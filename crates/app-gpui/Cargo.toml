@@ -1,0 +1,30 @@
+[package]
+name = "partitura"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["runtime-shaders"]
+runtime-shaders = ["gpui/runtime_shaders"]
+
+[dependencies]
+gpui.workspace = true
+dirs = "=6.0.0"
+ttf-parser = "=0.25.1"
+score-core.workspace = true
+score-document.workspace = true
+score-edit.workspace = true
+score-layout.workspace = true
+score-playback.workspace = true
+score-io.workspace = true
+score-platform.workspace = true
+score-keymap.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "=0.26.0"
+objc = "=0.2.7"
+core-text = "=21.0.0"
+core-graphics = "=0.24.0"
+block = "=0.1.6"

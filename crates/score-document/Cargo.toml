@@ -1,0 +1,13 @@
+[package]
+name = "score-document"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+score-core.workspace = true
+score-edit.workspace = true
+score-layout.workspace = true
+
+[dev-dependencies]
+score-io.workspace = true

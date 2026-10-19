@@ -1,0 +1,37 @@
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/app-gpui"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+
+[workspace.dependencies]
+score-core = { path = "crates/score-core" }
+score-edit = { path = "crates/score-edit" }
+score-layout = { path = "crates/score-layout" }
+score-playback = { path = "crates/score-playback" }
+score-io = { path = "crates/score-io" }
+score-platform = { path = "crates/platform" }
+score-document = { path = "crates/score-document" }
+score-keymap = { path = "crates/keymap" }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+imbl = { version = "=7.0.1", features = ["serde"] }
+slotmap = { version = "=1.1.1", features = ["serde"] }
+tempfile = "=3.27.0"
+gpui = "=0.2.2"
+cpal = "=0.16.0"
+midir = "=0.10.3"
+rustysynth = "=1.3.7"
+rtrb = "=0.4.0"
+assert_no_alloc = "=1.1.2"
+
+[profile.dev]
+debug = 1
+
+[profile.dev.package."*"]
+debug = 0

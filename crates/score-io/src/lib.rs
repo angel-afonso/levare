@@ -1,0 +1,535 @@
+//! Versioned native documents. Export formats will use independent adapters.
+use score_core::Score;
+use serde::{Deserialize, Serialize};
+use std::{
+    fmt,
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
+
+pub const SCHEMA_VERSION: u32 = 10;
+pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Serialize, Deserialize)]
+struct NativeFile {
+    format: String,
+    version: u32,
+    score: Score,
+}
+
+#[derive(Debug)]
+pub struct FileError(String);
+impl fmt::Display for FileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for FileError {}
+fn error(error: impl fmt::Display) -> FileError {
+    FileError(error.to_string())
+}
+
+pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
+    score.validate().map_err(error)?;
+    let bytes = serde_json::to_vec_pretty(&NativeFile {
+        format: "partitura".into(),
+        version: SCHEMA_VERSION,
+        score: score.clone(),
+    })
+    .map_err(error)?;
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(error("La partitura supera el límite de 16 MiB"));
+    }
+    Ok(bytes)
+}
+
+pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(error("El archivo supera el límite de 16 MiB"));
+    }
+    // Check the envelope before deserializing a possibly incompatible score.
+    let mut envelope: serde_json::Value = serde_json::from_slice(bytes).map_err(error)?;
+    if envelope["format"] != "partitura" {
+        return Err(error("El archivo no es una partitura nativa"));
+    }
+    if envelope["version"].as_u64() == Some(1) {
+        let score = envelope["score"]
+            .as_object_mut()
+            .ok_or_else(|| error("Partitura inválida"))?;
+        let measures = score
+            .remove("measures")
+            .ok_or_else(|| error("Compases inválidos"))?;
+        score.insert(
+            "parts".into(),
+            serde_json::json!([{ "id": 0, "instrument": "Piano", "measures": measures }]),
+        );
+        score.insert("next_part_id".into(), 1.into());
+        envelope["version"] = 2.into();
+    }
+    if envelope["version"].as_u64() == Some(2) {
+        let parts = envelope
+            .get_mut("score")
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|score| score.get_mut("parts"))
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| error("Instrumentos inválidos"))?;
+        if parts.is_empty() || parts.len() > score_core::MAX_PARTS {
+            return Err(error("Cantidad de instrumentos inválida"));
+        }
+        for part in parts {
+            let part = part
+                .as_object_mut()
+                .ok_or_else(|| error("Instrumento inválido"))?;
+            let measures = part
+                .remove("measures")
+                .ok_or_else(|| error("Compases inválidos"))?;
+            let count = measures
+                .as_array()
+                .ok_or_else(|| error("Compases inválidos"))?
+                .len();
+            if !(1..=score_core::MAX_MEASURES).contains(&count) {
+                return Err(error("Cantidad de compases inválida"));
+            }
+            let mut staves = vec![serde_json::json!({"id": "Upper", "measures": measures})];
+            if part
+                .get("instrument")
+                .is_some_and(|instrument| instrument == "Piano")
+            {
+                let empty = serde_json::to_value(score_core::Measure::default()).map_err(error)?;
+                staves.push(serde_json::json!({"id": "Lower", "measures": vec![empty; count]}));
+            }
+            part.insert("staves".into(), staves.into());
+        }
+        envelope["version"] = 3.into();
+    }
+    if envelope["version"].as_u64() == Some(3) {
+        let parts = envelope
+            .get_mut("score")
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|score| score.get_mut("parts"))
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| error("Instrumentos inválidos"))?;
+        for part in parts {
+            let staves = part
+                .get_mut("staves")
+                .and_then(serde_json::Value::as_array_mut)
+                .ok_or_else(|| error("Pentagramas inválidos"))?;
+            for staff in staves {
+                let measures = staff
+                    .get_mut("measures")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .ok_or_else(|| error("Compases inválidos"))?;
+                for measure in measures {
+                    let events = measure
+                        .get_mut("events")
+                        .and_then(serde_json::Value::as_array_mut)
+                        .ok_or_else(|| error("Notas inválidas"))?;
+                    for slot in events {
+                        if let Some(value) = slot.get_mut("value")
+                            && !value.is_null()
+                        {
+                            let event = value
+                                .as_object_mut()
+                                .ok_or_else(|| error("Nota inválida"))?;
+                            let pitch = event
+                                .remove("pitch")
+                                .ok_or_else(|| error("Altura de nota inválida"))?;
+                            let pitches = if pitch.is_null() {
+                                Vec::new()
+                            } else {
+                                vec![pitch]
+                            };
+                            event.insert("pitches".into(), pitches.into());
+                        }
+                    }
+                }
+            }
+        }
+        envelope["version"] = 4.into();
+    }
+    if envelope["version"].as_u64() == Some(4) {
+        // Missing accidental means the original natural pitch.
+        envelope["version"] = 5.into();
+    }
+    if envelope["version"].as_u64() == Some(5) {
+        // Older scores used natural pitches unless explicitly altered: C major
+        // preserves every existing note, chord and event identity.
+        envelope["score"]
+            .as_object_mut()
+            .ok_or_else(|| error("Partitura inválida"))?
+            .insert(
+                "key_signature".into(),
+                serde_json::to_value(score_core::KeySignature::default()).map_err(error)?,
+            );
+        envelope["version"] = 6.into();
+    }
+    if envelope["version"].as_u64() == Some(6) {
+        // Expressive marks default to absent in older files.
+        envelope["version"] = 7.into();
+    }
+    if envelope["version"].as_u64() == Some(7) {
+        // Missing technique keeps the original bowed instrument sound.
+        envelope["version"] = 8.into();
+    }
+    if envelope["version"].as_u64() == Some(8) {
+        // Existing connections remain unchanged; regulators are new connection kinds.
+        envelope["version"] = 9.into();
+    }
+    if envelope["version"].as_u64() == Some(9) {
+        // Ordinary duration strings retain their meaning; ticks are not serialized.
+        envelope["version"] = SCHEMA_VERSION.into();
+    }
+    if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {
+        return Err(error("Versión de archivo no compatible"));
+    }
+    let file: NativeFile = serde_json::from_value(envelope).map_err(error)?;
+    file.score.validate().map_err(error)?;
+    Ok(file.score)
+}
+
+pub fn load(path: &Path) -> Result<Score, FileError> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(error)?
+        .take((MAX_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(error)?;
+    decode(&bytes)
+}
+
+/// Write beside the destination, flush, then replace atomically. A failed write
+/// never truncates the previous document.
+pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
+    let bytes = encode(score)?;
+    let parent = path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
+    temporary.write_all(&bytes).map_err(error)?;
+    temporary.as_file().sync_all().map_err(error)?;
+    temporary.persist(path).map_err(error)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use score_core::{Duration, Event, Pitch, Step};
+
+    #[test]
+    fn old_scores_keep_their_sound_and_key_signatures_round_trip_with_validation() {
+        use score_core::{KeyMode, KeySignature};
+        for bytes in [
+            include_bytes!("../../../examples/primera-melodia.partitura").as_slice(),
+            include_bytes!("../../../examples/trio.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-dos-manos.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-acordes.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-alteraciones.partitura").as_slice(),
+        ] {
+            let mut score = decode(bytes).unwrap();
+            assert_eq!(score.key_signature(), KeySignature::default());
+            let before = score.clone();
+            score.set_key_signature(KeySignature::new(-3, KeyMode::Minor).unwrap());
+            let data = encode(&score).unwrap();
+            assert_eq!(decode(&data).unwrap(), score);
+            for malformed_key in [
+                serde_json::json!({"fifths":8,"mode":"Major"}),
+                serde_json::json!({"fifths":-8,"mode":"Minor"}),
+                serde_json::json!({"fifths":1,"mode":"Invalid"}),
+                serde_json::json!({"fifths":1.5,"mode":"Major"}),
+                serde_json::json!(null),
+            ] {
+                let mut invalid: serde_json::Value = serde_json::from_slice(&data).unwrap();
+                invalid["score"]["key_signature"] = malformed_key;
+                assert!(decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
+            }
+            score.set_key_signature(KeySignature::default());
+            assert_eq!(score, before);
+        }
+    }
+
+    #[test]
+    fn legacy_chords_stay_natural_and_new_accidentals_round_trip() {
+        let mut score =
+            decode(include_bytes!("../../../examples/piano-acordes.partitura")).unwrap();
+        let part = score.parts()[0].id();
+        for staff in [score_core::StaffId::Upper, score_core::StaffId::Lower] {
+            let event = score.part(part).unwrap().staff(staff).unwrap().measures()[0]
+                .id_at(0)
+                .unwrap();
+            let id = score_core::ElementId {
+                part,
+                staff,
+                measure: 0,
+                event,
+            };
+            assert!(
+                score
+                    .event(id)
+                    .unwrap()
+                    .pitches
+                    .iter()
+                    .all(|p| p.accidental().is_none())
+            );
+            for (index, sign) in [
+                score_core::Accidental::Sharp,
+                score_core::Accidental::Flat,
+                score_core::Accidental::Natural,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                score.set_accidental(id, index, Some(sign)).unwrap();
+            }
+        }
+        let bytes = encode(&score).unwrap();
+        assert_eq!(decode(&bytes).unwrap(), score);
+        let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(data["version"], SCHEMA_VERSION);
+        data["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]["pitches"][0]
+            ["accidental"] = "DoubleSharp".into();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+    }
+
+    #[test]
+    fn chord_files_round_trip_both_hands_and_reject_duplicate_or_oversized_sets() {
+        let mut score = decode(include_bytes!(
+            "../../../examples/piano-dos-manos.partitura"
+        ))
+        .unwrap();
+        let piano = score.parts()[0].id();
+        let mut ids = Vec::new();
+        for staff in [score_core::StaffId::Upper, score_core::StaffId::Lower] {
+            let event = score.part(piano).unwrap().staff(staff).unwrap().measures()[0]
+                .id_at(0)
+                .unwrap();
+            let id = score_core::ElementId {
+                part: piano,
+                staff,
+                measure: 0,
+                event,
+            };
+            let octave = if staff == score_core::StaffId::Upper {
+                4
+            } else {
+                3
+            };
+            score
+                .add_pitch(id, Pitch::new(Step::E, octave).unwrap())
+                .unwrap();
+            score
+                .add_pitch(id, Pitch::new(Step::G, octave).unwrap())
+                .unwrap();
+            ids.push(id);
+        }
+        let bytes = encode(&score).unwrap();
+        let loaded = decode(&bytes).unwrap();
+        assert_eq!(loaded, score);
+        assert!(
+            ids.into_iter()
+                .all(|id| loaded.event(id).unwrap().pitches.len() == 3)
+        );
+        let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        for pitches in [
+            serde_json::json!([{"step":"C", "octave":4}, {"step":"C", "octave":4}]),
+            serde_json::json!(
+                (0..9)
+                    .map(|octave| serde_json::json!({"step":"C", "octave":octave}))
+                    .collect::<Vec<_>>()
+            ),
+        ] {
+            let mut malformed = data.clone();
+            malformed["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]["pitches"] =
+                pitches;
+            assert!(decode(&serde_json::to_vec(&malformed).unwrap()).is_err());
+        }
+    }
+
+    #[test]
+    fn malformed_legacy_envelopes_return_errors_instead_of_panicking() {
+        for version in [1, 2, 3, 4, 5, 6] {
+            for score in [
+                serde_json::json!([]),
+                serde_json::json!("invalid"),
+                serde_json::json!(false),
+                serde_json::json!(null),
+                serde_json::json!(17),
+            ] {
+                let bytes = serde_json::to_vec(&serde_json::json!({ "format": "partitura", "version": version, "score": score })).unwrap();
+                assert!(decode(&bytes).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn saves_both_hands_and_migrates_legacy_pianos_without_moving_notes() {
+        let example = decode(include_bytes!(
+            "../../../examples/piano-dos-manos.partitura"
+        ))
+        .unwrap();
+        assert_eq!(example.parts().len(), 1);
+        assert!(
+            example.parts()[0]
+                .staves()
+                .iter()
+                .all(|staff| !staff.measures()[0].is_empty())
+        );
+        let mut score = decode(include_bytes!("../../../examples/trio.partitura")).unwrap(); // Schema 2.
+        let piano = score.parts()[0].id();
+        assert_eq!(score.parts()[0].staves().len(), 2);
+        let upper_before = score.parts()[0].measures().clone();
+        assert!(
+            score.parts()[0]
+                .staff(score_core::StaffId::Lower)
+                .unwrap()
+                .measures()
+                .iter()
+                .all(|bar| bar.is_empty())
+        );
+        let left = score
+            .insert_on(
+                piano,
+                score_core::StaffId::Lower,
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(Pitch::new(Step::C, 3)),
+                    duration: Duration::Whole,
+                },
+            )
+            .unwrap();
+        let bytes = encode(&score).unwrap();
+        let loaded = decode(&bytes).unwrap();
+        assert_eq!(loaded.parts()[0].measures(), &upper_before);
+        assert_eq!(loaded.event(left), score.event(left));
+        assert_eq!(loaded, score);
+        let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        data["score"]["parts"][0]["staves"]
+            .as_array_mut()
+            .unwrap()
+            .clear();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+        let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        data["score"]["parts"][0]["staves"][1]["id"] = "Upper".into();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+        let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        data["score"]["parts"][0]["staves"][1]["measures"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+    }
+
+    #[test]
+    fn opens_legacy_piano_and_round_trips_an_ensemble() {
+        let mut score = decode(include_bytes!(
+            "../../../examples/primera-melodia.partitura"
+        ))
+        .unwrap();
+        assert_eq!(score.parts().len(), 1);
+        assert_eq!(score.parts()[0].instrument(), score_core::Instrument::Piano);
+        assert!(!score.measures()[0].is_empty());
+        let part = score.add_part(score_core::Instrument::Cello).unwrap();
+        let id = score
+            .insert_in(
+                part,
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(Pitch::new(Step::C, 3)),
+                    duration: Duration::Half,
+                },
+            )
+            .unwrap();
+        let loaded = decode(&encode(&score).unwrap()).unwrap();
+        assert_eq!(loaded, score);
+        assert_eq!(loaded.event(id), score.event(id));
+        assert_eq!(
+            loaded.part(part).unwrap().instrument(),
+            score_core::Instrument::Cello
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_parts_and_misaligned_bar_counts() {
+        let mut score = Score::default();
+        score.add_part(score_core::Instrument::Violin).unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&encode(&score).unwrap()).unwrap();
+        let mut duplicate = data.clone();
+        duplicate["score"]["parts"][1]["id"] = duplicate["score"]["parts"][0]["id"].clone();
+        assert!(decode(&serde_json::to_vec(&duplicate).unwrap()).is_err());
+        let mut shorter = data.clone();
+        shorter["score"]["parts"][1]["staves"][0]["measures"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        assert!(decode(&serde_json::to_vec(&shorter).unwrap()).is_err());
+        let mut invalid_id = data;
+        invalid_id["score"]["next_part_id"] = 0.into();
+        assert!(decode(&serde_json::to_vec(&invalid_id).unwrap()).is_err());
+    }
+
+    #[test]
+    fn file_round_trip_preserves_notes_ids_and_replaces_atomically() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("melodia.partitura");
+        let mut score = Score::default();
+        save(&path, &score).unwrap();
+        let id = score
+            .insert(
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(Pitch::new(Step::A, 4)),
+                    duration: Duration::Half,
+                },
+            )
+            .unwrap();
+        save(&path, &score).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded, score);
+        assert_eq!(loaded.event(id), score.event(id));
+    }
+
+    #[test]
+    fn rejects_future_versions_malformed_time_and_dangling_events() {
+        let encoded = encode(&Score::default()).unwrap();
+        let mut data: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        data["version"] = 999.into();
+        data["score"] = serde_json::Value::Null;
+        assert!(
+            decode(&serde_json::to_vec(&data).unwrap())
+                .unwrap_err()
+                .to_string()
+                .contains("Versión")
+        );
+        let mut data: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        data["score"]["time"]["denominator"] = 0.into();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+        assert!(decode(b"not json").is_err());
+        assert!(decode(&vec![b' '; MAX_FILE_BYTES + 1]).is_err());
+        let mut score = Score::default();
+        score
+            .insert(
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(None),
+                    duration: Duration::Quarter,
+                },
+            )
+            .unwrap();
+        let mut data: serde_json::Value = serde_json::from_slice(&encode(&score).unwrap()).unwrap();
+        data["score"]["parts"][0]["staves"][0]["measures"][0]["order"] = serde_json::json!([]);
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod expression_tests;

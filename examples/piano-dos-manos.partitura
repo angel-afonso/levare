@@ -1,0 +1,446 @@
+{
+  "format": "partitura",
+  "version": 3,
+  "score": {
+    "title": "Piano a dos manos",
+    "time": {
+      "numerator": 4,
+      "denominator": 4
+    },
+    "parts": [
+      {
+        "id": 0,
+        "instrument": "Piano",
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "E",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "E",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "F",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "A",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 5
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "A",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "B",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "D",
+                        "octave": 5
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "B",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 5
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "E",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 4
+                      },
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "Lower",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 3
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 3
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "F",
+                        "octave": 2
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 3
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 2
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "D",
+                        "octave": 3
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "C",
+                        "octave": 3
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitch": {
+                        "step": "G",
+                        "octave": 2
+                      },
+                      "duration": "Half"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "next_part_id": 1
+  }
+}
