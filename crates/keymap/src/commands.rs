@@ -447,7 +447,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::ARCO, C::Expression, "Arco", S, false, R),
     spec(id::CLEAR_TECHNIQUE, C::Expression, "Quitar indicación de técnica", S, false, R),
     spec(id::CLEAR_ARTICULATION, C::Expression, "Quitar articulación", S, false, R),
-    spec(id::FERMATA, C::Expression, "Calderón", S, false, P),
+    spec(id::FERMATA, C::Expression, "Calderón", S, false, R),
     spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
     spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
     spec(id::DYNAMIC_P, C::Expression, "Dinámica p", S, false, R),

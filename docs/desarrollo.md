@@ -662,8 +662,45 @@ La UI ofrece controles en cinta, inspector y menú nativo. ↩ alterna únicamen
 unión saliente; S marca inicio/fin de frase y Esc cancela. El estado provisional
 se limpia al editar, deshacer, rehacer, crear o abrir otro documento. Las cuatro
 articulaciones no tienen tecla por defecto (como en Sibelius portátil) y se pueden
-asignar en Preferencias. Calderones y reguladores quedan
-pendientes, así como uniones de alturas individuales dentro de acordes distintos.
+asignar en Preferencias. Quedan pendientes las uniones de alturas individuales
+dentro de acordes distintos.
+
+### Catálogo de marcas
+
+`score-core::marks` describe cada marca una sola vez. `MarkKind` enumera las 19
+marcas (cuatro articulaciones, calderón, ocho dinámicas, pizz./arco, unión, expresión,
+crescendo y diminuendo) con su nombre corto y largo, su familia (`MarkFamily`), su
+glifo Bravura, el símbolo de botón y el lado del pentagrama (`Placement`). Una nota
+lleva como mucho una marca de cada familia puntual; `set_point_mark` sustituye la de
+su familia y `Command::ToggleMark` escribe, cambia o quita la de la selección.
+
+`MarkRef` identifica una marca escrita (la nota de una marca puntual o la conexión
+de una ligadura o regulador) para seleccionarla, borrarla (`Command::RemoveMark`) o
+cambiarla (`Command::ReplaceConnection`). `score-layout` genera un `MarkBox` por marca
+puntual, ajustado a las cajas de Bravura, y `Layout::hit` elige entre nota y marca.
+
+`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`mark_tile`), el
+inspector, el menú **Expresión**, los símbolos de los menús, el estado resaltado y el
+despacho de la app (`apply_mark`) la recorren en lugar de repetir cada marca. Un test
+exige que cada marca tenga un comando propio, listo y con su nombre en la etiqueta.
+
+Para añadir una marca puntual: su variante en `MarkKind` (y el campo en `Notation`
+si es una familia nueva, con `serde(default)` para no cambiar el formato), su
+comando en `score-keymap` y `score-toolbar::marks`, su colocación en
+`score-layout::expression::marks` y, si suena distinto, su regla en `score-playback`.
+
+### Calderón
+
+`Notation.fermata` se guarda solo cuando está activo, así que los archivos anteriores
+se abren sin migración. Admite notas y silencios, independiente de la articulación;
+al pegar una figura que se divide queda en el último fragmento. Se dibuja centrado
+sobre la nota, por fuera de la articulación, y desplaza hacia arriba la técnica.
+
+En reproducción, `score-playback::Timeline` convierte tiempo musical en audio: el
+tramo de cada calderón dura `FERMATA_HOLD` (el doble) para **todas** las partes, y
+lo que sigue empieza después. Los calderones simultáneos de varias partes se unen en
+un solo tramo. El plan, los reguladores, los saltos de la regla, el reloj y los
+segundos del transporte usan la misma línea de tiempo (`tick_at` es su inversa).
 
 ## Verificación
 

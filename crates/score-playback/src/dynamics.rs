@@ -20,15 +20,15 @@ impl LevelSegment {
 pub(super) fn prepare(
     envelope: DynamicEnvelope,
     sounds: &mut [SoundSpan],
-    tempo: Tempo,
+    timeline: &Timeline,
     rate: u32,
 ) -> Vec<ExpressionPoint> {
     let levels: Vec<_> = envelope
         .segments
         .into_iter()
         .map(|s| LevelSegment {
-            start: tempo.frame_at(s.start, rate),
-            end: tempo.frame_at(s.end, rate),
+            start: timeline.frame_at(s.start, rate),
+            end: timeline.frame_at(s.end, rate),
             from: s.from,
             to: s.to,
         })

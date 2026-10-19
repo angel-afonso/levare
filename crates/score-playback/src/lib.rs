@@ -7,7 +7,9 @@ use score_core::{
 mod audition;
 mod dynamics;
 mod interpretation;
+mod timeline;
 pub use audition::Audition;
+pub use timeline::{FERMATA_HOLD, Timeline};
 
 pub const PLAYBACK_CHANNELS: usize = 32;
 /// Channel for a validated score's part index; percussion and audition are reserved.
@@ -154,6 +156,8 @@ pub struct PlaybackPlan {
     key_sounds: std::collections::HashMap<(u8, u8), Vec<KeySound>>,
     pub duration_frames: u64,
     pub sample_rate: u32,
+    /// Musical to audio time for this score, fermatas included.
+    pub timeline: Timeline,
 }
 
 /// Overlap each slurred sound into the next written note of the same staff.
@@ -183,6 +187,7 @@ impl PlaybackPlan {
         if !(16_000..=192_000).contains(&sample_rate) {
             return Err(ScoreError("Frecuencia de audio no compatible"));
         }
+        let timeline = Timeline::new(score, tempo);
         let mut messages = Vec::new();
         let mut spans = Vec::new();
         let mut sounds: Vec<SoundSpan> = Vec::new();
@@ -226,9 +231,9 @@ impl PlaybackPlan {
                     let mut tick = index as u64 * capacity;
                     for (id, event) in measure.iter() {
                         let written_tick = tick;
-                        let start = tempo.frame_at(tick, sample_rate);
+                        let start = timeline.frame_at(tick, sample_rate);
                         tick += u64::from(event.duration.ticks());
-                        let end = tempo.frame_at(tick, sample_rate);
+                        let end = timeline.frame_at(tick, sample_rate);
                         let pitches = event.pitches.in_key(score.key_signature());
                         let element = ElementId {
                             staff: staff.id(),
@@ -321,8 +326,12 @@ impl PlaybackPlan {
                 if expressive {
                     let envelope =
                         score_core::DynamicEnvelope::new(score, part.id(), staff.id()).unwrap();
-                    let points =
-                        dynamics::prepare(envelope, &mut sounds[first_sound..], tempo, sample_rate);
+                    let points = dynamics::prepare(
+                        envelope,
+                        &mut sounds[first_sound..],
+                        &timeline,
+                        sample_rate,
+                    );
                     for point in &points {
                         messages.push(ScheduledMessage {
                             frame: point.frame,
@@ -430,6 +439,7 @@ impl PlaybackPlan {
             sounds,
             duration_frames,
             sample_rate,
+            timeline,
         })
     }
 

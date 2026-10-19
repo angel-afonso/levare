@@ -32,6 +32,9 @@ pub enum Command {
     ReplaceConnection(score_core::Connection, score_core::Connection),
     /// Delete one mark selected in the score, keeping its note.
     RemoveMark(score_core::MarkRef),
+    /// The ribbon's point marks: write `kind` on the selection, replacing its
+    /// family's mark, or remove it when it is already there.
+    ToggleMark(score_core::MarkKind),
     Delete,
     Transpose(i16),
     AddPitch(Pitch),
@@ -332,6 +335,15 @@ impl Editor {
                 next.score.add_connection(new)?;
             }
             Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
+            Command::ToggleMark(kind) => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o silencio"))?;
+                let family = kind.family();
+                let current = next.score.point_mark(id, family);
+                next.score
+                    .set_point_mark(id, family, (current != Some(kind)).then_some(kind))?;
+            }
             Command::RemoveConnections(kind) => {
                 let id = next
                     .selection

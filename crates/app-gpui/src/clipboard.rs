@@ -127,6 +127,7 @@ mod playback_tests {
                 technique: None,
                 dynamic: Some(Dynamic::F),
                 articulation: Some(Articulation::Staccato),
+                fermata: false,
             },
         };
         let mut source = Editor::default();

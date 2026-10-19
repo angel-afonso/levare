@@ -5,6 +5,7 @@
 //! answers [`CommandStates`]; the GPUI layer only paints the views and emits
 //! commands.
 
+pub mod marks;
 mod menu;
 mod project;
 mod spec;

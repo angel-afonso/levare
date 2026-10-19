@@ -228,6 +228,7 @@ impl Rhythm {
                     if event.duration.is_dotted()
                         || event.notation.dynamic.is_some()
                         || event.notation.technique.is_some()
+                        || event.notation.fermata
                     {
                         wide.insert(tick);
                     }

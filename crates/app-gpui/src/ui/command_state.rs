@@ -19,18 +19,6 @@ impl CommandStates for AppView {
                     }),
             )
         };
-        let articulation =
-            |mark: Articulation| CommandState::checked(selected_articulation(self) == Some(mark));
-        let dynamic = |mark: Dynamic| CommandState::checked(selected_dynamic(self) == Some(mark));
-        let technique = |mark: PlayingTechnique| {
-            CommandState::checked(
-                editor
-                    .selection()
-                    .and_then(|id| editor.score().event(id))
-                    .and_then(|event| event.notation.technique)
-                    == Some(mark),
-            )
-        };
         let hairpin = |kind: ConnectionKind| {
             let open = self
                 .pending_hairpin
@@ -45,6 +33,15 @@ impl CommandStates for AppView {
             enabled,
             ..CommandState::default()
         };
+        // Every point mark of the catalog: lit while the selection carries it.
+        if let Some(kind) = score_toolbar::marks::kind(command).filter(|kind| kind.is_point()) {
+            return CommandState::checked(
+                editor
+                    .selection()
+                    .and_then(|id| editor.score().point_mark(id, kind.family()))
+                    == Some(kind),
+            );
+        }
         match command {
             id::UNDO => enabled(editor.can_undo()),
             id::REDO => enabled(editor.can_redo()),
@@ -66,10 +63,6 @@ impl CommandStates for AppView {
             id::SHARP => accidental(Accidental::Sharp),
             id::FLAT => accidental(Accidental::Flat),
 
-            id::STACCATO => articulation(Articulation::Staccato),
-            id::TENUTO => articulation(Articulation::Tenuto),
-            id::ACCENT => articulation(Articulation::Accent),
-            id::MARCATO => articulation(Articulation::Marcato),
             id::TIE => CommandState::checked(selected_connection(self, ConnectionKind::Tie)),
             id::SLUR => CommandState {
                 checked: self.pending_slur.is_some(),
@@ -81,17 +74,6 @@ impl CommandStates for AppView {
             },
             id::CRESCENDO => hairpin(ConnectionKind::Crescendo),
             id::DIMINUENDO => hairpin(ConnectionKind::Diminuendo),
-
-            id::DYNAMIC_PPP => dynamic(Dynamic::Ppp),
-            id::DYNAMIC_PP => dynamic(Dynamic::Pp),
-            id::DYNAMIC_P => dynamic(Dynamic::P),
-            id::DYNAMIC_MP => dynamic(Dynamic::Mp),
-            id::DYNAMIC_MF => dynamic(Dynamic::Mf),
-            id::DYNAMIC_F => dynamic(Dynamic::F),
-            id::DYNAMIC_FF => dynamic(Dynamic::Ff),
-            id::DYNAMIC_FFF => dynamic(Dynamic::Fff),
-            id::PIZZICATO => technique(PlayingTechnique::Pizzicato),
-            id::ARCO => technique(PlayingTechnique::Arco),
 
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
             id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker.is_some()),

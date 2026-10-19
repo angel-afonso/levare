@@ -108,6 +108,23 @@ const fn tile(command: CommandId, visual: Visual, label: &'static str) -> Contro
 }
 
 use Visual::{Icon, Music, None as Plain, Text};
+use score_core::{
+    Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind, PlayingTechnique as T,
+};
+
+/// A catalog mark: its command, symbol and name come from the catalog.
+const fn mark_visual(kind: MarkKind) -> Visual {
+    match kind.symbol() {
+        Some(symbol) => Music(symbol),
+        None => Text(kind.label()),
+    }
+}
+const fn mark_tile(kind: MarkKind) -> Control {
+    tile(crate::marks::command(kind), mark_visual(kind), kind.name())
+}
+const fn mark_small(kind: MarkKind, label: &'static str) -> Control {
+    small(crate::marks::command(kind), mark_visual(kind), label)
+}
 
 const CLIPBOARD: GroupSpec = GroupSpec {
     title: "Portapapeles",
@@ -233,11 +250,11 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
     visual: Music("\u{e4a0}"),
     priority: 7,
     controls: &[
-        tile(id::STACCATO, Music("\u{e4a2}"), "Staccato"),
-        tile(id::TENUTO, Music("\u{e4a4}"), "Tenuto"),
-        tile(id::ACCENT, Music("\u{e4a0}"), "Acento"),
-        tile(id::MARCATO, Music("\u{e4ac}"), "Marcato"),
-        tile(id::FERMATA, Music("\u{e4c0}"), "Calderón"),
+        mark_tile(MarkKind::Articulation(A::Staccato)),
+        mark_tile(MarkKind::Articulation(A::Tenuto)),
+        mark_tile(MarkKind::Articulation(A::Accent)),
+        mark_tile(MarkKind::Articulation(A::Marcato)),
+        mark_tile(MarkKind::Fermata),
         tile(id::TIE, Icon("tie"), "Unión"),
         tile(id::SLUR, Icon("slur"), "Expresión"),
     ],
@@ -247,14 +264,14 @@ const DYNAMICS: GroupSpec = GroupSpec {
     visual: Music("\u{e521}\u{e522}"),
     priority: 6,
     controls: &[
-        tile(id::DYNAMIC_PP, Music("\u{e520}\u{e520}"), "Pianissimo"),
-        tile(id::DYNAMIC_P, Music("\u{e520}"), "Piano"),
-        tile(id::DYNAMIC_MP, Music("\u{e521}\u{e520}"), "Mezzopiano"),
-        tile(id::DYNAMIC_MF, Music("\u{e521}\u{e522}"), "Mezzoforte"),
-        tile(id::DYNAMIC_F, Music("\u{e522}"), "Forte"),
-        tile(id::DYNAMIC_FF, Music("\u{e522}\u{e522}"), "Fortissimo"),
-        small(id::DYNAMIC_PPP, Music("\u{e520}\u{e520}\u{e520}"), "ppp"),
-        small(id::DYNAMIC_FFF, Music("\u{e522}\u{e522}\u{e522}"), "fff"),
+        mark_tile(MarkKind::Dynamic(D::Pp)),
+        mark_tile(MarkKind::Dynamic(D::P)),
+        mark_tile(MarkKind::Dynamic(D::Mp)),
+        mark_tile(MarkKind::Dynamic(D::Mf)),
+        mark_tile(MarkKind::Dynamic(D::F)),
+        mark_tile(MarkKind::Dynamic(D::Ff)),
+        mark_small(MarkKind::Dynamic(D::Ppp), "ppp"),
+        mark_small(MarkKind::Dynamic(D::Fff), "fff"),
     ],
 };
 const HAIRPINS: GroupSpec = GroupSpec {
@@ -262,8 +279,8 @@ const HAIRPINS: GroupSpec = GroupSpec {
     visual: Music("\u{e53e}"),
     priority: 4,
     controls: &[
-        small(id::CRESCENDO, Music("\u{e53e}"), "Crescendo"),
-        small(id::DIMINUENDO, Music("\u{e53f}"), "Diminuendo"),
+        mark_small(MarkKind::Connection(K::Crescendo), "Crescendo"),
+        mark_small(MarkKind::Connection(K::Diminuendo), "Diminuendo"),
     ],
 };
 const TECHNIQUE: GroupSpec = GroupSpec {
@@ -271,8 +288,8 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     visual: Text("pizz."),
     priority: 3,
     controls: &[
-        small(id::PIZZICATO, Text("pizz."), "Pizzicato"),
-        small(id::ARCO, Text("arco"), "Arco"),
+        mark_small(MarkKind::Technique(T::Pizzicato), "Pizzicato"),
+        mark_small(MarkKind::Technique(T::Arco), "Arco"),
     ],
 };
 const TEXT_EXPRESSION: GroupSpec = GroupSpec {

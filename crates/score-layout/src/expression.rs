@@ -171,8 +171,9 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
     let bottom = result
         .beam_stem(id)
         .map_or(low + if down { stem } else { 0. }, |s| low.max(s.to.y));
+    let articulation_y = (-10f32).min(top - 12.);
     if let Some(mark) = event.notation.articulation {
-        let y = (-10f32).min(top - 12.);
+        let y = articulation_y;
         result.marks.push(MarkBox {
             mark: MarkRef::Articulation(id),
             glyph: Some(result.glyphs.len()),
@@ -191,11 +192,44 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         });
         result.top = result.top.min(y - 16.);
     }
+    // The fermata sits outside the articulation, centered over the note.
+    let fermata_y = if event.notation.articulation.is_some() {
+        articulation_y - 14.
+    } else {
+        (-12f32).min(top - 12.)
+    };
+    if event.notation.fermata {
+        let kind = score_core::MarkKind::Fermata;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Fermata(id),
+            glyph: Some(result.glyphs.len()),
+            // Bravura's fermataAbove: 2.4 spaces wide, 1.3 high.
+            center: Point {
+                x,
+                y: fermata_y - 6.,
+            },
+            half: (14., 9.),
+        });
+        result.glyphs.push(Glyph {
+            text: kind.glyph().expect("fermata glyph").into(),
+            position: Point {
+                x: x - 12.,
+                y: fermata_y,
+            },
+            element: Some(id),
+        });
+        result.top = result.top.min(fermata_y - 18.);
+    }
     if let Some(mark) = event.notation.technique {
         // A separate lane above stems and articulation, also used by slur envelopes.
         let y = (-18f32).min(top - 20.);
         let y = if event.notation.articulation.is_some() {
             y - 20.
+        } else {
+            y
+        };
+        let y = if event.notation.fermata {
+            y.min(fermata_y - 22.)
         } else {
             y
         };

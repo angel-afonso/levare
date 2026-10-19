@@ -340,3 +340,56 @@ fn a_selected_mark_is_removed_or_swapped_in_one_undoable_step() {
     editor.undo();
     assert_eq!(editor.score(), &decorated);
 }
+
+#[test]
+fn toggling_a_catalog_mark_writes_replaces_and_removes_it() {
+    use score_core::{MarkKind, PlayingTechnique};
+    let mut editor = Editor::default();
+    let event = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    editor.execute(Command::Insert(event)).unwrap();
+    let a = editor.selection().unwrap();
+    editor.select(a);
+    let notation = |editor: &Editor| editor.score().event(a).unwrap().notation;
+    editor
+        .execute(Command::ToggleMark(MarkKind::Articulation(
+            Articulation::Accent,
+        )))
+        .unwrap();
+    editor
+        .execute(Command::ToggleMark(MarkKind::Fermata))
+        .unwrap();
+    editor
+        .execute(Command::ToggleMark(MarkKind::Articulation(
+            Articulation::Staccato,
+        )))
+        .unwrap();
+    assert_eq!(notation(&editor).articulation, Some(Articulation::Staccato));
+    assert!(notation(&editor).fermata);
+    editor
+        .execute(Command::ToggleMark(MarkKind::Articulation(
+            Articulation::Staccato,
+        )))
+        .unwrap();
+    assert_eq!(notation(&editor).articulation, None);
+    assert!(notation(&editor).fermata, "families are independent");
+    editor
+        .execute(Command::ToggleMark(MarkKind::Dynamic(Dynamic::P)))
+        .unwrap();
+    assert_eq!(notation(&editor).dynamic, Some(Dynamic::P));
+    // A piano cannot play pizzicato, and nothing enters the history.
+    let before = editor.score().clone();
+    assert!(
+        editor
+            .execute(Command::ToggleMark(MarkKind::Technique(
+                PlayingTechnique::Pizzicato
+            )))
+            .is_err()
+    );
+    assert_eq!(editor.score(), &before);
+    editor.undo();
+    assert_eq!(notation(&editor).dynamic, None);
+}

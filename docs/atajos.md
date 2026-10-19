@@ -122,7 +122,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Arco |  |
 | — | Quitar indicación de técnica |  |
 | — | Quitar articulación |  |
-| — | Calderón | Pendiente |
+| — | Calderón |  |
 | — | Dinámica ppp |  |
 | — | Dinámica pp |  |
 | — | Dinámica p |  |

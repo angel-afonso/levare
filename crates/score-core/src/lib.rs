@@ -11,7 +11,7 @@ pub use expression::{
     Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
 };
 mod marks;
-pub use marks::MarkRef;
+pub use marks::{MarkFamily, MarkKind, MarkRef, Placement};
 mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod key_signature;

@@ -1,9 +1,9 @@
 //! One musical position for the score, transport ruler and position display.
 use gpui::{Bounds, Pixels, point, px, size};
-use score_core::{Score, TICKS_PER_QUARTER};
+use score_core::Score;
 use score_edit::Cursor;
 use score_layout::Layout;
-use score_playback::Tempo;
+use score_playback::Timeline;
 
 pub const ACTIVE: u32 = 0xd9781e;
 pub const SELECTED: u32 = 0x3c70cf;
@@ -23,11 +23,10 @@ pub fn position(
     score: &Score,
     cursor: Cursor,
     clock: Option<(u64, u32)>,
-    tempo: Tempo,
+    timeline: &Timeline,
 ) -> Position {
     let tick = if let Some((frame, rate)) = clock.filter(|(_, rate)| *rate > 0) {
-        frame as f64 * f64::from(tempo.bpm()) * f64::from(TICKS_PER_QUARTER)
-            / (f64::from(rate) * 60.)
+        timeline.tick_at(frame, rate)
     } else {
         let local: u16 = score
             .part(cursor.part)
@@ -41,10 +40,10 @@ pub fn position(
             });
         cursor.measure as f64 * f64::from(score.time().capacity()) + f64::from(local)
     };
-    position_at_tick(score, tick, tempo)
+    position_at_tick(score, tick, timeline)
 }
 
-pub fn position_at_tick(score: &Score, tick: f64, tempo: Tempo) -> Position {
+pub fn position_at_tick(score: &Score, tick: f64, timeline: &Timeline) -> Position {
     let capacity = f64::from(score.time().capacity());
     let total = capacity * score.measures().len() as f64;
     let tick = tick.clamp(0., total);
@@ -56,7 +55,7 @@ pub fn position_at_tick(score: &Score, tick: f64, tempo: Tempo) -> Position {
         beat: 1.
             + (tick - measure as f64 * capacity)
                 / (f64::from(score_core::TICKS_PER_WHOLE) / f64::from(score.time().denominator)),
-        seconds: tick * 60. / (f64::from(tempo.bpm()) * f64::from(TICKS_PER_QUARTER)),
+        seconds: timeline.seconds_at(tick),
         progress: (tick / total) as f32,
         at_end: tick >= total,
     }
@@ -207,7 +206,8 @@ mod tests {
             measure: 2,
             index: 1,
         };
-        let tempo = Tempo::default();
+        let timeline = Timeline::new(&score, score_playback::Tempo::default());
+        let tempo = &timeline;
         let clock = Some((120_000, 48_000)); // 2.5 seconds = bar 2, beat 2.
         let p = position(&score, cursor, clock, tempo);
         assert_eq!(p.tick, 240.);
@@ -226,6 +226,15 @@ mod tests {
         assert_eq!(paused.tick, p.tick);
         let idle = position(&score, cursor, None, tempo);
         assert_eq!((idle.tick, idle.measure, idle.beat), (432., 2, 2.));
+        // A fermata on the first beat holds the clock: 2.5 s is now one beat earlier.
+        let first = score
+            .insert(0, 0, note(Step::C, Duration::Quarter))
+            .unwrap();
+        score.set_fermata(first, true).unwrap();
+        let held = Timeline::new(&score, score_playback::Tempo::default());
+        let p = position(&score, cursor, clock, &held);
+        assert_eq!(p.tick, 192.);
+        assert_eq!(p.seconds, 2.5);
     }
 
     #[test]
@@ -329,7 +338,12 @@ mod tests {
         let id = score.insert(3, 0, note(Step::C, Duration::Whole)).unwrap();
         let mut editor = score_edit::Editor::new(score).unwrap();
         editor.select(id);
-        let p = position(editor.score(), editor.cursor(), None, Tempo::default());
+        let p = position(
+            editor.score(),
+            editor.cursor(),
+            None,
+            &Timeline::plain(score_playback::Tempo::default()),
+        );
         assert_eq!(
             (p.measure, p.tick, p.progress, p.at_end),
             (3, 768., 1., true)

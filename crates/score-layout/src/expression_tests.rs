@@ -340,3 +340,53 @@ fn clicks_pick_a_mark_around_its_note_but_the_notehead_still_picks_the_note() {
         None
     );
 }
+
+#[test]
+fn a_fermata_sits_above_the_articulation_and_is_clickable_on_notes_and_rests() {
+    use score_core::MarkRef;
+    let mut s = Score::default();
+    let quarter = Event {
+        duration: Duration::Quarter,
+        ..note()
+    };
+    let a = s.insert(0, 0, quarter).unwrap();
+    let rest = s
+        .insert(
+            0,
+            1,
+            Event {
+                pitches: score_core::Pitches::default(),
+                ..quarter
+            },
+        )
+        .unwrap();
+    s.set_articulation(a, Some(Articulation::Accent)).unwrap();
+    s.set_fermata(a, true).unwrap();
+    s.set_fermata(rest, true).unwrap();
+    let layout = LayoutEngine::default().layout(&s, 1000.);
+    let measure = &layout.measures[0];
+    let mark = |m| {
+        *measure
+            .content
+            .marks
+            .iter()
+            .find(|b| b.mark == m)
+            .unwrap_or_else(|| panic!("{m:?}"))
+    };
+    let fermata = mark(MarkRef::Fermata(a));
+    let accent = mark(MarkRef::Articulation(a));
+    assert!(fermata.center.y < accent.center.y - 8., "above the accent");
+    assert_eq!(
+        measure.content.glyphs[fermata.glyph.unwrap()].text,
+        "\u{e4c0}"
+    );
+    for target in [MarkRef::Fermata(a), MarkRef::Fermata(rest)] {
+        let b = mark(target);
+        let point = Point {
+            x: measure.origin.x + b.center.x,
+            y: measure.origin.y + b.center.y,
+        };
+        assert_eq!(layout.hit(point), Some(Hit::Mark(target)));
+    }
+    assert!(measure.content.top <= fermata.center.y - 9.);
+}

@@ -5,4 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+score-core.workspace = true
 score-keymap.workspace = true

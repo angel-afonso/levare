@@ -362,6 +362,10 @@ impl Editor {
                     notation.dynamic = None;
                     notation.technique = None;
                 }
+                // A split note keeps one fermata, over its final fragment.
+                if !is_last {
+                    notation.fermata = false;
+                }
                 if let Some(mark) = notation.articulation {
                     let belongs = if matches!(mark, Articulation::Staccato | Articulation::Tenuto) {
                         is_last

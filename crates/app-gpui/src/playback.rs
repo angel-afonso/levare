@@ -167,9 +167,13 @@ impl Playback {
         if self.clock.is_none()
             && let Some(tick) = self.seek_tick
         {
-            return crate::playhead::position_at_tick(score, tick as f64, self.tempo);
+            return crate::playhead::position_at_tick(score, tick as f64, &self.timeline(score));
         }
-        crate::playhead::position(score, cursor, self.clock, self.tempo)
+        crate::playhead::position(score, cursor, self.clock, &self.timeline(score))
+    }
+    /// Musical to audio time at the current tempo, fermatas included.
+    pub fn timeline(&self, score: &Score) -> score_playback::Timeline {
+        score_playback::Timeline::new(score, self.tempo)
     }
     pub fn has_ruler_position(&self) -> bool {
         self.seek_tick.is_some()
@@ -223,7 +227,7 @@ impl Playback {
         })?;
         let plan = Arc::new(transport_plan(score, self.tempo, output.sample_rate())?);
         if let Some(tick) = self.seek_tick {
-            let frame = self.tempo.frame_at(tick, output.sample_rate());
+            let frame = plan.timeline.frame_at(tick, output.sample_rate());
             output.control.play_from_frame(plan, frame)
         } else {
             match selection {
@@ -245,7 +249,10 @@ impl Playback {
             let plan = Arc::new(transport_plan(score, self.tempo, output.sample_rate())?);
             output
                 .control
-                .play_from_frame(plan, self.tempo.frame_at(tick, output.sample_rate()))
+                .play_from_frame(
+                    plan.clone(),
+                    plan.timeline.frame_at(tick, output.sample_rate()),
+                )
                 .map_err(|error| error.to_string())?;
         }
         self.seek_tick = Some(tick);
@@ -352,7 +359,7 @@ impl Playback {
 /// The visible ruler includes implicit rests through the final bar.
 fn transport_plan(score: &Score, tempo: Tempo, rate: u32) -> Result<PlaybackPlan, String> {
     let mut plan = PlaybackPlan::new(score, tempo, rate).map_err(|error| error.to_string())?;
-    plan.duration_frames = tempo.frame_at(
+    plan.duration_frames = plan.timeline.frame_at(
         score.measures().len() as u64 * u64::from(score.time().capacity()),
         rate,
     );

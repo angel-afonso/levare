@@ -14,7 +14,7 @@ mod ui;
 use gpui::{prelude::*, *};
 use score_core::{
     Accidental, Articulation, Connection, ConnectionKind, Dynamic, ElementId, Instrument, KeyMode,
-    KeySignature, MarkRef, PartId, PlayingTechnique, StaffId,
+    KeySignature, MarkFamily, MarkKind, MarkRef, PartId, StaffId,
 };
 use score_document::Document;
 use score_edit::{Command, Cursor};
@@ -224,47 +224,16 @@ impl AppView {
             .then(|| self.document.editor.score().clone());
     }
 
-    fn toggle_articulation(&mut self, mark: Articulation, cx: &mut Context<Self>) {
-        let current = self
-            .document
-            .editor
-            .selection()
-            .and_then(|id| self.document.editor.score().event(id))
-            .and_then(|event| event.notation.articulation);
-        self.edit(
-            Command::SetArticulation(if current == Some(mark) {
-                None
-            } else {
-                Some(mark)
-            }),
-            cx,
-        );
-    }
-    /// The ribbon has no remove buttons: pressing the selected note's active
-    /// mark again removes it, as articulations and accidentals already do.
-    fn toggle_dynamic(&mut self, mark: Dynamic, cx: &mut Context<Self>) {
-        let current = self
-            .document
-            .editor
-            .selection()
-            .and_then(|id| self.document.editor.score().event(id))
-            .and_then(|event| event.notation.dynamic);
-        self.edit(
-            Command::SetDynamic((current != Some(mark)).then_some(mark)),
-            cx,
-        );
-    }
-    fn toggle_technique(&mut self, mark: PlayingTechnique, cx: &mut Context<Self>) {
-        let current = self
-            .document
-            .editor
-            .selection()
-            .and_then(|id| self.document.editor.score().event(id))
-            .and_then(|event| event.notation.technique);
-        self.edit(
-            Command::SetTechnique((current != Some(mark)).then_some(mark)),
-            cx,
-        );
+    /// Every catalog mark, from the ribbon, a menu or a shortcut. Point marks
+    /// toggle on the selection: the active one is removed, another one of its
+    /// family replaces it. Connections are entered from both ends.
+    fn apply_mark(&mut self, kind: MarkKind, cx: &mut Context<Self>) {
+        match kind {
+            MarkKind::Connection(ConnectionKind::Tie) => self.toggle_tie(cx),
+            MarkKind::Connection(ConnectionKind::Slur) => self.toggle_slur(cx),
+            MarkKind::Connection(kind) => self.toggle_hairpin(kind, cx),
+            kind => self.edit(Command::ToggleMark(kind), cx),
+        }
     }
     /// A single selected note inside an existing connection of this kind. Its
     /// final note is excluded, so a new phrase or hairpin can still start there.
@@ -452,6 +421,7 @@ impl AppView {
                         | Command::SetTechnique(_)
                         | Command::SetDynamic(_)
                         | Command::SetArticulation(_)
+                        | Command::ToggleMark(_)
                 ) && let Some(id) = self.document.editor.selection()
                     && self
                         .document
@@ -621,6 +591,11 @@ impl AppView {
             cx.notify();
             return;
         }
+        if let Some(kind) = score_toolbar::marks::kind(command) {
+            self.apply_mark(kind, cx);
+            cx.notify();
+            return;
+        }
         use score_core::Step;
         match command {
             id::NEW => self.request_next(Next::New, window, cx),
@@ -711,34 +686,16 @@ impl AppView {
             id::FLAT => self.toggle_accidental(Accidental::Flat, cx),
             id::FOLLOW_KEY => self.apply_accidental(None, cx),
 
-            id::TIE => self.toggle_tie(cx),
-            id::SLUR => self.toggle_slur(cx),
             id::REMOVE_TIE => self.edit(Command::RemoveConnections(ConnectionKind::Tie), cx),
             id::REMOVE_SLUR => self.edit(Command::RemoveConnections(ConnectionKind::Slur), cx),
-            id::STACCATO => self.toggle_articulation(Articulation::Staccato, cx),
-            id::TENUTO => self.toggle_articulation(Articulation::Tenuto, cx),
-            id::ACCENT => self.toggle_articulation(Articulation::Accent, cx),
-            id::MARCATO => self.toggle_articulation(Articulation::Marcato, cx),
-            id::CRESCENDO => self.toggle_hairpin(ConnectionKind::Crescendo, cx),
-            id::DIMINUENDO => self.toggle_hairpin(ConnectionKind::Diminuendo, cx),
             id::REMOVE_CRESCENDO => {
                 self.edit(Command::RemoveConnections(ConnectionKind::Crescendo), cx)
             }
             id::REMOVE_DIMINUENDO => {
                 self.edit(Command::RemoveConnections(ConnectionKind::Diminuendo), cx)
             }
-            id::PIZZICATO => self.toggle_technique(PlayingTechnique::Pizzicato, cx),
-            id::ARCO => self.toggle_technique(PlayingTechnique::Arco, cx),
             id::CLEAR_TECHNIQUE => self.edit(Command::SetTechnique(None), cx),
             id::CLEAR_ARTICULATION => self.edit(Command::SetArticulation(None), cx),
-            id::DYNAMIC_PPP => self.toggle_dynamic(Dynamic::Ppp, cx),
-            id::DYNAMIC_PP => self.toggle_dynamic(Dynamic::Pp, cx),
-            id::DYNAMIC_P => self.toggle_dynamic(Dynamic::P, cx),
-            id::DYNAMIC_MP => self.toggle_dynamic(Dynamic::Mp, cx),
-            id::DYNAMIC_MF => self.toggle_dynamic(Dynamic::Mf, cx),
-            id::DYNAMIC_F => self.toggle_dynamic(Dynamic::F, cx),
-            id::DYNAMIC_FF => self.toggle_dynamic(Dynamic::Ff, cx),
-            id::DYNAMIC_FFF => self.toggle_dynamic(Dynamic::Fff, cx),
             id::CLEAR_DYNAMIC => self.edit(Command::SetDynamic(None), cx),
 
             id::KEY_SIGNATURE => {

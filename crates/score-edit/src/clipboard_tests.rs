@@ -126,6 +126,7 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
         technique: None,
         dynamic: Some(Dynamic::Ff),
         articulation: Some(Articulation::Staccato),
+        fermata: false,
     };
     source.execute(Command::Insert(event)).unwrap();
     let clip = source.copy_selection().unwrap();

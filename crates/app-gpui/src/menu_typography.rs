@@ -284,18 +284,15 @@ mod titles {
     }
 
     fn command_symbol(command: CommandId) -> Option<&'static str> {
+        if let Some(mark) = score_toolbar::marks::kind(command) {
+            return mark.symbol();
+        }
         Some(match command {
             id::NATURAL => "\u{e261}",
             id::SHARP => "\u{e262}",
             id::FLAT => "\u{e260}",
             id::DOT => "\u{e1e7}",
             id::TRIPLET => "\u{e883}",
-            id::STACCATO => "\u{e4a2}",
-            id::TENUTO => "\u{e4a4}",
-            id::ACCENT => "\u{e4a0}",
-            id::MARCATO => "\u{e4ac}",
-            id::CRESCENDO => "\u{e53e}",
-            id::DIMINUENDO => "\u{e53f}",
             _ => return None,
         })
     }

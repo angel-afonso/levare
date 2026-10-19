@@ -521,7 +521,7 @@ fn dynamic_button(
         ),
         selected,
         cx,
-        move |v, _, cx| v.edit(Command::SetDynamic(Some(mark)), cx),
+        move |v, _, cx| v.edit(Command::ToggleMark(MarkKind::Dynamic(mark)), cx),
     )
     .px_1()
     .h(px(29.))
@@ -1352,19 +1352,24 @@ fn selected_connection(view: &AppView, kind: ConnectionKind) -> bool {
     })
 }
 fn hairpin_controls(view: &AppView, cx: &Context<AppView>, prefix: &'static str) -> Div {
-    div().flex().flex_wrap().gap_1().children(
-        [
-            (ConnectionKind::Crescendo, id::CRESCENDO, "\u{e53e}"),
-            (ConnectionKind::Diminuendo, id::DIMINUENDO, "\u{e53f}"),
-        ]
-        .into_iter()
-        .map(|(kind, command, glyph)| {
+    div()
+        .flex()
+        .flex_wrap()
+        .gap_1()
+        .children(MarkFamily::Hairpin.kinds().filter_map(|mark| {
+            let MarkKind::Connection(kind) = mark else {
+                return None;
+            };
+            let (command, glyph) = (
+                score_toolbar::marks::command(mark),
+                mark.symbol().unwrap_or_default(),
+            );
             let label = if view.pending_hairpin.is_some_and(|(_, k)| k == kind) {
                 format!("Terminar {}", kind.label().to_lowercase())
             } else {
                 kind.label().to_owned()
             };
-            symbol_command_button(
+            Some(symbol_command_button(
                 format!("{prefix}-{}", kind.label()),
                 (glyph, &label),
                 view.pending_hairpin.is_some_and(|(_, k)| k == kind)
@@ -1372,9 +1377,8 @@ fn hairpin_controls(view: &AppView, cx: &Context<AppView>, prefix: &'static str)
                 view,
                 cx,
                 command,
-            )
-        }),
-    )
+            ))
+        }))
 }
 fn technique_controls(view: &AppView, cx: &Context<AppView>, prefix: &'static str) -> Div {
     let editor = &view.document.editor;
@@ -1382,36 +1386,32 @@ fn technique_controls(view: &AppView, cx: &Context<AppView>, prefix: &'static st
         .selection()
         .and_then(|id| editor.score().event(id))
         .and_then(|event| event.notation.technique);
-    div().flex().flex_col().gap_1().children(
-        [
-            (PlayingTechnique::Pizzicato, id::PIZZICATO),
-            (PlayingTechnique::Arco, id::ARCO),
-        ]
-        .into_iter()
-        .map(|(technique, command)| {
-            action(
-                format!(
-                    "{prefix}-{}",
-                    if technique == PlayingTechnique::Pizzicato {
-                        "pizzicato"
-                    } else {
-                        "arco"
-                    }
-                ),
-                div()
-                    .font_family("Times New Roman")
-                    .italic()
-                    .text_size(px(15.))
-                    .child(technique.label()),
-                mark == Some(technique),
-                cx,
-                move |v, window, cx| v.run(command, window, cx),
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .children(MarkFamily::Technique.kinds().filter_map(|kind| {
+            let MarkKind::Technique(technique) = kind else {
+                return None;
+            };
+            let command = score_toolbar::marks::command(kind);
+            Some(
+                action(
+                    format!("{prefix}-{}", kind.name().to_lowercase()),
+                    div()
+                        .font_family("Times New Roman")
+                        .italic()
+                        .text_size(px(15.))
+                        .child(technique.label()),
+                    mark == Some(technique),
+                    cx,
+                    move |v, window, cx| v.run(command, window, cx),
+                )
+                .px_2()
+                .h(px(29.))
+                .tooltip(command_hint(view, command)),
             )
-            .px_2()
-            .h(px(29.))
-            .tooltip(command_hint(view, command))
-        }),
-    )
+        }))
 }
 fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
     section("EXPRESIÓN")
@@ -1447,22 +1447,26 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     )))
             },
         )
-        .child(caption("Articulación del acorde o nota"))
+        .child(caption("Articulación y calderón del acorde o nota"))
         .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap_1()
-                .children(Articulation::ALL.into_iter().map(|mark| {
-                    symbol_command_button(
-                        format!("property-articulation-{}", mark.label()),
-                        (mark.glyph(), mark.label()),
-                        selected_articulation(view) == Some(mark),
-                        view,
-                        cx,
-                        articulation_command(mark),
-                    )
-                })),
+            div().flex().flex_wrap().gap_1().children(
+                MarkFamily::Articulation
+                    .kinds()
+                    .chain(MarkFamily::Fermata.kinds())
+                    .map(|kind| {
+                        let written = view.document.editor.selection().and_then(|id| {
+                            view.document.editor.score().point_mark(id, kind.family())
+                        });
+                        symbol_command_button(
+                            format!("property-mark-{}", kind.label()),
+                            (kind.symbol().unwrap_or_default(), kind.label()),
+                            written == Some(kind),
+                            view,
+                            cx,
+                            score_toolbar::marks::command(kind),
+                        )
+                    }),
+            ),
         )
         .child(button(
             "clear-articulation",
@@ -1660,15 +1664,6 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             ))
         })
 }
-fn articulation_command(mark: Articulation) -> CommandId {
-    match mark {
-        Articulation::Staccato => id::STACCATO,
-        Articulation::Tenuto => id::TENUTO,
-        Articulation::Accent => id::ACCENT,
-        Articulation::Marcato => id::MARCATO,
-    }
-}
-
 fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();
     let position = view.playback.position(score, view.document.editor.cursor());

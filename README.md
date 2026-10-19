@@ -223,8 +223,13 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   ligada se conserva el ataque inicial; un staccato final acorta al 50 % la duración
   sonora conjunta. Esto conserva el sonido al dividir una figura durante el pegado.
 
-**Editar marcas en la partitura:** un clic sobre una articulación, dinámica, técnica,
-ligadura o regulador selecciona solo esa marca (se resalta en azul; la nota no).
+- **Calderón:** en **Entrada › Articulaciones y ligaduras**, el inspector o el menú
+  **Expresión**. Va sobre notas o silencios, junto a cualquier articulación. Al
+  reproducir, ese momento dura el doble en todas las partes y la música sigue
+  después; la regla y el reloj lo tienen en cuenta.
+
+**Editar marcas en la partitura:** un clic sobre una articulación, calderón, dinámica,
+técnica, ligadura o regulador selecciona solo esa marca (se resalta en azul; la nota no).
 **Backspace** la borra sin tocar la nota. Pulsar otra marca de la misma familia en la
 cinta la cambia (por ejemplo, staccato por acento, *p* por *f*, o crescendo por
 diminuendo), y pulsar la misma la quita. Esc vuelve a la nota; con una marca

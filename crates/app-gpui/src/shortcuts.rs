@@ -234,6 +234,7 @@ impl Shortcuts {
                 Some(id::ACCENT),
                 Some(id::MARCATO),
                 Some(id::CLEAR_ARTICULATION),
+                Some(id::FERMATA),
                 None,
                 Some(id::CRESCENDO),
                 Some(id::DIMINUENDO),

@@ -1,7 +1,7 @@
 //! Expressive marks and stable, same-staff connections.
 use super::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Articulation {
     Staccato,
     Tenuto,
@@ -10,7 +10,7 @@ pub enum Articulation {
 }
 impl Articulation {
     pub const ALL: [Self; 4] = [Self::Staccato, Self::Tenuto, Self::Accent, Self::Marcato];
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Staccato => "Staccato",
             Self::Tenuto => "Tenuto",
@@ -18,7 +18,7 @@ impl Articulation {
             Self::Marcato => "Marcato",
         }
     }
-    pub fn symbol(self) -> &'static str {
+    pub const fn symbol(self) -> &'static str {
         match self {
             Self::Staccato => "•",
             Self::Tenuto => "—",
@@ -26,7 +26,7 @@ impl Articulation {
             Self::Marcato => "∧",
         }
     }
-    pub fn glyph(self) -> &'static str {
+    pub const fn glyph(self) -> &'static str {
         match self {
             Self::Staccato => "\u{e4a2}",
             Self::Tenuto => "\u{e4a4}",
@@ -35,7 +35,7 @@ impl Articulation {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Dynamic {
     Ppp,
     Pp,
@@ -57,7 +57,7 @@ impl Dynamic {
         Self::Ff,
         Self::Fff,
     ];
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Ppp => "ppp",
             Self::Pp => "pp",
@@ -81,7 +81,7 @@ impl Dynamic {
             Self::Fff => 124,
         }
     }
-    pub fn glyph(self) -> &'static str {
+    pub const fn glyph(self) -> &'static str {
         match self {
             Self::Ppp => "\u{e520}\u{e520}\u{e520}",
             Self::Pp => "\u{e520}\u{e520}",
@@ -95,14 +95,14 @@ impl Dynamic {
     }
 }
 /// A persistent instruction for bowed strings, independent of articulation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlayingTechnique {
     #[default]
     Arco,
     Pizzicato,
 }
 impl PlayingTechnique {
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Arco => "arco",
             Self::Pizzicato => "pizz.",
@@ -124,6 +124,9 @@ pub struct Notation {
     pub articulation: Option<Articulation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<Dynamic>,
+    /// Hold the note or rest; written over it, independent of articulation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fermata: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConnectionKind {
@@ -137,7 +140,7 @@ impl ConnectionKind {
         matches!(self, Self::Crescendo | Self::Diminuendo)
     }
 
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Tie => "Ligadura de unión",
             Self::Slur => "Ligadura de expresión",
@@ -423,6 +426,16 @@ impl Score {
         )[id.event]
             .notation
             .dynamic = value;
+        Ok(())
+    }
+    pub fn set_fermata(&mut self, id: ElementId, value: bool) -> Result<(), ScoreError> {
+        self.event(id)
+            .ok_or(ScoreError("Selecciona una nota o silencio"))?;
+        Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation
+            .fermata = value;
         Ok(())
     }
 }
