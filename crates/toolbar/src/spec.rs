@@ -128,18 +128,29 @@ const INSTRUMENTS: GroupSpec = GroupSpec {
         large(id::ADD_INSTRUMENT, Icon("add-staff"), "Añadir"),
         small(id::ADD_PIANO, Icon("piano"), "Piano a dos manos"),
         small(id::OSSIA, Icon("ossia"), "Ossia"),
-        small(id::REMOVE_INSTRUMENT, Icon("remove-staff"), "Eliminar"),
     ],
 };
-const STRUCTURE: GroupSpec = GroupSpec {
-    title: "Estructura",
+const BARS: GroupSpec = GroupSpec {
+    title: "Compases",
     visual: Icon("add-bar"),
     priority: 2,
+    controls: &[large(id::BAR_AT_END, Icon("add-bar"), "Añadir compás")],
+};
+const SELECTION: GroupSpec = GroupSpec {
+    title: "Selección",
+    visual: Plain,
+    priority: 0,
+    controls: &[small(id::SELECT_ALL, Plain, "Seleccionar todo")],
+};
+/// Sibelius' Notations › Common: what starts or changes the staff itself.
+const COMMON: GroupSpec = GroupSpec {
+    title: "Comunes",
+    visual: Music("\u{e050}"),
+    priority: 5,
     controls: &[
-        large(id::BAR_AT_END, Icon("add-bar"), "Compás"),
+        small(id::CLEF, Music("\u{e050}"), "Clave"),
         small(id::KEY_SIGNATURE, Music("\u{e262}"), "Tonalidad"),
         small(id::TIME_SIGNATURE, Music("\u{e084}"), "Compás de tiempo"),
-        small(id::CLEF, Music("\u{e050}"), "Clave"),
     ],
 };
 const INPUT_MODE: GroupSpec = GroupSpec {
@@ -178,21 +189,13 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
         tile(id::FLAT, Music("\u{e260}"), "Bemol"),
     ],
 };
+/// Chord mode and the intervals that stack a note above the selected one.
 const CHORDS: GroupSpec = GroupSpec {
     title: "Acordes",
     visual: Icon("chord"),
-    priority: 5,
+    priority: 2,
     controls: &[
         large(id::CHORD_MODE, Icon("chord"), "Modo acorde"),
-        small(id::REMOVE_HIGHEST, Icon("remove-note"), "Quitar nota aguda"),
-        small(id::FOLLOW_KEY, Music("\u{e261}"), "Seguir armadura"),
-    ],
-};
-const INTERVALS: GroupSpec = GroupSpec {
-    title: "Intervalos encima",
-    visual: Text("3ª"),
-    priority: 6,
-    controls: &[
         tile(id::INTERVAL_2, Text("2ª"), "Segunda"),
         tile(id::INTERVAL_3, Text("3ª"), "Tercera"),
         tile(id::INTERVAL_4, Text("4ª"), "Cuarta"),
@@ -213,17 +216,6 @@ const VOICES: GroupSpec = GroupSpec {
         tile(id::VOICE_4, Text("4"), "Voz 4"),
     ],
 };
-const EDIT: GroupSpec = GroupSpec {
-    title: "Edición",
-    visual: Icon("undo"),
-    priority: 4,
-    controls: &[
-        large(id::UNDO, Icon("undo"), "Deshacer"),
-        small(id::REDO, Icon("redo"), "Rehacer"),
-        small(id::DELETE, Plain, "Eliminar"),
-        small(id::SELECT_ALL, Plain, "Seleccionar todo"),
-    ],
-};
 const ELEMENTS: GroupSpec = GroupSpec {
     title: "Elementos",
     visual: Music("\u{e050}"),
@@ -234,6 +226,8 @@ const ELEMENTS: GroupSpec = GroupSpec {
         small(id::GRACE_NOTE, Plain, "Nota de adorno"),
     ],
 };
+/// Like MuseScore's note-input bar and Sibelius' keypad: what is written
+/// with each note sits beside its duration and accidental.
 const ARTICULATIONS: GroupSpec = GroupSpec {
     title: "Articulaciones y ligaduras",
     visual: Music("\u{e4a0}"),
@@ -261,7 +255,6 @@ const DYNAMICS: GroupSpec = GroupSpec {
         tile(id::DYNAMIC_FF, Music("\u{e522}\u{e522}"), "Fortissimo"),
         small(id::DYNAMIC_PPP, Music("\u{e520}\u{e520}\u{e520}"), "ppp"),
         small(id::DYNAMIC_FFF, Music("\u{e522}\u{e522}\u{e522}"), "fff"),
-        small(id::CLEAR_DYNAMIC, Plain, "Quitar"),
     ],
 };
 const HAIRPINS: GroupSpec = GroupSpec {
@@ -271,8 +264,6 @@ const HAIRPINS: GroupSpec = GroupSpec {
     controls: &[
         small(id::CRESCENDO, Music("\u{e53e}"), "Crescendo"),
         small(id::DIMINUENDO, Music("\u{e53f}"), "Diminuendo"),
-        small(id::REMOVE_CRESCENDO, Plain, "Quitar crescendo"),
-        small(id::REMOVE_DIMINUENDO, Plain, "Quitar diminuendo"),
     ],
 };
 const TECHNIQUE: GroupSpec = GroupSpec {
@@ -282,7 +273,6 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     controls: &[
         small(id::PIZZICATO, Text("pizz."), "Pizzicato"),
         small(id::ARCO, Text("arco"), "Arco"),
-        small(id::CLEAR_TECHNIQUE, Plain, "Quitar técnica"),
     ],
 };
 const TEXT_EXPRESSION: GroupSpec = GroupSpec {
@@ -364,19 +354,29 @@ const PAGE: GroupSpec = GroupSpec {
     ],
 };
 
-/// Partitura's ribbon. File is not a tab: it is the dropdown in `menu`.
+/// Partitura's ribbon, after Sibelius' tabs. File is not a tab: it is the
+/// dropdown in `menu`. Undo and redo live in the title bar's quick access.
+/// There are no remove buttons: select the mark's note in the score and
+/// press its active control again, or delete the selection.
 pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Home,
-        groups: &[EDIT, CLIPBOARD, INSTRUMENTS, STRUCTURE],
+        groups: &[CLIPBOARD, INSTRUMENTS, BARS, SELECTION],
     },
     TabSpec {
         id: TabId::NoteInput,
-        groups: &[INPUT_MODE, DURATION, ACCIDENTALS, INTERVALS, CHORDS, VOICES],
+        groups: &[
+            INPUT_MODE,
+            DURATION,
+            ACCIDENTALS,
+            ARTICULATIONS,
+            VOICES,
+            CHORDS,
+        ],
     },
     TabSpec {
         id: TabId::Notation,
-        groups: &[ARTICULATIONS, DYNAMICS, HAIRPINS, TECHNIQUE, ELEMENTS],
+        groups: &[COMMON, DYNAMICS, HAIRPINS, TECHNIQUE, ELEMENTS],
     },
     TabSpec {
         id: TabId::Text,
@@ -436,6 +436,21 @@ mod tests {
                     assert!(!seen.contains(&control.command), "{}", control.command);
                     seen.push(control.command);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn the_ribbon_has_no_remove_buttons() {
+        let registry = Registry::builtin();
+        for group in TABS.iter().flat_map(|tab| tab.groups) {
+            for control in group.controls {
+                let label = registry.get(control.command.as_str()).unwrap().label;
+                assert!(
+                    !label.starts_with("Quitar") && control.command != id::DELETE,
+                    "{}: {label}",
+                    group.title
+                );
             }
         }
     }

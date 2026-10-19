@@ -435,11 +435,11 @@ mod tests {
         assert_eq!(eighth.label, "Corchea");
         assert!(find(&input, id::THIRTY_SECOND).pending);
         assert!(!find(&input, id::QUARTER).checked);
-        let notation = view(TabId::Notation, 2000., &states);
-        let slur = find(&notation, id::SLUR);
+        // Articulations and slurs sit beside the durations, as in MuseScore.
+        let slur = find(&input, id::SLUR);
         assert_eq!(slur.label, "Terminar expresión");
         assert_eq!(slur.keys.as_deref(), Some("S"));
-        assert_eq!(find(&notation, id::STACCATO).keys, None);
+        assert_eq!(find(&input, id::STACCATO).keys, None);
         let home = view(TabId::Home, 2000., &states);
         assert_eq!(find(&home, id::PASTE).label, "Pegar");
     }
@@ -550,14 +550,14 @@ mod tests {
         let needed = full_width(&view(TabId::Home, 5000., &Fake(vec![])));
         let home = view(TabId::Home, needed - 1., &Fake(vec![]));
         for group in &home.groups {
-            let expected = if group.title == "Portapapeles" {
+            let expected = if group.title == "Selección" {
                 GroupMode::Folded
             } else {
                 GroupMode::Full
             };
             assert_eq!(
                 group.mode, expected,
-                "{}: clipboard has the lowest priority",
+                "{}: selection has the lowest priority",
                 group.title
             );
         }

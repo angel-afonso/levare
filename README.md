@@ -35,8 +35,15 @@ ver el conjunto de cinco instrumentos.
 
 - **Archivo:** nueva, abrir, guardar y guardar como. Los iconos de la cabecera
   permiten guardar, deshacer y rehacer.
-- **Entrada:** activa Notas con `N`, elige duración y alteración, añade instrumentos,
-  compases o acordes. La cinta se desplaza horizontalmente si faltan espacios.
+- **Cinta:** las pestañas siguen la organización de Sibelius y MuseScore.
+  **Inicio** reúne portapapeles, instrumentos, compases y selección; **Entrada**,
+  todo lo que se escribe con cada nota (modo de entrada, duración, alteraciones,
+  articulaciones y ligaduras, voces y acordes con intervalos); **Notación**, clave,
+  tonalidad y compás de tiempo, dinámicas, reguladores, técnica de cuerda y otros
+  elementos. Deshacer y rehacer están en la cabecera. No hay botones de «Quitar»:
+  selecciona la nota en la partitura y vuelve a pulsar la marca activa (resaltada)
+  para quitarla, o pulsa Backspace para borrar la selección. Si falta espacio, los
+  grupos menos usados se pliegan en un botón desplegable.
 - **Instrumentos:** selección por familias y manos del piano; el selector de
   tonalidad aparece en este panel. Los botones de la cabecera ocultan los paneles.
 - **Propiedades:** nota y duración seleccionadas, elección de nota dentro del
@@ -186,7 +193,8 @@ anteriores. No cambian las duraciones ni la reproducción. Ejemplo:
 
 ## Ligaduras, dinámicas y articulaciones
 
-La cinta de **Entrada**, el inspector **Expresión** y el menú nativo **Expresión**
+La cinta (**Entrada** para articulaciones y ligaduras, **Notación** para dinámicas,
+reguladores y técnica), el inspector **Expresión** y el menú nativo **Expresión**
 permiten editar estas marcas en notas y acordes de cualquier pentagrama. Todos los
 cambios se guardan y admiten deshacer/rehacer. Ejemplo:
 [`examples/piano-expresion.partitura`](examples/piano-expresion.partitura).
@@ -196,7 +204,8 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   ligan completos; los sonidos deben coincidir en todas sus alturas. Volver a pulsar
   `↩` quita solo la unión con la siguiente. Las cadenas pueden continuar varias notas.
 - **Expresión (`S`):** selecciona el inicio, pulsa `S`, selecciona la nota final del mismo
-  pentagrama y pulsa `S` otra vez. Esc cancela la operación. La frase se dibuja con
+  pentagrama y pulsa `S` otra vez. Esc cancela la operación. Pulsar `S` con la primera
+  nota de una frase seleccionada la quita. La frase se dibuja con
   una curva, incluso entre sistemas. Esta versión no admite frases solapadas en un
   mismo pentagrama. En la reproducción, las notas de la frase se unen con un breve
   solapamiento (legato); la última se separa como de costumbre y un staccato dentro
@@ -205,6 +214,7 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   hasta la siguiente indicación del mismo pentagrama. Cada mano del piano mantiene
   su propia dinámica. Sin indicación se usa mf (velocidad MIDI 88).
   Se puede colocar una dinámica en un silencio para preparar la entrada siguiente.
+  Volver a pulsar la dinámica activa de la nota la quita.
 - **Articulaciones:** sin indicación, cada nota suena al 92 % (con un hueco máximo de
   60 ms) para separarse de la siguiente; staccato acorta el sonido al 50 %; tenuto
   conserva la duración completa; acento y marcato refuerzan el ataque (+16/+24 de
@@ -213,7 +223,9 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   ligada se conserva el ataque inicial; un staccato final acorta al 50 % la duración
   sonora conjunta. Esto conserva el sonido al dividir una figura durante el pegado.
 
-El inspector permite quitar indicaciones y las ligaduras que tocan la nota elegida.
+Las articulaciones, dinámicas, técnicas y alteraciones activas aparecen resaltadas
+en la cinta; volver a pulsarlas las quita. El inspector permite además quitar
+indicaciones y las ligaduras que tocan la nota elegida.
 Si una edición de alturas, una inserción o un borrado invalida una unión, se retira
 esa ligadura; deshacer recupera tanto las notas como sus marcas. El inicio de
 reproducción desde una selección recupera la dinámica vigente y las notas ligadas.
@@ -239,8 +251,8 @@ ligadas, con pausa/continuación e inicio desde selección. Cada instrumento y c
 mano del piano mantiene su propia curva. Añadir un regulador conserva el volumen
 y el timbre de los pasajes que quedan fuera de él.
 
-Selecciona cualquier nota dentro del regulador y usa **Quitar crescendo** o
-**Quitar diminuendo** para eliminarlo. Se guarda con la partitura y admite
+Para eliminarlo, selecciona una nota dentro del regulador (salvo la final, desde
+la que puede empezar otro) y vuelve a pulsar **Crescendo** o **Diminuendo**. Se guarda con la partitura y admite
 deshacer/rehacer. Copiar un pasaje conserva los reguladores cuyos dos extremos
 están seleccionados; los que salen del pasaje se omiten. Al copiar desde dentro de
 uno de estos últimos, la dinámica inicial se aproxima al nivel escrito más cercano.
@@ -250,13 +262,14 @@ un extremo. Ejemplo: [`examples/reguladores.partitura`](examples/reguladores.par
 ## Pizzicato y arco
 
 Selecciona una nota, acorde o silencio de **violín, viola, violonchelo o contrabajo**.
-En la cinta **Entrada › Técnica de cuerda**, el inspector **Expresión** o el menú
+En la cinta **Notación › Técnica de cuerda**, el inspector **Expresión** o el menú
 **Expresión**, elige **pizz.** para tocar pulsando la cuerda y **arco** para volver al
 sonido habitual. La indicación aparece en cursiva sobre el pentagrama y se mantiene
 hasta la siguiente marca del mismo instrumento, también al reproducir desde una
 selección. Una marca en un silencio prepara la entrada siguiente.
 
-**Quitar indicación de técnica** elimina la marca elegida; vuelve a regir la anterior.
+Volver a pulsar la técnica activa de la nota elegida quita la marca; vuelve a regir
+la anterior.
 Los cambios se guardan, se pueden deshacer y se conservan al copiar pasajes, incluso
 si el pasaje empieza después de la marca original. Los pasajes con técnicas de arco
 se pegan en instrumentos compatibles. En una nota ligada, el timbre del ataque se
@@ -334,7 +347,7 @@ añaden notas al elemento seleccionado. Desactívalo para continuar con la sigui
 figura. Si no hay una nota seleccionada, el modo introduce la primera normalmente.
 
 Un clic en cualquier cabeza selecciona el acorde completo. Las flechas lo transponen;
-**⌥Backspace** o **Quitar nota aguda** elimina su nota más alta, conservando al menos
+**⌥Backspace** elimina su nota más alta, conservando al menos
 una. **Backspace** elimina el acorde entero. Puedes deshacer cada cambio.
 La audición, reproducción, pausa y seguimiento incluyen todas sus notas.
 Abre [`examples/piano-acordes.partitura`](examples/piano-acordes.partitura) para probarlo.

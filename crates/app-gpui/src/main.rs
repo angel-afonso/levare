@@ -236,6 +236,46 @@ impl AppView {
             cx,
         );
     }
+    /// The ribbon has no remove buttons: pressing the selected note's active
+    /// mark again removes it, as articulations and accidentals already do.
+    fn toggle_dynamic(&mut self, mark: Dynamic, cx: &mut Context<Self>) {
+        let current = self
+            .document
+            .editor
+            .selection()
+            .and_then(|id| self.document.editor.score().event(id))
+            .and_then(|event| event.notation.dynamic);
+        self.edit(
+            Command::SetDynamic((current != Some(mark)).then_some(mark)),
+            cx,
+        );
+    }
+    fn toggle_technique(&mut self, mark: PlayingTechnique, cx: &mut Context<Self>) {
+        let current = self
+            .document
+            .editor
+            .selection()
+            .and_then(|id| self.document.editor.score().event(id))
+            .and_then(|event| event.notation.technique);
+        self.edit(
+            Command::SetTechnique((current != Some(mark)).then_some(mark)),
+            cx,
+        );
+    }
+    /// A single selected note inside an existing connection of this kind. Its
+    /// final note is excluded, so a new phrase or hairpin can still start there.
+    fn connection_at_selection(&self, kind: ConnectionKind) -> Option<Connection> {
+        let editor = &self.document.editor;
+        let id = editor
+            .selection()
+            .filter(|_| editor.selected_ids().len() == 1)?;
+        editor
+            .score()
+            .connections()
+            .iter()
+            .copied()
+            .find(|c| c.kind == kind && c.end != id && editor.score().connection_contains(*c, id))
+    }
     fn toggle_tie(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
             return;
@@ -269,6 +309,14 @@ impl AppView {
     }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
+            return;
+        }
+        if self
+            .pending_hairpin
+            .is_none_or(|(_, pending)| pending != kind)
+            && let Some(connection) = self.connection_at_selection(kind)
+        {
+            self.edit(Command::RemoveConnection(connection), cx);
             return;
         }
         let ids = self.document.editor.selected_ids();
@@ -312,6 +360,12 @@ impl AppView {
             cx.notify();
             return;
         };
+        if self.pending_slur.is_none()
+            && let Some(connection) = self.connection_at_selection(ConnectionKind::Slur)
+        {
+            self.edit(Command::RemoveConnection(connection), cx);
+            return;
+        }
         if let Some(start) = self.pending_slur {
             if id == start {
                 self.pending_slur = None;
@@ -640,20 +694,18 @@ impl AppView {
             id::REMOVE_DIMINUENDO => {
                 self.edit(Command::RemoveConnections(ConnectionKind::Diminuendo), cx)
             }
-            id::PIZZICATO => {
-                self.edit(Command::SetTechnique(Some(PlayingTechnique::Pizzicato)), cx)
-            }
-            id::ARCO => self.edit(Command::SetTechnique(Some(PlayingTechnique::Arco)), cx),
+            id::PIZZICATO => self.toggle_technique(PlayingTechnique::Pizzicato, cx),
+            id::ARCO => self.toggle_technique(PlayingTechnique::Arco, cx),
             id::CLEAR_TECHNIQUE => self.edit(Command::SetTechnique(None), cx),
             id::CLEAR_ARTICULATION => self.edit(Command::SetArticulation(None), cx),
-            id::DYNAMIC_PPP => self.edit(Command::SetDynamic(Some(Dynamic::Ppp)), cx),
-            id::DYNAMIC_PP => self.edit(Command::SetDynamic(Some(Dynamic::Pp)), cx),
-            id::DYNAMIC_P => self.edit(Command::SetDynamic(Some(Dynamic::P)), cx),
-            id::DYNAMIC_MP => self.edit(Command::SetDynamic(Some(Dynamic::Mp)), cx),
-            id::DYNAMIC_MF => self.edit(Command::SetDynamic(Some(Dynamic::Mf)), cx),
-            id::DYNAMIC_F => self.edit(Command::SetDynamic(Some(Dynamic::F)), cx),
-            id::DYNAMIC_FF => self.edit(Command::SetDynamic(Some(Dynamic::Ff)), cx),
-            id::DYNAMIC_FFF => self.edit(Command::SetDynamic(Some(Dynamic::Fff)), cx),
+            id::DYNAMIC_PPP => self.toggle_dynamic(Dynamic::Ppp, cx),
+            id::DYNAMIC_PP => self.toggle_dynamic(Dynamic::Pp, cx),
+            id::DYNAMIC_P => self.toggle_dynamic(Dynamic::P, cx),
+            id::DYNAMIC_MP => self.toggle_dynamic(Dynamic::Mp, cx),
+            id::DYNAMIC_MF => self.toggle_dynamic(Dynamic::Mf, cx),
+            id::DYNAMIC_F => self.toggle_dynamic(Dynamic::F, cx),
+            id::DYNAMIC_FF => self.toggle_dynamic(Dynamic::Ff, cx),
+            id::DYNAMIC_FFF => self.toggle_dynamic(Dynamic::Fff, cx),
             id::CLEAR_DYNAMIC => self.edit(Command::SetDynamic(None), cx),
 
             id::KEY_SIGNATURE => {
