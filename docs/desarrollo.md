@@ -13,6 +13,8 @@ el núcleo independiente para futuras plataformas.
 
 ```text
 partitura (GPUI, entrada, pintado, diálogos, tareas de archivo)
+ ├─ score-toolbar (modelo de presentación de la cinta y Archivo; sin GPUI)
+ │   └─ score-keymap
  ├─ score-keymap (comandos, perfiles y atajos; sin GPUI)
  ├─ score-document (sesión y estado guardado)
  │   ├─ score-edit (comandos transaccionales e historial)
@@ -527,6 +529,41 @@ Bravura, plicas y líneas adicionales; los guarda junto a la caché y reserva un
 margen entre pentagramas. El modo estándar conserva su espaciado anterior.
 El reloj visible se actualiza desde la posición ya publicada por el control de
 audio; la interfaz no consulta ni modifica el sintetizador para dibujarlo.
+
+## Barra de herramientas
+
+La cinta y el menú Archivo siguen capas con dependencias hacia abajo:
+
+```text
+ui/toolbar.rs (GPUI)  pinta ToolbarView y MenuRow; cada clic emite un comando
+   ▼
+score-toolbar         TABS y FILE_MENU (datos) · project() · fit() · project_menu()
+   ▼
+score-keymap          registro (etiquetas, pendientes) y mapa activo (teclas)
+AppView::run          punto único de ejecución · ui/command_state.rs implementa CommandStates
+```
+
+- **Descripción** (`spec.rs`): pestañas (`TabId`), grupos y controles. Cada control es
+  un `CommandId` con tamaño (grande, fila pequeña o casilla) y un glifo. No contiene
+  textos de estado ni teclas.
+- **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
+  comando está activo, habilitado o con una etiqueta temporal («Terminar expresión»).
+  La app la responde en `ui/command_state.rs`; los tests usan un falso.
+- **Proyección** (`project`): une descripción, registro, mapa y estado, apila las filas
+  pequeñas en columnas de tres y mide con valores fijos (`Metrics`). `fit` pliega
+  grupos por prioridad —el de menor prioridad y, a igualdad, el de la derecha—
+  hasta que la fila cabe. La cinta nunca hace scroll; un grupo plegado es un botón con
+  desplegable.
+- **Archivo** (`FILE_MENU`): una misma lista genera el desplegable de la ventana y el
+  menú nativo de macOS, con el submenú «Abrir reciente».
+- **Recientes** (`score-io::RecentFiles`): `recientes.json` en la carpeta de datos,
+  máximo 10, sin duplicados, el más reciente primero; olvida los archivos que ya no
+  existen. Se actualiza al abrir y guardar.
+
+Los tests cubren que cada control apunte a un comando registrado, que las etiquetas,
+teclas, estado y pendientes salgan de su fuente, que todas las pestañas quepan sin
+plegar a 1420 px, el orden de plegado, el menú Archivo, la persistencia de recientes
+y que la fuente musical tenga precargados todos los glifos de la cinta.
 
 ## Motor de atajos
 

@@ -34,6 +34,11 @@ pub struct ChooseKeySignature(pub KeySignature);
 #[action(namespace = partitura, no_json)]
 pub struct ChooseDynamic(pub Option<score_core::Dynamic>);
 
+/// Opens one of the recent files listed in Archivo › Abrir reciente.
+#[derive(Clone, Debug, PartialEq, Action)]
+#[action(namespace = partitura, no_json)]
+pub struct OpenRecent(pub PathBuf);
+
 pub struct Shortcuts {
     pub registry: Registry,
     pub keymap: Keymap,
@@ -42,6 +47,8 @@ pub struct Shortcuts {
     pub path: Option<PathBuf>,
     /// Messages about the user's file and unusable keys, shown in Preferences.
     pub problems: Vec<String>,
+    /// Snapshot of the recent files for the native Archivo menu.
+    pub recent: Vec<PathBuf>,
 }
 
 impl Shortcuts {
@@ -70,6 +77,7 @@ impl Shortcuts {
             layout: SystemLayout::current(),
             path,
             problems,
+            recent: Vec::new(),
         };
         shortcuts.rebuild();
         shortcuts
@@ -163,6 +171,27 @@ impl Shortcuts {
             .collect()
     }
 
+    /// Archivo, from the same description as the in-window dropdown.
+    fn file_menu(&self) -> Vec<MenuItem> {
+        score_toolbar::FILE_MENU
+            .iter()
+            .map(|entry| match entry {
+                score_toolbar::MenuEntry::Command(command) => self.item(*command),
+                score_toolbar::MenuEntry::Separator => MenuItem::separator(),
+                score_toolbar::MenuEntry::Recent => MenuItem::submenu(Menu {
+                    name: "Abrir reciente".into(),
+                    items: self
+                        .recent
+                        .iter()
+                        .map(|path| MenuItem::action(recent_title(path), OpenRecent(path.clone())))
+                        .chain((!self.recent.is_empty()).then(MenuItem::separator))
+                        .chain([self.item(id::CLEAR_RECENT)])
+                        .collect(),
+                }),
+            })
+            .collect()
+    }
+
     pub fn menus(&self) -> Vec<Menu> {
         let instruments = Instrument::ALL
             .into_iter()
@@ -240,14 +269,7 @@ impl Shortcuts {
             },
             Menu {
                 name: "Archivo".into(),
-                items: self.items(&[
-                    Some(id::NEW),
-                    Some(id::OPEN),
-                    Some(id::SAVE),
-                    Some(id::SAVE_AS),
-                    None,
-                    Some(id::CLOSE),
-                ]),
+                items: self.file_menu(),
             },
             Menu {
                 name: "Edición".into(),
@@ -339,6 +361,24 @@ impl Shortcuts {
             .filter(|bound| *bound != keys)
             .cloned()
             .collect()
+    }
+}
+
+/// File name of a recent score, for menus.
+pub fn recent_title(path: &std::path::Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// Folder of a recent score, with the home directory shortened to `~`.
+pub fn recent_folder(path: &std::path::Path) -> String {
+    let folder = path.parent().unwrap_or(path);
+    match dirs::home_dir().and_then(|home| folder.strip_prefix(home).ok().map(PathBuf::from)) {
+        Some(relative) if relative.as_os_str().is_empty() => "~".into(),
+        Some(relative) => format!("~/{}", relative.display()),
+        None => folder.display().to_string(),
     }
 }
 

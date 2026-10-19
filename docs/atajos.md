@@ -21,6 +21,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘P` | Imprimir… | Pendiente |
 | — | Exportar… | Pendiente |
 | `⌘,` | Preferencias de atajos… |  |
+| — | Borrar la lista de recientes |  |
 | `Esc` | Cerrar el panel abierto |  |
 
 ## Edición
@@ -76,6 +77,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥4` | Voz 4 | Pendiente |
 | `;` | Convertir en nota de adorno | Pendiente |
 | `⇧⌘F` | Entrada en tiempo real | Pendiente |
+| — | Entrada paso a paso |  |
+| — | Entrada con teclado MIDI | Pendiente |
 
 ## Duración
 
@@ -119,6 +122,16 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Arco |  |
 | — | Quitar indicación de técnica |  |
 | — | Quitar articulación |  |
+| — | Calderón | Pendiente |
+| — | Dinámica ppp |  |
+| — | Dinámica pp |  |
+| — | Dinámica p |  |
+| — | Dinámica mp |  |
+| — | Dinámica mf |  |
+| — | Dinámica f |  |
+| — | Dinámica ff |  |
+| — | Dinámica fff |  |
+| — | Quitar dinámica |  |
 | `⌘E` | Texto de expresión | Pendiente |
 | `⌘T` | Texto de técnica | Pendiente |
 | `⌥⌘T` | Texto de tempo | Pendiente |
@@ -150,6 +163,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | Atajo | Comando | Estado |
 |---|---|---|
 | `I` | Añadir instrumentos… |  |
+| — | Añadir piano a dos manos |  |
+| — | Ossia | Pendiente |
 | — | Eliminar el instrumento seleccionado |  |
 | — | Instrumento siguiente |  |
 | — | Instrumento anterior |  |
@@ -186,6 +201,10 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥Espacio` | Repetir la última reproducción | Pendiente |
 | `⇧Espacio` | Reproducir a media velocidad | Pendiente |
 | `M` | Mostrar el mezclador |  |
+| — | Audición al escribir |  |
+| — | Subir el tempo |  |
+| — | Bajar el tempo |  |
+| — | Reproducir repeticiones | Pendiente |
 
 ## Vista
 
@@ -198,3 +217,4 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘U` | Pantalla completa |  |
 | — | Mostrar u ocultar instrumentos |  |
 | — | Mostrar u ocultar propiedades |  |
+| — | Vista de página | Pendiente |

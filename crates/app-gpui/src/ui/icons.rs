@@ -17,6 +17,43 @@ pub enum Icon {
     Stop,
     Loop,
     Speaker,
+    AddBar,
+    Chord,
+    Mixer,
+    Copy,
+    Cut,
+    Tie,
+    Slur,
+}
+
+impl Icon {
+    /// The toolbar model names icons; unknown names draw nothing.
+    pub fn named(name: &str) -> Option<Self> {
+        Some(match name {
+            "save" => Self::Save,
+            "undo" => Self::Undo,
+            "redo" => Self::Redo,
+            "tie" => Self::Tie,
+            "slur" => Self::Slur,
+            "search" => Self::Search,
+            "left-panel" => Self::LeftPanel,
+            "right-panel" => Self::RightPanel,
+            "export" => Self::Export,
+            "clipboard" => Self::Clipboard,
+            "add-staff" => Self::AddStaff,
+            "first" => Self::First,
+            "play" => Self::Play,
+            "stop" => Self::Stop,
+            "loop" | "repeat" => Self::Loop,
+            "speaker" => Self::Speaker,
+            "add-bar" => Self::AddBar,
+            "chord" => Self::Chord,
+            "mixer" => Self::Mixer,
+            "copy" => Self::Copy,
+            "cut" => Self::Cut,
+            _ => return None,
+        })
+    }
 }
 
 pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
@@ -122,6 +159,50 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                     line(&[(11., 2.), (14., 4.), (17., 2.)]);
                     line(&[(15., 11.), (15., 14.), (4., 14.), (4., 17.)]);
                     line(&[(1., 16.), (4., 14.), (7., 16.)]);
+                }
+                Icon::AddBar => {
+                    for y in [4., 7., 10., 13.] {
+                        line(&[(1., y), (11., y)]);
+                    }
+                    line(&[(6., 4.), (6., 13.)]);
+                    line(&[(15., 6.), (15., 14.)]);
+                    line(&[(11., 10.), (18., 10.)]);
+                }
+                Icon::Chord => {
+                    for (x, y) in [(5., 14.), (7., 10.), (5., 6.)] {
+                        line(&[
+                            (x - 3., y),
+                            (x, y - 2.),
+                            (x + 3., y),
+                            (x, y + 2.),
+                            (x - 3., y),
+                        ]);
+                    }
+                    line(&[(8.5, 13.), (8.5, 2.), (14., 4.)]);
+                }
+                Icon::Mixer => {
+                    for (x, knob) in [(4., 11.), (9., 5.), (14., 9.)] {
+                        line(&[(x, 2.), (x, 16.)]);
+                        line(&[(x - 2., knob), (x + 2., knob)]);
+                    }
+                }
+                Icon::Copy => {
+                    line(&[(6., 6.), (16., 6.), (16., 16.), (6., 16.), (6., 6.)]);
+                    line(&[(12., 6.), (12., 2.), (2., 2.), (2., 12.), (6., 12.)]);
+                }
+                Icon::Cut => {
+                    line(&[(4., 2.), (13., 12.)]);
+                    line(&[(14., 2.), (5., 12.)]);
+                    line(&[(2., 13.), (5., 12.), (6., 15.), (3., 16.), (2., 13.)]);
+                    line(&[(16., 13.), (13., 12.), (12., 15.), (15., 16.), (16., 13.)]);
+                }
+                Icon::Tie => {
+                    line(&[(2., 7.), (2.5, 7.5)]);
+                    line(&[(15.5, 7.), (16., 7.5)]);
+                    line(&[(2., 10.), (5., 13.), (9., 14.), (13., 13.), (16., 10.)]);
+                }
+                Icon::Slur => {
+                    line(&[(1., 14.), (4., 8.), (9., 6.), (14., 8.), (17., 14.)]);
                 }
                 Icon::Speaker => {
                     line(&[

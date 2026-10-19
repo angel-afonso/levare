@@ -1,4 +1,6 @@
 //! Versioned native documents. Export formats will use independent adapters.
+mod recent;
+pub use recent::RecentFiles;
 use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{

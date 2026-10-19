@@ -20,6 +20,7 @@ score-playback.workspace = true
 score-io.workspace = true
 score-platform.workspace = true
 score-keymap.workspace = true
+score-toolbar.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

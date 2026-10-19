@@ -1,7 +1,9 @@
 //! Native editor chrome. Pending controls are visibly marked TODO; score data
 //! and transport readouts always come from the current document/session.
+mod command_state;
 mod icons;
 mod preferences;
+mod toolbar;
 use super::*;
 use icons::{Icon, icon};
 pub use preferences::{Preferences, PreferencesConflict};
@@ -25,8 +27,15 @@ pub struct UiState {
     pub note_entry: bool,
     pub compact: bool,
     pub zoom: f32,
-    tab: &'static str,
+    pub tab: score_toolbar::TabId,
     pub inspector: &'static str,
+    /// Archivo dropdown and its "Abrir reciente" submenu.
+    pub file_menu: bool,
+    pub recent_menu: bool,
+    /// The folded ribbon group whose dropdown is open, by position.
+    pub open_group: Option<usize>,
+    /// Window width, for the ribbon's fold decision.
+    pub width: f32,
 }
 impl Default for UiState {
     fn default() -> Self {
@@ -36,8 +45,12 @@ impl Default for UiState {
             note_entry: true,
             compact: false,
             zoom: 0.7,
-            tab: "Entrada",
+            tab: score_toolbar::TabId::NoteInput,
             inspector: "Propiedades",
+            file_menu: false,
+            recent_menu: false,
+            open_group: None,
+            width: 1440.,
         }
     }
 }
@@ -172,26 +185,6 @@ fn command_button(
     })
     .children(key_hint(view, command))
 }
-fn group(label: &'static str, content: impl IntoElement) -> Div {
-    div()
-        .h(px(104.))
-        .px_3()
-        .flex()
-        .flex_col()
-        .justify_between()
-        .flex_shrink_0()
-        .border_r_1()
-        .border_color(rgb(BORDER))
-        .child(content)
-        .child(
-            div()
-                .text_center()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child(label),
-        )
-}
-
 pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl IntoElement {
     div()
         .relative()
@@ -208,8 +201,8 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
             cx.listener(AppView::end_passage_selection),
         )
         .child(titlebar(view, title, cx))
-        .child(tabs(view, cx))
-        .child(ribbon(view, cx))
+        .child(toolbar::tabs(view, cx))
+        .child(toolbar::ribbon(view, cx))
         .child(
             div()
                 .flex()
@@ -381,83 +374,6 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .text_color(rgb(0x222329)),
         )
 }
-fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
-    div()
-        .h(px(35.))
-        .flex_shrink_0()
-        .flex()
-        .items_center()
-        .justify_between()
-        .bg(rgb(PANEL))
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(
-            div()
-                .id("ribbon-tabs")
-                .flex()
-                .min_w_0()
-                .overflow_x_scroll()
-                .px_2()
-                .children(
-                    [
-                        "Archivo",
-                        "Inicio",
-                        "Entrada",
-                        "Notación",
-                        "Texto",
-                        "Reproducción",
-                        "Disposición",
-                        "Apariencia",
-                        "Partes",
-                        "Revisión",
-                        "Vista",
-                    ]
-                    .into_iter()
-                    .map(|tab| {
-                        action(
-                            format!("tab-{tab}"),
-                            div().child(tab),
-                            false,
-                            cx,
-                            move |v, _, cx| {
-                                v.ui.tab = tab;
-                                cx.notify();
-                            },
-                        )
-                        .h(px(35.))
-                        .px_3()
-                        .rounded_none()
-                        .bg(rgb(PANEL))
-                        .border_0()
-                        .border_b_2()
-                        .border_color(if view.ui.tab == tab {
-                            Hsla::from(rgb(BLUE))
-                        } else {
-                            transparent_black()
-                        })
-                        .text_color(rgb(if view.ui.tab == tab { TEXT } else { MUTED }))
-                    }),
-                ),
-        )
-        .child(
-            command_button(
-                "entry-state",
-                if view.ui.note_entry {
-                    "●  Entrada activa"
-                } else {
-                    "Entrada desactivada"
-                },
-                view.ui.note_entry,
-                view,
-                cx,
-                id::TOGGLE_NOTE_INPUT,
-            )
-            .mr_3()
-            .h(px(23.))
-            .rounded_full()
-            .text_size(px(10.)),
-        )
-}
 fn music_symbol(
     view: &AppView,
     text: impl Into<SharedString>,
@@ -569,519 +485,6 @@ fn accidental_label(view: &AppView, sign: Option<Accidental>, selected: bool) ->
         None => div().child("Armadura"),
     }
 }
-fn ribbon(view: &AppView, cx: &Context<AppView>) -> Stateful<Div> {
-    let mut row = div()
-        .id("ribbon-tools")
-        .h(px(112.))
-        .flex_shrink_0()
-        .overflow_x_scroll()
-        .flex()
-        .items_center()
-        .py_2()
-        .bg(rgb(PANEL))
-        .border_b_1()
-        .border_color(rgb(BORDER));
-    match view.ui.tab {
-        "Archivo" => {
-            row = row.child(group(
-                "Documento",
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(button("new-score", "Nueva", false, cx, |v, w, cx| {
-                        v.request_next(Next::New, w, cx)
-                    }))
-                    .child(button("open-score", "Abrir…", false, cx, |v, w, cx| {
-                        v.request_next(Next::Open, w, cx)
-                    }))
-                    .child(button("save-score", "Guardar", false, cx, |v, _, cx| {
-                        v.save(false, cx)
-                    }))
-                    .child(button(
-                        "save-as-score",
-                        "Guardar como…",
-                        false,
-                        cx,
-                        |v, _, cx| v.save(true, cx),
-                    ))
-                    .child(pending("print-todo", "Imprimir", cx)),
-            ))
-        }
-        "Reproducción" => {
-            row = row
-                .child(group(
-                    "Sonido",
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(button(
-                            "audition-enabled",
-                            if view.playback.audition {
-                                "Audición al escribir: sí"
-                            } else {
-                                "Audición al escribir: no"
-                            },
-                            view.playback.audition,
-                            cx,
-                            |v, _, cx| {
-                                v.playback.audition = !v.playback.audition;
-                                cx.notify();
-                            },
-                        ))
-                        .child(button("tempo-less", "− Tempo", false, cx, |v, _, cx| {
-                            v.playback.change_tempo(-5);
-                            cx.notify();
-                        }))
-                        .child(button("tempo-more", "+ Tempo", false, cx, |v, _, cx| {
-                            v.playback.change_tempo(5);
-                            cx.notify();
-                        }))
-                        .child(pending("record-midi-todo", "Grabar MIDI", cx)),
-                ))
-                .child(group(
-                    "Interpretación",
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(pending("dynamics-todo", "Dinámicas", cx))
-                        .child(pending("repeats-todo", "Repeticiones", cx)),
-                ))
-        }
-        "Vista" => {
-            row = row.child(group(
-                "Paneles",
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(button(
-                        "show-left",
-                        "Instrumentos",
-                        view.ui.show_instruments,
-                        cx,
-                        |v, _, cx| {
-                            v.ui.show_instruments = !v.ui.show_instruments;
-                            cx.notify();
-                        },
-                    ))
-                    .child(button(
-                        "show-right",
-                        "Propiedades",
-                        view.ui.show_inspector,
-                        cx,
-                        |v, _, cx| {
-                            v.ui.show_inspector = !v.ui.show_inspector;
-                            cx.notify();
-                        },
-                    ))
-                    .child(pending("layout-page-todo", "Vista de página", cx)),
-            ))
-        }
-        "Inicio" | "Entrada" | "Notación" => {
-            row = row
-                .child(group(
-                    "Portapapeles",
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .gap_1()
-                                .text_color(rgb(MUTED))
-                                .child(icon(Icon::Clipboard, TEXT))
-                                .child(command_button(
-                                    "paste-music",
-                                    "Pegar",
-                                    false,
-                                    view,
-                                    cx,
-                                    id::PASTE,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(command_button(
-                                    "copy-music",
-                                    "Copiar",
-                                    false,
-                                    view,
-                                    cx,
-                                    id::COPY,
-                                ))
-                                .child(command_button(
-                                    "cut-music",
-                                    "Cortar",
-                                    false,
-                                    view,
-                                    cx,
-                                    id::CUT,
-                                )),
-                        ),
-                ))
-                .child(group(
-                    "Instrumentos",
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(
-                            action(
-                                "add-instrument",
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(icon(Icon::AddStaff, TEXT))
-                                    .child("Añadir"),
-                                false,
-                                cx,
-                                |v, _, cx| {
-                                    v.instrument_picker = !v.instrument_picker;
-                                    v.key_picker = false;
-                                    v.ui.show_instruments = true;
-                                    cx.notify();
-                                },
-                            )
-                            .w(px(48.))
-                            .h(px(62.))
-                            .bg(rgb(PANEL)),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(button(
-                                    "piano-staves",
-                                    "Piano a dos manos",
-                                    false,
-                                    cx,
-                                    |v, _, cx| v.edit(Command::AddPart(Instrument::Piano), cx),
-                                ))
-                                .child(pending("ossia-todo", "Ossia", cx)),
-                        ),
-                ))
-                .child(group(
-                    "Modo de entrada",
-                    div()
-                        .flex()
-                        .gap_1()
-                        .child(
-                            action(
-                                "notes-mode",
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(music_symbol(view, "\u{e1d7}", 30., (31., 35.), TEXT))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .gap_1()
-                                            .child("Notas")
-                                            .children(key_hint(view, id::TOGGLE_NOTE_INPUT)),
-                                    ),
-                                view.ui.note_entry,
-                                cx,
-                                |v, window, cx| v.run(id::TOGGLE_NOTE_INPUT, window, cx),
-                            )
-                            .w(px(58.))
-                            .h(px(65.)),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .rounded_md()
-                                        .px_2()
-                                        .h(px(23.))
-                                        .text_size(px(11.))
-                                        .text_color(rgb(0xb8ceff))
-                                        .bg(rgb(SELECT))
-                                        .child(music_symbol(
-                                            view,
-                                            "\u{e1d7}",
-                                            16.,
-                                            (12., 18.),
-                                            BLUE,
-                                        ))
-                                        .child("Paso a paso"),
-                                )
-                                .child(pending("realtime-todo", "Tiempo real", cx))
-                                .child(pending("keyboard-todo", "Teclado MIDI", cx)),
-                        ),
-                ))
-                .child(group(
-                    "Duración",
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .children(
-                            Duration::ALL
-                                .into_iter()
-                                .enumerate()
-                                .map(|(index, duration)| {
-                                    let (code, command) = match duration.value() {
-                                        score_core::NoteValue::Whole => (0xe1d2, id::WHOLE),
-                                        score_core::NoteValue::Half => (0xe1d3, id::HALF),
-                                        score_core::NoteValue::Quarter => (0xe1d5, id::QUARTER),
-                                        score_core::NoteValue::Eighth => (0xe1d7, id::EIGHTH),
-                                        score_core::NoteValue::Sixteenth => (0xe1d9, id::SIXTEENTH),
-                                    };
-                                    action(
-                                        format!("duration-{index}"),
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .child(music_symbol(
-                                                view,
-                                                char::from_u32(code).unwrap().to_string(),
-                                                30.,
-                                                (31., 35.),
-                                                TEXT,
-                                            ))
-                                            .children(key_hint(view, command)),
-                                        view.document.editor.duration.value() == duration.value(),
-                                        cx,
-                                        move |v, window, cx| v.run(command, window, cx),
-                                    )
-                                    .w(px(35.))
-                                    .h(px(65.))
-                                }),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(symbol_command_button(
-                                    "dotted",
-                                    ("\u{e1e7}", ""),
-                                    active_duration(view).is_dotted(),
-                                    view,
-                                    cx,
-                                    id::DOT,
-                                ))
-                                .child(symbol_command_button(
-                                    "triplet",
-                                    ("\u{e883}", ""),
-                                    active_duration(view).is_triplet(),
-                                    view,
-                                    cx,
-                                    id::TRIPLET,
-                                )),
-                        ),
-                ))
-                .child(group(
-                    "Alteraciones",
-                    div().flex().items_center().gap_1().children(
-                        [
-                            (Accidental::Natural, id::NATURAL),
-                            (Accidental::Sharp, id::SHARP),
-                            (Accidental::Flat, id::FLAT),
-                        ]
-                        .into_iter()
-                        .map(|(sign, command)| {
-                            let selected = view
-                                .document
-                                .editor
-                                .selected_pitch()
-                                .map_or(view.entry_accidental == Some(sign), |pitch| {
-                                    pitch.accidental() == Some(sign)
-                                });
-                            action(
-                                format!("accidental-{}", sign.symbol()),
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(accidental_symbol(view, sign, selected))
-                                    .children(key_hint(view, command)),
-                                selected,
-                                cx,
-                                move |v, window, cx| v.run(command, window, cx),
-                            )
-                            .w(px(32.))
-                            .h(px(65.))
-                        }),
-                    ),
-                ))
-                .child(group(
-                    "Articulaciones y ligaduras",
-                    div()
-                        .flex()
-                        .gap_1()
-                        .children(Articulation::ALL.into_iter().map(|mark| {
-                            let command = articulation_command(mark);
-                            action(
-                                format!("articulation-{}", mark.label()),
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(music_symbol(
-                                        view,
-                                        mark.glyph(),
-                                        32.,
-                                        (18., 20.),
-                                        if selected_articulation(view) == Some(mark) {
-                                            BLUE
-                                        } else {
-                                            TEXT
-                                        },
-                                    ))
-                                    .children(key_hint(view, command)),
-                                selected_articulation(view) == Some(mark),
-                                cx,
-                                move |v, window, cx| v.run(command, window, cx),
-                            )
-                            .h(px(42.))
-                            .w(px(34.))
-                        }))
-                        .child(command_button(
-                            "tie",
-                            "Unión",
-                            selected_connection(view, ConnectionKind::Tie),
-                            view,
-                            cx,
-                            id::TIE,
-                        ))
-                        .child(command_button(
-                            "slur",
-                            if view.pending_slur.is_some() {
-                                "Terminar expresión"
-                            } else {
-                                "Expresión"
-                            },
-                            view.pending_slur.is_some(),
-                            view,
-                            cx,
-                            id::SLUR,
-                        ))
-                        .child(
-                            action(
-                                "fermata-todo",
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(music_symbol(view, "\u{e4c0}", 30., (20., 22.), MUTED))
-                                    .child(todo_badge()),
-                                false,
-                                cx,
-                                |v, _, cx| {
-                                    v.status = "TODO · Calderón".into();
-                                    cx.notify();
-                                },
-                            )
-                            .px_2()
-                            .h(px(28.))
-                            .bg(rgb(PANEL)),
-                        ),
-                ))
-                .child(group(
-                    "Dinámicas",
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .children(Dynamic::ALL.chunks(4).map(|row| {
-                            div().flex().gap_1().children(
-                                row.iter()
-                                    .copied()
-                                    .map(|mark| dynamic_button("dynamic-ribbon", mark, view, cx)),
-                            )
-                        })),
-                ))
-                .child(group(
-                    "Reguladores",
-                    hairpin_controls(view, cx, "ribbon-hairpin"),
-                ))
-                .child(group(
-                    "Técnica de cuerda",
-                    technique_controls(view, cx, "ribbon"),
-                ))
-                .child(group(
-                    "Estructura",
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(command_button(
-                            "add-measure",
-                            "⊞  Compás",
-                            false,
-                            view,
-                            cx,
-                            id::BAR_AT_END,
-                        ))
-                        .child(button(
-                            "choose-key",
-                            view.document.editor.score().key_signature().label(),
-                            view.key_picker,
-                            cx,
-                            |v, _, cx| {
-                                v.ui.show_instruments = true;
-                                v.toggle_key_picker(cx);
-                            },
-                        )),
-                ))
-                .child(group(
-                    "Acordes",
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(command_button(
-                            "chord-mode",
-                            "Modo acorde",
-                            view.chord_entry,
-                            view,
-                            cx,
-                            id::CHORD_MODE,
-                        ))
-                        .child(command_button(
-                            "remove-high-note",
-                            "Quitar nota aguda",
-                            false,
-                            view,
-                            cx,
-                            id::REMOVE_HIGHEST,
-                        )),
-                ));
-        }
-        other => {
-            row = row.child(
-                div()
-                    .p_4()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(todo_badge())
-                    .child(format!("{other} · herramientas pendientes")),
-            )
-        }
-    }
-    row
-}
-
 pub(super) fn instrument_name(score: &score_core::Score, id: PartId) -> String {
     let Some(part) = score.part(id) else {
         return String::new();

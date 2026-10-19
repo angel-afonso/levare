@@ -177,6 +177,7 @@ pub mod id {
         PRINT = "archivo.imprimir";
         EXPORT = "archivo.exportar";
         PREFERENCES = "archivo.preferencias";
+        CLEAR_RECENT = "archivo.borrar-recientes";
         CLOSE_PANEL = "panel.cerrar";
 
         UNDO = "edicion.deshacer";
@@ -224,6 +225,8 @@ pub mod id {
         VOICE_4 = "entrada.voz.4";
         GRACE_NOTE = "entrada.nota-de-adorno";
         FLEXI_TIME = "entrada.tiempo-real";
+        STEP_TIME = "entrada.paso-a-paso";
+        MIDI_INPUT = "entrada.teclado-midi";
 
         THIRTY_SECOND = "duracion.fusa";
         SIXTEENTH = "duracion.semicorchea";
@@ -255,6 +258,16 @@ pub mod id {
         ARCO = "expresion.arco";
         CLEAR_TECHNIQUE = "expresion.sin-tecnica";
         CLEAR_ARTICULATION = "expresion.sin-articulacion";
+        FERMATA = "expresion.calderon";
+        DYNAMIC_PPP = "expresion.dinamica.ppp";
+        DYNAMIC_PP = "expresion.dinamica.pp";
+        DYNAMIC_P = "expresion.dinamica.p";
+        DYNAMIC_MP = "expresion.dinamica.mp";
+        DYNAMIC_MF = "expresion.dinamica.mf";
+        DYNAMIC_F = "expresion.dinamica.f";
+        DYNAMIC_FF = "expresion.dinamica.ff";
+        DYNAMIC_FFF = "expresion.dinamica.fff";
+        CLEAR_DYNAMIC = "expresion.sin-dinamica";
         EXPRESSION_TEXT = "expresion.texto";
         TECHNIQUE_TEXT = "expresion.tecnica";
         TEMPO_TEXT = "expresion.tempo";
@@ -274,6 +287,8 @@ pub mod id {
         GO_TO_BAR = "compases.ir-a";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
+        ADD_PIANO = "instrumentos.piano";
+        OSSIA = "instrumentos.ossia";
         REMOVE_INSTRUMENT = "instrumentos.quitar";
         NEXT_INSTRUMENT = "instrumentos.siguiente";
         PREVIOUS_INSTRUMENT = "instrumentos.anterior";
@@ -302,6 +317,10 @@ pub mod id {
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
         MIXER = "reproduccion.mezclador";
+        AUDITION = "reproduccion.audicion";
+        TEMPO_UP = "reproduccion.tempo-mas";
+        TEMPO_DOWN = "reproduccion.tempo-menos";
+        REPEATS = "reproduccion.repeticiones";
 
         ZOOM_IN = "vista.acercar";
         ZOOM_OUT = "vista.alejar";
@@ -310,6 +329,7 @@ pub mod id {
         FULL_SCREEN = "vista.pantalla-completa";
         TOGGLE_INSTRUMENTS_PANEL = "vista.panel-instrumentos";
         TOGGLE_INSPECTOR = "vista.panel-propiedades";
+        PAGE_VIEW = "vista.pagina";
     }
 }
 
@@ -346,6 +366,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PRINT, C::File, "Imprimir…", G, false, P),
     spec(id::EXPORT, C::File, "Exportar…", G, false, P),
     spec(id::PREFERENCES, C::File, "Preferencias de atajos…", G, false, R),
+    spec(id::CLEAR_RECENT, C::File, "Borrar la lista de recientes", G, false, R),
     spec(id::CLOSE_PANEL, C::File, "Cerrar el panel abierto", M, false, R),
 
     spec(id::UNDO, C::Edit, "Deshacer", G, true, R),
@@ -393,6 +414,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, P),
     spec(id::GRACE_NOTE, C::NoteInput, "Convertir en nota de adorno", S, false, P),
     spec(id::FLEXI_TIME, C::NoteInput, "Entrada en tiempo real", G, false, P),
+    spec(id::STEP_TIME, C::NoteInput, "Entrada paso a paso", S, false, R),
+    spec(id::MIDI_INPUT, C::NoteInput, "Entrada con teclado MIDI", G, false, P),
 
     spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, P),
     spec(id::SIXTEENTH, C::Duration, "Semicorchea", S, false, R),
@@ -424,6 +447,16 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::ARCO, C::Expression, "Arco", S, false, R),
     spec(id::CLEAR_TECHNIQUE, C::Expression, "Quitar indicación de técnica", S, false, R),
     spec(id::CLEAR_ARTICULATION, C::Expression, "Quitar articulación", S, false, R),
+    spec(id::FERMATA, C::Expression, "Calderón", S, false, P),
+    spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
+    spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
+    spec(id::DYNAMIC_P, C::Expression, "Dinámica p", S, false, R),
+    spec(id::DYNAMIC_MP, C::Expression, "Dinámica mp", S, false, R),
+    spec(id::DYNAMIC_MF, C::Expression, "Dinámica mf", S, false, R),
+    spec(id::DYNAMIC_F, C::Expression, "Dinámica f", S, false, R),
+    spec(id::DYNAMIC_FF, C::Expression, "Dinámica ff", S, false, R),
+    spec(id::DYNAMIC_FFF, C::Expression, "Dinámica fff", S, false, R),
+    spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
     spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión", G, false, P),
     spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica", G, false, P),
     spec(id::TEMPO_TEXT, C::Expression, "Texto de tempo", G, false, P),
@@ -443,6 +476,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::GO_TO_BAR, C::Bars, "Ir al compás…", G, false, P),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
+    spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),
+    spec(id::OSSIA, C::Instruments, "Ossia", G, false, P),
     spec(id::REMOVE_INSTRUMENT, C::Instruments, "Eliminar el instrumento seleccionado", G, false, R),
     spec(id::NEXT_INSTRUMENT, C::Instruments, "Instrumento siguiente", G, true, R),
     spec(id::PREVIOUS_INSTRUMENT, C::Instruments, "Instrumento anterior", G, true, R),
@@ -471,6 +506,10 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, P),
     spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, P),
     spec(id::MIXER, C::Playback, "Mostrar el mezclador", S, false, R),
+    spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
+    spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),
+    spec(id::TEMPO_DOWN, C::Playback, "Bajar el tempo", G, true, R),
+    spec(id::REPEATS, C::Playback, "Reproducir repeticiones", G, false, P),
 
     spec(id::ZOOM_IN, C::View, "Acercar", G, true, R),
     spec(id::ZOOM_OUT, C::View, "Alejar", G, true, R),
@@ -479,6 +518,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::FULL_SCREEN, C::View, "Pantalla completa", G, false, R),
     spec(id::TOGGLE_INSTRUMENTS_PANEL, C::View, "Mostrar u ocultar instrumentos", G, false, R),
     spec(id::TOGGLE_INSPECTOR, C::View, "Mostrar u ocultar propiedades", G, false, R),
+    spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, P),
 ];
 
 #[cfg(test)]

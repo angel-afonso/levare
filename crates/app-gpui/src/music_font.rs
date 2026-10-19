@@ -50,7 +50,7 @@ impl MusicFont {
         for code in [0xe050, 0xe05c, 0xe062]
             .into_iter()
             .chain(0xe080..=0xe089)
-            .chain(0xe1d2..=0xe1da)
+            .chain(0xe1d2..=0xe1db)
             .chain(0xe0a2..=0xe0a4)
             .chain(0xe240..=0xe243)
             .chain(0xe260..=0xe262)
@@ -83,6 +83,13 @@ impl MusicFont {
             );
         }
         Self { outlines, scale }
+    }
+
+    /// Whether every character of `text` is among the preloaded outlines.
+    #[cfg(test)]
+    pub fn covers(&self, text: &str) -> bool {
+        text.chars()
+            .all(|character| self.outlines.contains_key(&character))
     }
 
     /// Visible ink relative to the baseline, including bearings and all glyphs.
@@ -150,7 +157,7 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 49);
+        assert_eq!(font.outlines.len(), 50);
         assert!(font.outlines.values().all(
             |(outline, advance, bounds)| !outline.segments.is_empty()
                 && *advance > 0.

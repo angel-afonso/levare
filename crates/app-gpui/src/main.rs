@@ -18,7 +18,9 @@ use score_core::{
 use score_document::Document;
 use score_edit::{Command, Cursor};
 use score_keymap::{CommandId, KeySequence, Keystroke as Key, Status, id};
-use shortcuts::{AddInstrument, ChooseDynamic, ChooseKeySignature, MenuRun, Run, Shortcuts};
+use shortcuts::{
+    AddInstrument, ChooseDynamic, ChooseKeySignature, MenuRun, OpenRecent, Run, Shortcuts,
+};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -33,10 +35,11 @@ type QuitSnapshot = Rc<RefCell<Option<score_core::Score>>>;
 /// (covers a key-up lost while the window was in the background).
 const REPEAT_WINDOW: Elapsed = Elapsed::from_millis(700);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Next {
     New,
     Open,
+    OpenPath(PathBuf),
     Close,
 }
 
@@ -69,6 +72,8 @@ struct AppView {
     /// auto-repeat; consumed by the next `Run`.
     repeat_at: Option<Instant>,
     held: HashMap<String, Instant>,
+    recent: score_io::RecentFiles,
+    recent_path: Option<PathBuf>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -77,7 +82,7 @@ impl AppView {
         window: &mut Window,
         cx: &mut Context<Self>,
         quit_snapshot: QuitSnapshot,
-        shortcuts: Shortcuts,
+        mut shortcuts: Shortcuts,
     ) -> Self {
         let (mut document, status) = match recovery_path().filter(|path| path.exists()) {
             Some(path) => match score_io::load(&path)
@@ -99,6 +104,13 @@ impl AppView {
                 "Escribe tu primera nota con las teclas A–G".to_owned(),
             ),
         };
+        let recent_path = data_path("recientes.json");
+        let recent = recent_path
+            .as_deref()
+            .and_then(|path| score_io::RecentFiles::load(path).ok())
+            .unwrap_or_default();
+        shortcuts.recent = recent.files().to_vec();
+        shortcuts.install(cx);
         let layout = document.layout(960.);
         let focus = cx.focus_handle();
         focus.focus(window);
@@ -192,6 +204,8 @@ impl AppView {
             preferences: None,
             repeat_at: None,
             held: HashMap::new(),
+            recent,
+            recent_path,
             _subscriptions: vec![interceptor, layout_change],
         }
     }
@@ -520,6 +534,11 @@ impl AppView {
             id::SAVE_AS => self.save(true, cx),
             id::CLOSE | id::QUIT => self.request_next(Next::Close, window, cx),
             id::PREFERENCES => self.open_preferences(cx),
+            id::CLEAR_RECENT => {
+                self.recent.clear();
+                self.save_recent(cx);
+                self.status = "Lista de recientes borrada".into();
+            }
             id::CLOSE_PANEL => self.close_preferences(cx),
 
             id::COPY => self.copy_music(false, cx),
@@ -551,6 +570,7 @@ impl AppView {
             id::REPEAT => self.repeat_selection(cx),
 
             id::TOGGLE_NOTE_INPUT => self.toggle_note_entry(cx),
+            id::STEP_TIME => self.status = "La entrada paso a paso está activa".into(),
             id::NOTE_C => self.write_note(Step::C, cx),
             id::NOTE_D => self.write_note(Step::D, cx),
             id::NOTE_E => self.write_note(Step::E, cx),
@@ -615,6 +635,15 @@ impl AppView {
             id::ARCO => self.edit(Command::SetTechnique(Some(PlayingTechnique::Arco)), cx),
             id::CLEAR_TECHNIQUE => self.edit(Command::SetTechnique(None), cx),
             id::CLEAR_ARTICULATION => self.edit(Command::SetArticulation(None), cx),
+            id::DYNAMIC_PPP => self.edit(Command::SetDynamic(Some(Dynamic::Ppp)), cx),
+            id::DYNAMIC_PP => self.edit(Command::SetDynamic(Some(Dynamic::Pp)), cx),
+            id::DYNAMIC_P => self.edit(Command::SetDynamic(Some(Dynamic::P)), cx),
+            id::DYNAMIC_MP => self.edit(Command::SetDynamic(Some(Dynamic::Mp)), cx),
+            id::DYNAMIC_MF => self.edit(Command::SetDynamic(Some(Dynamic::Mf)), cx),
+            id::DYNAMIC_F => self.edit(Command::SetDynamic(Some(Dynamic::F)), cx),
+            id::DYNAMIC_FF => self.edit(Command::SetDynamic(Some(Dynamic::Ff)), cx),
+            id::DYNAMIC_FFF => self.edit(Command::SetDynamic(Some(Dynamic::Fff)), cx),
+            id::CLEAR_DYNAMIC => self.edit(Command::SetDynamic(None), cx),
 
             id::KEY_SIGNATURE => {
                 self.ui.show_instruments = true;
@@ -628,6 +657,7 @@ impl AppView {
                 self.ui.show_instruments = true;
             }
             id::REMOVE_INSTRUMENT => self.edit(Command::RemovePart, cx),
+            id::ADD_PIANO => self.edit(Command::AddPart(Instrument::Piano), cx),
             id::NEXT_INSTRUMENT => self.cycle_part(true, cx),
             id::PREVIOUS_INSTRUMENT => self.cycle_part(false, cx),
             id::RIGHT_HAND => {
@@ -655,6 +685,17 @@ impl AppView {
             }
             id::PLAY_FROM_START => self.playback_from_start(cx),
             id::STOP => self.stop_playback(cx),
+            id::AUDITION => {
+                self.playback.audition = !self.playback.audition;
+                self.status = if self.playback.audition {
+                    "Audición al escribir activada"
+                } else {
+                    "Audición al escribir desactivada"
+                }
+                .into();
+            }
+            id::TEMPO_UP => self.playback.change_tempo(5),
+            id::TEMPO_DOWN => self.playback.change_tempo(-5),
             id::MIXER => {
                 self.ui.show_inspector = true;
                 self.ui.inspector = "Mezclador";
@@ -997,6 +1038,7 @@ impl AppView {
     }
 
     fn perform_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        let closing = matches!(next, Next::Close);
         match next {
             Next::New => {
                 clear_recovery();
@@ -1011,47 +1053,53 @@ impl AppView {
                 self.path = None;
                 self.status = "Nueva partitura · clave de sol · 4/4".into();
             }
-            Next::Open => self.open(cx),
+            Next::Open => self.open(None, cx),
+            Next::OpenPath(path) => self.open(Some(path), cx),
             Next::Close => {
                 clear_recovery();
                 *self.quit_snapshot.borrow_mut() = None;
                 window.remove_window();
             }
         }
-        if !matches!(next, Next::Close) {
+        if !closing {
             self.sync_quit_snapshot();
         }
         cx.notify();
     }
 
-    fn open(&mut self, cx: &mut Context<Self>) {
+    /// Opens `known`, or asks for a file when it is `None`.
+    fn open(&mut self, known: Option<PathBuf>, cx: &mut Context<Self>) {
         self.busy = true;
-        let picker = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: Some("Abrir partitura".into()),
+        let picker = known.is_none().then(|| {
+            cx.prompt_for_paths(PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("Abrir partitura".into()),
+            })
         });
         cx.spawn(async move |view, cx| {
-            let result = match picker.await {
-                Ok(Ok(Some(paths))) => {
-                    if let Some(path) = paths.into_iter().next() {
-                        Some(
-                            cx.background_executor()
-                                .spawn(async move {
-                                    score_io::load(&path)
-                                        .map(|score| (score, path))
-                                        .map_err(|error| error.to_string())
-                                })
-                                .await,
-                        )
-                    } else {
-                        None
-                    }
-                }
-                Ok(Ok(None)) => None,
-                Ok(Err(error)) => Some(Err(error.to_string())),
-                Err(error) => Some(Err(error.to_string())),
+            let path = match (known, picker) {
+                (Some(path), _) => Ok(Some(path)),
+                (None, Some(picker)) => match picker.await {
+                    Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
+                    Ok(Err(error)) => Err(error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                },
+                (None, None) => Ok(None),
+            };
+            let result = match path {
+                Ok(Some(path)) => Some(
+                    cx.background_executor()
+                        .spawn(async move {
+                            score_io::load(&path)
+                                .map(|score| (score, path))
+                                .map_err(|error| error.to_string())
+                        })
+                        .await,
+                ),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             };
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
@@ -1067,6 +1115,7 @@ impl AppView {
                             view.key_picker = false;
                             view.chord_entry = false;
                             view.entry_accidental = None;
+                            view.remember_recent(&path, cx);
                             view.path = Some(path);
                             view.status = "Partitura abierta".into();
                             view.sync_quit_snapshot();
@@ -1080,6 +1129,34 @@ impl AppView {
             });
         })
         .detach();
+    }
+
+    /// Archivo › Abrir reciente. A file that disappeared leaves the list.
+    fn open_recent(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if path.exists() {
+            self.request_next(Next::OpenPath(path), window, cx);
+        } else {
+            self.recent.remove(&path);
+            self.save_recent(cx);
+            self.status = format!("Ya no existe: {}", path.display());
+            cx.notify();
+        }
+    }
+
+    fn remember_recent(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        self.recent.touch(path);
+        self.save_recent(cx);
+    }
+
+    /// Persists the list and refreshes Archivo in the native menu bar.
+    fn save_recent(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = &self.recent_path
+            && let Err(error) = self.recent.save(path)
+        {
+            self.status = format!("No se pudo guardar la lista de recientes: {error}");
+        }
+        self.shortcuts.recent = self.recent.files().to_vec();
+        self.shortcuts.install(cx);
     }
 
     fn save(&mut self, save_as: bool, cx: &mut Context<Self>) {
@@ -1128,6 +1205,7 @@ impl AppView {
                         clear_recovery();
                         view.document.mark_saved();
                         view.status = format!("Guardado: {}", path.display());
+                        view.remember_recent(&path, cx);
                         view.path = Some(path);
                         view.sync_quit_snapshot();
                     }
@@ -1382,6 +1460,7 @@ impl AppView {
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ui.compact = f32::from(window.viewport_size().width) < 1250.;
+        self.ui.width = f32::from(window.viewport_size().width);
         let panels = if self.ui.show_instruments {
             ui::LEFT_WIDTH
         } else {
@@ -1441,6 +1520,9 @@ impl Render for AppView {
             .on_action(cx.listener(|this, action: &ChooseDynamic, _, cx| {
                 this.edit(Command::SetDynamic(action.0), cx)
             }))
+            .on_action(cx.listener(|this, action: &OpenRecent, window, cx| {
+                this.open_recent(action.0.clone(), window, cx)
+            }))
             .on_action(cx.listener(|this, action: &AddInstrument, _, cx| {
                 this.edit(Command::AddPart(action.0), cx)
             }))
@@ -1453,8 +1535,12 @@ impl Render for AppView {
     }
 }
 
+fn data_path(name: &str) -> Option<PathBuf> {
+    dirs::data_local_dir().map(|directory| directory.join("Partitura").join(name))
+}
+
 fn recovery_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|directory| directory.join("Partitura").join("recovery.partitura"))
+    data_path("recovery.partitura")
 }
 
 fn clear_recovery() {
