@@ -2,10 +2,12 @@
 //! and transport readouts always come from the current document/session.
 mod command_state;
 mod icons;
+mod instrument_panel;
 mod preferences;
 mod toolbar;
 use super::*;
 use icons::{Icon, icon};
+pub use instrument_panel::InstrumentPicker;
 pub use preferences::{Preferences, PreferencesConflict};
 use score_core::Duration;
 use score_keymap::{CommandId, id};
@@ -99,7 +101,7 @@ fn action(
         }))
 }
 fn icon_button(
-    id: &'static str,
+    id: impl Into<SharedString>,
     glyph: Icon,
     selected: bool,
     cx: &Context<AppView>,
@@ -167,11 +169,56 @@ fn shortcut(text: impl Into<SharedString>) -> Div {
         .text_color(rgb(MUTED))
         .child(text.into())
 }
-/// The current shortcut of a command, as a key cap; `None` when unbound.
-fn key_hint(view: &AppView, command: CommandId) -> Option<Div> {
-    view.shortcuts.label(command).map(shortcut)
+struct HoverHint {
+    label: SharedString,
+    keys: Option<String>,
 }
-/// A labelled button that runs a registered command and shows its shortcut.
+impl Render for HoverHint {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .px_2()
+            .py_1()
+            .max_w(px(360.))
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(0x3b3d46))
+            .bg(rgb(FIELD))
+            .shadow_md()
+            .text_size(px(11.))
+            .text_color(rgb(TEXT))
+            .child(self.label.clone())
+            .children(self.keys.clone().map(shortcut))
+    }
+}
+fn hover_hint(
+    label: impl Into<SharedString>,
+    keys: Option<String>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let label = label.into();
+    move |_, cx| {
+        cx.new(|_| HoverHint {
+            label: label.clone(),
+            keys: keys.clone(),
+        })
+        .into()
+    }
+}
+fn command_hint(
+    view: &AppView,
+    command: CommandId,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    hover_hint(
+        view.shortcuts
+            .registry
+            .get(command.as_str())
+            .map_or(command.as_str(), |spec| spec.label),
+        view.shortcuts.label(command),
+    )
+}
+/// A command's shortcut is available on hover without taking space in the button.
 fn command_button(
     element: impl Into<SharedString>,
     label: impl Into<SharedString>,
@@ -183,7 +230,7 @@ fn command_button(
     button(element, label, selected, cx, move |v, window, cx| {
         v.run(command, window, cx)
     })
-    .children(key_hint(view, command))
+    .tooltip(command_hint(view, command))
 }
 pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl IntoElement {
     div()
@@ -209,7 +256,7 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
                 .flex_1()
                 .min_h_0()
                 .when(view.ui.show_instruments, |row| {
-                    row.child(instruments(view, cx))
+                    row.child(instrument_panel::panel(view, cx))
                 })
                 .child(score_area(view, cx))
                 .when(view.ui.show_inspector, |row| row.child(inspector(view, cx))),
@@ -218,6 +265,9 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         .child(statusbar(view))
         .when(view.preferences.is_some(), |root| {
             root.child(preferences::overlay(view, cx))
+        })
+        .when(view.instrument_picker.is_some(), |root| {
+            root.child(instrument_panel::dialog(view, cx))
         })
 }
 
@@ -241,17 +291,17 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                 .child("Partitura"),
         )
         .child(div().h(px(25.)).border_r_1().border_color(rgb(BORDER)))
-        .child(icon_button(
-            "save-document",
-            Icon::Save,
-            false,
-            cx,
-            |v, _, cx| v.save(false, cx),
-        ))
+        .child(
+            icon_button("save-document", Icon::Save, false, cx, |v, _, cx| {
+                v.save(false, cx)
+            })
+            .tooltip(command_hint(view, id::SAVE)),
+        )
         .child(
             icon_button("undo-edit", Icon::Undo, false, cx, |v, _, cx| {
                 v.history(false, cx)
             })
+            .tooltip(command_hint(view, id::UNDO))
             .opacity(if view.document.editor.can_undo() {
                 1.
             } else {
@@ -262,6 +312,7 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             icon_button("redo-edit", Icon::Redo, false, cx, |v, _, cx| {
                 v.history(true, cx)
             })
+            .tooltip(command_hint(view, id::REDO))
             .opacity(if view.document.editor.can_redo() {
                 1.
             } else {
@@ -437,7 +488,7 @@ fn symbol_command_button(
     )
     .px_2()
     .h(px(29.))
-    .children(key_hint(view, command))
+    .tooltip(command_hint(view, command))
 }
 
 fn dynamic_button(
@@ -462,6 +513,7 @@ fn dynamic_button(
     )
     .px_1()
     .h(px(29.))
+    .tooltip(hover_hint(format!("Dinámica: {}", mark.label()), None))
 }
 
 fn accidental_symbol(view: &AppView, sign: Accidental, selected: bool) -> impl IntoElement {
@@ -515,41 +567,6 @@ fn clef_name(clef: score_core::Clef) -> &'static str {
         score_core::Clef::Alto => "do",
         score_core::Clef::Bass => "fa",
     }
-}
-fn instruments(view: &AppView, cx: &Context<AppView>) -> Div {
-    let score = view.document.editor.score();
-    let cursor = view.document.editor.cursor();
-    div().w(px(LEFT_WIDTH)).flex_shrink_0().flex().flex_col().bg(rgb(PANEL)).border_r_1().border_color(rgb(BORDER))
-        .child(div().h(px(48.)).px_3().flex().items_center().justify_between()
-            .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(if view.key_picker{"Tonalidad".to_owned()}else{format!("Instrumentos  {}",score.parts().len())}))
-            .child(button("picker-add","+",view.instrument_picker,cx,|v,_,cx|{v.instrument_picker= !v.instrument_picker;v.key_picker=false;cx.notify();})))
-        .child(div().id("instrument-rows").flex_1().min_h_0().overflow_y_scroll().px_2().pb_3().flex().flex_col().gap_1()
-            .when(view.key_picker,|list|list.child(key_picker(view,cx)))
-            .when(view.instrument_picker,|list|list.child(caption("AÑADIR INSTRUMENTO")).children(Instrument::ALL.into_iter().map(|instrument|button(format!("add-{:?}",instrument),format!("+ {}",instrument.name()),false,cx,move|v,_,cx|{v.edit(Command::AddPart(instrument),cx);v.instrument_picker=false;}))))
-            .children(score_core::InstrumentFamily::ALL.into_iter().filter(|family|score.parts().iter().any(|part|part.instrument().family()==*family)).map(|family|{
-                div().flex().flex_col().gap_1().mb_2().child(caption(family.label()).mt_3().mb_1().pl_2())
-                    .children(score.parts().iter().enumerate().filter(move|(_,part)|part.instrument().family()==family).map(|(index,part)|{
-                        let id=part.id();let selected=cursor.part==id;
-                        div().id(("part-row",u64::from(id.0))).flex().flex_col().gap_1()
-                            .child(action(format!("select-part-{}",id.0),div().flex().items_center().gap_2().w_full()
-                                .child(div().text_size(px(14.)).text_color(rgb(0x626875)).child("⠿"))
-                                .child(div().flex_1().min_w_0().flex().flex_col().gap_1()
-                                    .child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).child(instrument_name(score,id)))
-                                    .child(div().text_size(px(9.)).text_color(rgb(if selected{0xa9bfe7}else{MUTED})).child(format!("{} · Canal {}",if part.instrument()==Instrument::Piano{"Claves sol / fa".to_owned()}else{format!("Clave de {}",clef_name(part.clef(StaffId::Upper)))},if index<9{index+1}else{index+2}))))
-                                .child(div().text_size(px(8.)).text_color(rgb(MUTED)).child("M S\nTODO")),selected,cx,move|v,_,cx|v.select_part(id,cx)).px_2().py_2().bg(rgb(if selected{SELECT}else{PANEL})))
-                            .when(part.instrument()==Instrument::Piano,|row|row.child(div().pl_5().flex().gap_1()
-                                .child(button(format!("right-{}",id.0),"M. derecha",selected&&cursor.staff==StaffId::Upper,cx,move|v,_,cx|v.select_hand(id,StaffId::Upper,cx)).text_size(px(9.)).px_1().h(px(23.)))
-                                .child(button(format!("left-{}",id.0),"M. izquierda",selected&&cursor.staff==StaffId::Lower,cx,move|v,_,cx|v.select_hand(id,StaffId::Lower,cx)).text_size(px(9.)).px_1().h(px(23.)))))
-                    }))
-            }))
-            .child(button("add-instrument-bottom","+ Añadir instrumento",false,cx,|v,_,cx|{v.instrument_picker= !v.instrument_picker;v.key_picker=false;cx.notify();}).w_full().mt_2().h(px(34.)).border_color(rgb(0x424652)).bg(rgb(PANEL))))
-        .child(div().border_t_1().border_color(rgb(BORDER)).px_3().py_2().flex().flex_col().gap_2()
-            .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("Orden automático por familias"))
-            .when(score.parts().len()>1,|body|body.child(command_button("remove-selected-instrument","Eliminar seleccionado",false,view,cx,id::REMOVE_INSTRUMENT).w_full().text_color(rgb(0xf1a4a4))))
-            .when(score.parts().len()==1,|body|body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La partitura conserva un instrumento."))))
-        .child(div().border_t_1().border_color(rgb(BORDER)).px_3().py_3().flex().flex_col().gap_2()
-            .child(div().flex().items_center().justify_between().child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).child("Páginas")).child(todo_badge()))
-            .child(div().flex().gap_2().items_end().child(action("scroll-to-top",page_thumbnail(score.parts().len()),true,cx,|v,_,cx|{v.viewport.scroll.set_offset(Point::default());cx.notify();}).p_1()).child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("Vista continua\nPaginación pendiente"))))
 }
 fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
     div()
@@ -988,8 +1005,7 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 })
                 .when(view.ui.inspector == "Sonidos", |body| {
                     body.child(sounds(view, cx))
-                })
-                .child(shortcuts(view, cx)),
+                }),
         )
 }
 fn section(label: &'static str) -> Div {
@@ -1251,7 +1267,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                             }
                         },
                     )
-                    .children(key_hint(view, id::REST)),
+                    .tooltip(command_hint(view, id::REST)),
                 )
                 .child(button(
                     "property-chord",
@@ -1380,7 +1396,7 @@ fn technique_controls(view: &AppView, cx: &Context<AppView>, prefix: &'static st
             )
             .px_2()
             .h(px(29.))
-            .children(key_hint(view, command))
+            .tooltip(command_hint(view, command))
         }),
     )
 }
@@ -1619,7 +1635,7 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             cx,
             |v, _, cx| {
                 v.ui.show_instruments = true;
-                v.instrument_picker = true;
+                v.open_instrument_picker(cx);
                 v.key_picker = false;
                 cx.notify();
             },
@@ -1660,68 +1676,6 @@ fn articulation_command(mark: Articulation) -> CommandId {
         Articulation::Marcato => id::MARCATO,
     }
 }
-/// The inspector's quick reference, read from the active keymap.
-fn shortcuts(view: &AppView, cx: &Context<AppView>) -> Div {
-    let keys = |commands: &[CommandId], separator: &str| {
-        let labels: Option<Vec<String>> = commands
-            .iter()
-            .map(|command| view.shortcuts.label(*command))
-            .collect();
-        labels.map(|labels| labels.join(separator))
-    };
-    let rows = [
-        (keys(&[id::NOTE_A, id::NOTE_G], "–"), "Escribir nota"),
-        (keys(&[id::ADD_A, id::ADD_G], "–"), "Añadir nota al acorde"),
-        (
-            keys(&[id::INTERVAL_2, id::INTERVAL_9], "–"),
-            "Añadir intervalo encima",
-        ),
-        (
-            keys(
-                &[id::SIXTEENTH, id::EIGHTH, id::QUARTER, id::HALF, id::WHOLE],
-                " ",
-            ),
-            "Semicorchea … redonda",
-        ),
-        (
-            keys(&[id::NATURAL, id::SHARP, id::FLAT], " "),
-            "Becuadro / sostenido / bemol",
-        ),
-        (keys(&[id::REST], ""), "Silencio"),
-        (keys(&[id::TIE], ""), "Ligadura de unión"),
-        (keys(&[id::SLUR], ""), "Ligadura de expresión"),
-        (keys(&[id::REPEAT], ""), "Repetir"),
-        (
-            keys(&[id::STEP_UP, id::STEP_DOWN], " "),
-            "Subir / bajar un grado",
-        ),
-        (
-            keys(&[id::OCTAVE_UP, id::OCTAVE_DOWN], " "),
-            "Subir / bajar una octava",
-        ),
-        (keys(&[id::TOGGLE_NOTE_INPUT], ""), "Activar entrada"),
-        (keys(&[id::PLAY], ""), "Reproducir / pausar"),
-    ];
-    section("ATAJOS DE ENTRADA · SIBELIUS")
-        .children(rows.into_iter().filter_map(|(keys, text)| {
-            Some(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(shortcut(keys?))
-                    .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(text)),
-            )
-        }))
-        .child(command_button(
-            "all-shortcuts",
-            "Ver y cambiar todos los atajos",
-            false,
-            view,
-            cx,
-            id::PREFERENCES,
-        ))
-}
 
 fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();
@@ -1741,13 +1695,12 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
         .bg(rgb(BG))
         .border_t_1()
         .border_color(rgb(BORDER))
-        .child(icon_button(
-            "play-from-start",
-            Icon::First,
-            false,
-            cx,
-            |v, _, cx| v.playback_from_start(cx),
-        ))
+        .child(
+            icon_button("play-from-start", Icon::First, false, cx, |v, _, cx| {
+                v.playback_from_start(cx)
+            })
+            .tooltip(command_hint(view, id::PLAY_FROM_START)),
+        )
         .child(
             action(
                 "toggle-playback",
@@ -1766,15 +1719,15 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
             .w(px(38.))
             .h(px(38.))
             .rounded_full()
+            .tooltip(command_hint(view, id::PLAY))
             .bg(rgb(0xe8e9ee)),
         )
-        .child(icon_button(
-            "stop-playback",
-            Icon::Stop,
-            false,
-            cx,
-            |v, _, cx| v.stop_playback(cx),
-        ))
+        .child(
+            icon_button("stop-playback", Icon::Stop, false, cx, |v, _, cx| {
+                v.stop_playback(cx)
+            })
+            .tooltip(command_hint(view, id::STOP)),
+        )
         .child(
             action(
                 "loop-todo",

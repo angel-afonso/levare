@@ -24,6 +24,7 @@ pub enum Icon {
     Cut,
     Tie,
     Slur,
+    Trash,
 }
 
 impl Icon {
@@ -69,6 +70,13 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                 }
             };
             match kind {
+                Icon::Trash => {
+                    line(&[(3., 5.), (15., 5.)]);
+                    line(&[(6., 5.), (6., 2.), (12., 2.), (12., 5.)]);
+                    line(&[(4., 5.), (5., 16.), (13., 16.), (14., 5.)]);
+                    line(&[(7., 8.), (7., 13.)]);
+                    line(&[(11., 8.), (11., 13.)]);
+                }
                 Icon::Save => {
                     line(&[
                         (3., 2.),

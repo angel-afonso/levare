@@ -51,7 +51,7 @@ struct AppView {
     status: String,
     busy: bool,
     confirming: bool,
-    instrument_picker: bool,
+    instrument_picker: Option<ui::InstrumentPicker>,
     key_picker: bool,
     key_mode: KeyMode,
     chord_entry: bool,
@@ -185,7 +185,7 @@ impl AppView {
             status,
             busy: false,
             confirming: false,
-            instrument_picker: false,
+            instrument_picker: None,
             key_picker: false,
             key_mode: KeyMode::Major,
             chord_entry: false,
@@ -345,10 +345,10 @@ impl AppView {
 
     fn edit(&mut self, command: Command, cx: &mut Context<Self>) {
         self.selection_drag = None;
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.instrument_picker.is_some() {
             return;
         }
-        self.status = match self.document.execute(command) {
+        self.status = match self.document.execute(command.clone()) {
             Ok(true) => {
                 self.pending_slur = None;
                 self.pending_hairpin = None;
@@ -390,10 +390,14 @@ impl AppView {
                     return;
                 }
                 match command {
-                    Command::RemovePart => {
+                    Command::RemovePart | Command::RemovePartById(_) => {
                         "Instrumento eliminado. Puedes recuperarlo con Deshacer.".into()
                     }
                     Command::AddPart(_) => "Instrumento añadido y colocado en el score.".into(),
+                    Command::AddParts(parts) => format!(
+                        "{} instrumentos añadidos. Puedes deshacerlos juntos.",
+                        parts.len()
+                    ),
                     _ => "Partitura actualizada".into(),
                 }
             }
@@ -414,6 +418,14 @@ impl AppView {
             .insert(stroke.key.clone(), now)
             .is_some_and(|last| now.duration_since(last) < REPEAT_WINDOW);
         self.repeat_at = repeated.then_some(now);
+        if self.instrument_picker.is_some() && stroke.key == "enter" && !stroke.modifiers.modified()
+        {
+            cx.stop_propagation();
+            if !repeated {
+                self.confirm_instruments(cx);
+            }
+            return;
+        }
         let Some(preferences) = &self.preferences else {
             return;
         };
@@ -468,6 +480,12 @@ impl AppView {
             return;
         };
         if self.busy || self.confirming {
+            return;
+        }
+        if self.instrument_picker.is_some() {
+            if [id::CLOSE_PANEL, id::ESCAPE, id::ADD_INSTRUMENT].contains(&command) {
+                self.close_instrument_picker(cx);
+            }
             return;
         }
         if self.preferences.is_some()
@@ -652,9 +670,7 @@ impl AppView {
             id::BAR_AT_END => self.edit(Command::AppendMeasure, cx),
 
             id::ADD_INSTRUMENT => {
-                self.instrument_picker = !self.instrument_picker;
-                self.key_picker = false;
-                self.ui.show_instruments = true;
+                self.open_instrument_picker(cx);
             }
             id::REMOVE_INSTRUMENT => self.edit(Command::RemovePart, cx),
             id::ADD_PIANO => self.edit(Command::AddPart(Instrument::Piano), cx),
@@ -921,6 +937,47 @@ impl AppView {
         cx.notify();
     }
 
+    fn open_instrument_picker(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.preferences.is_some() {
+            return;
+        }
+        self.instrument_picker = Some(ui::InstrumentPicker::default());
+        self.selection_drag = None;
+        self.key_picker = false;
+        self.ui.file_menu = false;
+        self.ui.open_group = None;
+        self.playback.stop();
+        cx.notify();
+    }
+
+    fn close_instrument_picker(&mut self, cx: &mut Context<Self>) {
+        self.instrument_picker = None;
+        cx.notify();
+    }
+
+    fn confirm_instruments(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            return;
+        }
+        let Some(mut picker) = self.instrument_picker.take() else {
+            return;
+        };
+        let instruments = picker.instruments();
+        if instruments.is_empty() {
+            self.instrument_picker = Some(picker);
+            return;
+        }
+        let before = self.document.editor.score().parts().len();
+        self.edit(Command::AddParts(instruments), cx);
+        if self.document.editor.score().parts().len() == before {
+            picker.error = Some(self.status.clone());
+            self.instrument_picker = Some(picker);
+        } else {
+            self.ui.show_instruments = true;
+        }
+        cx.notify();
+    }
+
     fn close_preferences(&mut self, cx: &mut Context<Self>) {
         match &mut self.preferences {
             Some(preferences)
@@ -1008,7 +1065,7 @@ impl AppView {
     }
 
     fn request_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.instrument_picker.is_some() {
             return;
         }
         self.playback.stop();
@@ -1046,7 +1103,7 @@ impl AppView {
                 self.pending_hairpin = None;
                 self.document = Document::default();
                 self.viewport.scroll.set_offset(Point::default());
-                self.instrument_picker = false;
+                self.instrument_picker = None;
                 self.key_picker = false;
                 self.chord_entry = false;
                 self.entry_accidental = None;
@@ -1111,7 +1168,7 @@ impl AppView {
                             view.pending_hairpin = None;
                             view.document = document;
                             view.viewport.scroll.set_offset(Point::default());
-                            view.instrument_picker = false;
+                            view.instrument_picker = None;
                             view.key_picker = false;
                             view.chord_entry = false;
                             view.entry_accidental = None;
@@ -1296,7 +1353,7 @@ impl AppView {
         self.key_picker = !self.key_picker;
         if self.key_picker {
             self.key_mode = self.document.editor.score().key_signature().mode();
-            self.instrument_picker = false;
+            self.instrument_picker = None;
         }
         cx.notify();
     }
@@ -1505,11 +1562,13 @@ impl Render for AppView {
             .text_color(rgb(ui::TEXT))
             .font_family(".SystemUIFont")
             .track_focus(&self.focus)
-            .key_context(if self.preferences.is_some() {
-                "Partitura Modal"
-            } else {
-                "Partitura"
-            })
+            .key_context(
+                if self.preferences.is_some() || self.instrument_picker.is_some() {
+                    "Partitura Modal"
+                } else {
+                    "Partitura"
+                },
+            )
             .on_key_up(cx.listener(Self::key_up))
             .on_action(
                 cx.listener(|this, action: &Run, window, cx| this.run_key(action.0, window, cx)),

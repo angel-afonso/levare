@@ -4,6 +4,8 @@ use score_core::{
 };
 
 pub mod clipboard;
+#[cfg(test)]
+mod instrument_tests;
 mod selection;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -14,7 +16,7 @@ pub struct Cursor {
     pub index: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Command {
     Insert(Event),
     SetArticulation(Option<score_core::Articulation>),
@@ -32,7 +34,10 @@ pub enum Command {
     SetAccidental(Option<Accidental>),
     AppendMeasure,
     AddPart(Instrument),
+    /// Add an ensemble atomically, including repeated instruments.
+    AddParts(Vec<Instrument>),
     RemovePart,
+    RemovePartById(PartId),
     SetKeySignature(score_core::KeySignature),
 }
 
@@ -443,37 +448,68 @@ impl Editor {
                 };
                 next.selection = None;
             }
-            Command::RemovePart => {
+            Command::AddParts(ref instruments) => {
+                if instruments.is_empty() {
+                    return Ok(false);
+                }
+                let mut first = None;
+                for &instrument in instruments {
+                    let id = next.score.add_part(instrument)?;
+                    first.get_or_insert(id);
+                }
+                next.score.arrange_parts();
+                next.cursor = Cursor {
+                    part: first.expect("nonempty ensemble"),
+                    ..Cursor::default()
+                };
+                next.selection = None;
+            }
+            Command::RemovePart | Command::RemovePartById(_) => {
+                let target = match command {
+                    Command::RemovePartById(id) => id,
+                    _ => next.cursor.part,
+                };
                 let index = next
                     .score
                     .parts()
                     .iter()
-                    .position(|part| part.id() == next.cursor.part)
-                    .expect("cursor part");
-                next.score.remove_part(next.cursor.part)?;
-                let neighbor = next.score.parts()[index.min(next.score.parts().len() - 1)].id();
-                next.cursor = Cursor {
-                    staff: score_core::StaffId::Upper,
-                    part: neighbor,
-                    measure: next.cursor.measure,
-                    index: 0,
-                };
-                next.selection = None;
+                    .position(|part| part.id() == target)
+                    .ok_or(ScoreError("El instrumento no existe"))?;
+                next.score.remove_part(target)?;
+                if next.cursor.part == target {
+                    let neighbor = next.score.parts()[index.min(next.score.parts().len() - 1)].id();
+                    next.cursor = Cursor {
+                        staff: score_core::StaffId::Upper,
+                        part: neighbor,
+                        measure: next.cursor.measure,
+                        index: 0,
+                    };
+                    next.selection = None;
+                }
             }
         }
-        if !matches!(command, Command::SetDotted(_) | Command::SetTriplet(_)) {
+        let remove_other =
+            matches!(command, Command::RemovePartById(id) if id != self.cursor().part);
+        let preserve_range =
+            matches!(command, Command::SetDotted(_) | Command::SetTriplet(_)) || remove_other;
+        if !preserve_range {
             next.range_anchor = None;
         }
+        let entry_octave = self.octave;
         self.commit(next);
         if let Command::AddPitch(pitch) = command {
             self.octave = pitch.octave();
         }
-        if matches!(command, Command::AddPart(_) | Command::RemovePart) {
-            self.octave = self
-                .score()
-                .part(self.cursor().part)
-                .expect("cursor part")
-                .entry_octave(self.cursor().staff);
+        if remove_other {
+            self.octave = entry_octave;
+        } else if matches!(
+            command,
+            Command::AddPart(_)
+                | Command::AddParts(_)
+                | Command::RemovePart
+                | Command::RemovePartById(_)
+        ) {
+            self.sync_octave();
         }
         Ok(true)
     }
@@ -732,7 +768,7 @@ mod tests {
     fn missing_selection_or_rest_cannot_silently_create_a_chord() {
         let mut editor = Editor::default();
         let command = Command::AddPitch(Pitch::new(Step::C, 4).unwrap());
-        assert!(editor.execute(command).is_err());
+        assert!(editor.execute(command.clone()).is_err());
         assert!(!editor.can_undo());
         editor.execute(Command::Insert(editor.rest())).unwrap();
         let before = editor.score().clone();

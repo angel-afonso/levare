@@ -51,9 +51,9 @@ pub enum Visual {
 pub enum ControlSize {
     /// Icon over label, full height.
     Large,
-    /// One row of a three-row column: icon, label, key.
+    /// One row of a three-row column: icon and label.
     Small,
-    /// Glyph over key cap, full height, fixed width.
+    /// Glyph, full height, fixed width; its shortcut appears on hover.
     Tile,
 }
 

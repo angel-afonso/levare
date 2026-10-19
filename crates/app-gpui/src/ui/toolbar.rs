@@ -67,6 +67,7 @@ fn frame(
     .when(!control.checked, |frame| frame.bg(rgb(PANEL)))
     .text_color(rgb(ink(control)))
     .when(!control.enabled, |frame| frame.opacity(0.4))
+    .tooltip(hover_hint(control.description, control.keys.clone()))
 }
 
 fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Stateful<Div> {
@@ -84,8 +85,7 @@ fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Statef
                     .items_center()
                     .gap_1()
                     .text_size(px(11.5))
-                    .child(control.label.clone())
-                    .children(control.keys.clone().map(shortcut)),
+                    .child(control.label.clone()),
             ),
         control,
         cx,
@@ -96,7 +96,7 @@ fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Statef
     .px_1()
 }
 
-/// A glyph over its key cap; `named` adds the control's name between them.
+/// A musical glyph; `named` adds its name when the group has room.
 fn tile(
     view: &AppView,
     control: &ControlView,
@@ -124,12 +124,7 @@ fn tile(
                         .line_height(px(11.))
                         .child(control.label.clone()),
                 )
-            })
-            // Unbound tiles keep the key row so every tile aligns.
-            .child(
-                shortcut(control.keys.clone().unwrap_or_else(|| "–".into()))
-                    .when(control.keys.is_none(), |cap| cap.invisible()),
-            ),
+            }),
         control,
         cx,
         false,
@@ -160,7 +155,9 @@ fn row(
                 ink(control),
             )))
             .child(div().flex_1().truncate().child(control.label.clone()))
-            .children(control.keys.clone().map(shortcut)),
+            .when(close, |row| {
+                row.children(control.keys.clone().map(shortcut))
+            }),
         control,
         cx,
         close,

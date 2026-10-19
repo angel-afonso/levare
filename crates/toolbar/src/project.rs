@@ -47,8 +47,6 @@ pub struct Metrics {
     pub tile: f32,
     pub small_base: f32,
     pub char_width: f32,
-    pub key_char_width: f32,
-    pub key_base: f32,
     pub gap: f32,
     pub group_padding: f32,
     pub separator: f32,
@@ -65,8 +63,6 @@ impl Default for Metrics {
             tile: 32.,
             small_base: 34.,
             char_width: 6.6,
-            key_char_width: 6.5,
-            key_base: 12.,
             gap: 2.,
             group_padding: 16.,
             separator: 1.,
@@ -186,11 +182,7 @@ fn text_width(text: &str, per_char: f32) -> f32 {
 }
 
 fn small_width(control: &ControlView, metrics: &Metrics) -> f32 {
-    metrics.small_base
-        + text_width(&control.label, metrics.char_width)
-        + control.keys.as_deref().map_or(0., |keys| {
-            metrics.key_base + text_width(keys, metrics.key_char_width)
-        })
+    metrics.small_base + text_width(&control.label, metrics.char_width)
 }
 
 fn items(controls: &[ControlView], metrics: &Metrics) -> Vec<Item> {
@@ -226,13 +218,7 @@ fn item_width(item: &Item, metrics: &Metrics) -> f32 {
     match item {
         Item::Large(control) => metrics
             .large
-            .max(text_width(&control.label, metrics.char_width) + 12.)
-            .max(control.keys.as_deref().map_or(0., |keys| {
-                text_width(&control.label, metrics.char_width)
-                    + metrics.key_base
-                    + text_width(keys, metrics.key_char_width)
-                    + 12.
-            })),
+            .max(text_width(&control.label, metrics.char_width) + 12.),
         Item::Tile(_) => metrics.tile,
         Item::LabeledTile(control) => metrics
             .labeled_tile

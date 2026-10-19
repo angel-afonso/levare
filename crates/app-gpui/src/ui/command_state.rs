@@ -94,7 +94,7 @@ impl CommandStates for AppView {
             id::ARCO => technique(PlayingTechnique::Arco),
 
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
-            id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker),
+            id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker.is_some()),
 
             id::PLAY => CommandState {
                 checked: self.playback.is_playing(),

@@ -62,6 +62,10 @@ completa, generada desde el código, está en [docs/atajos.md](docs/atajos.md).
 Puedes cambiarlos en **Partitura › Preferencias de atajos…** (`⌘,`) o con el botón
 **Atajos** de la cabecera.
 
+La barra y el inspector muestran el nombre y el atajo actual de cada control al
+mantener el cursor encima. Los menús y la ventana **Atajos** conservan las teclas
+visibles como referencia, sin repetirlas permanentemente junto a los botones.
+
 | Tecla / acción | Resultado |
 |---|---|
 | `N` | Activar / desactivar la entrada de notas |
@@ -253,19 +257,21 @@ Puedes asignar atajos en Preferencias. Ejemplo:
 
 ## Partituras con varios instrumentos
 
-Pulsa **+ Instrumento** en el panel izquierdo y elige un sonido. También puedes
-usar el menú **Instrumentos**. Hay piano, guitarra, violín, viola, violonchelo,
+Pulsa **+ Añadir instrumentos** en el panel izquierdo para abrir el diálogo.
+Marca varios instrumentos y ajusta sus cantidades con **− / +**; **Añadir** incorpora
+el conjunto en una sola operación que puedes deshacer. **Cancelar** o **Esc** cierra
+sin cambiar la partitura. También puedes usar el menú **Instrumentos**. Hay piano, guitarra, violín, viola, violonchelo,
 contrabajo, flauta, oboe, clarinete, fagot, trompeta, trompa y trombón; se admiten
 hasta **14 partes**, incluyendo instrumentos repetidos.
 
 Selecciona una parte en el panel o pulsa su pentagrama para escribir en ella.
 **⌥↑ / ⌥↓** pasa al pentagrama vecino (y, en un acorde, primero recorre sus notas). Cada parte conserva sus notas; los compases
 se añaden a todos los instrumentos y los tiempos coincidentes quedan alineados.
-**Eliminar seleccionado**, visible al pie del panel de instrumentos, elimina la parte
-activa con sus pentagramas. **Deshacer** recupera sus notas, dinámicas y ligaduras.
-También está disponible en el menú **Instrumentos**.
-La partitura conserva al menos un instrumento. Tras eliminar una parte, queda
-seleccionado el instrumento vecino.
+La **papelera de cada fila** elimina ese instrumento directamente con sus pentagramas,
+sin seleccionarlo antes. **Deshacer** recupera sus notas, dinámicas y ligaduras.
+El menú **Instrumentos** permite eliminar la parte activa.
+La partitura conserva al menos un instrumento. Si eliminas la parte activa, queda
+seleccionado el instrumento vecino; al eliminar otra, se conserva tu selección.
 
 Al abrir una partitura o añadir instrumentos, el score y el panel se ordenan
 por familias: maderas, metales, teclados, cuerdas pulsadas y cuerdas. Dentro de

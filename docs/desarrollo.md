@@ -532,6 +532,16 @@ audio; la interfaz no consulta ni modifica el sintetizador para dibujarlo.
 
 ## Barra de herramientas
 
+El panel de instrumentos vive en `ui/instrument_panel.rs`. El diálogo mantiene un
+borrador de cantidades por instrumento, limitado a las plazas disponibles de las
+14 partes; ni seleccionar ni cancelar modifica el documento. Confirmar ejecuta
+`Command::AddParts` como una transacción: si falla un alta, no se guarda ninguna,
+y Deshacer retira el conjunto completo. El contexto modal bloquea la entrada de
+notas y los comandos globales hasta confirmar o cancelar.
+Cada fila elimina por `PartId` mediante `RemovePartById`, conservando el pasaje y
+la nota elegidos cuando pertenecen a otra parte. Si se elimina la parte activa se
+elige su vecina; Deshacer recupera los pentagramas y conexiones originales.
+
 La cinta y el menú Archivo siguen capas con dependencias hacia abajo:
 
 ```text
@@ -554,6 +564,11 @@ AppView::run          punto único de ejecución · ui/command_state.rs implemen
   grupos por prioridad —el de menor prioridad y, a igualdad, el de la derecha—
   hasta que la fila cabe. La cinta nunca hace scroll; un grupo plegado es un botón con
   desplegable.
+- **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del
+  inspector muestran una ayuda breve con su nombre y la asignación activa después
+  de la espera de GPUI (500 ms). Las teclas no ocupan espacio en los botones ni
+  intervienen en sus medidas. Los desplegables y Preferencias conservan las teclas
+  como referencia; el inspector ya no repite la lista completa de atajos.
 - **Archivo** (`FILE_MENU`): una misma lista genera el desplegable de la ventana y el
   menú nativo de macOS, con el submenú «Abrir reciente».
 - **Recientes** (`score-io::RecentFiles`): `recientes.json` en la carpeta de datos,
