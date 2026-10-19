@@ -27,6 +27,11 @@ pub enum Command {
     AddConnection(score_core::Connection),
     RemoveConnections(score_core::ConnectionKind),
     RemoveConnection(score_core::Connection),
+    /// One step: swap a span mark for another, such as crescendo for diminuendo.
+    /// The original stays if the replacement is not valid.
+    ReplaceConnection(score_core::Connection, score_core::Connection),
+    /// Delete one mark selected in the score, keeping its note.
+    RemoveMark(score_core::MarkRef),
     Delete,
     Transpose(i16),
     AddPitch(Pitch),
@@ -316,6 +321,17 @@ impl Editor {
                 }
                 next.score.remove_connection(connection);
             }
+            Command::ReplaceConnection(old, new) => {
+                if old == new {
+                    return Ok(false);
+                }
+                if !next.score.connections().contains(&old) {
+                    return Err(ScoreError("La marca ya no está en la partitura"));
+                }
+                next.score.remove_connection(old);
+                next.score.add_connection(new)?;
+            }
+            Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
             Command::RemoveConnections(kind) => {
                 let id = next
                     .selection

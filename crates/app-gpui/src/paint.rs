@@ -1,5 +1,5 @@
 use gpui::{prelude::*, *};
-use score_core::ElementId;
+use score_core::{ElementId, MarkRef};
 use score_edit::Cursor;
 use score_layout::Layout;
 use std::rc::Rc;
@@ -10,6 +10,8 @@ pub struct CanvasState {
     pub cursor: Cursor,
     pub playheads: Vec<ElementId>,
     pub selected_pitch: Option<score_core::Pitch>,
+    /// A mark picked in the score is highlighted on its own, not its note.
+    pub selected_mark: Option<MarkRef>,
     pub position: crate::playhead::Position,
     pub capacity: u16,
 }
@@ -25,9 +27,17 @@ pub fn score_canvas(
         cursor,
         playheads,
         selected_pitch,
+        selected_mark,
         position,
         capacity,
     } = state;
+    let (selection, selection_range) = if selected_mark.is_some() {
+        (None, Vec::new())
+    } else {
+        (selection, selection_range)
+    };
+    let connection_selected =
+        move |connection| selected_mark == Some(MarkRef::Connection(connection));
     let passage = crate::selection::passage_bounds(&layout, &selection_range);
     let selected: std::collections::HashSet<_> = selection_range.into_iter().collect();
     let scale = layout.scale;
@@ -197,7 +207,9 @@ pub fn score_canvas(
                         font("Times New Roman").italic(),
                         16. * scale,
                         offset + point(px(label.position.x * scale), px(label.position.y * scale)),
-                        if selected.contains(&label.element) {
+                        if selected.contains(&label.element)
+                            || selected_mark == Some(MarkRef::Technique(label.element))
+                        {
                             0x3c70cf
                         } else {
                             0x202c27
@@ -206,9 +218,17 @@ pub fn score_canvas(
                         cx,
                     );
                 }
-                for glyph in &measure.content.glyphs {
+                for (index, glyph) in measure.content.glyphs.iter().enumerate() {
                     let mut color =
                         crate::playhead::note_color(glyph.element, &selected, &playheads);
+                    if measure
+                        .content
+                        .marks
+                        .iter()
+                        .any(|mark| mark.glyph == Some(index) && Some(mark.mark) == selected_mark)
+                    {
+                        color = crate::playhead::SELECTED;
+                    }
                     // Distinguish the chosen chord tone through the notehead ink,
                     // while keeping staff lines visible through hollow heads.
                     if color == crate::playhead::SELECTED
@@ -247,6 +267,7 @@ pub fn score_canvas(
             for hairpin in &layout.hairpins {
                 let color = if selected.contains(&hairpin.connection.start)
                     || selected.contains(&hairpin.connection.end)
+                    || connection_selected(hairpin.connection)
                 {
                     0x3c70cf
                 } else {
@@ -277,6 +298,7 @@ pub fn score_canvas(
                         rgb(
                             if selected.contains(&curve.connection.start)
                                 || selected.contains(&curve.connection.end)
+                                || connection_selected(curve.connection)
                             {
                                 0x3c70cf
                             } else {

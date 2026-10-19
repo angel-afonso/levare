@@ -134,7 +134,30 @@ impl AppView {
         }
         self.reveal_selection = false;
         let point = canvas_point(event.position, self.canvas_origin);
-        if let Some((id, pitch)) = self.layout.hit_pitch(point) {
+        self.clicked_mark = None;
+        let hit = self.layout.hit(point);
+        if let Some(score_layout::Hit::Mark(mark)) = hit.filter(|_| !event.modifiers.shift) {
+            let anchor = mark.anchor();
+            self.document.editor.select(anchor);
+            self.clicked_mark = Some(mark);
+            self.playback.follow_staff(anchor.part, anchor.staff);
+            let label = self
+                .document
+                .editor
+                .score()
+                .mark_label(mark)
+                .unwrap_or_default();
+            self.status = format!(
+                "{label} seleccionado · Backspace lo borra; pulsa otra marca de la cinta para cambiarlo"
+            );
+            cx.notify();
+            return;
+        }
+        let note = match hit {
+            Some(score_layout::Hit::Note(id, pitch)) => Some((id, pitch)),
+            _ => self.layout.hit_pitch(point),
+        };
+        if let Some((id, pitch)) = note {
             if event.modifiers.shift {
                 self.document.editor.extend_selection(id);
             } else {

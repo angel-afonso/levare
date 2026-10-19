@@ -893,6 +893,7 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                                                 selection_range: editor.selected_ids(),
                                                 cursor,
                                                 selected_pitch: editor.selected_pitch(),
+                                                selected_mark: view.selected_mark(),
                                                 playheads: view.playback.playheads.clone(),
                                                 position,
                                                 capacity: time.capacity(),

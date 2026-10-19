@@ -279,3 +279,64 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     assert_eq!(s.event_tick(rest), Some(72));
     s.validate().unwrap();
 }
+
+#[test]
+fn a_selected_mark_is_removed_or_swapped_in_one_undoable_step() {
+    let mut editor = Editor::default();
+    let event = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    editor.execute(Command::Insert(event)).unwrap();
+    let a = editor.selection().unwrap();
+    editor.execute(Command::Insert(event)).unwrap();
+    let b = editor.selection().unwrap();
+    editor.select(a);
+    editor
+        .execute(Command::SetArticulation(Some(Articulation::Tenuto)))
+        .unwrap();
+    let crescendo = Connection {
+        start: a,
+        end: b,
+        kind: ConnectionKind::Crescendo,
+    };
+    editor.execute(Command::AddConnection(crescendo)).unwrap();
+    let decorated = editor.score().clone();
+
+    let diminuendo = Connection {
+        kind: ConnectionKind::Diminuendo,
+        ..crescendo
+    };
+    editor
+        .execute(Command::ReplaceConnection(crescendo, diminuendo))
+        .unwrap();
+    assert_eq!(editor.score().connections().len(), 1);
+    assert!(editor.score().connections().contains(&diminuendo));
+    // An invalid replacement keeps the original mark and history.
+    let backwards = Connection {
+        start: b,
+        end: a,
+        ..diminuendo
+    };
+    assert!(
+        editor
+            .execute(Command::ReplaceConnection(diminuendo, backwards))
+            .is_err()
+    );
+    assert!(editor.score().connections().contains(&diminuendo));
+
+    editor
+        .execute(Command::RemoveMark(score_core::MarkRef::Articulation(a)))
+        .unwrap();
+    assert_eq!(editor.score().event(a).unwrap().notation.articulation, None);
+    assert_eq!(editor.score().event(a).unwrap().pitches, event.pitches);
+    assert!(
+        editor
+            .execute(Command::RemoveMark(score_core::MarkRef::Articulation(a)))
+            .is_err()
+    );
+    editor.undo();
+    editor.undo();
+    assert_eq!(editor.score(), &decorated);
+}

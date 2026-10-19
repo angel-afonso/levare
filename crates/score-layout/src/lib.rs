@@ -15,7 +15,7 @@ pub use beaming::{BeamGroup, BeamSegment, BeamStem};
 mod rhythm;
 pub use rhythm::TupletGroup;
 mod expression;
-pub use expression::{Curve, Hairpin};
+pub use expression::{Curve, Hairpin, Hit, MarkBox};
 
 pub const STAFF_SPACE: f32 = 10.;
 pub const MUSIC_SIZE: f32 = STAFF_SPACE * 4.;
@@ -57,6 +57,8 @@ pub struct MeasureLayout {
     pub lines: Vec<Line>,
     pub glyphs: Vec<Glyph>,
     pub techniques: Vec<TechniqueLabel>,
+    /// Clickable area of each point mark (articulation, dynamic, technique).
+    pub marks: Vec<MarkBox>,
     pub tuplets: Vec<TupletGroup>,
     pub beams: Vec<BeamGroup>,
     pub events: Vec<EventPosition>,
@@ -860,6 +862,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         lines: Vec::new(),
         glyphs: Vec::new(),
         techniques: Vec::new(),
+        marks: Vec::new(),
         tuplets: Vec::new(),
         beams: Vec::new(),
         events: Vec::new(),

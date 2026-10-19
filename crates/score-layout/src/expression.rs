@@ -1,5 +1,147 @@
 use super::*;
-use score_core::{Connection, ConnectionKind};
+use score_core::{Connection, ConnectionKind, MarkRef};
+
+/// Where a point mark can be clicked, in measure coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MarkBox {
+    pub mark: MarkRef,
+    /// The mark's glyph in `MeasureLayout::glyphs`; techniques are labels.
+    pub glyph: Option<usize>,
+    pub center: Point,
+    pub half: (f32, f32),
+}
+impl MarkBox {
+    fn distance(&self, x: f32, y: f32) -> Option<f32> {
+        let dx = (x - self.center.x).abs();
+        let dy = (y - self.center.y).abs();
+        (dx <= self.half.0 && dy <= self.half.1).then_some(dx * dx + dy * dy)
+    }
+}
+
+/// What a click on the score lands on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    Note(ElementId, Option<score_core::Pitch>),
+    Mark(MarkRef),
+}
+
+/// Pointer tolerance around curves and hairpin strokes, in layout units.
+const STROKE_REACH: f32 = 5.;
+
+fn segment_distance(p: Point, a: Point, b: Point) -> f32 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let length = dx * dx + dy * dy;
+    let t = if length == 0. {
+        0.
+    } else {
+        (((p.x - a.x) * dx + (p.y - a.y) * dy) / length).clamp(0., 1.)
+    };
+    let (x, y) = (a.x + t * dx - p.x, a.y + t * dy - p.y);
+    (x * x + y * y).sqrt()
+}
+
+impl Curve {
+    /// The same cubic the canvas strokes, sampled as a polyline.
+    pub fn distance(&self, p: Point) -> f32 {
+        let span = self.to.x - self.from.x;
+        let controls = [
+            self.from,
+            Point {
+                x: self.from.x + span / 3.,
+                y: self.from.y + self.bend,
+            },
+            Point {
+                x: self.to.x - span / 3.,
+                y: self.to.y + self.bend,
+            },
+            self.to,
+        ];
+        let at = |t: f32| {
+            let u = 1. - t;
+            let w = [u * u * u, 3. * u * u * t, 3. * u * t * t, t * t * t];
+            Point {
+                x: controls.iter().zip(w).map(|(c, w)| c.x * w).sum(),
+                y: controls.iter().zip(w).map(|(c, w)| c.y * w).sum(),
+            }
+        };
+        (0..16)
+            .map(|i| segment_distance(p, at(i as f32 / 16.), at((i + 1) as f32 / 16.)))
+            .fold(f32::INFINITY, f32::min)
+    }
+}
+
+impl Hairpin {
+    /// Zero inside the wedge, else the distance to its nearer stroke.
+    pub fn distance(&self, p: Point) -> f32 {
+        let (left, right) = (self.upper.from.x, self.upper.to.x);
+        if (left..=right).contains(&p.x) {
+            let t = (p.x - left) / (right - left).max(1.);
+            let top = self.upper.from.y + (self.upper.to.y - self.upper.from.y) * t;
+            let bottom = self.lower.from.y + (self.lower.to.y - self.lower.from.y) * t;
+            if (top..=bottom).contains(&p.y) {
+                return 0.;
+            }
+        }
+        segment_distance(p, self.upper.from, self.upper.to).min(segment_distance(
+            p,
+            self.lower.from,
+            self.lower.to,
+        ))
+    }
+}
+
+impl Layout {
+    /// Notes win over the marks around them only on the notehead itself, so
+    /// an articulation just above a note is still easy to pick.
+    pub fn hit(&self, point: Point) -> Option<Hit> {
+        let p = Point {
+            x: point.x / self.scale,
+            y: point.y / self.scale,
+        };
+        let note = self.hit_pitch(point);
+        let on_head = note.is_some_and(|(id, pitch)| {
+            self.measures.iter().any(|m| {
+                m.content.events.iter().any(|e| {
+                    e.id == id
+                        && e.pitch == pitch
+                        && (p.x - m.origin.x - e.center.x).abs() <= 7.
+                        && (p.y - m.origin.y - e.center.y).abs() <= 5.
+                })
+            })
+        });
+        if on_head {
+            return note.map(|(id, pitch)| Hit::Note(id, pitch));
+        }
+        let point_mark = self
+            .measures
+            .iter()
+            .flat_map(|m| {
+                m.content.marks.iter().filter_map(move |mark| {
+                    mark.distance(p.x - m.origin.x, p.y - m.origin.y)
+                        .map(|d| (mark.mark, d))
+                })
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(mark, _)| mark);
+        if let Some(mark) = point_mark {
+            return Some(Hit::Mark(mark));
+        }
+        if let Some((id, pitch)) = note {
+            return Some(Hit::Note(id, pitch));
+        }
+        self.curves
+            .iter()
+            .map(|curve| (curve.connection, curve.distance(p)))
+            .chain(
+                self.hairpins
+                    .iter()
+                    .map(|hairpin| (hairpin.connection, hairpin.distance(p))),
+            )
+            .filter(|(_, distance)| *distance <= STROKE_REACH)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(connection, _)| Hit::Mark(MarkRef::Connection(connection)))
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Curve {
@@ -31,6 +173,17 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         .map_or(low + if down { stem } else { 0. }, |s| low.max(s.to.y));
     if let Some(mark) = event.notation.articulation {
         let y = (-10f32).min(top - 12.);
+        result.marks.push(MarkBox {
+            mark: MarkRef::Articulation(id),
+            glyph: Some(result.glyphs.len()),
+            // Bravura's above-articulations rise up to one space from the
+            // baseline and reach 1.4 spaces right of the drawing point.
+            center: Point {
+                x: x + 2.,
+                y: y - 5.,
+            },
+            half: (9., 8.),
+        });
         result.glyphs.push(Glyph {
             text: mark.glyph().into(),
             position: Point { x: x - 4., y },
@@ -46,6 +199,16 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         } else {
             y
         };
+        let width = mark.label().chars().count() as f32 * 7.;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Technique(id),
+            glyph: None,
+            center: Point {
+                x: x - 5. + width / 2.,
+                y: y - 5.,
+            },
+            half: (width / 2. + 3., 9.),
+        });
         result.techniques.push(TechniqueLabel {
             text: mark.label(),
             position: Point { x: x - 5., y },
@@ -56,6 +219,18 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
     if let Some(mark) = event.notation.dynamic {
         // Keep forte ascenders below the entire lower tie lane.
         let y = 40f32.max(bottom) + 40.;
+        // Bravura's dynamic letters are up to 1.8 spaces wide; f rises 1.8
+        // spaces and p descends 0.6 below the baseline.
+        let width = mark.label().chars().count() as f32 * 14.;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Dynamic(id),
+            glyph: Some(result.glyphs.len()),
+            center: Point {
+                x: x - 6. + width / 2.,
+                y: y - 5.,
+            },
+            half: (width / 2. + 3., 11.),
+        });
         result.glyphs.push(Glyph {
             text: mark.glyph().into(),
             position: Point { x: x - 6., y },

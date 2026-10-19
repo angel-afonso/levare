@@ -10,6 +10,8 @@ mod expression;
 pub use expression::{
     Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
 };
+mod marks;
+pub use marks::MarkRef;
 mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod key_signature;

@@ -14,7 +14,7 @@ mod ui;
 use gpui::{prelude::*, *};
 use score_core::{
     Accidental, Articulation, Connection, ConnectionKind, Dynamic, ElementId, Instrument, KeyMode,
-    KeySignature, PartId, PlayingTechnique, StaffId,
+    KeySignature, MarkRef, PartId, PlayingTechnique, StaffId,
 };
 use score_document::Document;
 use score_edit::{Command, Cursor};
@@ -59,6 +59,9 @@ struct AppView {
     entry_accidental: Option<Accidental>,
     pending_slur: Option<ElementId>,
     pending_hairpin: Option<(ElementId, ConnectionKind)>,
+    /// A mark clicked in the score. Its note is the editor's selection, so
+    /// the ribbon's toggles change or remove it; see `selected_mark`.
+    clicked_mark: Option<MarkRef>,
     reveal_selection: bool,
     canvas_origin: Point<Pixels>,
     selection_drag: Option<selection::PassageDrag>,
@@ -194,6 +197,7 @@ impl AppView {
             entry_accidental: None,
             pending_slur: None,
             pending_hairpin: None,
+            clicked_mark: None,
             reveal_selection: false,
             canvas_origin: Point::default(),
             selection_drag: None,
@@ -307,8 +311,34 @@ impl AppView {
             cx.notify();
         }
     }
+    /// The clicked mark while it still exists and its note stays selected
+    /// alone; any other selection or edit that removes it lets it go.
+    pub(crate) fn selected_mark(&self) -> Option<MarkRef> {
+        let editor = &self.document.editor;
+        self.clicked_mark.filter(|mark| {
+            editor.score().has_mark(*mark)
+                && editor.selection() == Some(mark.anchor())
+                && editor.selected_ids().len() == 1
+        })
+    }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
+            return;
+        }
+        // A hairpin picked in the score: the same kind removes it, the other
+        // one turns it around in place.
+        if let Some(MarkRef::Connection(old)) = self.selected_mark()
+            && old.kind.is_hairpin()
+        {
+            if old.kind == kind {
+                self.edit(Command::RemoveConnection(old), cx);
+            } else {
+                let new = Connection { kind, ..old };
+                self.edit(Command::ReplaceConnection(old, new), cx);
+                if self.document.editor.score().connections().contains(&new) {
+                    self.clicked_mark = Some(MarkRef::Connection(new));
+                }
+            }
             return;
         }
         if self
@@ -630,7 +660,10 @@ impl AppView {
             }
             id::UNDO => self.history(false, cx),
             id::REDO => self.history(true, cx),
-            id::DELETE => self.edit(Command::Delete, cx),
+            id::DELETE => match self.selected_mark() {
+                Some(mark) => self.edit(Command::RemoveMark(mark), cx),
+                None => self.edit(Command::Delete, cx),
+            },
             id::ESCAPE => self.escape(cx),
             id::REPEAT => self.repeat_selection(cx),
 
@@ -731,6 +764,13 @@ impl AppView {
             id::PREVIOUS | id::NEXT => {
                 self.document.editor.navigate(command == id::NEXT);
                 self.reveal_selection = true;
+            }
+            // A mark picked in the score must not move its note by surprise.
+            id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
+                if self.selected_mark().is_some() =>
+            {
+                self.status =
+                    "Hay una marca seleccionada: Esc vuelve a su nota para transportarla".into();
             }
             id::STEP_UP => self.edit(Command::Transpose(1), cx),
             id::STEP_DOWN => self.edit(Command::Transpose(-1), cx),
@@ -838,7 +878,10 @@ impl AppView {
 
     fn escape(&mut self, cx: &mut Context<Self>) {
         self.selection_drag = None;
-        if self.pending_hairpin.take().is_some() {
+        if self.clicked_mark.take().is_some() {
+            self.status = "Nota seleccionada".into();
+            cx.notify();
+        } else if self.pending_hairpin.take().is_some() {
             self.status = "Regulador cancelado".into();
         } else if self.pending_slur.take().is_some() {
             self.status = "Ligadura cancelada".into();

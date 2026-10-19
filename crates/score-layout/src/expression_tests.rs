@@ -250,3 +250,93 @@ fn hairpins_cross_systems_clear_dynamics_and_keep_openings_and_cache_correct() {
         layout.hairpins.last().unwrap().lower.to.y
     );
 }
+
+#[test]
+fn clicks_pick_a_mark_around_its_note_but_the_notehead_still_picks_the_note() {
+    use score_core::{Instrument, MarkRef, PlayingTechnique};
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let violin = s.add_part(Instrument::Violin).unwrap();
+    s.remove_part(piano).unwrap();
+    let quarter = Event {
+        duration: Duration::Quarter,
+        ..note()
+    };
+    let ids: Vec<_> = (0..4)
+        .map(|i| s.insert_in(violin, 0, i, quarter).unwrap())
+        .collect();
+    s.set_articulation(ids[0], Some(Articulation::Accent))
+        .unwrap();
+    s.set_dynamic(ids[0], Some(Dynamic::Mf)).unwrap();
+    s.set_technique(ids[1], Some(PlayingTechnique::Pizzicato))
+        .unwrap();
+    let slur = Connection {
+        start: ids[0],
+        end: ids[2],
+        kind: ConnectionKind::Slur,
+    };
+    let crescendo = Connection {
+        start: ids[1],
+        end: ids[3],
+        kind: ConnectionKind::Crescendo,
+    };
+    s.add_connection(slur).unwrap();
+    s.add_connection(crescendo).unwrap();
+    let layout = LayoutEngine::default().layout(&s, 1000.);
+    let measure = &layout.measures[0];
+    let at = |p: Point| Point {
+        x: measure.origin.x + p.x,
+        y: measure.origin.y + p.y,
+    };
+    let marks = &measure.content.marks;
+    assert_eq!(marks.len(), 3);
+    for mark in marks {
+        assert_eq!(layout.hit(at(mark.center)), Some(Hit::Mark(mark.mark)));
+        if let Some(index) = mark.glyph {
+            assert_eq!(
+                measure.content.glyphs[index].element,
+                Some(mark.mark.anchor())
+            );
+        }
+    }
+    assert!(
+        marks
+            .iter()
+            .any(|m| m.mark == MarkRef::Articulation(ids[0]))
+    );
+    assert!(marks.iter().any(|m| m.mark == MarkRef::Dynamic(ids[0])));
+    assert!(marks.iter().any(|m| m.mark == MarkRef::Technique(ids[1])));
+    let head = measure
+        .content
+        .events
+        .iter()
+        .find(|e| e.id == ids[0])
+        .unwrap();
+    assert!(matches!(layout.hit(at(head.center)), Some(Hit::Note(id, _)) if id == ids[0]));
+    let curve = layout.curves.iter().find(|c| c.connection == slur).unwrap();
+    let middle = Point {
+        x: (curve.from.x + curve.to.x) / 2.,
+        y: (curve.from.y + curve.to.y) / 2. + curve.bend * 0.75,
+    };
+    assert_eq!(
+        layout.hit(middle),
+        Some(Hit::Mark(MarkRef::Connection(slur)))
+    );
+    let hairpin = &layout.hairpins[0];
+    let inside = Point {
+        x: (hairpin.upper.from.x + hairpin.upper.to.x) / 2.,
+        y: (hairpin.upper.to.y + hairpin.lower.to.y) / 2.,
+    };
+    assert_eq!(
+        layout.hit(inside),
+        Some(Hit::Mark(MarkRef::Connection(crescendo)))
+    );
+    // Empty paper far from every mark selects nothing.
+    assert_eq!(
+        layout.hit(Point {
+            x: middle.x,
+            y: middle.y - 60.
+        }),
+        None
+    );
+}

@@ -223,6 +223,14 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   ligada se conserva el ataque inicial; un staccato final acorta al 50 % la duración
   sonora conjunta. Esto conserva el sonido al dividir una figura durante el pegado.
 
+**Editar marcas en la partitura:** un clic sobre una articulación, dinámica, técnica,
+ligadura o regulador selecciona solo esa marca (se resalta en azul; la nota no).
+**Backspace** la borra sin tocar la nota. Pulsar otra marca de la misma familia en la
+cinta la cambia (por ejemplo, staccato por acento, *p* por *f*, o crescendo por
+diminuendo), y pulsar la misma la quita. Esc vuelve a la nota; con una marca
+seleccionada, las flechas no transportan la nota. Un clic sobre la cabeza de la nota
+sigue seleccionando la nota.
+
 Las articulaciones, dinámicas, técnicas y alteraciones activas aparecen resaltadas
 en la cinta; volver a pulsarlas las quita. El inspector permite además quitar
 indicaciones y las ligaduras que tocan la nota elegida.
