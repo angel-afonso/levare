@@ -98,7 +98,9 @@ eventos que no requiera cargar el motor de reproducción.
   cierre forzado, fallos de escritura ni sesiones simultáneas.
 - **Desarrollo macOS.** La característica `runtime-shaders` está activa por defecto
   porque el equipo tiene Xcode pero no Metal Toolchain. La compilación anticipada
-  queda disponible con `--no-default-features` al instalar ese componente.
+  queda disponible con `--no-default-features --features vsco` al instalar ese
+  componente. La característica `vsco` (adaptador de VSCO CE) también está activa
+  por defecto; sin muestras instaladas no aparece y no cambia el sonido.
 
 Las versiones se fijan con `Cargo.lock`. Los objetivos de latencia de
 `herramientas.md` siguen siendo propuestas: todavía no están medidos.

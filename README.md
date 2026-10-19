@@ -14,10 +14,11 @@ cargo run
 
 GPUI está fijado a `0.2.2`. Por defecto se usa su opción `runtime_shaders`, que
 permite desarrollar sin descargar el componente Metal Toolchain de Xcode.
-Para compilar los shaders durante la construcción (requiere ese componente):
+Para compilar los shaders durante la construcción (requiere ese componente),
+desactiva las opciones por defecto y conserva el paquete VSCO:
 
 ```sh
-cargo build --release --no-default-features
+cargo build --release --no-default-features --features vsco
 ```
 
 Windows y Linux todavía no están validados. La primera plataforma es macOS;
@@ -387,9 +388,10 @@ Prueba [`piano-sol-mayor.partitura`](examples/piano-sol-mayor.partitura) o
 
 ## Escuchar mientras escribes
 
-La compilación básica usa GeneralUser y no depende del adaptador VSCO. Para probar
-**VSCO CE** como [paquete de sonido opcional](docs/vsco.md), ejecuta
-`cargo run --features vsco`; sus grabaciones originales SFZ se eligen desde **Sonidos**.
+`cargo run` incluye el adaptador de **VSCO CE**, un
+[paquete de sonido opcional](docs/vsco.md): si sus muestras están instaladas, sus
+grabaciones originales SFZ se eligen desde **Sonidos**; si no, solo aparece GeneralUser.
+Para compilar sin el adaptador, usa `--no-default-features --features runtime-shaders`.
 GeneralUser sigue siendo la opción inicial; cambiar de paquete no modifica la partitura.
 Los bancos implementan un [contrato común de audio](docs/sound-banks.md).
 

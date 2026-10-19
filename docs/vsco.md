@@ -7,10 +7,11 @@ un motor de reproducción intercambiable desde la aplicación.
 
 ## Probarlo
 
-El adaptador está en el paquete independiente `score-sound-vsco`. La app básica no
-lo incluye: se habilita expresamente con `cargo run --features vsco` o
-`cargo build -p partitura --features vsco`. El bundle local de esta prueba se compila
-con esa opción. Instalar las muestras sigue siendo opcional incluso en esa compilación.
+El adaptador está en el paquete independiente `score-sound-vsco`. La característica
+`vsco` de `partitura` está activa por defecto, así que `cargo run` y `cargo build`
+lo incluyen. Instalar las muestras sigue siendo opcional: sin ellas, **Sonidos** solo
+ofrece GeneralUser. Para compilar sin el adaptador:
+`cargo run --no-default-features --features runtime-shaders`.
 
 1. Abre **Sonidos** en el inspector, o pulsa el nombre del sonido junto al transporte.
 2. Elige **VSCO CE · experimental**. Se cargan los instrumentos de la partitura y
@@ -113,7 +114,7 @@ versión antigua selecciona para el nombre `arm64`.
 ```sh
 cargo test --workspace
 cargo test -p score-sound-vsco -- --ignored --nocapture
-cargo test -p partitura --features vsco
+cargo test -p partitura
 cargo run -p score-sound-vsco --example vsco_compare
 ```
 

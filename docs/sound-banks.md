@@ -78,8 +78,10 @@ las rutas SFZ, el enlace sfizz y la selección de muestras. `score-platform` no 
 de ese paquete. El editor, la interfaz y el transporte solo conocen `SoundBank`.
 
 La única inscripción concreta está en `app-gpui/src/sound_banks.rs`, protegida por
-la característica opcional `vsco`. Sin esa opción, la app no compila ni incorpora
-el adapter ni su enlace SFZ. Las partituras no contienen dependencias de proveedores.
+la característica `vsco`, activa por defecto. Sin esa opción
+(`--no-default-features --features runtime-shaders`), la app no compila ni incorpora
+el adapter ni su enlace SFZ. Como sfizz se carga en tiempo de ejecución, incluir el
+adapter no exige ninguna biblioteca nativa para compilar. Las partituras no contienen dependencias de proveedores.
 
 Para añadir otro banco, implementa `SoundBank` y `SoundEngine` en su paquete y
 regístralo en ese punto de composición. El editor no necesita nuevas condiciones.
@@ -90,7 +92,7 @@ Rust arbitrarios ni un host VST/AU.
 
 ```sh
 cargo test --workspace
-cargo test -p partitura --features vsco
+cargo test -p partitura --no-default-features --features runtime-shaders
 cargo test -p score-sound-vsco -- --ignored
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
