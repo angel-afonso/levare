@@ -1,5 +1,10 @@
 //! Built-in SoundFont audio. The callback owns its synth and never touches UI state.
+pub mod mixer;
+#[cfg(test)]
+mod mixer_tests;
 mod renderer;
+mod reverb;
+pub mod sound_engine;
 
 #[cfg(test)]
 #[global_allocator]
@@ -21,6 +26,11 @@ impl fmt::Display for AudioError {
     }
 }
 impl std::error::Error for AudioError {}
+impl AudioError {
+    pub fn new(value: impl fmt::Display) -> Self {
+        Self(value.to_string())
+    }
+}
 fn error(value: impl fmt::Display) -> AudioError {
     AudioError(value.to_string())
 }
@@ -35,6 +45,22 @@ pub struct AudioOutput {
 
 impl AudioOutput {
     pub fn open() -> Result<Self, AudioError> {
+        Self::open_config(None)
+    }
+    pub fn open_with_bank(
+        bank: &dyn sound_engine::SoundBank,
+        score: &score_core::Score,
+        audition: score_core::Instrument,
+    ) -> Result<Self, AudioError> {
+        Self::open_config(Some((bank, score, audition)))
+    }
+    fn open_config(
+        pack: Option<(
+            &dyn sound_engine::SoundBank,
+            &score_core::Score,
+            score_core::Instrument,
+        )>,
+    ) -> Result<Self, AudioError> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -42,7 +68,12 @@ impl AudioOutput {
         let supported = device.default_output_config().map_err(error)?;
         let config = supported.config();
         let sample_rate = config.sample_rate.0;
-        let (control, renderer) = Renderer::new(sample_rate)?;
+        let (control, renderer) = match pack {
+            Some((bank, score, audition)) => {
+                Renderer::with_bank(sample_rate, bank, score, audition)?
+            }
+            None => Renderer::new(sample_rate)?,
+        };
         let stream = match supported.sample_format() {
             SampleFormat::F32 => build::<f32>(&device, &config, renderer),
             SampleFormat::F64 => build::<f64>(&device, &config, renderer),

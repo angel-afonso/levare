@@ -150,7 +150,7 @@ mod playback_tests {
         }
         assert!(matches!(
             pasted.messages[0].message,
-            Message::NoteOn { velocity: 100, .. }
+            Message::NoteOn(note) if note.level == 100
         ));
     }
 }

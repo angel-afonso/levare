@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Salida de audio activa: {} Hz", audio.sample_rate());
     audio.control.preview_chord(
         [Some(61), Some(64), Some(68), None, None, None, None, None],
-        0,
+        score_core::Instrument::Piano,
     )?;
     std::thread::sleep(WallDuration::from_millis(300));
     let mut score = Score::default();

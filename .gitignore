@@ -3,6 +3,7 @@
 *.log
 .DS_Store
 /exports/
+/soundpacks/
 /.claude/settings.local.json
 .env
 .env.*

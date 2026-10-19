@@ -4000,6 +4000,7 @@ dependencies = [
  "score-layout",
  "score-platform",
  "score-playback",
+ "score-sound-vsco",
  "score-toolbar",
  "serde_json",
  "ttf-parser 0.25.1",
@@ -5079,6 +5080,19 @@ name = "score-playback"
 version = "0.1.0"
 dependencies = [
  "score-core",
+]
+
+[[package]]
+name = "score-sound-vsco"
+version = "0.1.0"
+dependencies = [
+ "assert_no_alloc",
+ "libloading",
+ "score-core",
+ "score-platform",
+ "score-playback",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

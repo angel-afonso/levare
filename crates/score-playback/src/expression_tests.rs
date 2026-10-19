@@ -28,7 +28,7 @@ fn dynamic_persists_per_staff_staccato_releases_early_and_chase_keeps_velocity()
         plan.messages
             .iter()
             .find_map(|m| match m.message {
-                Message::NoteOn { key: k, velocity } if k == key => Some(velocity),
+                Message::NoteOn(note) if note.key == key => Some(note.level),
                 _ => None,
             })
             .unwrap()
@@ -54,15 +54,16 @@ fn dynamic_persists_per_staff_staccato_releases_early_and_chase_keeps_velocity()
             .held_notes_at(18_000)
             .into_iter()
             .flatten()
-            .any(|n| n.key == 60)
+            .any(|n| n.note.key == 60)
     );
     assert_eq!(
         plan.held_notes_at(30_000)
             .into_iter()
             .flatten()
-            .find(|n| n.key == 62)
+            .find(|n| n.note.key == 62)
             .unwrap()
-            .velocity,
+            .note
+            .level,
         72
     );
 }
@@ -93,7 +94,7 @@ fn tied_chord_chains_cross_bars_without_new_attacks_and_can_start_at_continuatio
     assert_eq!(
         plan.messages
             .iter()
-            .filter(|m| matches!(m.message, Message::NoteOn { .. }))
+            .filter(|m| matches!(m.message, Message::NoteOn(_)))
             .count(),
         2
     );
@@ -101,12 +102,12 @@ fn tied_chord_chains_cross_bars_without_new_attacks_and_can_start_at_continuatio
         plan.messages
             .iter()
             .filter(|m| matches!(m.message, Message::NoteOff(_)))
-            .all(|m| m.frame == 144_000)
+            .all(|m| m.frame == 144_000 - 2_880) // detached release of the chain
     );
     assert_eq!(plan.frame_for_element(c), Some(96_000));
     let held: Vec<_> = plan.held_notes_at(96_000).into_iter().flatten().collect();
     assert_eq!(held.len(), 2);
-    assert!(held.iter().all(|n| n.velocity == 44));
+    assert!(held.iter().all(|n| n.note.level == 44));
     assert_eq!(plan.element_at(96_000), Some(c));
     assert_eq!(plan.held_notes_at(144_000).into_iter().flatten().count(), 0);
 }
@@ -131,16 +132,17 @@ fn overlapping_unisons_chase_the_original_attack_across_a_chain_of_hands() {
             p.held_notes_at(frame)
                 .into_iter()
                 .flatten()
-                .find(|n| n.key == 60)
+                .find(|n| n.note.key == 60)
                 .unwrap()
-                .velocity,
+                .note
+                .level,
             56
         );
     }
     assert_eq!(
         p.messages
             .iter()
-            .filter(|m| matches!(m.message, Message::NoteOn { key: 60, .. }))
+            .filter(|m| matches!(m.message, Message::NoteOn(NoteEvent { key: 60, .. })))
             .count(),
         1
     );
@@ -184,7 +186,7 @@ fn pizzicato_chases_original_tied_attack_and_arco_restores_each_string_timbre() 
         assert_eq!(
             p.messages
                 .iter()
-                .filter(|m| m.channel == channel && matches!(m.message, Message::NoteOn { .. }))
+                .filter(|m| m.channel == channel && matches!(m.message, Message::NoteOn(_)))
                 .count(),
             3
         );
@@ -194,37 +196,48 @@ fn pizzicato_chases_original_tied_attack_and_arco_restores_each_string_timbre() 
             .flatten()
             .find(|n| n.channel == channel)
             .unwrap();
-        assert_eq!((held.program, held.velocity), (45, 56));
+        assert_eq!((held.note.technique, held.note.level), (T::Pizzicato, 56));
+        let attack_at = |p: &PlaybackPlan, frame| {
+            p.messages
+                .iter()
+                .find_map(|m| match m.message {
+                    Message::NoteOn(note) if m.channel == channel && m.frame == frame => Some(note),
+                    _ => None,
+                })
+                .unwrap()
+        };
         for id in [c, d] {
             let frame = p.frame_for_element(id).unwrap();
-            assert!(p.messages.contains(&ScheduledMessage {
-                frame,
-                channel,
-                message: Message::ProgramChange(instrument.program())
-            }));
+            assert_eq!(attack_at(&p, frame).technique, T::Arco);
+            assert_eq!(attack_at(&p, frame).instrument, instrument);
             assert_eq!(
                 p.held_notes_at(frame + 1)
                     .into_iter()
                     .flatten()
                     .find(|n| n.channel == channel)
                     .unwrap()
-                    .program,
-                instrument.program()
+                    .note
+                    .technique,
+                T::Arco
             );
         }
-        assert_eq!(
-            p.held_notes_at(30_000)
-                .into_iter()
-                .flatten()
-                .find(|n| n.channel
+        let piano_note = p
+            .held_notes_at(30_000)
+            .into_iter()
+            .flatten()
+            .find(|n| {
+                n.channel
                     == p.tracks
                         .iter()
                         .find(|t| t.part == piano.part)
                         .unwrap()
-                        .channel)
-                .unwrap()
-                .program,
-            0
+                        .channel
+            })
+            .unwrap()
+            .note;
+        assert_eq!(
+            (piano_note.instrument, piano_note.technique),
+            (Instrument::Piano, T::Arco)
         );
         // An instruction on a rest carries through an implicit bar remainder.
         let mut rest = note(Step::C, Duration::Quarter);
@@ -236,11 +249,7 @@ fn pizzicato_chases_original_tied_attack_and_arco_restores_each_string_timbre() 
             .unwrap();
         let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
         let frame = p.frame_for_element(next).unwrap();
-        assert!(p.messages.contains(&ScheduledMessage {
-            frame,
-            channel,
-            message: Message::ProgramChange(45)
-        }));
+        assert_eq!(attack_at(&p, frame).technique, T::Pizzicato);
     }
 }
 
@@ -296,11 +305,11 @@ fn hairpins_schedule_continuous_expression_chase_ties_and_isolate_both_piano_han
     assert_eq!(p.expressions_at(72_000)[16], 71);
     let held: Vec<_> = p.held_notes_at(36_000).into_iter().flatten().collect();
     assert_eq!(held.len(), 2);
-    assert!(held.iter().all(|n| n.velocity == 100));
+    assert!(held.iter().all(|n| n.note.level == 100));
     assert_eq!(
         p.messages
             .iter()
-            .filter(|m| matches!(m.message, Message::NoteOn { .. }))
+            .filter(|m| matches!(m.message, Message::NoteOn(_)))
             .count(),
         2
     );
@@ -336,7 +345,7 @@ fn hairpins_schedule_continuous_expression_chase_ties_and_isolate_both_piano_han
             .messages
             .iter()
             .position(|m| {
-                m.channel == channel && m.frame == 0 && matches!(m.message, Message::NoteOn { .. })
+                m.channel == channel && m.frame == 0 && matches!(m.message, Message::NoteOn(_))
             })
             .unwrap();
         assert!(first < attack);
@@ -399,10 +408,11 @@ fn controller_timing_follows_the_original_slope_through_rests_and_staccato_gaps(
         })
         .unwrap();
         let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
-        let last_tick = if staccato { 7 } else { 15 };
+        // Last tick before the release: staccato halves, detached keeps 92 %.
+        let last_tick = if staccato { 7 } else { 14 };
         let frame = Tempo::default().frame_at(last_tick * 3, 48_000);
         let held = p.held_notes_at(frame).into_iter().flatten().next().unwrap();
-        let actual = f64::from(held.velocity) * f64::from(p.expressions_at(frame)[0]) / 127.;
+        let actual = f64::from(held.note.level) * f64::from(p.expressions_at(frame)[0]) / 127.;
         let expected = 56. + 44. * last_tick as f64 / 32.;
         assert!(
             (actual - expected).abs() < 1.,
@@ -468,7 +478,7 @@ fn dotted_and_triplet_onsets_stay_exact_with_chords_rests_ties_and_other_hands()
     assert_eq!(
         p.messages
             .iter()
-            .filter(|m| matches!(m.message, Message::NoteOn { key: 67, .. }))
+            .filter(|m| matches!(m.message, Message::NoteOn(NoteEvent { key: 67, .. })))
             .count(),
         2
     );
@@ -476,7 +486,7 @@ fn dotted_and_triplet_onsets_stay_exact_with_chords_rests_ties_and_other_hands()
         p.held_notes_at(60_000)
             .into_iter()
             .flatten()
-            .any(|n| n.key == 67)
+            .any(|n| n.note.key == 67)
     );
     // An entire long score of triplets ends on the same clock as straight beats.
     let mut s = Score::default();
@@ -494,5 +504,68 @@ fn dotted_and_triplet_onsets_stay_exact_with_chords_rests_ties_and_other_hands()
     assert_eq!(
         p.duration_frames,
         tempo.frame_at(96 * u64::from(score_core::TICKS_PER_WHOLE), 44_100)
+    );
+}
+
+#[test]
+fn slurs_connect_notes_with_a_short_overlap_and_unslurred_notes_detach() {
+    let mut s = Score::default();
+    // Bar 1: C D D E under one slur; the F in bar 2 stays outside it.
+    let ids: Vec<_> = [Step::C, Step::D, Step::D, Step::E]
+        .into_iter()
+        .enumerate()
+        .map(|(i, step)| s.insert(0, i, note(step, Duration::Quarter)).unwrap())
+        .collect();
+    s.insert(1, 0, note(Step::F, Duration::Quarter)).unwrap();
+    s.add_connection(Connection {
+        start: ids[0],
+        end: ids[3],
+        kind: ConnectionKind::Slur,
+    })
+    .unwrap();
+    let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
+    let release = |key, after| {
+        p.messages
+            .iter()
+            .find(|m| m.message == Message::NoteOff(key) && m.frame > after)
+            .unwrap()
+            .frame
+    };
+    // C overlaps 25 ms into D; the repeated D is re-attacked exactly on time.
+    assert_eq!(release(60, 0), 24_000 + 1_200);
+    assert_eq!(release(62, 0), 48_000);
+    assert_eq!(release(62, 48_000), 72_000 + 1_200);
+    // The last slurred note and the following unslurred one are detached.
+    assert_eq!(release(64, 0), 96_000 - 1_920);
+    assert_eq!(release(65, 0), 96_000 + 22_080);
+    let legato: Vec<_> = p
+        .messages
+        .iter()
+        .filter_map(|m| match m.message {
+            Message::NoteOn(n) => Some((n.key, n.legato)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        legato,
+        [(60, true), (62, true), (62, true), (64, true), (65, false)]
+    );
+    // A slurred staccato is portato: longer than staccato, still separated.
+    s.set_articulation(ids[0], Some(Articulation::Staccato))
+        .unwrap();
+    let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
+    assert!(p.messages.contains(&ScheduledMessage {
+        frame: 18_000,
+        channel: 0,
+        message: Message::NoteOff(60)
+    }));
+    let preview = Audition::for_element(&s, ids[0], Tempo::default(), 48_000).unwrap();
+    assert!(preview.legato);
+    assert_eq!(preview.duration_frames, 12_000 * 75 / 100);
+    let outside = s.next_event(ids[3]).unwrap();
+    assert!(
+        !Audition::for_element(&s, outside, Tempo::default(), 48_000)
+            .unwrap()
+            .legato
     );
 }

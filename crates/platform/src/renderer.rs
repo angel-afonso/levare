@@ -1,14 +1,12 @@
+use crate::mixer::{ChannelMix, ReverbSettings};
+use crate::sound_engine::{Engines, SoundBank, SoundEngine};
 use crate::{AudioError, error};
 use cpal::{FromSample, Sample};
 use rtrb::{Consumer, Producer, RingBuffer};
-use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use score_playback::{Message, PlaybackPlan};
-use std::{
-    io::Cursor,
-    sync::{
-        Arc, OnceLock,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 
 const QUEUE_CAPACITY: usize = 64;
@@ -22,6 +20,8 @@ struct Shared {
     volume: AtomicU32,
     failed: Arc<AtomicBool>,
     paused: AtomicBool,
+    mix: [AtomicU32; score_playback::PLAYBACK_CHANNELS],
+    reverb: AtomicU32,
 }
 
 // Inline bounded payloads keep ownership and allocation out of the callback.
@@ -36,8 +36,7 @@ enum Command {
     },
     Preview {
         epoch: u64,
-        keys: [Option<u8>; score_core::MAX_CHORD_NOTES],
-        program: u8,
+        audition: score_playback::Audition,
     },
 }
 
@@ -142,19 +141,37 @@ impl Control {
     }
 
     pub fn preview(&mut self, key: u8) -> Result<(), AudioError> {
-        self.preview_with_program(key, 0)
+        self.preview_instrument(key, score_core::Instrument::Piano)
     }
-    pub fn preview_with_program(&mut self, key: u8, program: u8) -> Result<(), AudioError> {
+    pub fn preview_instrument(
+        &mut self,
+        key: u8,
+        instrument: score_core::Instrument,
+    ) -> Result<(), AudioError> {
         let mut keys = [None; score_core::MAX_CHORD_NOTES];
         keys[0] = Some(key);
-        self.preview_chord(keys, program)
+        self.preview_chord(keys, instrument)
     }
     pub fn preview_chord(
         &mut self,
         keys: [Option<u8>; score_core::MAX_CHORD_NOTES],
-        program: u8,
+        instrument: score_core::Instrument,
     ) -> Result<(), AudioError> {
-        if program > 127
+        self.preview_audition(score_playback::Audition::plain(
+            keys,
+            instrument,
+            self.sample_rate,
+        ))
+    }
+    pub fn preview_audition(
+        &mut self,
+        audition: score_playback::Audition,
+    ) -> Result<(), AudioError> {
+        let keys = audition.keys;
+        if audition.sample_rate != self.sample_rate
+            || audition.duration_frames == 0
+            || audition.duration_frames > u64::from(self.sample_rate) * 2
+            || !(1..=127).contains(&audition.level)
             || keys.iter().flatten().any(|key| *key > 127)
             || keys.iter().all(Option::is_none)
         {
@@ -173,8 +190,7 @@ impl Control {
         self.commands
             .push(Command::Preview {
                 epoch: self.shared.epoch.load(Ordering::Acquire),
-                keys,
-                program,
+                audition,
             })
             .map_err(|_| error("La cola de audio está ocupada"))
     }
@@ -239,43 +255,36 @@ impl Control {
             .volume
             .store(percent.min(100), Ordering::Relaxed);
     }
+    /// Live controls are bounded atomic snapshots: they cannot fill the event queue.
+    pub fn set_channel_mix(&mut self, channel: u8, mix: ChannelMix) {
+        if let Some(value) = self.shared.mix.get(usize::from(channel)) {
+            value.store(mix.packed(), Ordering::Relaxed);
+        }
+    }
+    pub fn set_reverb(&mut self, settings: ReverbSettings) {
+        self.shared
+            .reverb
+            .store(settings.packed(), Ordering::Relaxed);
+    }
     fn reclaim(&mut self) {
         self.retained.retain(|plan| Arc::strong_count(plan) > 1);
     }
 }
 
-// The bank is parsed once, before any audio callback. All synth buffers and
-// voices are allocated by Synthesizer::new, on this same control thread.
-fn sound_font() -> Result<Arc<SoundFont>, AudioError> {
-    static BANK: OnceLock<Result<Arc<SoundFont>, String>> = OnceLock::new();
-    BANK.get_or_init(|| {
-        SoundFont::new(&mut Cursor::new(
-            include_bytes!("../../../assets/sounds/GeneralUser-GS.sf2").as_slice(),
-        ))
-        .map(Arc::new)
-        .map_err(|error| error.to_string())
-    })
-    .as_ref()
-    .map(Arc::clone)
-    .map_err(error)
-}
-
 pub struct Renderer {
     commands: Consumer<Command>,
     shared: Arc<Shared>,
-    synth: Synthesizer,
-    lower_synth: Synthesizer,
+    engines: Engines,
     active: Option<Active>,
     epoch: u64,
     frame: u64,
     next_message: usize,
     clock: u64,
     preview_off: Option<u64>,
-    sample_rate: u32,
     left: [f32; BLOCK],
     right: [f32; BLOCK],
-    lower_left: [f32; BLOCK],
-    lower_right: [f32; BLOCK],
+    mix: [u32; score_playback::PLAYBACK_CHANNELS],
+    reverb: crate::reverb::Reverb,
 }
 
 impl Renderer {
@@ -284,14 +293,7 @@ impl Renderer {
         if !(16_000..=192_000).contains(&sample_rate) {
             return Err(error("Frecuencia de audio no compatible"));
         }
-        let mut settings = SynthesizerSettings::new(sample_rate as i32);
-        settings.enable_reverb_and_chorus = false;
-        // Reserve RustySynth's maximum for chords, sample layers and release tails.
-        settings.maximum_polyphony = 256;
-        let mut synth = Synthesizer::new(&sound_font()?, &settings).map_err(error)?;
-        synth.set_master_volume(0.5);
-        let mut lower_synth = Synthesizer::new(&sound_font()?, &settings).map_err(error)?;
-        lower_synth.set_master_volume(0.5);
+        let engines = Engines::new(sample_rate, None)?;
         let (producer, consumer) = RingBuffer::new(QUEUE_CAPACITY);
         let shared = Arc::new(Shared {
             epoch: AtomicU64::new(1),
@@ -301,6 +303,8 @@ impl Renderer {
             volume: AtomicU32::new(70),
             failed: Arc::new(AtomicBool::new(false)),
             paused: AtomicBool::new(false),
+            mix: std::array::from_fn(|_| AtomicU32::new(ChannelMix::default().packed())),
+            reverb: AtomicU32::new(ReverbSettings::default().packed()),
         });
         let control = Control {
             commands: producer,
@@ -312,47 +316,75 @@ impl Renderer {
         let renderer = Self {
             commands: consumer,
             shared,
-            synth,
-            lower_synth,
-            lower_left: [0.; BLOCK],
-            lower_right: [0.; BLOCK],
+            engines,
             active: None,
             epoch: 1,
             frame: 0,
             next_message: 0,
             clock: 0,
             preview_off: None,
-            sample_rate,
             left: [0.; BLOCK],
             right: [0.; BLOCK],
+            mix: [u32::MAX; score_playback::PLAYBACK_CHANNELS],
+            reverb: crate::reverb::Reverb::new(sample_rate),
         };
+        Ok((control, renderer))
+    }
+
+    pub fn with_bank(
+        sample_rate: u32,
+        bank: &dyn SoundBank,
+        score: &score_core::Score,
+        audition: score_core::Instrument,
+    ) -> Result<(Control, Self), AudioError> {
+        let (control, mut renderer) = Self::new(sample_rate)?;
+        renderer.engines = Engines::new(
+            sample_rate,
+            Some(bank.prepare(score, audition, sample_rate)?),
+        )?;
         Ok((control, renderer))
     }
 
     pub(crate) fn failure_flag(&self) -> Arc<AtomicBool> {
         self.shared.failed.clone()
     }
-
-    fn synth_for(&mut self, channel: u8) -> (&mut Synthesizer, i32) {
-        (
-            if channel >= 16 {
-                &mut self.lower_synth
-            } else {
-                &mut self.synth
-            },
-            i32::from(channel % 16),
-        )
+    /// For offline exports only: permits native sample streaming to wait for disk.
+    /// The live CPAL stream never enables this mode.
+    pub fn offline(&mut self) {
+        self.engines.offline();
     }
+    fn midi(&mut self, channel: u8, status: u8, a: u8, b: u8) {
+        self.engines.midi(channel, status, a, b);
+    }
+    fn note_on(&mut self, channel: u8, note: score_playback::NoteEvent) {
+        self.engines.note_on(channel, note);
+    }
+    fn note_off(&mut self, channel: u8, key: u8) {
+        self.engines.note_off(channel, key);
+    }
+
     fn check_stop(&mut self) {
         let epoch = self.shared.epoch.load(Ordering::Acquire);
         if epoch != self.epoch {
-            self.synth.note_off_all(true);
-            self.lower_synth.note_off_all(true);
+            self.reverb.clear();
+            self.engines.silence(None, true);
             self.active = None;
             self.preview_off = None;
             self.frame = 0;
             self.next_message = 0;
             self.epoch = epoch;
+        }
+    }
+
+    fn update_mix(&mut self) {
+        for channel in 0..score_playback::PLAYBACK_CHANNELS {
+            let packed = self.shared.mix[channel].load(Ordering::Relaxed);
+            if self.mix[channel] != packed {
+                let mix = ChannelMix::unpack(packed);
+                self.midi(channel as u8, 0xb0, 7, mix.volume);
+                self.midi(channel as u8, 0xb0, 10, mix.midi_pan());
+                self.mix[channel] = packed;
+            }
         }
     }
 
@@ -375,21 +407,13 @@ impl Renderer {
                     held_notes,
                     expressions,
                 } if epoch == self.epoch => {
-                    self.synth.note_off_all(true);
-                    self.lower_synth.note_off_all(true);
+                    self.engines.silence(None, true);
                     for (channel, value) in expressions.into_iter().enumerate() {
-                        let (synth, channel) = self.synth_for(channel as u8);
-                        synth.process_midi_message(channel, 0xb0, 11, i32::from(value));
-                    }
-                    for track in &plan.tracks {
-                        let (synth, channel) = self.synth_for(track.channel);
-                        synth.process_midi_message(channel, 0xc0, i32::from(track.program), 0);
+                        self.midi(channel as u8, 0xb0, 11, value);
                     }
                     // Chase both the original attack and current expression level.
-                    for note in held_notes.into_iter().flatten() {
-                        let (synth, channel) = self.synth_for(note.channel);
-                        synth.process_midi_message(channel, 0xc0, i32::from(note.program), 0);
-                        synth.note_on(channel, i32::from(note.key), i32::from(note.velocity));
+                    for held in held_notes.into_iter().flatten() {
+                        self.note_on(held.channel, held.note);
                     }
                     self.next_message = plan
                         .messages
@@ -404,18 +428,13 @@ impl Renderer {
                     self.shared.frame.store(start_frame, Ordering::Release);
                     self.shared.started.store(epoch, Ordering::Release);
                 }
-                Command::Preview {
-                    epoch,
-                    keys,
-                    program,
-                } if epoch == self.epoch => {
-                    self.synth.note_off_all_channel(15, true);
-                    self.synth
-                        .process_midi_message(15, 0xc0, i32::from(program), 0);
-                    for key in keys.into_iter().flatten() {
-                        self.synth.note_on(15, i32::from(key), 88);
+                Command::Preview { epoch, audition } if epoch == self.epoch => {
+                    self.engines.silence(Some(15), true);
+                    self.midi(15, 0xb0, 11, 127);
+                    for key in audition.keys.into_iter().flatten() {
+                        self.note_on(15, audition.note(key));
                     }
-                    self.preview_off = Some(self.clock + u64::from(self.sample_rate) / 4);
+                    self.preview_off = Some(self.clock.saturating_add(audition.duration_frames));
                 }
                 _ => {} // Old commands are invalidated by Stop; owners stay in Control.
             }
@@ -432,18 +451,10 @@ impl Renderer {
             if message.frame > self.frame {
                 break;
             }
-            let (synth, channel) = self.synth_for(message.channel);
             match message.message {
-                Message::Expression(value) => {
-                    synth.process_midi_message(channel, 0xb0, 11, i32::from(value))
-                }
-                Message::ProgramChange(program) => {
-                    synth.process_midi_message(channel, 0xc0, i32::from(program), 0)
-                }
-                Message::NoteOn { key, velocity } => {
-                    synth.note_on(channel, i32::from(key), i32::from(velocity))
-                }
-                Message::NoteOff(key) => synth.note_off(channel, i32::from(key)),
+                Message::Expression(value) => self.midi(message.channel, 0xb0, 11, value),
+                Message::NoteOn(note) => self.note_on(message.channel, note),
+                Message::NoteOff(key) => self.note_off(message.channel, key),
             }
             self.next_message += 1;
         }
@@ -458,7 +469,7 @@ impl Renderer {
             self.shared.finished.store(self.epoch, Ordering::Release);
         }
         if self.preview_off.is_some_and(|off| self.clock >= off) {
-            self.synth.note_off_all_channel(15, false);
+            self.engines.silence(Some(15), false);
             self.preview_off = None;
         }
     }
@@ -470,6 +481,7 @@ impl Renderer {
             return;
         }
         self.commands();
+        self.update_mix();
         let total_frames = output.len() / channels;
         let mut written = 0;
         while written < total_frames {
@@ -502,16 +514,15 @@ impl Renderer {
             }
             // due_messages consumed all boundaries at the current frame.
             debug_assert!(count > 0);
-            self.synth
+            self.left[..count].fill(0.);
+            self.right[..count].fill(0.);
+            self.engines
                 .render(&mut self.left[..count], &mut self.right[..count]);
-            self.lower_synth.render(
-                &mut self.lower_left[..count],
-                &mut self.lower_right[..count],
+            self.reverb.process(
+                &mut self.left[..count],
+                &mut self.right[..count],
+                self.shared.reverb.load(Ordering::Relaxed),
             );
-            for i in 0..count {
-                self.left[i] += self.lower_left[i];
-                self.right[i] += self.lower_right[i];
-            }
             let volume = self.shared.volume.load(Ordering::Relaxed) as f32 / 100.;
             for index in 0..count {
                 let frame =
@@ -544,6 +555,7 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sound_engine::sound_font;
     use assert_no_alloc::assert_no_alloc;
     use score_core::{Duration, Event, Pitch, Score, Step};
     use score_playback::Tempo;
@@ -579,7 +591,9 @@ mod tests {
         for (slot, pitch) in keys.iter_mut().zip(pitches.iter()) {
             *slot = Some(score_playback::midi_key(pitch));
         }
-        control.preview_chord(keys, 0).unwrap();
+        control
+            .preview_chord(keys, score_core::Instrument::Piano)
+            .unwrap();
         assert_no_alloc(|| renderer.render(&mut actual, 2));
         assert!(actual.iter().map(|sample| sample * sample).sum::<f32>() > 0.01);
         // Fresh renderers eliminate audition release tails from the comparison.
@@ -776,11 +790,7 @@ mod tests {
         .unwrap();
         let ramp = Arc::new(PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap());
         assert!(ramp.messages.iter().any(|m| m.frame == 0
-            && m.message
-                == Message::NoteOn {
-                    key: 69,
-                    velocity: 56
-                }));
+            && matches!(m.message, Message::NoteOn(n) if (n.key, n.level) == (69, 56))));
         assert_eq!(ramp.expressions_at(0)[0], 127);
         let (mut a_control, mut a_renderer) = Renderer::new(48_000).unwrap();
         let (mut b_control, mut b_renderer) = Renderer::new(48_000).unwrap();
@@ -1003,9 +1013,7 @@ mod tests {
                         && preset.get_patch_number() == i32::from(instrument.program()))
             );
             let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
-            control
-                .preview_with_program(69, instrument.program())
-                .unwrap();
+            control.preview_instrument(69, instrument).unwrap();
             let mut output = [0f32; 4096];
             assert_no_alloc(|| renderer.render(&mut output, 2));
             assert!(

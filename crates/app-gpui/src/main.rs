@@ -8,6 +8,7 @@ mod playback;
 mod playhead;
 mod selection;
 mod shortcuts;
+mod sound_banks;
 mod ui;
 
 use gpui::{prelude::*, *};
@@ -61,6 +62,7 @@ struct AppView {
     reveal_selection: bool,
     canvas_origin: Point<Pixels>,
     selection_drag: Option<selection::PassageDrag>,
+    mixer_drag: Option<ui::MixerDrag>,
     viewport: follow::PlaybackViewport,
     layout: score_layout::Layout,
     music_font: Rc<music_font::MusicFont>,
@@ -195,6 +197,7 @@ impl AppView {
             reveal_selection: false,
             canvas_origin: Point::default(),
             selection_drag: None,
+            mixer_drag: None,
             viewport: follow::PlaybackViewport::default(),
             layout,
             music_font: Rc::new(music_font::MusicFont::new()),
@@ -363,26 +366,16 @@ impl AppView {
                         | Command::SetAccidental(_)
                         | Command::SetKeySignature(_)
                         | Command::SetTechnique(_)
-                ) && let Some(pitches) = self
-                    .document
-                    .editor
-                    .selection()
-                    .and_then(|id| self.document.editor.score().event(id))
-                    .and_then(|event| (!event.pitches.is_empty()).then_some(event.pitches))
-                    && let Err(error) = self.playback.preview(
-                        pitches.in_key(self.document.editor.score().key_signature()),
-                        self.document
-                            .editor
-                            .score()
-                            .part(self.document.editor.cursor().part)
-                            .expect("active part")
-                            .instrument(),
-                        self.document
-                            .editor
-                            .selection()
-                            .and_then(|id| self.document.editor.score().technique_at(id))
-                            .unwrap_or_default(),
-                    )
+                        | Command::SetDynamic(_)
+                        | Command::SetArticulation(_)
+                ) && let Some(id) = self.document.editor.selection()
+                    && self
+                        .document
+                        .editor
+                        .score()
+                        .event(id)
+                        .is_some_and(|event| !event.pitches.is_empty())
+                    && let Err(error) = self.playback.preview(self.document.editor.score(), id)
                 {
                     self.status = format!("Nota escrita. Audición: {error}");
                     self.sync_quit_snapshot();
@@ -1102,6 +1095,11 @@ impl AppView {
                 self.pending_slur = None;
                 self.pending_hairpin = None;
                 self.document = Document::default();
+                self.playback.reset_part_mix(
+                    self.document.editor.score(),
+                    self.document.editor.cursor().part,
+                );
+                self.mixer_drag = None;
                 self.viewport.scroll.set_offset(Point::default());
                 self.instrument_picker = None;
                 self.key_picker = false;
@@ -1167,6 +1165,11 @@ impl AppView {
                             view.pending_slur = None;
                             view.pending_hairpin = None;
                             view.document = document;
+                            view.playback.reset_part_mix(
+                                view.document.editor.score(),
+                                view.document.editor.cursor().part,
+                            );
+                            view.mixer_drag = None;
                             view.viewport.scroll.set_offset(Point::default());
                             view.instrument_picker = None;
                             view.key_picker = false;
@@ -1510,6 +1513,31 @@ impl AppView {
     fn stop_playback(&mut self, cx: &mut Context<Self>) {
         self.playback.stop();
         self.status = "Reproducción detenida".into();
+        cx.notify();
+    }
+    fn choose_sound(&mut self, bank: Option<usize>, cx: &mut Context<Self>) {
+        if self.busy
+            || self.confirming
+            || self.instrument_picker.is_some()
+            || self.preferences.is_some()
+        {
+            return;
+        }
+        let score = self.document.editor.score();
+        self.status =
+            match self
+                .playback
+                .choose_sound(bank, score, self.document.editor.cursor().part)
+            {
+                Ok(()) => format!(
+                    "Sonido: {} · Listo para reproducir",
+                    self.playback.sound_name()
+                ),
+                Err(error) => {
+                    self.playback.sound_error = Some(error.clone());
+                    error
+                }
+            };
         cx.notify();
     }
 }

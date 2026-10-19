@@ -45,7 +45,7 @@ pub(super) fn prepare(
             .fold(1f64, f64::max)
             .ceil() as u8;
         sound.reference_level = peak;
-        sound.velocity = peak.saturating_add(sound.boost).min(127);
+        sound.level = peak.saturating_add(sound.boost).min(127);
     }
     let mut points: Vec<ExpressionPoint> = Vec::new();
     let mut sound_index = 0;

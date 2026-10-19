@@ -1,12 +1,24 @@
 //! Deterministic musical timing, independent of audio devices and UI clocks.
 use score_core::{
-    ElementId, MAX_SOUNDING_NOTES, MAX_STAVES, PartId, Pitch, Pitches, Score, ScoreError, StaffId,
-    Step,
+    Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_STAVES, PartId, Pitch, Pitches,
+    PlayingTechnique, Score, ScoreError, StaffId, Step,
 };
 
+mod audition;
 mod dynamics;
+mod interpretation;
+pub use audition::Audition;
 
 pub const PLAYBACK_CHANNELS: usize = 32;
+/// Channel for a validated score's part index; percussion and audition are reserved.
+pub fn part_channel(index: usize) -> u8 {
+    debug_assert!(index < score_core::MAX_PARTS);
+    if index < 9 {
+        index as u8
+    } else {
+        index as u8 + 1
+    }
+}
 pub const TICKS_PER_QUARTER: u64 = score_core::TICKS_PER_QUARTER as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,12 +54,30 @@ pub fn midi_key(pitch: Pitch) -> u8 {
     (i16::from(pitch.octave() + 1) * 12 + semitone + i16::from(pitch.alteration())) as u8
 }
 
+/// One interpreted attack: musical intent, not General MIDI state. Providers
+/// choose recordings from it; they must not reapply the accent already in
+/// `level` nor reinterpret the sounding length, which the plan schedules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoteEvent {
+    pub key: u8,
+    /// Attack intensity on the MIDI velocity scale (1..=127): the written or
+    /// hairpin dynamic plus any accent or marcato.
+    pub level: u8,
+    pub instrument: Instrument,
+    /// Inherited bowed-string technique; `Arco` for every other instrument.
+    pub technique: PlayingTechnique,
+    /// Written articulation of this attack.
+    pub articulation: Option<Articulation>,
+    /// Under a slur. The plan already overlaps connected notes; a slurred
+    /// staccato is portato and should keep a sustained recording.
+    pub legato: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Message {
-    ProgramChange(u8),
     Expression(u8),
     NoteOff(u8),
-    NoteOn { key: u8, velocity: u8 },
+    NoteOn(NoteEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,30 +98,33 @@ pub struct Span {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeldNote {
-    pub program: u8,
     pub channel: u8,
-    pub key: u8,
-    pub velocity: u8,
+    pub note: NoteEvent,
 }
 
-/// Sounding intervals differ from notation for articulation and tied chains.
+/// Sounding intervals differ from notation for articulation, slurs and tied chains.
 #[derive(Clone, Copy, Debug)]
 struct SoundSpan {
+    articulation: Option<Articulation>,
     boost: u8,
     reference_level: u8,
-    program: Option<u8>,
+    technique: PlayingTechnique,
+    instrument: Instrument,
+    legato: bool,
+    /// The slur continues from this sound into the next written note.
+    slurred: bool,
     start: u64,
     end: u64,
+    written_end: u64,
     channel: u8,
     pitches: Pitches,
-    velocity: u8,
+    level: u8,
 }
 #[derive(Debug)]
 struct KeySound {
-    program: u8,
+    note: NoteEvent,
     start: u64,
     end: u64,
-    velocity: u8,
 }
 
 /// Prepared on the control thread. One immutable plan can be shared with the
@@ -101,7 +134,7 @@ pub struct Track {
     pub staff: StaffId,
     pub part: PartId,
     pub channel: u8,
-    pub program: u8,
+    pub instrument: Instrument,
     spans: std::ops::Range<usize>,
     sounds: std::ops::Range<usize>,
     expression: std::ops::Range<usize>,
@@ -121,6 +154,27 @@ pub struct PlaybackPlan {
     key_sounds: std::collections::HashMap<(u8, u8), Vec<KeySound>>,
     pub duration_frames: u64,
     pub sample_rate: u32,
+}
+
+/// Overlap each slurred sound into the next written note of the same staff.
+/// A repeated key is re-attacked instead, so a unison never merges into a tie.
+fn connect_slurred(sounds: &mut [SoundSpan], rate: u32) {
+    let overlap = interpretation::legato_overlap(rate);
+    for index in 1..sounds.len() {
+        let (before, after) = sounds.split_at_mut(index);
+        let (previous, next) = (&mut before[index - 1], &after[0]);
+        let repeated = previous
+            .pitches
+            .iter()
+            .any(|a| next.pitches.iter().any(|b| midi_key(a) == midi_key(b)));
+        if previous.slurred
+            && previous.end == previous.written_end
+            && previous.written_end == next.start
+            && !repeated
+        {
+            previous.end = next.start + overlap.min(next.end - next.start);
+        }
+    }
 }
 
 impl PlaybackPlan {
@@ -145,11 +199,7 @@ impl PlaybackPlan {
         let mut tracks = Vec::new();
         let mut expression: Vec<ExpressionPoint> = Vec::new();
         for (part_index, part) in score.parts().iter().enumerate() {
-            let channel = if part_index < 9 {
-                part_index as u8
-            } else {
-                part_index as u8 + 1
-            };
+            let channel = part_channel(part_index);
             let split_hands = part.instrument() == score_core::Instrument::Piano
                 && score
                     .connections()
@@ -170,10 +220,12 @@ impl PlaybackPlan {
                 let first_span = spans.len();
                 let first_sound = sounds.len();
                 let mut dynamic = score_core::Dynamic::Mf;
-                let mut program = None;
+                let mut technique = PlayingTechnique::Arco;
+                let slurs = interpretation::Slurs::new(score, part.id(), staff.id());
                 for (index, measure) in staff.measures().iter().enumerate() {
                     let mut tick = index as u64 * capacity;
                     for (id, event) in measure.iter() {
+                        let written_tick = tick;
                         let start = tempo.frame_at(tick, sample_rate);
                         tick += u64::from(event.duration.ticks());
                         let end = tempo.frame_at(tick, sample_rate);
@@ -192,56 +244,80 @@ impl PlaybackPlan {
                             pitches,
                         });
                         if let Some(mark) = event.notation.technique {
-                            program = Some(mark.program(part.instrument()));
+                            technique = mark;
                         }
                         if let Some(mark) = event.notation.dynamic {
                             dynamic = mark;
                         }
-                        let velocity = dynamic
-                            .velocity()
-                            .saturating_add(
-                                event
-                                    .notation
-                                    .articulation
-                                    .map_or(0, score_core::Articulation::velocity_boost),
-                            )
-                            .min(127);
-                        let gate = if tied_starts.contains(&element) {
-                            100
-                        } else {
-                            event
-                                .notation
-                                .articulation
-                                .map_or(100, score_core::Articulation::gate_percent)
-                        };
-                        let sound_end = start + (end - start) * gate / 100;
+                        let articulation = event.notation.articulation;
+                        let slurred = slurs.continues(written_tick);
                         if !pitches.is_empty() {
                             if tied_ends.contains(&element) {
-                                // Whole chords tie as a unit; the original attack and velocity survive.
+                                // Whole chords tie as a unit; the original attack and level survive.
                                 let sound =
                                     sounds.last_mut().expect("validated consecutive tied chord");
-                                // The final articulation gates the combined tied duration.
+                                // The final articulation shapes the combined tied duration.
                                 // This also preserves staccato when paste splits a long note.
-                                sound.end = sound.start + (end - sound.start) * gate / 100;
+                                sound.written_end = end;
+                                sound.slurred = slurred;
+                                sound.end = if tied_starts.contains(&element) {
+                                    end
+                                } else {
+                                    interpretation::sounding_end(
+                                        sound.start,
+                                        end,
+                                        articulation,
+                                        slurred,
+                                        sample_rate,
+                                    )
+                                };
+                                // Paste may put the release articulation on the
+                                // final tied fragment. Preserve its short sample
+                                // choice as well as the combined duration.
+                                if !tied_starts.contains(&element)
+                                    && articulation == Some(Articulation::Staccato)
+                                {
+                                    sound.articulation = articulation;
+                                }
                             } else {
+                                let tied = tied_starts.contains(&element);
                                 sounds.push(SoundSpan {
-                                    boost: event
-                                        .notation
-                                        .articulation
-                                        .map_or(0, score_core::Articulation::velocity_boost),
+                                    articulation: if tied
+                                        && articulation == Some(Articulation::Staccato)
+                                    {
+                                        None
+                                    } else {
+                                        articulation
+                                    },
+                                    boost: interpretation::accent_boost(articulation),
                                     reference_level: dynamic.velocity(),
-                                    program,
+                                    technique,
+                                    instrument: part.instrument(),
+                                    legato: slurs.contains(written_tick),
+                                    slurred,
                                     start,
-                                    end: sound_end,
+                                    end: if tied {
+                                        end
+                                    } else {
+                                        interpretation::sounding_end(
+                                            start,
+                                            end,
+                                            articulation,
+                                            slurred,
+                                            sample_rate,
+                                        )
+                                    },
+                                    written_end: end,
                                     channel,
                                     pitches,
-                                    velocity,
+                                    level: interpretation::level(dynamic.velocity(), articulation),
                                 });
                             }
                         }
                         duration_frames = duration_frames.max(end);
                     }
                 }
+                connect_slurred(&mut sounds[first_sound..], sample_rate);
                 if expressive {
                     let envelope =
                         score_core::DynamicEnvelope::new(score, part.id(), staff.id()).unwrap();
@@ -260,7 +336,7 @@ impl PlaybackPlan {
                     staff: staff.id(),
                     part: part.id(),
                     channel,
-                    program: part.instrument().program(),
+                    instrument: part.instrument(),
                     spans: first_span..spans.len(),
                     sounds: first_sound..sounds.len(),
                     expression: first_expression..expression.len(),
@@ -268,22 +344,19 @@ impl PlaybackPlan {
             }
         }
         for span in &sounds {
-            if let Some(program) = span.program {
-                messages.push(ScheduledMessage {
-                    frame: span.start,
-                    channel: span.channel,
-                    message: Message::ProgramChange(program),
-                });
-            }
             for pitch in span.pitches.iter() {
                 let key = midi_key(pitch);
                 messages.push(ScheduledMessage {
                     frame: span.start,
                     channel: span.channel,
-                    message: Message::NoteOn {
+                    message: Message::NoteOn(NoteEvent {
                         key,
-                        velocity: span.velocity,
-                    },
+                        level: span.level,
+                        instrument: span.instrument,
+                        technique: span.technique,
+                        articulation: span.articulation,
+                        legato: span.legato,
+                    }),
                 });
                 messages.push(ScheduledMessage {
                     frame: span.end,
@@ -298,8 +371,8 @@ impl PlaybackPlan {
                 message.frame,
                 match message.message {
                     Message::NoteOff(_) => 0,
-                    Message::ProgramChange(_) | Message::Expression(_) => 1,
-                    Message::NoteOn { .. } => 2,
+                    Message::Expression(_) => 1,
+                    Message::NoteOn(_) => 2,
                 },
             )
         });
@@ -308,13 +381,13 @@ impl PlaybackPlan {
         let mut held = [[0u8; 128]; PLAYBACK_CHANNELS];
         messages.retain(|scheduled| {
             let key = match scheduled.message {
-                Message::ProgramChange(_) | Message::Expression(_) => return true,
-                Message::NoteOn { key, .. } | Message::NoteOff(key) => key,
+                Message::Expression(_) => return true,
+                Message::NoteOn(NoteEvent { key, .. }) | Message::NoteOff(key) => key,
             };
             let count = &mut held[usize::from(scheduled.channel)][usize::from(key)];
             match scheduled.message {
-                Message::ProgramChange(_) | Message::Expression(_) => unreachable!(),
-                Message::NoteOn { .. } => {
+                Message::Expression(_) => unreachable!(),
+                Message::NoteOn(_) => {
                     *count += 1;
                     *count == 1
                 }
@@ -327,22 +400,16 @@ impl PlaybackPlan {
         // Chase the actual merged attack, including overlap chains between hands.
         let mut key_sounds: std::collections::HashMap<(u8, u8), Vec<KeySound>> =
             std::collections::HashMap::new();
-        let mut programs = [0u8; PLAYBACK_CHANNELS];
-        for track in &tracks {
-            programs[usize::from(track.channel)] = track.program;
-        }
         for message in &messages {
             match message.message {
                 Message::Expression(_) => {}
-                Message::ProgramChange(program) => programs[usize::from(message.channel)] = program,
-                Message::NoteOn { key, velocity } => key_sounds
-                    .entry((message.channel, key))
+                Message::NoteOn(note) => key_sounds
+                    .entry((message.channel, note.key))
                     .or_default()
                     .push(KeySound {
-                        program: programs[usize::from(message.channel)],
+                        note,
                         start: message.frame,
                         end: 0,
-                        velocity,
                     }),
                 Message::NoteOff(key) => {
                     key_sounds
@@ -413,22 +480,12 @@ impl PlaybackPlan {
                     let key = midi_key(pitch);
                     let seen = &mut seen[usize::from(span.channel)][usize::from(key)];
                     if !*seen {
+                        let intervals = &self.key_sounds[&(span.channel, key)];
+                        let index = intervals.partition_point(|sound| sound.start < frame) - 1;
+                        debug_assert!(frame < intervals[index].end);
                         notes[count] = Some(HeldNote {
-                            program: {
-                                let intervals = &self.key_sounds[&(span.channel, key)];
-                                let index =
-                                    intervals.partition_point(|sound| sound.start < frame) - 1;
-                                intervals[index].program
-                            },
                             channel: span.channel,
-                            key,
-                            velocity: {
-                                let intervals = &self.key_sounds[&(span.channel, key)];
-                                let index =
-                                    intervals.partition_point(|sound| sound.start < frame) - 1;
-                                debug_assert!(frame < intervals[index].end);
-                                intervals[index].velocity
-                            },
+                            note: intervals[index].note,
                         });
                         count += 1;
                         *seen = true;
@@ -451,6 +508,16 @@ impl PlaybackPlan {
 mod tests {
     use super::*;
     use score_core::{Duration, Event};
+    pub(crate) fn piano_note(key: u8, level: u8) -> NoteEvent {
+        NoteEvent {
+            key,
+            level,
+            instrument: Instrument::Piano,
+            technique: PlayingTechnique::Arco,
+            articulation: None,
+            legato: false,
+        }
+    }
     fn note(step: Step, duration: Duration) -> Event {
         Event {
             notation: Default::default(),
@@ -505,7 +572,7 @@ mod tests {
             plan.held_notes_at(24_000)
                 .into_iter()
                 .flatten()
-                .map(|note| note.key)
+                .map(|note| note.note.key)
                 .collect::<Vec<_>>(),
             [66, 69, 73, 54, 60]
         );
@@ -513,7 +580,7 @@ mod tests {
             .messages
             .iter()
             .filter_map(|message| {
-                if let Message::NoteOn { key, .. } = message.message {
+                if let Message::NoteOn(NoteEvent { key, .. }) = message.message {
                     Some(key)
                 } else {
                     None
@@ -527,7 +594,7 @@ mod tests {
             plan.held_notes_at(24_000)
                 .into_iter()
                 .flatten()
-                .map(|note| note.key)
+                .map(|note| note.note.key)
                 .collect::<Vec<_>>(),
             [65, 69, 72, 53, 60]
         );
@@ -565,7 +632,7 @@ mod tests {
         let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
         assert_eq!(plan.messages.len(), 2);
         assert_eq!(plan.held_notes_at(100).into_iter().flatten().count(), 1);
-        assert_eq!(plan.held_notes_at(100)[0].unwrap().key, 61);
+        assert_eq!(plan.held_notes_at(100)[0].unwrap().note.key, 61);
     }
 
     #[test]
@@ -625,18 +692,9 @@ mod tests {
         assert_eq!(
             starts,
             vec![
-                Message::NoteOn {
-                    key: 60,
-                    velocity: 88
-                },
-                Message::NoteOn {
-                    key: 64,
-                    velocity: 88
-                },
-                Message::NoteOn {
-                    key: 67,
-                    velocity: 88
-                }
+                Message::NoteOn(piano_note(60, 88)),
+                Message::NoteOn(piano_note(64, 88)),
+                Message::NoteOn(piano_note(67, 88))
             ]
         );
         assert_eq!(plan.frame_for_element(right), Some(0));
@@ -645,7 +703,7 @@ mod tests {
             plan.held_notes_at(24_000)
                 .into_iter()
                 .flatten()
-                .map(|note| note.key)
+                .map(|note| note.note.key)
                 .collect::<Vec<_>>(),
             vec![60, 64, 67]
         );
@@ -653,7 +711,8 @@ mod tests {
             plan.messages
                 .iter()
                 .filter(|message| matches!(message.message, Message::NoteOff(60 | 64 | 67)))
-                .all(|message| message.frame == 96_000)
+                // A detached whole note releases at most 60 ms early.
+                .all(|message| message.frame == 93_120)
         );
         assert_eq!(plan.spans.len(), 3);
     }
@@ -691,11 +750,7 @@ mod tests {
         assert_eq!(
             plan.messages
                 .iter()
-                .filter(|message| message.message
-                    == (Message::NoteOn {
-                        key: 60,
-                        velocity: 88
-                    }))
+                .filter(|message| message.message == (Message::NoteOn(piano_note(60, 88))))
                 .count(),
             1
         );
@@ -705,13 +760,13 @@ mod tests {
                 .filter(|message| message.message == Message::NoteOff(60))
                 .map(|message| message.frame)
                 .collect::<Vec<_>>(),
-            vec![96_000]
+            vec![93_120]
         );
         assert_eq!(
             plan.held_notes_at(24_000)
                 .into_iter()
                 .flatten()
-                .map(|note| note.key)
+                .map(|note| note.note.key)
                 .collect::<Vec<_>>(),
             vec![60, 64, 55]
         );
@@ -746,7 +801,7 @@ mod tests {
         let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
         assert_eq!(plan.tracks.len(), 2);
         assert_eq!(plan.tracks[0].channel, plan.tracks[1].channel);
-        assert_eq!(plan.tracks[0].program, plan.tracks[1].program);
+        assert_eq!(plan.tracks[0].instrument, plan.tracks[1].instrument);
         assert_eq!(plan.tracks[1].staff, StaffId::Lower);
         assert_eq!(plan.frame_for_element(left), Some(0));
         assert_eq!(
@@ -765,10 +820,8 @@ mod tests {
                 .flatten()
                 .collect::<Vec<_>>(),
             vec![HeldNote {
-                program: 0,
                 channel: 0,
-                key: 48,
-                velocity: 88
+                note: piano_note(48, 88)
             }]
         );
     }
@@ -803,13 +856,10 @@ mod tests {
                 ScheduledMessage {
                     frame: 0,
                     channel: 0,
-                    message: Message::NoteOn {
-                        key: 60,
-                        velocity: 88
-                    }
+                    message: Message::NoteOn(piano_note(60, 88))
                 },
                 ScheduledMessage {
-                    frame: 96_000,
+                    frame: 93_120,
                     channel: 0,
                     message: Message::NoteOff(60)
                 }
@@ -822,10 +872,8 @@ mod tests {
                 .flatten()
                 .collect::<Vec<_>>(),
             vec![HeldNote {
-                program: 0,
                 channel: 0,
-                key: 60,
-                velocity: 88
+                note: piano_note(60, 88)
             }]
         );
     }
@@ -886,8 +934,8 @@ mod tests {
                 .iter()
                 .find(|track| track.part == flute)
                 .unwrap()
-                .program,
-            score_core::Instrument::Flute.program()
+                .instrument,
+            score_core::Instrument::Flute
         );
         assert!(plan.elements_at(0).contains(&Some(short)));
         assert_eq!(plan.elements_at(100_000)[0], Some(long));
@@ -940,7 +988,7 @@ mod tests {
             .filter(|message| matches!(message.message, Message::NoteOff(_)))
             .map(|message| (message.channel, message.frame))
             .collect();
-        assert_eq!(releases, vec![(0, 24_000), (1, 48_000)]);
+        assert_eq!(releases, vec![(0, 22_080), (1, 45_120)]);
     }
 
     #[test]
@@ -1003,7 +1051,7 @@ mod tests {
         assert_eq!(
             plan.messages[1],
             ScheduledMessage {
-                frame: 24_000,
+                frame: 22_080,
                 channel: 0,
                 message: Message::NoteOff(60)
             }
@@ -1013,10 +1061,7 @@ mod tests {
             ScheduledMessage {
                 frame: 24_000,
                 channel: 0,
-                message: Message::NoteOn {
-                    key: 60,
-                    velocity: 88
-                }
+                message: Message::NoteOn(piano_note(60, 88))
             }
         );
     }

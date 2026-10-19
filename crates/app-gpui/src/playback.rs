@@ -1,6 +1,9 @@
-use score_core::{ElementId, Instrument, PartId, Pitches, Score, StaffId};
+use score_core::{ElementId, Instrument, PartId, Score, StaffId};
 use score_platform::AudioOutput;
-use score_playback::{PlaybackPlan, Tempo, midi_key};
+use score_platform::mixer::{ChannelMix, ReverbSettings};
+use score_platform::sound_engine::{RoutingSignature, SoundBank};
+use score_playback::{Audition, PlaybackPlan, Tempo};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// UI-owned transport. The audio callback only receives immutable prepared plans.
@@ -18,6 +21,13 @@ pub struct Playback {
     pub just_finished: bool,
     clock: Option<(u64, u32)>,
     seek_tick: Option<u64>,
+    pub banks: Vec<Arc<dyn SoundBank>>,
+    pub selected_bank: Option<usize>,
+    pub sound_error: Option<String>,
+    sound_signature: Option<RoutingSignature>,
+    pub part_mix: HashMap<PartId, ChannelMix>,
+    pub reverb: ReverbSettings,
+    mix_channels: [ChannelMix; score_playback::PLAYBACK_CHANNELS],
 }
 
 impl Playback {
@@ -36,6 +46,13 @@ impl Playback {
             just_finished: false,
             clock: None,
             seek_tick: None,
+            banks: crate::sound_banks::discover(),
+            selected_bank: None,
+            sound_error: None,
+            sound_signature: None,
+            part_mix: HashMap::new(),
+            reverb: ReverbSettings::default(),
+            mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
         };
         playback.connect();
         playback
@@ -43,14 +60,108 @@ impl Playback {
     pub fn connect(&mut self) {
         self.stop();
         self.output = None;
+        self.selected_bank = None;
+        self.sound_signature = None;
         match AudioOutput::open() {
-            Ok(mut output) => {
-                output.control.set_volume(self.volume);
-                self.output = Some(output);
-                self.error = None;
-            }
+            Ok(output) => self.install_output(output),
             Err(error) => self.error = Some(error.to_string()),
         }
+    }
+    pub fn sound_name(&self) -> &'static str {
+        self.selected_bank
+            .and_then(|index| self.banks.get(index))
+            .map_or("GeneralUser GS", |bank| bank.name())
+    }
+    pub fn sound_description(&self) -> Option<&'static str> {
+        self.selected_bank
+            .and_then(|index| self.banks.get(index))
+            .map(|bank| bank.description())
+    }
+    pub fn choose_sound(
+        &mut self,
+        bank: Option<usize>,
+        score: &Score,
+        audition_part: PartId,
+    ) -> Result<(), String> {
+        self.stop();
+        let audition = score
+            .part(audition_part)
+            .map_or(Instrument::Piano, |p| p.instrument());
+        self.apply_mixer(score, audition_part);
+        let output = match bank {
+            Some(index) => {
+                let bank = self
+                    .banks
+                    .get(index)
+                    .ok_or("El banco de sonidos no está disponible")?;
+                AudioOutput::open_with_bank(bank.as_ref(), score, audition)
+            }
+            None => AudioOutput::open(),
+        }
+        .map_err(|error| error.to_string())?;
+        self.install_output(output);
+        self.selected_bank = bank;
+        self.sound_signature = bank.map(|_| RoutingSignature::new(score, audition));
+        self.sound_error = None;
+        Ok(())
+    }
+    fn install_output(&mut self, mut output: AudioOutput) {
+        output.control.set_volume(self.volume);
+        output.control.set_reverb(self.reverb);
+        for (channel, mix) in self.mix_channels.iter().enumerate() {
+            output.control.set_channel_mix(channel as u8, *mix);
+        }
+        self.output = Some(output);
+        self.error = None;
+    }
+    /// The session's adjustment for a part, else its seat on the stage.
+    pub fn part_mix(&self, score: &Score, part: PartId) -> ChannelMix {
+        self.part_mix
+            .get(&part)
+            .copied()
+            .unwrap_or_else(|| ChannelMix::seated(score, part))
+    }
+    pub fn part_mix_mut(&mut self, score: &Score, part: PartId) -> &mut ChannelMix {
+        self.part_mix
+            .entry(part)
+            .or_insert_with(|| ChannelMix::seated(score, part))
+    }
+    pub fn apply_mixer(&mut self, score: &Score, audition: PartId) {
+        self.mix_channels.fill(ChannelMix::default());
+        for (index, part) in score.parts().iter().enumerate() {
+            let channel = usize::from(score_playback::part_channel(index));
+            let mix = self.part_mix(score, part.id());
+            self.mix_channels[channel] = mix;
+            // A piano may split its hands into the second bank for hairpins.
+            self.mix_channels[channel + 16] = mix;
+        }
+        self.mix_channels[15] = self.part_mix(score, audition);
+        if let Some(output) = &mut self.output {
+            output.control.set_reverb(self.reverb);
+            for (channel, mix) in self.mix_channels.iter().enumerate() {
+                output.control.set_channel_mix(channel as u8, *mix);
+            }
+        }
+    }
+    pub fn reset_part_mix(&mut self, score: &Score, audition: PartId) {
+        self.part_mix.clear();
+        self.apply_mixer(score, audition);
+    }
+    fn prepare_sound(&mut self, score: &Score, audition: Instrument) -> Result<(), String> {
+        if let Some(index) = self.selected_bank {
+            let signature = RoutingSignature::new(score, audition);
+            if self.sound_signature.as_ref() != Some(&signature) {
+                let bank = self
+                    .banks
+                    .get(index)
+                    .ok_or("El banco de sonidos ya no está disponible")?;
+                let output = AudioOutput::open_with_bank(bank.as_ref(), score, audition)
+                    .map_err(|error| error.to_string())?;
+                self.install_output(output);
+                self.sound_signature = Some(signature);
+            }
+        }
+        Ok(())
     }
     pub fn position(&self, score: &Score, cursor: score_edit::Cursor) -> crate::playhead::Position {
         if self.clock.is_none()
@@ -98,6 +209,13 @@ impl Playback {
         }
         self.follow_part = part;
         self.follow_staff = staff;
+        self.apply_mixer(score, part);
+        self.prepare_sound(
+            score,
+            score
+                .part(part)
+                .map_or(Instrument::Piano, |part| part.instrument()),
+        )?;
         let output = self.output.as_mut().ok_or_else(|| {
             self.error
                 .clone()
@@ -151,19 +269,22 @@ impl Playback {
         self.was_active = false;
         self.just_finished = false;
     }
-    pub fn preview(
-        &mut self,
-        pitches: Pitches,
-        instrument: Instrument,
-        technique: score_core::PlayingTechnique,
-    ) -> Result<(), String> {
-        if self.audition
-            && let Some(output) = &mut self.output
-        {
-            let keys = audition_keys(pitches);
+    pub fn preview(&mut self, score: &Score, id: ElementId) -> Result<(), String> {
+        if !self.audition {
+            return Ok(());
+        }
+        let instrument = score
+            .part(id.part)
+            .ok_or("El instrumento no existe")?
+            .instrument();
+        self.apply_mixer(score, id.part);
+        self.prepare_sound(score, instrument)?;
+        if let Some(output) = &mut self.output {
+            let audition = Audition::for_element(score, id, self.tempo, output.sample_rate())
+                .map_err(|error| error.to_string())?;
             output
                 .control
-                .preview_chord(keys, technique.program(instrument))
+                .preview_audition(audition)
                 .map_err(|error| error.to_string())?;
         }
         Ok(())
@@ -238,18 +359,6 @@ fn transport_plan(score: &Score, tempo: Tempo, rate: u32) -> Result<PlaybackPlan
     Ok(plan)
 }
 
-fn audition_keys(pitches: Pitches) -> [Option<u8>; score_core::MAX_CHORD_NOTES] {
-    let mut keys = [None; score_core::MAX_CHORD_NOTES];
-    let mut count = 0;
-    for pitch in pitches.iter() {
-        let key = Some(midi_key(pitch));
-        if !keys.contains(&key) {
-            keys[count] = key;
-            count += 1;
-        }
-    }
-    keys
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +378,13 @@ mod tests {
             just_finished: false,
             clock: None,
             seek_tick: None,
+            banks: Vec::new(),
+            selected_bank: None,
+            sound_error: None,
+            sound_signature: None,
+            part_mix: HashMap::new(),
+            reverb: ReverbSettings::default(),
+            mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
         }
     }
 
@@ -305,22 +421,39 @@ mod tests {
     }
 
     #[test]
-    fn audition_deduplicates_enharmonic_tones_without_losing_other_notes() {
-        use score_core::{
-            Accidental::{Flat, Natural, Sharp},
-            Pitch, Step,
+    fn mix_follows_part_identity_across_reordering_removal_and_engine_preparation() {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let mut playback = offline();
+        let chosen = ChannelMix {
+            volume: 65,
+            pan: -30,
         };
-        let pitches = Pitches::new(&[
-            Pitch::new(Step::C, 4).unwrap().with_accidental(Some(Sharp)),
-            Pitch::new(Step::D, 4).unwrap().with_accidental(Some(Flat)),
-            Pitch::new(Step::E, 4)
-                .unwrap()
-                .with_accidental(Some(Natural)),
-        ])
-        .unwrap();
+        playback.part_mix.insert(piano, chosen);
+        let flute = score.add_part(Instrument::Flute).unwrap();
+        score.arrange_parts();
+        playback.apply_mixer(&score, piano);
+        // An untouched part takes its stage seat (flute slightly left).
+        assert_eq!(playback.mix_channels[0], ChannelMix::seated(&score, flute));
+        assert_eq!(playback.mix_channels[0].pan, -15);
+        assert_eq!(playback.mix_channels[1], chosen);
+        assert_eq!(playback.mix_channels[17], chosen);
+        assert_eq!(playback.mix_channels[15], chosen);
+        let with_flute = score.clone();
+        score.remove_part(flute).unwrap();
+        playback.apply_mixer(&score, piano);
+        assert_eq!(playback.mix_channels[0], chosen);
+        assert_eq!(playback.mix_channels[1], ChannelMix::default());
+        playback.apply_mixer(&with_flute, flute);
+        assert_eq!(playback.mix_channels[1], chosen);
         assert_eq!(
-            audition_keys(pitches),
-            [Some(61), Some(64), None, None, None, None, None, None]
+            playback.mix_channels[15],
+            ChannelMix::seated(&with_flute, flute)
+        );
+        playback.reset_part_mix(&Score::default(), piano);
+        assert_eq!(
+            playback.part_mix(&Score::default(), piano),
+            ChannelMix::default()
         );
     }
 }

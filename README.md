@@ -40,8 +40,13 @@ ver el conjunto de cinco instrumentos.
   tonalidad aparece en este panel. Los botones de la cabecera ocultan los paneles.
 - **Propiedades:** nota y duración seleccionadas, elección de nota dentro del
   acorde, alteraciones, octava de entrada, armadura y audición.
-- **Mezclador / Sonidos:** volumen general, sonido actual, añadir/quitar parte y
-  reconectar audio. Reproducción incluye tempo y audición.
+- **Mezclador / Sonidos:** volumen general, volumen y posición estéreo por instrumento
+  (con varias partes, cada una parte de su sitio habitual en el escenario),
+  reverberación suave con cantidad, tamaño de sala y encendido/apagado. Los deslizadores
+  responden a clic, arrastre y botones −/+, incluso durante la reproducción.
+  Los ajustes son de sesión, se conservan al cambiar de banco de sonidos y no se guardan
+  en la partitura. Sonidos permite elegir banco, añadir/quitar parte y reconectar audio.
+  Reproducción incluye tempo y audición.
 - **Transporte:** reproducir/pausar, detener e iniciar desde el principio sin
   borrar la selección. Reloj y regla siguen la posición musical real.
 - **Vista:** desplazamiento continuo y zoom entre 50 y 150 %, con selección y
@@ -50,8 +55,8 @@ ver el conjunto de cinco instrumentos.
 Los controles que llevan **TODO** son pendientes: varias
 pestañas de documentos, búsqueda, exportación/impresión, entrada MIDI/tiempo real,
 puntillos, tresillos, calderones, reguladores crescendo/decrescendo, voces 2–4, plicas manuales,
-velocidad/duración sonora por nota, edición de duración existente, silencio/solo y
-volumen por parte, cambio de timbre, paginación y vista de pentagrama individual.
+velocidad/duración sonora por nota, edición de duración existente, silencio/solo,
+cambio de timbre, paginación y vista de pentagrama individual.
 El guardado sigue siendo manual; el indicador muestra el estado real del archivo.
 
 ## Uso
@@ -192,14 +197,17 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
 - **Expresión (`S`):** selecciona el inicio, pulsa `S`, selecciona la nota final del mismo
   pentagrama y pulsa `S` otra vez. Esc cancela la operación. La frase se dibuja con
   una curva, incluso entre sistemas. Esta versión no admite frases solapadas en un
-  mismo pentagrama. La reproducción conserva el legato de duración completa habitual;
-  las articulaciones explícitas mantienen su efecto.
+  mismo pentagrama. En la reproducción, las notas de la frase se unen con un breve
+  solapamiento (legato); la última se separa como de costumbre y un staccato dentro
+  de la frase suena portato (75 %).
 - **Dinámicas:** ppp, pp, p, mp, mf, f, ff y fff. Se aplican desde la posición marcada
   hasta la siguiente indicación del mismo pentagrama. Cada mano del piano mantiene
   su propia dinámica. Sin indicación se usa mf (velocidad MIDI 88).
   Se puede colocar una dinámica en un silencio para preparar la entrada siguiente.
-- **Articulaciones:** staccato acorta el sonido al 50 %; tenuto conserva la duración
-  completa; acento y marcato refuerzan el ataque (+16/+24 de velocidad, hasta 127).
+- **Articulaciones:** sin indicación, cada nota suena al 92 % (con un hueco máximo de
+  60 ms) para separarse de la siguiente; staccato acorta el sonido al 50 %; tenuto
+  conserva la duración completa; acento y marcato refuerzan el ataque (+16/+24 de
+  velocidad, hasta 127).
   Afectan a todas las notas del acorde, sin cambiar su duración escrita. En una cadena
   ligada se conserva el ataque inicial; un staccato final acorta al 50 % la duración
   sonora conjunta. Esto conserva el sonido al dividir una figura durante el pegado.
@@ -379,8 +387,18 @@ Prueba [`piano-sol-mayor.partitura`](examples/piano-sol-mayor.partitura) o
 
 ## Escuchar mientras escribes
 
+La compilación básica usa GeneralUser y no depende del adaptador VSCO. Para probar
+**VSCO CE** como [paquete de sonido opcional](docs/vsco.md), ejecuta
+`cargo run --features vsco`; sus grabaciones originales SFZ se eligen desde **Sonidos**.
+GeneralUser sigue siendo la opción inicial; cambiar de paquete no modifica la partitura.
+Los bancos implementan un [contrato común de audio](docs/sound-banks.md).
+
 La opción **Audición al escribir** está activada al iniciar: cada nota o acorde introducido
-o transpuesto suena brevemente con el sonido de su instrumento. Los silencios y las ediciones
+o transpuesto suena brevemente con el sonido de su instrumento, la dinámica vigente y
+su articulación. Cambiar una dinámica o articulación vuelve a escuchar la nota seleccionada.
+El staccato acorta la audición y, si el banco dispone de ellas, usa muestras cortas reales.
+Los acentos y marcato refuerzan el ataque; tenuto conserva la duración completa.
+Los silencios y las ediciones
 rechazadas no disparan una nota. Puedes desactivar la audición desde la barra de sonido.
 
 Selecciona una nota o silencio y pulsa **Espacio** o **Reproducir** para empezar

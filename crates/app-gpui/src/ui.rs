@@ -3,6 +3,8 @@
 mod command_state;
 mod icons;
 mod instrument_panel;
+mod mixer;
+pub use mixer::MixerDrag;
 mod preferences;
 mod toolbar;
 use super::*;
@@ -238,14 +240,24 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         .size_full()
         .flex()
         .flex_col()
-        .on_mouse_move(cx.listener(AppView::move_passage_selection))
+        .on_mouse_move(cx.listener(|v, event: &MouseMoveEvent, window, cx| {
+            if !mixer::drag(v, event, cx) {
+                v.move_passage_selection(event, window, cx);
+            }
+        }))
         .on_mouse_up(
             MouseButton::Left,
-            cx.listener(AppView::end_passage_selection),
+            cx.listener(|v, event, window, cx| {
+                mixer::end(v, event, cx);
+                v.end_passage_selection(event, window, cx);
+            }),
         )
         .on_mouse_up_out(
             MouseButton::Left,
-            cx.listener(AppView::end_passage_selection),
+            cx.listener(|v, event, window, cx| {
+                mixer::end(v, event, cx);
+                v.end_passage_selection(event, window, cx);
+            }),
         )
         .child(titlebar(view, title, cx))
         .child(toolbar::tabs(view, cx))
@@ -1570,40 +1582,9 @@ fn slider_placeholder(label: &'static str, value: &'static str, fraction: f32) -
         )
 }
 fn mixer(view: &AppView, cx: &Context<AppView>) -> Div {
-    section("SALIDA GENERAL")
-        .child(
-            div()
-                .text_size(px(14.))
-                .child(format!("Volumen  {} %", view.playback.volume)),
-        )
-        .child(
-            div()
-                .flex()
-                .gap_2()
-                .child(button("volume-down", "−", false, cx, |v, _, cx| {
-                    v.playback.change_volume(-10);
-                    cx.notify();
-                }))
-                .child(button("volume-up", "+", false, cx, |v, _, cx| {
-                    v.playback.change_volume(10);
-                    cx.notify();
-                })),
-        )
-        .children(view.document.editor.score().parts().iter().map(|part| {
-            div()
-                .mt_2()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .child(instrument_name(view.document.editor.score(), part.id())),
-                )
-                .child(slider_placeholder("Volumen por instrumento", "TODO", 0.7))
-        }))
-        .child(pending("solo-mute-todo", "Silenciar / Solo", cx))
+    mixer::panel(view, cx)
 }
+
 fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
     let instrument = editor
@@ -1612,22 +1593,32 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
         .unwrap()
         .instrument();
     section("SONIDO DEL INSTRUMENTO")
+        .child(caption("FUENTE DE SONIDO"))
+        .child(button("sound-generaluser", "GeneralUser GS", view.playback.selected_bank.is_none(), cx, |v, _, cx| v.choose_sound(None, cx)).w_full())
+        .children(view.playback.banks.iter().enumerate().map(|(index, bank)| {
+            button(format!("sound-{}", bank.id()), bank.name(), view.playback.selected_bank == Some(index), cx,
+                move |v, _, cx| v.choose_sound(Some(index), cx)).w_full()
+        }))
+        .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
+        .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(0xf2b282)).child(error)))
+        .child(caption("INSTRUMENTO ACTUAL"))
         .child(div().text_size(px(14.)).child(instrument.name()))
         .child(
             div()
                 .text_size(px(11.))
                 .text_color(rgb(MUTED))
                 .child(format!(
-                    "General MIDI {}\nGeneralUser GS 2.0.3",
+                    "General MIDI {}\n{}",
                     editor
                         .selection()
                         .and_then(|id| editor.score().technique_at(id))
                         .unwrap_or_default()
                         .program(instrument)
-                        + 1
+                        + 1,
+                    view.playback.sound_name(),
                 )),
         )
-        .child(pending("change-sound-todo", "Cambiar timbre", cx))
+        .when_some(view.playback.sound_description(), |body, description| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(description)))
         .child(button(
             "add-from-sounds",
             "+ Añadir instrumento",
@@ -1818,6 +1809,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(timeline(bars, score.time().numerator, progress, cx))
         .child(
             div()
+                .id("sound-source")
                 .flex()
                 .items_center()
                 .gap_2()
@@ -1832,12 +1824,15 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                     div()
                         .text_size(px(10.))
                         .text_color(rgb(MUTED))
-                        .child(if view.ui.compact {
-                            "GeneralUser GS"
-                        } else {
-                            "Sintetizador interno · GeneralUser GS"
-                        }),
-                ),
+                        .child(view.playback.sound_name()),
+                )
+                .cursor_pointer()
+                .tooltip(hover_hint("Elegir fuente de sonido", None))
+                .on_click(cx.listener(|view, _, _, cx| {
+                    view.ui.show_inspector = true;
+                    view.ui.inspector = "Sonidos";
+                    cx.notify();
+                })),
         )
         .child(
             div()

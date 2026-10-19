@@ -34,16 +34,6 @@ impl Articulation {
             Self::Marcato => "\u{e4ac}",
         }
     }
-    pub fn gate_percent(self) -> u64 {
-        if self == Self::Staccato { 50 } else { 100 }
-    }
-    pub fn velocity_boost(self) -> u8 {
-        match self {
-            Self::Accent => 16,
-            Self::Marcato => 24,
-            _ => 0,
-        }
-    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Dynamic {
