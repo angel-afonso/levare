@@ -156,6 +156,7 @@ fn header(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .child(
             button(
+                view,
                 "preferences-reset-all",
                 "Restablecer todo",
                 false,
@@ -191,6 +192,7 @@ fn categories(view: &AppView, cx: &Context<AppView>) -> Div {
         .children(Category::ALL.into_iter().map(|category| {
             let count = view.shortcuts.registry.in_category(category).count();
             button(
+                view,
                 format!("preferences-category-{category:?}"),
                 format!("{}  ·  {count}", category.label()),
                 current == Some(category),
@@ -288,6 +290,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                         )
                         .child(
                             button(
+                                view,
                                 format!("preferences-change-{command}"),
                                 "Cambiar",
                                 recording,
@@ -298,6 +301,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                         )
                         .child(
                             button(
+                                view,
                                 format!("preferences-add-{command}"),
                                 "+",
                                 false,
@@ -309,6 +313,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                         .when(!keys.is_empty(), |row| {
                             row.child(
                                 button(
+                                    view,
                                     format!("preferences-remove-{command}"),
                                     "Quitar",
                                     false,
@@ -324,6 +329,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                         .when(overridden, |row| {
                             row.child(
                                 button(
+                                    view,
                                     format!("preferences-reset-{command}"),
                                     "Restablecer",
                                     false,
@@ -357,6 +363,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                                 conflict.keys.label()
                             )))
                             .child(button(
+                                view,
                                 format!("preferences-reassign-{command}"),
                                 "Reasignar",
                                 true,
@@ -376,6 +383,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                                 },
                             ))
                             .child(button(
+                                view,
                                 format!("preferences-keep-{command}"),
                                 "Cancelar",
                                 false,

@@ -41,6 +41,14 @@ pub enum Visual {
     Icon(&'static str),
     /// Characters of the music font (SMuFL code points).
     Music(&'static str),
+    /// A triad composed from the music font's quarter notes on a shared stem.
+    Chord,
+    /// Music-font noteheads joined by the font's tie contour.
+    Tie,
+    Slur,
+    /// Bravura staff, optionally combined with a barline.
+    Staff,
+    Bar,
     /// Plain or italic text, such as `pizz.`.
     Text(&'static str),
     None,
@@ -109,7 +117,8 @@ const fn tile(command: CommandId, visual: Visual, label: &'static str) -> Contro
 
 use Visual::{Icon, Music, None as Plain, Text};
 use score_core::{
-    Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind, PlayingTechnique as T,
+    Arpeggio as R, Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind,
+    PlayingTechnique as T,
 };
 
 /// A catalog mark: its command, symbol and name come from the catalog.
@@ -139,19 +148,25 @@ const CLIPBOARD: GroupSpec = GroupSpec {
 };
 const INSTRUMENTS: GroupSpec = GroupSpec {
     title: "Instrumentos",
-    visual: Icon("add-staff"),
+    visual: Visual::Staff,
     priority: 3,
     controls: &[
-        large(id::ADD_INSTRUMENT, Icon("add-staff"), "Añadir"),
-        small(id::ADD_PIANO, Icon("piano"), "Piano a dos manos"),
-        small(id::OSSIA, Icon("ossia"), "Ossia"),
+        large(id::ADD_INSTRUMENT, Visual::Staff, "Añadir"),
+        small(id::ADD_PIANO, Visual::Staff, "Piano a dos manos"),
+        small(id::DIVIDE_PART, Visual::Staff, "Dividir pasaje"),
+        small(id::JOIN_PART, Visual::Staff, "Volver a unis."),
+        small(id::OSSIA, Visual::Staff, "Ossia"),
     ],
 };
 const BARS: GroupSpec = GroupSpec {
     title: "Compases",
-    visual: Icon("add-bar"),
+    visual: Visual::Bar,
     priority: 2,
-    controls: &[large(id::BAR_AT_END, Icon("add-bar"), "Añadir compás")],
+    controls: &[
+        large(id::BAR_AT_END, Visual::Bar, "Añadir al final"),
+        small(id::SINGLE_BAR, Visual::Bar, "Insertar antes"),
+        small(id::DELETE_BAR, Visual::Bar, "Eliminar compases"),
+    ],
 };
 const SELECTION: GroupSpec = GroupSpec {
     title: "Selección",
@@ -209,10 +224,10 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
 /// Chord mode and the intervals that stack a note above the selected one.
 const CHORDS: GroupSpec = GroupSpec {
     title: "Acordes",
-    visual: Icon("chord"),
+    visual: Visual::Chord,
     priority: 2,
     controls: &[
-        large(id::CHORD_MODE, Icon("chord"), "Modo acorde"),
+        large(id::CHORD_MODE, Visual::Chord, "Modo acorde"),
         tile(id::INTERVAL_2, Text("2ª"), "Segunda"),
         tile(id::INTERVAL_3, Text("3ª"), "Tercera"),
         tile(id::INTERVAL_4, Text("4ª"), "Cuarta"),
@@ -229,8 +244,8 @@ const VOICES: GroupSpec = GroupSpec {
     controls: &[
         tile(id::VOICE_1, Text("1"), "Voz 1"),
         tile(id::VOICE_2, Text("2"), "Voz 2"),
-        tile(id::VOICE_3, Text("3"), "Voz 3"),
-        tile(id::VOICE_4, Text("4"), "Voz 4"),
+        small(id::DIVISI, Text("div."), "div."),
+        small(id::UNISON, Text("unis."), "unis."),
     ],
 };
 const ELEMENTS: GroupSpec = GroupSpec {
@@ -255,8 +270,19 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
         mark_tile(MarkKind::Articulation(A::Accent)),
         mark_tile(MarkKind::Articulation(A::Marcato)),
         mark_tile(MarkKind::Fermata),
-        tile(id::TIE, Icon("tie"), "Unión"),
-        tile(id::SLUR, Icon("slur"), "Expresión"),
+        tile(id::TIE, Visual::Tie, "Unión"),
+        tile(id::SLUR, Visual::Slur, "Expresión"),
+    ],
+};
+const ARPEGGIOS: GroupSpec = GroupSpec {
+    title: "Arpegios",
+    visual: Music("\u{e63c}"),
+    priority: 6,
+    controls: &[
+        mark_tile(MarkKind::Arpeggio(R::Normal)),
+        mark_tile(MarkKind::Arpeggio(R::Up)),
+        mark_tile(MarkKind::Arpeggio(R::Down)),
+        large(id::ARPEGGIO_BOTH_HANDS, Music("\u{e63c}"), "Ambas manos"),
     ],
 };
 const DYNAMICS: GroupSpec = GroupSpec {
@@ -290,6 +316,14 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     controls: &[
         mark_small(MarkKind::Technique(T::Pizzicato), "Pizzicato"),
         mark_small(MarkKind::Technique(T::Arco), "Arco"),
+        mark_small(
+            MarkKind::Harmonic(score_core::Harmonic::Natural),
+            "Armónico natural",
+        ),
+        mark_small(
+            MarkKind::Harmonic(score_core::Harmonic::Artificial),
+            "Armónico artificial",
+        ),
     ],
 };
 const TEXT_EXPRESSION: GroupSpec = GroupSpec {
@@ -322,8 +356,8 @@ const SOUND: GroupSpec = GroupSpec {
     priority: 4,
     controls: &[
         small(id::AUDITION, Icon("speaker"), "Audición al escribir"),
-        small(id::TEMPO_UP, Plain, "Subir tempo"),
-        small(id::TEMPO_DOWN, Plain, "Bajar tempo"),
+        small(id::TEMPO_UP, Icon("tempo-up"), "Subir tempo"),
+        small(id::TEMPO_DOWN, Icon("tempo-down"), "Bajar tempo"),
         large(id::MIXER, Icon("mixer"), "Mezclador"),
     ],
 };
@@ -333,8 +367,8 @@ const INTERPRETATION: GroupSpec = GroupSpec {
     priority: 2,
     controls: &[
         small(id::LOOP, Icon("loop"), "Bucle"),
-        small(id::REPEATS, Plain, "Repeticiones"),
-        small(id::HALF_SPEED, Plain, "Media velocidad"),
+        small(id::REPEATS, Icon("repeats"), "Repeticiones"),
+        small(id::HALF_SPEED, Icon("half-speed"), "Media velocidad"),
     ],
 };
 const ZOOM: GroupSpec = GroupSpec {
@@ -342,9 +376,9 @@ const ZOOM: GroupSpec = GroupSpec {
     visual: Icon("search"),
     priority: 4,
     controls: &[
-        small(id::ZOOM_IN, Plain, "Acercar"),
-        small(id::ZOOM_OUT, Plain, "Alejar"),
-        small(id::ZOOM_ACTUAL, Plain, "Tamaño real"),
+        small(id::ZOOM_IN, Icon("zoom-in"), "Acercar"),
+        small(id::ZOOM_OUT, Icon("zoom-out"), "Alejar"),
+        small(id::ZOOM_ACTUAL, Icon("zoom-actual"), "Tamaño real"),
     ],
 };
 const PANELS: GroupSpec = GroupSpec {
@@ -358,7 +392,7 @@ const PANELS: GroupSpec = GroupSpec {
             "Instrumentos",
         ),
         small(id::TOGGLE_INSPECTOR, Icon("right-panel"), "Propiedades"),
-        small(id::FULL_SCREEN, Plain, "Pantalla completa"),
+        small(id::FULL_SCREEN, Icon("full-screen"), "Pantalla completa"),
     ],
 };
 const PAGE: GroupSpec = GroupSpec {
@@ -367,7 +401,7 @@ const PAGE: GroupSpec = GroupSpec {
     priority: 2,
     controls: &[
         small(id::PAGE_VIEW, Icon("page"), "Vista de página"),
-        small(id::ZOOM_FIT, Plain, "Ajustar a la página"),
+        small(id::ZOOM_FIT, Icon("fit-page"), "Ajustar a la página"),
     ],
 };
 
@@ -393,7 +427,7 @@ pub const TABS: &[TabSpec] = &[
     },
     TabSpec {
         id: TabId::Notation,
-        groups: &[COMMON, DYNAMICS, HAIRPINS, TECHNIQUE, ELEMENTS],
+        groups: &[COMMON, DYNAMICS, HAIRPINS, ARPEGGIOS, TECHNIQUE, ELEMENTS],
     },
     TabSpec {
         id: TabId::Text,
@@ -435,6 +469,43 @@ pub fn tab(id: TabId) -> &'static TabSpec {
 mod tests {
     use super::*;
     use score_keymap::Registry;
+
+    #[test]
+    fn notation_groups_never_fall_back_to_utility_icons() {
+        for group in [
+            INSTRUMENTS,
+            BARS,
+            COMMON,
+            DURATION,
+            ACCIDENTALS,
+            CHORDS,
+            ARTICULATIONS,
+            ARPEGGIOS,
+            DYNAMICS,
+            HAIRPINS,
+            TECHNIQUE,
+        ] {
+            for visual in
+                std::iter::once(group.visual).chain(group.controls.iter().map(|c| c.visual))
+            {
+                assert!(
+                    matches!(
+                        visual,
+                        Visual::Music(_)
+                            | Visual::Chord
+                            | Visual::Tie
+                            | Visual::Slur
+                            | Visual::Staff
+                            | Visual::Bar
+                            | Visual::Text(_)
+                    ),
+                    "{}: {visual:?}",
+                    group.title
+                );
+            }
+        }
+        assert!(matches!(INPUT_MODE.controls[0].visual, Visual::Music(_)));
+    }
 
     #[test]
     fn every_control_runs_a_registered_command_once_per_tab() {

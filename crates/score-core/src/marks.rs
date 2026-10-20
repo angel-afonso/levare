@@ -10,10 +10,13 @@ use super::*;
 /// One kind of mark a user can write.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkKind {
+    Division(Division),
+    Arpeggio(Arpeggio),
     Articulation(Articulation),
     Fermata,
     Dynamic(Dynamic),
     Technique(PlayingTechnique),
+    Harmonic(Harmonic),
     Connection(ConnectionKind),
 }
 
@@ -21,10 +24,13 @@ pub enum MarkKind {
 /// one of each point family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkFamily {
+    Division,
+    Arpeggio,
     Articulation,
     Fermata,
     Dynamic,
     Technique,
+    Harmonic,
     Tie,
     Slur,
     Hairpin,
@@ -33,12 +39,18 @@ pub enum MarkFamily {
 /// Which side of the staff a mark is written on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
+    Left,
     Above,
     Below,
 }
 
 impl MarkKind {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 26] = [
+        Self::Division(Division::Divisi),
+        Self::Division(Division::Unison),
+        Self::Arpeggio(Arpeggio::Normal),
+        Self::Arpeggio(Arpeggio::Up),
+        Self::Arpeggio(Arpeggio::Down),
         Self::Articulation(Articulation::Staccato),
         Self::Articulation(Articulation::Tenuto),
         Self::Articulation(Articulation::Accent),
@@ -54,6 +66,8 @@ impl MarkKind {
         Self::Dynamic(Dynamic::Fff),
         Self::Technique(PlayingTechnique::Pizzicato),
         Self::Technique(PlayingTechnique::Arco),
+        Self::Harmonic(Harmonic::Natural),
+        Self::Harmonic(Harmonic::Artificial),
         Self::Connection(ConnectionKind::Tie),
         Self::Connection(ConnectionKind::Slur),
         Self::Connection(ConnectionKind::Crescendo),
@@ -62,10 +76,13 @@ impl MarkKind {
 
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Division(mark) => mark.label(),
+            Self::Arpeggio(mark) => mark.label(),
             Self::Articulation(mark) => mark.label(),
             Self::Fermata => "Calderón",
             Self::Dynamic(mark) => mark.label(),
             Self::Technique(mark) => mark.label(),
+            Self::Harmonic(mark) => mark.label(),
             Self::Connection(kind) => kind.label(),
         }
     }
@@ -88,7 +105,7 @@ impl MarkKind {
         }
     }
     /// Music-font symbol for buttons and menus: the mark's own glyph, or a
-    /// hairpin's. Ties and slurs use drawn icons instead.
+    /// hairpin's. The UI composes ties and slurs from music-font glyphs.
     pub const fn symbol(self) -> Option<&'static str> {
         match self {
             Self::Connection(ConnectionKind::Crescendo) => Some("\u{e53e}"),
@@ -98,10 +115,13 @@ impl MarkKind {
     }
     pub const fn family(self) -> MarkFamily {
         match self {
+            Self::Division(_) => MarkFamily::Division,
+            Self::Arpeggio(_) => MarkFamily::Arpeggio,
             Self::Articulation(_) => MarkFamily::Articulation,
             Self::Fermata => MarkFamily::Fermata,
             Self::Dynamic(_) => MarkFamily::Dynamic,
             Self::Technique(_) => MarkFamily::Technique,
+            Self::Harmonic(_) => MarkFamily::Harmonic,
             Self::Connection(ConnectionKind::Tie) => MarkFamily::Tie,
             Self::Connection(ConnectionKind::Slur) => MarkFamily::Slur,
             Self::Connection(_) => MarkFamily::Hairpin,
@@ -110,14 +130,17 @@ impl MarkKind {
     /// The music-font glyph; connections are drawn as curves and wedges.
     pub const fn glyph(self) -> Option<&'static str> {
         match self {
+            Self::Arpeggio(mark) => Some(mark.glyph()),
+            Self::Harmonic(mark) => Some(mark.glyph()),
             Self::Articulation(mark) => Some(mark.glyph()),
             Self::Fermata => Some("\u{e4c0}"),
             Self::Dynamic(mark) => Some(mark.glyph()),
-            Self::Technique(_) | Self::Connection(_) => None,
+            Self::Division(_) | Self::Technique(_) | Self::Connection(_) => None,
         }
     }
     pub const fn placement(self) -> Placement {
         match self {
+            Self::Arpeggio(_) => Placement::Left,
             Self::Dynamic(_) | Self::Connection(ConnectionKind::Crescendo) => Placement::Below,
             Self::Connection(ConnectionKind::Diminuendo) => Placement::Below,
             _ => Placement::Above,
@@ -129,21 +152,27 @@ impl MarkKind {
     }
     /// Bowed-string techniques only apply to violin, viola, cello and bass.
     pub const fn requires_strings(self) -> bool {
-        matches!(self, Self::Technique(_))
+        matches!(self, Self::Technique(_) | Self::Harmonic(_))
     }
     /// Rests take a fermata, dynamic or technique, but no articulation.
     pub const fn allowed_on_rest(self) -> bool {
-        !matches!(self, Self::Articulation(_) | Self::Connection(_))
+        !matches!(
+            self,
+            Self::Arpeggio(_) | Self::Articulation(_) | Self::Harmonic(_) | Self::Connection(_)
+        )
     }
 }
 
 impl MarkFamily {
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Division => "Divisi y unísono",
+            Self::Arpeggio => "Arpegio",
             Self::Articulation => "Articulación",
             Self::Fermata => "Calderón",
             Self::Dynamic => "Dinámica",
             Self::Technique => "Técnica",
+            Self::Harmonic => "Armónico",
             Self::Tie => "Ligadura de unión",
             Self::Slur => "Ligadura de expresión",
             Self::Hairpin => "Regulador",
@@ -159,10 +188,13 @@ impl MarkFamily {
 /// A mark written in the score.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkRef {
+    Division(ElementId),
+    Arpeggio(ElementId),
     Articulation(ElementId),
     Fermata(ElementId),
     Dynamic(ElementId),
     Technique(ElementId),
+    Harmonic(ElementId),
     Connection(Connection),
 }
 
@@ -170,20 +202,26 @@ impl MarkRef {
     /// The note the mark is written on; a connection's first note.
     pub fn anchor(self) -> ElementId {
         match self {
-            Self::Articulation(id)
+            Self::Division(id)
+            | Self::Arpeggio(id)
+            | Self::Articulation(id)
             | Self::Fermata(id)
             | Self::Dynamic(id)
-            | Self::Technique(id) => id,
+            | Self::Technique(id)
+            | Self::Harmonic(id) => id,
             Self::Connection(connection) => connection.start,
         }
     }
     /// The point mark of `family` on `id`, whether or not it is written yet.
     pub fn point(family: MarkFamily, id: ElementId) -> Option<Self> {
         Some(match family {
+            MarkFamily::Division => Self::Division(id),
+            MarkFamily::Arpeggio => Self::Arpeggio(id),
             MarkFamily::Articulation => Self::Articulation(id),
             MarkFamily::Fermata => Self::Fermata(id),
             MarkFamily::Dynamic => Self::Dynamic(id),
             MarkFamily::Technique => Self::Technique(id),
+            MarkFamily::Harmonic => Self::Harmonic(id),
             MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin => return None,
         })
     }
@@ -194,10 +232,26 @@ impl Score {
     pub fn mark_kind(&self, mark: MarkRef) -> Option<MarkKind> {
         let notation = |id| self.event(id).map(|event| event.notation);
         match mark {
+            MarkRef::Division(id) => {
+                let part = self.part(id.part)?;
+                if part.has_passage_divisi() {
+                    part.divisi_change_at_tick(
+                        id.measure,
+                        (self.event_tick(id)? - self.measure_start_tick(id.measure)) as u16,
+                    )
+                    .map(MarkKind::Division)
+                } else {
+                    notation(id)?.division.map(MarkKind::Division)
+                }
+            }
+            MarkRef::Arpeggio(id) => self
+                .arpeggio_at(id)
+                .map(|mark| MarkKind::Arpeggio(mark.kind)),
             MarkRef::Articulation(id) => notation(id)?.articulation.map(MarkKind::Articulation),
             MarkRef::Fermata(id) => notation(id)?.fermata.then_some(MarkKind::Fermata),
             MarkRef::Dynamic(id) => notation(id)?.dynamic.map(MarkKind::Dynamic),
             MarkRef::Technique(id) => notation(id)?.technique.map(MarkKind::Technique),
+            MarkRef::Harmonic(id) => notation(id)?.harmonic.map(MarkKind::Harmonic),
             MarkRef::Connection(connection) => self
                 .connections()
                 .contains(&connection)
@@ -233,6 +287,14 @@ impl Score {
             return Err(ScoreError("La marca no pertenece a esa familia"));
         }
         match (family, kind) {
+            (MarkFamily::Division, Some(MarkKind::Division(mark))) => {
+                self.set_division(id, Some(mark))
+            }
+            (MarkFamily::Division, _) => self.set_division(id, None),
+            (MarkFamily::Arpeggio, Some(MarkKind::Arpeggio(mark))) => {
+                self.set_arpeggio(id, Some(mark))
+            }
+            (MarkFamily::Arpeggio, _) => self.set_arpeggio(id, None),
             (MarkFamily::Articulation, Some(MarkKind::Articulation(mark))) => {
                 self.set_articulation(id, Some(mark))
             }
@@ -246,6 +308,10 @@ impl Score {
                 self.set_technique(id, Some(mark))
             }
             (MarkFamily::Technique, _) => self.set_technique(id, None),
+            (MarkFamily::Harmonic, Some(MarkKind::Harmonic(mark))) => {
+                self.set_harmonic(id, Some(mark))
+            }
+            (MarkFamily::Harmonic, _) => self.set_harmonic(id, None),
             (MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin, _) => {
                 Err(ScoreError("Las ligaduras y los reguladores unen dos notas"))
             }
@@ -278,6 +344,53 @@ mod tests {
     }
 
     #[test]
+    fn arpeggios_require_chords_replace_remove_and_clear_with_the_last_interval() {
+        let mut score = Score::default();
+        let id = score.insert(0, 0, note(Step::C)).unwrap();
+        assert!(score.set_arpeggio(id, Some(Arpeggio::Normal)).is_err());
+        score
+            .add_pitch(id, Pitch::new(Step::E, 4).unwrap())
+            .unwrap();
+        score.set_dynamic(id, Some(Dynamic::F)).unwrap();
+        for mark in Arpeggio::ALL {
+            score
+                .set_point_mark(id, MarkFamily::Arpeggio, Some(MarkKind::Arpeggio(mark)))
+                .unwrap();
+            assert_eq!(
+                score.mark_kind(MarkRef::Arpeggio(id)),
+                Some(MarkKind::Arpeggio(mark))
+            );
+            score.validate().unwrap();
+        }
+        score.remove_mark(MarkRef::Arpeggio(id)).unwrap();
+        assert_eq!(score.event(id).unwrap().notation.dynamic, Some(Dynamic::F));
+        score.set_arpeggio(id, Some(Arpeggio::Up)).unwrap();
+        score.remove_highest_pitch(id).unwrap();
+        assert!(!score.has_mark(MarkRef::Arpeggio(id)));
+        let invalid = Event {
+            notation: Notation {
+                arpeggio: Some(Arpeggio::Down),
+                ..Default::default()
+            },
+            ..note(Step::C)
+        };
+        assert!(score.insert(0, 1, invalid).is_err());
+        assert!(
+            score
+                .insert(
+                    0,
+                    1,
+                    Event {
+                        pitches: Pitches::default(),
+                        ..invalid
+                    }
+                )
+                .is_err()
+        );
+        score.validate().unwrap();
+    }
+
+    #[test]
     fn the_catalog_lists_every_kind_once_with_its_family_and_glyph() {
         let mut seen = std::collections::HashSet::new();
         for kind in MarkKind::ALL {
@@ -285,7 +398,8 @@ mod tests {
             assert!(!kind.label().is_empty());
             assert_eq!(
                 kind.glyph().is_some(),
-                kind.is_point() && kind.family() != MarkFamily::Technique
+                kind.is_point()
+                    && !matches!(kind.family(), MarkFamily::Technique | MarkFamily::Division)
             );
             assert!(kind.family().kinds().any(|k| k == kind));
         }

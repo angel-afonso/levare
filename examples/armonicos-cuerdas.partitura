@@ -1,0 +1,1580 @@
+{
+  "format": "partitura",
+  "version": 18,
+  "score": {
+    "title": "Armónicos — estudio para cuerdas",
+    "time": {
+      "numerator": 4,
+      "denominator": 4
+    },
+    "tempo": {
+      "bpm": 72,
+      "beat": "Quarter",
+      "text": "Andante luminoso"
+    },
+    "key_signature": {
+      "fifths": 0,
+      "mode": "Major"
+    },
+    "parts": [
+      {
+        "id": 1,
+        "instrument": "Violin",
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Natural",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Pizzicato",
+                        "harmonic": "Natural",
+                        "articulation": "Staccato",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial",
+                        "fermata": true
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "instrument": "Violin",
+        "divisi_changes": {
+          "1": {
+            "48": true,
+            "144": false
+          }
+        },
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Natural",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ],
+                "second_order": [
+                  {
+                    "idx": 5,
+                    "version": 1
+                  },
+                  {
+                    "idx": 6,
+                    "version": 1
+                  },
+                  {
+                    "idx": 7,
+                    "version": 1
+                  },
+                  {
+                    "idx": 8,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Pizzicato",
+                        "harmonic": "Natural",
+                        "articulation": "Staccato",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial",
+                        "fermata": true
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "instrument": "Viola",
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Natural",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Pizzicato",
+                        "harmonic": "Natural",
+                        "articulation": "Staccato",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial",
+                        "fermata": true
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "instrument": "Cello",
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Natural",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "P"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Pizzicato",
+                        "harmonic": "Natural",
+                        "articulation": "Staccato",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Natural",
+                        "articulation": "Staccato"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "technique": "Arco",
+                        "harmonic": "Artificial",
+                        "dynamic": "Mp"
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "A",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial"
+                      },
+                      "pitches": [
+                        {
+                          "step": "D",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "notation": {
+                        "harmonic": "Artificial",
+                        "fermata": true
+                      },
+                      "pitches": [
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Quarter"
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  },
+                  {
+                    "idx": 3,
+                    "version": 1
+                  },
+                  {
+                    "idx": 4,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "next_part_id": 5,
+    "connections": []
+  }
+}

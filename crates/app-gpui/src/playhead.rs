@@ -33,28 +33,31 @@ pub fn position(
             .and_then(|p| p.staff(cursor.staff))
             .and_then(|s| s.measures().get(cursor.measure))
             .map_or(0, |bar| {
-                bar.iter()
+                bar.voice_iter(cursor.voice)
                     .take(cursor.index)
                     .map(|(_, e)| e.duration.ticks())
                     .sum()
             });
-        cursor.measure as f64 * f64::from(score.time().capacity()) + f64::from(local)
+        score.measure_start_tick(cursor.measure) as f64 + f64::from(local)
     };
     position_at_tick(score, tick, timeline)
 }
 
 pub fn position_at_tick(score: &Score, tick: f64, timeline: &Timeline) -> Position {
-    let capacity = f64::from(score.time().capacity());
-    let total = capacity * score.measures().len() as f64;
+    let total = score.total_ticks() as f64;
     let tick = tick.clamp(0., total);
-    let measure =
-        ((tick / capacity).floor() as usize).min(score.measures().len().saturating_sub(1));
+    let measure = score
+        .measure_at_tick(tick.floor() as u64)
+        .0
+        .min(score.measures().len() - 1);
+    let begin = score.measure_start_tick(measure) as f64;
     Position {
         tick,
         measure,
         beat: 1.
-            + (tick - measure as f64 * capacity)
-                / (f64::from(score_core::TICKS_PER_WHOLE) / f64::from(score.time().denominator)),
+            + (tick - begin)
+                / (f64::from(score_core::TICKS_PER_WHOLE)
+                    / f64::from(score.time_at(measure).denominator)),
         seconds: timeline.seconds_at(tick),
         progress: (tick / total) as f32,
         at_end: tick >= total,
@@ -63,27 +66,68 @@ pub fn position_at_tick(score: &Score, tick: f64, timeline: &Timeline) -> Positi
 
 /// The ruler's eight-pixel inset is shared by painting and hit testing.
 pub fn ruler_tick(score: &Score, x: f32, width: f32) -> u64 {
-    let beat = u64::from(score_core::TICKS_PER_WHOLE / u16::from(score.time().denominator));
-    let total = u64::from(score.time().capacity()) * score.measures().len() as u64;
+    let total = score.total_ticks();
     let fraction = ((x - 8.) / (width - 16.).max(1.)).clamp(0., 1.);
-    let ticks = (f64::from(fraction) * total as f64 / beat as f64).round() as u64 * beat;
-    ticks.min(total.saturating_sub(beat))
+    let raw = (f64::from(fraction) * total as f64).floor() as u64;
+    let measure = score.measure_at_tick(raw).0.min(score.measures().len() - 1);
+    let begin = score.measure_start_tick(measure);
+    let time = score.time_at(measure);
+    let beat = u64::from(score_core::TICKS_PER_WHOLE / u16::from(time.denominator));
+    let local = (((raw - begin) as f64 / beat as f64).round() as u64 * beat)
+        .min(u64::from(time.capacity()));
+    if begin + local >= total {
+        let last = score.time_at(score.measures().len() - 1);
+        total - u64::from(score_core::TICKS_PER_WHOLE / u16::from(last.denominator))
+    } else {
+        begin + local
+    }
+}
+
+/// Clicked notes keep their exact onset (including tuplets); whitespace snaps
+/// to the local beat on the engraved rhythmic grid, across zoom and divisi.
+pub fn score_tick(
+    score: &Score,
+    layout: &Layout,
+    point: score_layout::Point,
+    voice: score_core::Voice,
+) -> Option<u64> {
+    if let Some((id, _, tick)) = layout.hit_pitch_with_position(point, voice) {
+        return Some(score.measure_start_tick(id.measure) + u64::from(tick));
+    }
+    let (part, staff, bar) = layout.measure_at(point)?;
+    let measure = layout.measure_on(part, staff, bar)?;
+    let raw = measure
+        .content
+        .tick_at_x(point.x / layout.scale - measure.origin.x);
+    let time = score.time_at(bar);
+    let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+    let mut local = ((raw / f64::from(beat)).round() as u16 * beat).min(time.capacity());
+    if bar + 1 == score.measures().len() {
+        local = local.min(time.capacity() - beat);
+    }
+    Some(score.measure_start_tick(bar) + u64::from(local))
 }
 
 /// The rhythmic grid is shared by every staff, including implicit silent gaps.
 /// The returned rectangle is already scaled into canvas coordinates.
-pub fn score_bounds(
-    layout: &Layout,
-    cursor: Cursor,
-    position: Position,
-    capacity: u16,
-) -> Option<Bounds<Pixels>> {
+pub fn score_bounds(layout: &Layout, cursor: Cursor, position: Position) -> Option<Bounds<Pixels>> {
     let last = layout.measures.iter().map(|m| m.index).max()?;
     let index = position.measure.min(last);
     let bar = layout
-        .measure_on(cursor.part, cursor.staff, index)
+        .voice_measure_at_tick(
+            cursor.part,
+            cursor.staff,
+            index,
+            cursor.voice,
+            position.tick
+                - layout
+                    .measures
+                    .iter()
+                    .find(|m| m.index == index)?
+                    .start_tick as f64,
+        )
         .or_else(|| layout.measures.iter().find(|m| m.index == index))?;
-    let local = position.tick - index as f64 * f64::from(capacity);
+    let local = position.tick - bar.start_tick as f64;
     let x = bar.origin.x + bar.content.x_at_tick(local);
     let mut top = f32::INFINITY;
     let mut bottom = f32::NEG_INFINITY;
@@ -101,15 +145,22 @@ pub fn tracking_bounds(
     layout: &Layout,
     cursor: Cursor,
     position: Position,
-    capacity: u16,
 ) -> Option<Bounds<Pixels>> {
     let last = layout.measures.iter().map(|m| m.index).max()?;
     let index = position.measure.min(last);
-    let bar = layout.measure_on(cursor.part, cursor.staff, index)?;
-    let x = bar.origin.x
-        + bar
-            .content
-            .x_at_tick(position.tick - index as f64 * f64::from(capacity));
+    let bar = layout.voice_measure_at_tick(
+        cursor.part,
+        cursor.staff,
+        index,
+        cursor.voice,
+        position.tick
+            - layout
+                .measures
+                .iter()
+                .find(|m| m.index == index)?
+                .start_tick as f64,
+    )?;
+    let x = bar.origin.x + bar.content.x_at_tick(position.tick - bar.start_tick as f64);
     let top = bar.origin.y + bar.content.ink_top.min(0.) - 22.;
     let bottom = bar.origin.y + bar.content.ink_bottom.max(40.) + 14.;
     Some(Bounds::new(
@@ -168,6 +219,82 @@ mod tests {
     }
 
     #[test]
+    fn score_clicks_keep_exact_note_onsets_across_views_zoom_voices_and_divisi() {
+        for bytes in [
+            include_bytes!("../../../examples/divisi-dentro-del-compas.partitura").as_slice(),
+            include_bytes!("../../../examples/menuetto-y-trio-cuerdas.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-arpegios.partitura").as_slice(),
+        ] {
+            let score = score_io::decode(bytes).unwrap();
+            for mode in [
+                score_layout::ViewMode::Page,
+                score_layout::ViewMode::Continuous,
+                score_layout::ViewMode::SingleSystem,
+            ] {
+                let mut layout =
+                    score_layout::LayoutEngine::default().layout_view(&score, 1000., mode);
+                for scale in [0.5, 0.7, 1., 1.5] {
+                    layout.scale = scale;
+                    for m in &layout.measures {
+                        for event in &m.content.events {
+                            let point = score_layout::Point {
+                                x: (m.origin.x + event.center.x) * scale,
+                                y: (m.origin.y + event.center.y) * scale,
+                            };
+                            assert_eq!(
+                                score_tick(&score, &layout, point, event.voice),
+                                Some(m.start_tick + u64::from(event.tick))
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn score_whitespace_clicks_snap_to_local_meter_without_requiring_notes() {
+        let mut score = Score::default();
+        score
+            .set_time_signature_at(
+                1,
+                score_core::TimeSignature {
+                    numerator: 6,
+                    denominator: 8,
+                },
+            )
+            .unwrap();
+        let mut layout = score_layout::LayoutEngine::default().layout(&score, 1000.);
+        for scale in [0.5, 1., 2.] {
+            layout.scale = scale;
+            for m in &layout.measures {
+                let time = score.time_at(m.index);
+                let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+                for b in 0..time.numerator {
+                    let tick = u16::from(b) * beat;
+                    let point = score_layout::Point {
+                        x: (m.origin.x + m.content.x_at_tick(f64::from(tick))) * scale,
+                        y: (m.origin.y + 40.) * scale,
+                    };
+                    assert_eq!(
+                        score_tick(&score, &layout, point, score_core::Voice::One),
+                        Some(m.start_tick + u64::from(tick))
+                    );
+                }
+            }
+            assert_eq!(
+                score_tick(
+                    &score,
+                    &layout,
+                    score_layout::Point { x: -100., y: -100. },
+                    score_core::Voice::One
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn ruler_clicks_use_painted_insets_and_snap_to_beats_inside_the_score() {
         let score = Score::default(); // Four bars of 4/4.
         for width in [80., 400., 1000.] {
@@ -195,12 +322,51 @@ mod tests {
     }
 
     #[test]
+    fn mixed_meters_use_local_beats_and_can_seek_to_a_short_final_bar() {
+        use score_core::TimeSignature;
+        let mut score = Score::default();
+        score
+            .set_time_signature_at(
+                3,
+                TimeSignature {
+                    numerator: 1,
+                    denominator: 16,
+                },
+            )
+            .unwrap();
+        assert_eq!(score.total_ticks(), 588);
+        // A click near the end of bar 3 rounds forward to bar 4, not backward
+        // by a quarter-note beat inherited from the clicked bar.
+        let x = 8. + 384. * 560. / 588.;
+        assert_eq!(ruler_tick(&score, x, 400.), 576);
+        assert_eq!(ruler_tick(&score, 400., 400.), 576);
+
+        score
+            .set_time_signature_at(
+                1,
+                TimeSignature {
+                    numerator: 6,
+                    denominator: 8,
+                },
+            )
+            .unwrap();
+        let timeline = Timeline::new(&score, score_playback::Tempo::default());
+        let position = position_at_tick(&score, 360., &timeline);
+        assert_eq!((position.measure, position.beat), (2, 2.));
+        assert_eq!(position.seconds, 3.75);
+        assert_eq!(score.total_ticks(), 492);
+        let x = 8. + 384. * 360. / 492.;
+        assert_eq!(ruler_tick(&score, x, 400.), 360);
+    }
+
+    #[test]
     fn audio_clock_is_absolute_and_paused_position_does_not_follow_selection() {
         let mut score = Score::default();
         score
             .insert(2, 0, note(Step::C, Duration::Quarter))
             .unwrap();
         let cursor = Cursor {
+            voice: Default::default(),
             part: score.parts()[0].id(),
             staff: StaffId::Upper,
             measure: 2,
@@ -247,6 +413,7 @@ mod tests {
             .insert_on(part, StaffId::Lower, 0, 0, note(Step::E, Duration::Half))
             .unwrap();
         let cursor = Cursor {
+            voice: Default::default(),
             part,
             staff: StaffId::Upper,
             measure: 0,
@@ -274,7 +441,7 @@ mod tests {
                     progress: 0.,
                     at_end: false,
                 };
-                let marker = score_bounds(&layout, cursor, p, score.time().capacity()).unwrap();
+                let marker = score_bounds(&layout, cursor, p).unwrap();
                 assert!(
                     (f32::from(marker.left()) - (upper.origin.x + (x1 + x2) / 2.) * scale).abs()
                         < 0.01
@@ -310,11 +477,11 @@ mod tests {
             let bar = layout
                 .measure_on(cursor.part, cursor.staff, measure)
                 .unwrap();
-            let marker = score_bounds(&layout, cursor, p, 192).unwrap();
+            let marker = score_bounds(&layout, cursor, p).unwrap();
             assert!(
                 (f32::from(marker.left()) - bar.origin.x - bar.content.x_at_tick(0.)).abs() < 0.01
             );
-            let tracking = tracking_bounds(&layout, cursor, p, 192).unwrap();
+            let tracking = tracking_bounds(&layout, cursor, p).unwrap();
             assert!(tracking.top() < px(bar.origin.y));
         }
         let end = Position {
@@ -326,7 +493,7 @@ mod tests {
             at_end: true,
         };
         let last = layout.measure_on(cursor.part, cursor.staff, 3).unwrap();
-        let marker = score_bounds(&layout, cursor, end, 192).unwrap();
+        let marker = score_bounds(&layout, cursor, end).unwrap();
         assert!(
             (f32::from(marker.left()) - last.origin.x - last.content.x_at_tick(192.)).abs() < 0.01
         );

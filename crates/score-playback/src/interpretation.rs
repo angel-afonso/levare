@@ -57,12 +57,20 @@ pub(crate) fn legato_overlap(rate: u32) -> u64 {
 #[derive(Default)]
 pub(crate) struct Slurs(Vec<(u64, u64)>);
 impl Slurs {
-    pub(crate) fn new(score: &Score, part: PartId, staff: StaffId) -> Self {
+    pub(crate) fn new(
+        score: &Score,
+        part: PartId,
+        staff: StaffId,
+        voice: score_core::Voice,
+    ) -> Self {
         let mut ranges: Vec<_> = score
             .connections()
             .iter()
             .filter(|c| {
-                c.kind == ConnectionKind::Slur && c.start.part == part && c.start.staff == staff
+                c.kind == ConnectionKind::Slur
+                    && c.start.part == part
+                    && c.start.staff == staff
+                    && score.voice_of(c.start) == Some(voice)
             })
             .filter_map(|c| Some((score.event_tick(c.start)?, score.event_tick(c.end)?)))
             .collect();

@@ -1,0 +1,649 @@
+{
+  "format": "partitura",
+  "version": 14,
+  "score": {
+    "title": "Piano · Arpegios",
+    "time": {
+      "numerator": 4,
+      "denominator": 4
+    },
+    "tempo": {
+      "bpm": 84,
+      "beat": "Quarter",
+      "text": "Andante"
+    },
+    "parts": [
+      {
+        "id": 0,
+        "instrument": "Piano",
+        "staves": [
+          {
+            "id": "Upper",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 4
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 4
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "F",
+                          "octave": 4,
+                          "accidental": "Sharp"
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4,
+                          "accidental": "Sharp"
+                        },
+                        {
+                          "step": "A",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 4
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 4
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 4
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "G",
+                          "octave": 4
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "C",
+                          "octave": 5
+                        },
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp",
+                        "arpeggio": "Normal"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        },
+                        {
+                          "step": "E",
+                          "octave": 4
+                        },
+                        {
+                          "step": "C",
+                          "octave": 5
+                        },
+                        {
+                          "step": "G",
+                          "octave": 5
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "arpeggio": "Normal"
+                      }
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "Lower",
+            "measures": [
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              },
+              {
+                "events": [
+                  {
+                    "value": null,
+                    "version": 0
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {
+                        "dynamic": "Mp"
+                      }
+                    },
+                    "version": 1
+                  },
+                  {
+                    "value": {
+                      "pitches": [
+                        {
+                          "step": "C",
+                          "octave": 3
+                        },
+                        {
+                          "step": "G",
+                          "octave": 3
+                        }
+                      ],
+                      "duration": "Half",
+                      "notation": {}
+                    },
+                    "version": 1
+                  }
+                ],
+                "order": [
+                  {
+                    "idx": 1,
+                    "version": 1
+                  },
+                  {
+                    "idx": 2,
+                    "version": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "connections": [],
+    "next_part_id": 1,
+    "piano_arpeggios": [
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 0,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 0,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "kind": "Normal"
+      },
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 0,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 0,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "kind": "Normal"
+      },
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 1,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 1,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "kind": "Up"
+      },
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 1,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 1,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "kind": "Up"
+      },
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 2,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 2,
+          "event": {
+            "idx": 1,
+            "version": 1
+          }
+        },
+        "kind": "Down"
+      },
+      {
+        "upper": {
+          "part": 0,
+          "staff": "Upper",
+          "measure": 2,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "lower": {
+          "part": 0,
+          "staff": "Lower",
+          "measure": 2,
+          "event": {
+            "idx": 2,
+            "version": 1
+          }
+        },
+        "kind": "Down"
+      }
+    ]
+  }
+}

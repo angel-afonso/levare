@@ -121,6 +121,11 @@ impl Layout {
                         .map(|d| (mark.mark, d))
                 })
             })
+            .chain(self.piano_arpeggios.iter().filter_map(|mark| {
+                mark.bounds
+                    .distance(p.x, p.y)
+                    .map(|d| (mark.bounds.mark, d))
+            }))
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(mark, _)| mark);
         if let Some(mark) = point_mark {
@@ -131,6 +136,7 @@ impl Layout {
         }
         self.curves
             .iter()
+            .filter(|curve| curve.connection.start != curve.connection.end)
             .map(|curve| (curve.connection, curve.distance(p)))
             .chain(
                 self.hairpins
@@ -145,33 +151,235 @@ impl Layout {
 
 #[derive(Clone, Debug)]
 pub struct Curve {
+    /// Display staff owning this segment, including projected divisi voices.
+    pub staff_origin: f32,
     pub from: Point,
     pub to: Point,
     pub bend: f32,
     pub connection: Connection,
 }
 
+/// Compose an arbitrarily tall arpeggio from unchanged Bravura line segments.
+/// SMuFL segments run horizontally; the canvas turns the whole run upwards.
+pub(super) fn arpeggio(
+    result: &mut MeasureLayout,
+    event: score_core::Event,
+    id: ElementId,
+    metrics: &Metrics,
+) {
+    let Some(mark) = event.notation.arpeggio else {
+        return;
+    };
+    let heads: Vec<_> = result.events.iter().filter(|head| head.id == id).collect();
+    let high = heads
+        .iter()
+        .map(|h| h.center.y)
+        .fold(f32::INFINITY, f32::min);
+    let low = heads
+        .iter()
+        .map(|h| h.center.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let head_width = if event.duration.value() == score_core::NoteValue::Whole {
+        metrics.whole
+    } else {
+        metrics.head
+    };
+    let mut left = heads
+        .iter()
+        .map(|h| h.center.x - head_width / 2.)
+        .fold(f32::INFINITY, f32::min);
+    for glyph in result.glyphs.iter().filter(|g| g.element == Some(id)) {
+        left = left.min(glyph.position.x + metrics.bounds(&glyph.text, false).0);
+    }
+    let (glyph, bounds) = arpeggio_glyph(mark, id, high, low, left, metrics);
+    result.top = result.top.min(bounds.center.y - bounds.half.1 - 4.);
+    result.bottom = result.bottom.max(bounds.center.y + bounds.half.1 + 4.);
+    result.marks.push(MarkBox {
+        glyph: Some(result.glyphs.len()),
+        ..bounds
+    });
+    result.glyphs.push(glyph);
+}
+
+fn arpeggio_glyph(
+    mark: score_core::Arpeggio,
+    id: ElementId,
+    high: f32,
+    low: f32,
+    left: f32,
+    metrics: &Metrics,
+) -> (Glyph, MarkBox) {
+    let arrow = match mark {
+        score_core::Arpeggio::Normal => "",
+        score_core::Arpeggio::Up => "\u{eaad}",
+        score_core::Arpeggio::Down => "\u{eaae}",
+    };
+    let arrow_length = if arrow.is_empty() {
+        0.
+    } else {
+        metrics.bounds(arrow, false).2
+    };
+    let repeats = ((low - high + 12. - arrow_length) / metrics.arpeggio_repeat)
+        .ceil()
+        .max(1.) as usize;
+    let segment = if mark == score_core::Arpeggio::Down {
+        "\u{eaaa}"
+    } else {
+        "\u{eaa9}"
+    };
+    let text = if mark == score_core::Arpeggio::Down {
+        format!("{arrow}{}", segment.repeat(repeats))
+    } else {
+        format!("{}{arrow}", segment.repeat(repeats))
+    };
+    let (l, t, r, b) = metrics.bounds(&text, true);
+    let position = Point {
+        x: left - 7. - r,
+        y: (high + low - t - b) / 2.,
+    };
+    let bounds = MarkBox {
+        mark: MarkRef::Arpeggio(id),
+        glyph: None,
+        center: Point {
+            x: position.x + (l + r) / 2.,
+            y: position.y + (t + b) / 2.,
+        },
+        half: ((r - l) / 2. + 3., (b - t) / 2. + 2.),
+    };
+    (
+        Glyph {
+            rotated: true,
+            text,
+            position,
+            element: Some(id),
+        },
+        bounds,
+    )
+}
+
+/// A single mark in final score coordinates, after staff spacing and pagination.
+#[derive(Clone, Debug)]
+pub struct PianoArpeggioLayout {
+    pub glyph: Glyph,
+    pub bounds: MarkBox,
+    pub other_hand: ElementId,
+}
+
+pub(super) fn piano_arpeggios(
+    score: &Score,
+    measures: &[PlacedMeasure],
+    metrics: &Metrics,
+) -> Vec<PianoArpeggioLayout> {
+    let lookup: HashMap<_, _> = measures
+        .iter()
+        .map(|bar| ((bar.part, bar.staff, bar.index), bar))
+        .collect();
+    score
+        .piano_arpeggios()
+        .iter()
+        .filter_map(|mark| {
+            let mut high = f32::INFINITY;
+            let mut low = f32::NEG_INFINITY;
+            let mut left = f32::INFINITY;
+            for id in [mark.upper, mark.lower] {
+                let bar = lookup.get(&(id.part, id.staff, id.measure))?;
+                for head in bar.content.events.iter().filter(|head| head.id == id) {
+                    high = high.min(bar.origin.y + head.center.y);
+                    low = low.max(bar.origin.y + head.center.y);
+                }
+                for glyph in bar.content.glyphs.iter().filter(|g| {
+                    g.element == Some(id)
+                        && g.text.chars().next().is_some_and(
+                            |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e262}'),
+                        )
+                }) {
+                    left = left.min(
+                        bar.origin.x + glyph.position.x + metrics.bounds(&glyph.text, false).0,
+                    );
+                }
+            }
+            if !high.is_finite() || !left.is_finite() {
+                return None;
+            }
+            let (glyph, bounds) = arpeggio_glyph(mark.kind, mark.upper, high, low, left, metrics);
+            Some(PianoArpeggioLayout {
+                glyph,
+                bounds,
+                other_hand: mark.lower,
+            })
+        })
+        .collect()
+}
+
 /// Place local marks outside the complete note/chord, including its stem.
 pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: ElementId) {
     let heads: Vec<_> = result.events.iter().filter(|head| head.id == id).collect();
     let low = heads.iter().map(|head| head.center.y).fold(20f32, f32::max);
-    let high = heads.iter().map(|head| head.center.y).fold(20f32, f32::min);
+    let high = heads
+        .iter()
+        .map(|head| head.center.y)
+        .chain(
+            result
+                .marks
+                .iter()
+                .filter(|m| m.mark == MarkRef::Harmonic(id))
+                .map(|m| m.center.y),
+        )
+        .fold(20f32, f32::min);
     let x = heads.first().map_or(0., |head| head.center.x);
-    let down = result
-        .beam_stem(id)
-        .map_or((low + high) / 2. <= 20., |s| s.down);
+    let poly = result.events.iter().any(|head| head.voice == Voice::Two);
+    let below = poly && heads.first().is_some_and(|head| head.voice == Voice::Two);
+    let down = if poly {
+        below
+    } else {
+        result
+            .beam_stem(id)
+            .map_or((low + high) / 2. <= 20., |s| s.down)
+    };
+    let staff_top = result.ink_top;
+    let staff_bottom = result.ink_bottom;
     let stem = if event.duration.value() != score_core::NoteValue::Whole {
         35.
     } else {
         0.
     };
-    let top = result
+    let mut top = result
         .beam_stem(id)
         .map_or(high - if down { 0. } else { stem }, |s| high.min(s.to.y));
-    let bottom = result
+    let mut bottom = result
         .beam_stem(id)
         .map_or(low + if down { stem } else { 0. }, |s| low.max(s.to.y));
-    let articulation_y = (-10f32).min(top - 12.);
+    if event.notation.harmonic == Some(score_core::Harmonic::Natural) {
+        let y = if below {
+            52f32.max(bottom + 14.)
+        } else {
+            (-12f32).min(top - 12.)
+        };
+        result.marks.push(MarkBox {
+            mark: MarkRef::Harmonic(id),
+            glyph: Some(result.glyphs.len()),
+            center: Point { x, y: y - 4. },
+            half: (7., 7.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: score_core::Harmonic::Natural.glyph().into(),
+            position: Point { x: x - 4., y },
+            element: Some(id),
+        });
+        if below {
+            bottom = y + 4.;
+            result.bottom = result.bottom.max(y + 10.);
+        } else {
+            top = y - 10.;
+            result.top = result.top.min(y - 14.);
+        }
+    }
+    let articulation_y = if below {
+        (50f32).max(bottom + 12.)
+    } else {
+        (-10f32).min(top - 12.)
+    };
     if let Some(mark) = event.notation.articulation {
         let y = articulation_y;
         result.marks.push(MarkBox {
@@ -181,22 +389,36 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             // baseline and reach 1.4 spaces right of the drawing point.
             center: Point {
                 x: x + 2.,
-                y: y - 5.,
+                y: y + if below { 5. } else { -5. },
             },
             half: (9., 8.),
         });
         result.glyphs.push(Glyph {
-            text: mark.glyph().into(),
+            rotated: false,
+            text: if below {
+                mark.glyph_below()
+            } else {
+                mark.glyph()
+            }
+            .into(),
             position: Point { x: x - 4., y },
             element: Some(id),
         });
-        result.top = result.top.min(y - 16.);
+        if below {
+            result.bottom = result.bottom.max(y + 16.);
+        } else {
+            result.top = result.top.min(y - 16.);
+        }
     }
     // The fermata sits outside the articulation, centered over the note.
     let fermata_y = if event.notation.articulation.is_some() {
-        articulation_y - 14.
+        articulation_y + if below { 18. } else { -14. }
     } else {
-        (-12f32).min(top - 12.)
+        if below {
+            (52f32).max(bottom + 12.)
+        } else {
+            (-12f32).min(top - 12.)
+        }
     };
     if event.notation.fermata {
         let kind = score_core::MarkKind::Fermata;
@@ -206,23 +428,62 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             // Bravura's fermataAbove: 2.4 spaces wide, 1.3 high.
             center: Point {
                 x,
-                y: fermata_y - 6.,
+                y: fermata_y + if below { 6. } else { -6. },
             },
             half: (14., 9.),
         });
         result.glyphs.push(Glyph {
-            text: kind.glyph().expect("fermata glyph").into(),
+            rotated: false,
+            text: if below {
+                "\u{e4c1}"
+            } else {
+                kind.glyph().expect("fermata glyph")
+            }
+            .into(),
             position: Point {
                 x: x - 12.,
                 y: fermata_y,
             },
             element: Some(id),
         });
-        result.top = result.top.min(fermata_y - 18.);
+        if below {
+            result.bottom = result.bottom.max(fermata_y + 18.);
+        } else {
+            result.top = result.top.min(fermata_y - 18.);
+        }
+    }
+    if let Some(mark) = event.notation.division {
+        let y = (-24f32).min(if poly { staff_top } else { top } - 24.)
+            - if event.notation.technique.is_some() {
+                22.
+            } else {
+                0.
+            };
+        let y = if event.notation.fermata && !below {
+            y.min(fermata_y - 24.)
+        } else {
+            y
+        };
+        let width = mark.label().chars().count() as f32 * 7.;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Division(id),
+            glyph: None,
+            center: Point {
+                x: x - 5. + width / 2.,
+                y: y - 5.,
+            },
+            half: (width / 2. + 3., 9.),
+        });
+        result.techniques.push(TechniqueLabel {
+            text: mark.label(),
+            position: Point { x: x - 5., y },
+            element: id,
+        });
+        result.top = result.top.min(y - 16.);
     }
     if let Some(mark) = event.notation.technique {
         // A separate lane above stems and articulation, also used by slur envelopes.
-        let y = (-18f32).min(top - 20.);
+        let y = (-18f32).min(if poly { staff_top } else { top } - 20.);
         let y = if event.notation.articulation.is_some() {
             y - 20.
         } else {
@@ -252,7 +513,10 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
     }
     if let Some(mark) = event.notation.dynamic {
         // Keep forte ascenders below the entire lower tie lane.
-        let y = 40f32.max(bottom) + 40.;
+        let y = 40f32
+            .max(bottom)
+            .max(if poly { staff_bottom } else { bottom })
+            + 40.;
         // Bravura's dynamic letters are up to 1.8 spaces wide; f rises 1.8
         // spaces and p descends 0.6 below the baseline.
         let width = mark.label().chars().count() as f32 * 14.;
@@ -266,6 +530,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             half: (width / 2. + 3., 11.),
         });
         result.glyphs.push(Glyph {
+            rotated: false,
             text: mark.glyph().into(),
             position: Point { x: x - 6., y },
             element: Some(id),
@@ -274,21 +539,38 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
     }
 }
 
-pub(super) fn curves(score: &Score, measures: &[PlacedMeasure]) -> Vec<Curve> {
-    let mut result = Vec::new();
-    let mut staves: HashMap<(PartId, StaffId), Vec<&PlacedMeasure>> = HashMap::new();
-    for measure in measures {
-        staves
-            .entry((measure.part, measure.staff))
-            .or_default()
-            .push(measure);
+/// Placed measures indexed once per layout, so each slur, tie and hairpin
+/// finds its notes and rows without scanning every bar of the score.
+pub(super) struct PlacedIndex<'a> {
+    /// The first displayed measure holding each event's heads.
+    events: HashMap<ElementId, &'a PlacedMeasure>,
+    /// Displayed measures of each part's source staff, in layout order.
+    staves: HashMap<(PartId, StaffId), Vec<&'a PlacedMeasure>>,
+}
+impl<'a> PlacedIndex<'a> {
+    pub(super) fn new(measures: &'a [PlacedMeasure]) -> Self {
+        let mut events = HashMap::new();
+        let mut staves = HashMap::<_, Vec<_>>::new();
+        for m in measures {
+            for head in &m.content.events {
+                events.entry(head.id).or_insert(m);
+            }
+            staves.entry((m.part, m.source_staff)).or_default().push(m);
+        }
+        Self { events, staves }
     }
+    fn measure_of(&self, id: ElementId) -> Option<&'a PlacedMeasure> {
+        self.events.get(&id).copied()
+    }
+}
+
+pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> Vec<Curve> {
+    let mut result = Vec::new();
     for c in score.connections().iter().filter(|c| !c.kind.is_hairpin()) {
-        let Some(staff) = staves.get(&(c.start.part, c.start.staff)) else {
+        let Some(start) = index.measure_of(c.start) else {
             continue;
         };
-        let (Some(start), Some(end)) = (staff.get(c.start.measure), staff.get(c.end.measure))
-        else {
+        let Some(end) = index.measure_of(c.end) else {
             continue;
         };
         let start_heads: Vec<_> = start
@@ -303,16 +585,7 @@ pub(super) fn curves(score: &Score, measures: &[PlacedMeasure]) -> Vec<Curve> {
             .iter()
             .filter(|e| e.id == c.end)
             .collect();
-        let mut systems: Vec<Vec<&PlacedMeasure>> = Vec::new();
-        for &m in &staff[c.start.measure..=c.end.measure] {
-            if systems
-                .last()
-                .is_none_or(|row| row[0].origin.y != m.origin.y)
-            {
-                systems.push(Vec::new())
-            }
-            systems.last_mut().unwrap().push(m);
-        }
+        let systems = connection_rows(score, *c, index);
         let count = if c.kind == ConnectionKind::Tie {
             start_heads.len()
         } else {
@@ -330,7 +603,16 @@ pub(super) fn curves(score: &Score, measures: &[PlacedMeasure]) -> Vec<Curve> {
                 end_heads[0]
             };
             // Opposite the stem for single notes, outward for chord tones.
-            let below = if count > 1 {
+            let below = if score
+                .part(c.start.part)
+                .unwrap()
+                .staff(c.start.staff)
+                .unwrap()
+                .measures()[c.start.measure]
+                .has_two_voices()
+            {
+                score.voice_of(c.start) == Some(Voice::Two)
+            } else if count > 1 {
                 a.center.y
                     >= (start_heads
                         .iter()
@@ -347,40 +629,87 @@ pub(super) fn curves(score: &Score, measures: &[PlacedMeasure]) -> Vec<Curve> {
                     .beam_stem(c.start)
                     .map_or(a.center.y > 20., |stem| !stem.down)
             };
+            if c.kind == ConnectionKind::Tie
+                && start.system_start == end.system_start
+                && start.staff != end.staff
+            {
+                let offset = if below { 8. } else { -8. };
+                result.push(Curve {
+                    staff_origin: start.origin.y,
+                    from: Point {
+                        x: start.origin.x + a.center.x + 7.,
+                        y: start.origin.y + a.center.y + offset,
+                    },
+                    to: Point {
+                        x: end.origin.x + b.center.x - 7.,
+                        y: end.origin.y + b.center.y + offset,
+                    },
+                    bend: if below { 12. } else { -12. },
+                    connection: *c,
+                });
+                continue;
+            }
             for (row_index, row) in systems.iter().enumerate() {
-                let first = row[0];
-                let last = row[row.len() - 1];
+                let first = row.measures[0];
                 let x1 = if row_index == 0 {
                     start.origin.x + a.center.x + 7.
                 } else {
-                    first.origin.x + music_prefix(true, score.key_signature()) - 12.
+                    row.start_x()
                 };
                 let x2 = if row_index + 1 == systems.len() {
                     end.origin.x + b.center.x - 7.
                 } else {
-                    last.origin.x + last.width - 5.
+                    row.end_x(score)
                 };
                 let (y1, y2, bend) = if c.kind == ConnectionKind::Slur {
-                    // Follow the envelope of every glyph/stem on this system.
-                    let top = row
+                    // Keep the original shallow, level arch. Indication text
+                    // has its own lane above it and cannot raise this envelope.
+                    let (top, bottom) = row
+                        .measures
                         .iter()
-                        .map(|m| m.origin.y + m.content.ink_top)
-                        .fold(f32::INFINITY, f32::min)
-                        - 8.;
-                    (top, top, -14.)
+                        .map(|bar| {
+                            let (top, bottom) = notation_bounds(&bar.content, metrics);
+                            (bar.origin.y + top, bar.origin.y + bottom)
+                        })
+                        .fold((f32::INFINITY, f32::NEG_INFINITY), |a, b| {
+                            (a.0.min(b.0), a.1.max(b.1))
+                        });
+                    if score.voice_of(c.start) == Some(Voice::Two) {
+                        (bottom + 8., bottom + 8., 14.)
+                    } else {
+                        (top - 8., top - 8., -14.)
+                    }
                 } else {
                     let offset = if below { 8. } else { -8. };
+                    let clearance = |bar: &PlacedMeasure, head: &EventPosition| {
+                        let tick = score.event_tick(head.id);
+                        bar.content
+                            .events
+                            .iter()
+                            .filter(|other| {
+                                other.voice != head.voice && score.event_tick(other.id) == tick
+                            })
+                            .map(|other| other.center.y)
+                            .fold(head.center.y, |y, other| {
+                                if below { y.max(other) } else { y.min(other) }
+                            })
+                    };
                     (
-                        first.origin.y + a.center.y + offset,
-                        first.origin.y + b.center.y + offset,
+                        first.origin.y + clearance(start, a) + offset,
+                        first.origin.y + clearance(end, b) + offset,
                         if below { 12. } else { -12. },
                     )
                 };
                 if x2 > x1 {
                     result.push(Curve {
+                        staff_origin: first.origin.y,
                         from: Point { x: x1, y: y1 },
                         to: Point { x: x2, y: y2 },
-                        bend,
+                        bend: if row.start == row.end {
+                            bend * 0.2
+                        } else {
+                            bend
+                        },
                         connection: *c,
                     });
                 }
@@ -390,6 +719,125 @@ pub(super) fn curves(score: &Score, measures: &[PlacedMeasure]) -> Vec<Curve> {
     result
 }
 
+/// Musical symbols occupy the inner lane; text and dynamics are separate.
+pub(super) fn notation_bounds(content: &MeasureLayout, metrics: &Metrics) -> (f32, f32) {
+    let (mut top, mut bottom) = (0f32, 40f32);
+    for (index, glyph) in content.glyphs.iter().enumerate() {
+        if content
+            .marks
+            .iter()
+            .any(|mark| mark.glyph == Some(index) && matches!(mark.mark, MarkRef::Dynamic(_)))
+        {
+            continue;
+        }
+        let (_, a, _, b) = metrics.bounds(&glyph.text, glyph.rotated);
+        top = top.min(glyph.position.y + a);
+        bottom = bottom.max(glyph.position.y + b);
+    }
+    for line in &content.lines {
+        top = top.min(line.from.y.min(line.to.y) - line.thickness / 2.);
+        bottom = bottom.max(line.from.y.max(line.to.y) + line.thickness / 2.);
+    }
+    for point in content
+        .beams
+        .iter()
+        .flat_map(|g| &g.segments)
+        .flat_map(|s| &s.corners)
+    {
+        top = top.min(point.y);
+        bottom = bottom.max(point.y);
+    }
+    for mark in &content.marks {
+        if !matches!(
+            mark.mark,
+            MarkRef::Dynamic(_) | MarkRef::Technique(_) | MarkRef::Division(_)
+        ) {
+            top = top.min(mark.center.y - mark.half.1);
+            bottom = bottom.max(mark.center.y + mark.half.1);
+        }
+    }
+    for tuplet in &content.tuplets {
+        top = top.min(tuplet.top);
+    }
+    (top, bottom)
+}
+
+/// Arrange text after the complete staff row is known, without changing cached
+/// engraving. Inner to outer: notation, slur, technique, division. Text boxes
+/// have ten units of clear space; coincident indications use another lane.
+pub(super) fn arrange_indications(
+    measures: &mut [PlacedMeasure],
+    metrics: &Metrics,
+    above_slur: bool,
+) -> (f32, f32, f32) {
+    let bounds: Vec<_> = measures
+        .iter()
+        .map(|bar| notation_bounds(&bar.content, metrics))
+        .collect();
+    let top = bounds.iter().map(|b| b.0).fold(0f32, f32::min);
+    let bottom = bounds.iter().map(|b| b.1).fold(40f32, f32::max);
+    let division = |text: &str| matches!(text, "div." | "unis.");
+    let has_technique = measures
+        .iter()
+        .any(|bar| bar.content.techniques.iter().any(|t| !division(t.text)));
+    let technique_y = top - if above_slur { 22. } else { 0. } - 14.;
+    let division_y = technique_y - if has_technique { 30. } else { 0. };
+    let mut labels: Vec<_> = measures
+        .iter()
+        .enumerate()
+        .flat_map(|(m, bar)| {
+            bar.content
+                .techniques
+                .iter()
+                .enumerate()
+                .map(move |(i, label)| {
+                    (division(label.text), bar.origin.x + label.position.x, m, i)
+                })
+        })
+        .collect();
+    labels.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));
+    let mut occupied: Vec<(f32, f32, f32)> = Vec::new();
+    for (is_division, x, m, i) in labels {
+        let content = Arc::make_mut(&mut measures[m].content);
+        let label = &mut content.techniques[i];
+        let width = label.text.chars().count() as f32 * 7.;
+        let mut y = if is_division { division_y } else { technique_y };
+        while let Some(&(_, _, other_y)) = occupied.iter().find(|&&(left, right, other_y)| {
+            x < right + 10. && x + width + 10. > left && (y - other_y).abs() < 30.
+        }) {
+            y = other_y - 30.;
+        }
+        let shift = y - label.position.y;
+        let anchor = label.element;
+        label.position.y = y;
+        for mark in &mut content.marks {
+            if mark.mark
+                == if is_division {
+                    MarkRef::Division(anchor)
+                } else {
+                    MarkRef::Technique(anchor)
+                }
+            {
+                mark.center.y += shift;
+            }
+        }
+        occupied.push((x, x + width, y));
+    }
+    for (bar, bounds) in measures.iter_mut().zip(bounds) {
+        if bar.content.techniques.is_empty() {
+            continue;
+        }
+        let content = Arc::make_mut(&mut bar.content);
+        content.ink_top = content
+            .techniques
+            .iter()
+            .map(|label| label.position.y - 16.)
+            .fold(bounds.0, f32::min);
+        content.top = content.ink_top.min(-42.);
+    }
+    (top, bottom, division_y)
+}
+
 #[derive(Clone, Debug)]
 pub struct Hairpin {
     pub staff_origin: f32,
@@ -397,15 +845,39 @@ pub struct Hairpin {
     pub lower: Line,
     pub connection: Connection,
 }
-pub(super) fn hairpins(score: &Score, measures: &[PlacedMeasure]) -> Vec<Hairpin> {
+/// Shared expression baseline, with a floor below every sounding note and
+/// lower articulation. Dynamics alone cannot pull the wedge through low notes.
+pub(super) fn hairpin_y<'a>(
+    measures: impl Iterator<Item = &'a MeasureLayout>,
+    below_curve: bool,
+) -> f32 {
+    let mut floor = 40f32;
+    let mut dynamic = f32::NEG_INFINITY;
+    for content in measures {
+        floor = floor.max(content.music_ink_bottom);
+        if below_curve {
+            floor = floor.max(content.ink_bottom);
+        }
+        for mark in &content.marks {
+            if matches!(mark.mark, MarkRef::Dynamic(_)) {
+                dynamic = dynamic.max(mark.center.y);
+            } else {
+                floor = floor.max(mark.center.y + mark.half.1);
+            }
+        }
+    }
+    dynamic.max(floor + 28.)
+}
+
+pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Vec<Hairpin> {
     let mut result = Vec::new();
     for c in score.connections().iter().filter(|c| c.kind.is_hairpin()) {
-        let staff: Vec<_> = measures
-            .iter()
-            .filter(|m| m.part == c.start.part && m.staff == c.start.staff)
-            .collect();
-        let start = staff[c.start.measure];
-        let end = staff[c.end.measure];
+        let Some(start) = index.measure_of(c.start) else {
+            continue;
+        };
+        let Some(end) = index.measure_of(c.end) else {
+            continue;
+        };
         let a = start
             .content
             .events
@@ -422,16 +894,9 @@ pub(super) fn hairpins(score: &Score, measures: &[PlacedMeasure]) -> Vec<Hairpin
             .unwrap()
             .center
             .x;
-        let mut rows: Vec<Vec<&PlacedMeasure>> = Vec::new();
-        for &m in &staff[c.start.measure..=c.end.measure] {
-            if rows.last().is_none_or(|r| r[0].origin.y != m.origin.y) {
-                rows.push(Vec::new());
-            }
-            rows.last_mut().unwrap().push(m);
-        }
+        let rows = connection_rows(score, *c, index);
         let start_tick = score.event_tick(c.start).unwrap() as f32;
         let end_tick = score.event_tick(c.end).unwrap() as f32;
-        let capacity = f32::from(score.time().capacity());
         let opening = |tick: f32| {
             let progress = ((tick - start_tick) / (end_tick - start_tick)).clamp(0., 1.);
             6. * if c.kind == ConnectionKind::Crescendo {
@@ -441,54 +906,175 @@ pub(super) fn hairpins(score: &Score, measures: &[PlacedMeasure]) -> Vec<Hairpin
             }
         };
         for (i, row) in rows.iter().enumerate() {
-            let first = row[0];
-            let last = row[row.len() - 1];
-            let x1 = if i == 0 {
+            let first = row.measures[0];
+            let dynamics: Vec<_> = row
+                .measures
+                .iter()
+                .flat_map(|m| {
+                    m.content.marks.iter().filter_map(move |mark| {
+                        matches!(mark.mark, MarkRef::Dynamic(_)).then_some((
+                            m.origin.x + mark.center.x - mark.half.0,
+                            m.origin.x + mark.center.x + mark.half.0,
+                            m.origin.y + mark.center.y,
+                        ))
+                    })
+                })
+                .collect();
+            let mut x1 = if i == 0 {
                 start.origin.x + a + 8.
             } else {
-                first.origin.x + music_prefix(true, score.key_signature()) - 12.
+                row.start_x()
             };
-            let x2 = if i + 1 == rows.len() {
+            let mut x2 = if i + 1 == rows.len() {
                 end.origin.x + b - 8.
             } else {
-                last.origin.x + last.width - 5.
+                row.end_x(score)
             };
-            // Shared lane below every local mark and lower tie on this staff row.
-            let y = staff
-                .iter()
-                .filter(|m| m.origin.y == first.origin.y)
-                .map(|m| m.origin.y + m.content.ink_bottom)
-                .fold(f32::NEG_INFINITY, f32::max)
-                + 28.;
-            let h1 = opening(if i == 0 {
-                start_tick
-            } else {
-                first.index as f32 * capacity
+            // Dynamics and hairpins share one expression lane. Leave horizontal
+            // clearance around the letters rather than stacking another lane.
+            for &(left, right, _) in &dynamics {
+                if left <= x1 && right >= x1 - 6. {
+                    x1 = right + 6.;
+                }
+                if left <= x2 + 6. && right >= x2 {
+                    x2 = left - 6.;
+                }
+            }
+            let below_curve = score.connections().iter().any(|connection| {
+                !connection.kind.is_hairpin()
+                    && connection.start.part == first.part
+                    && connection.start.staff == first.source_staff
+                    && (connection.kind == ConnectionKind::Tie
+                        || score.voice_of(connection.start) == Some(Voice::Two))
+                    && row.measures.iter().any(|m| {
+                        (connection.start.measure..=connection.end.measure).contains(&m.index)
+                    })
             });
+            let y = first.origin.y
+                + hairpin_y(row.measures.iter().map(|m| m.content.as_ref()), below_curve);
+            let h1 = opening(if i == 0 { start_tick } else { row.start as f32 });
             let h2 = opening(if i + 1 == rows.len() {
                 end_tick
             } else {
-                (last.index + 1) as f32 * capacity
+                row.end as f32
             });
             if x1 < x2 {
-                result.push(Hairpin {
-                    staff_origin: first.origin.y,
-                    upper: Line {
-                        from: Point { x: x1, y: y - h1 },
-                        to: Point { x: x2, y: y - h2 },
-                        thickness: 1.2,
-                        element: None,
-                    },
-                    lower: Line {
-                        from: Point { x: x1, y: y + h1 },
-                        to: Point { x: x2, y: y + h2 },
-                        thickness: 1.2,
-                        element: None,
-                    },
-                    connection: *c,
-                });
+                let mut spans = vec![(x1, x2)];
+                for &(left, right, _) in &dynamics {
+                    spans = spans
+                        .into_iter()
+                        .flat_map(|(a, b)| {
+                            if right + 6. <= a || left - 6. >= b {
+                                vec![(a, b)]
+                            } else {
+                                [(a, left - 6.), (right + 6., b)]
+                                    .into_iter()
+                                    .filter(|(a, b)| a < b)
+                                    .collect()
+                            }
+                        })
+                        .collect();
+                }
+                let opening_at = |x: f32| h1 + (h2 - h1) * (x - x1) / (x2 - x1);
+                for (left, right) in spans {
+                    result.push(Hairpin {
+                        staff_origin: first.origin.y,
+                        upper: Line {
+                            from: Point {
+                                x: left,
+                                y: y - opening_at(left),
+                            },
+                            to: Point {
+                                x: right,
+                                y: y - opening_at(right),
+                            },
+                            thickness,
+                            element: None,
+                        },
+                        lower: Line {
+                            from: Point {
+                                x: left,
+                                y: y + opening_at(left),
+                            },
+                            to: Point {
+                                x: right,
+                                y: y + opening_at(right),
+                            },
+                            thickness,
+                            element: None,
+                        },
+                        connection: *c,
+                    });
+                }
             }
         }
     }
     result
+}
+
+struct ConnectionRow<'a> {
+    measures: Vec<&'a PlacedMeasure>,
+    start: u64,
+    end: u64,
+}
+impl ConnectionRow<'_> {
+    fn start_x(&self) -> f32 {
+        let first = self.measures[0];
+        let local = self.start - first.start_tick;
+        // Use this placed bar's actual timing grid. A voice returning to the
+        // upper staff within a system does not repeat its clef/signature.
+        first.origin.x + first.content.x_at_tick(local as f64) - 4.
+    }
+    fn end_x(&self, score: &Score) -> f32 {
+        let last = self.measures[self.measures.len() - 1];
+        let local = self.end - last.start_tick;
+        last.origin.x
+            + if local == u64::from(score.time_at(last.index).capacity()) {
+                last.width - 5.
+            } else {
+                last.content.x_at_tick(local as f64) + 2.
+            }
+    }
+}
+fn connection_rows<'a>(
+    score: &Score,
+    c: Connection,
+    index: &PlacedIndex<'a>,
+) -> Vec<ConnectionRow<'a>> {
+    let voice = score.voice_of(c.start).unwrap_or(Voice::One);
+    let start = score.event_tick(c.start).unwrap();
+    let end = score.event_tick(c.end).unwrap();
+    let mut pieces = Vec::new();
+    for &m in index
+        .staves
+        .get(&(c.start.part, c.start.staff))
+        .into_iter()
+        .flatten()
+    {
+        for r in m.regions.iter().filter(|r| r.voice == voice) {
+            let a = m.start_tick + u64::from(r.start);
+            let b = m.start_tick + u64::from(r.end);
+            if b > start && a <= end {
+                pieces.push((a.max(start), b.min(end), m));
+            }
+        }
+    }
+    pieces.sort_by_key(|(a, b, _)| (*a, *b));
+    let mut rows: Vec<ConnectionRow<'_>> = Vec::new();
+    for (start, end, m) in pieces {
+        if let Some(row) = rows
+            .last_mut()
+            .filter(|row| row.measures[0].origin.y == m.origin.y && row.end == start)
+        {
+            row.measures.push(m);
+            row.end = end;
+        } else {
+            rows.push(ConnectionRow {
+                measures: vec![m],
+                start,
+                end,
+            });
+        }
+    }
+    rows
 }

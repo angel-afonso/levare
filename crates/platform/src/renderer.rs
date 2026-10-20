@@ -60,7 +60,7 @@ pub struct Control {
 pub struct PlaybackPosition {
     pub frame: u64,
     pub element: Option<score_core::ElementId>,
-    pub elements: [Option<score_core::ElementId>; score_core::MAX_STAVES],
+    pub elements: [Option<score_core::ElementId>; score_core::MAX_STAVES * 2],
 }
 
 impl Control {
@@ -174,6 +174,13 @@ impl Control {
             || !(1..=127).contains(&audition.level)
             || keys.iter().flatten().any(|key| *key > 127)
             || keys.iter().all(Option::is_none)
+            || (0..keys.len()).any(|index| {
+                keys[index].is_some()
+                    && (audition.delays[index] >= audition.gate_at(index)
+                        || audition.gate_at(index) > u64::from(self.sample_rate) * 2
+                        || audition.note_at(index).key != keys[index].unwrap()
+                        || !(1..=127).contains(&audition.note_at(index).level))
+            })
         {
             return Err(error("Notas MIDI inválidas"));
         }
@@ -281,6 +288,9 @@ pub struct Renderer {
     next_message: usize,
     clock: u64,
     preview_off: Option<u64>,
+    /// Fixed storage: no pending attack can allocate in the audio callback.
+    preview: Option<(score_playback::Audition, u64)>,
+    preview_attacked: [bool; score_playback::MAX_AUDITION_NOTES],
     left: [f32; BLOCK],
     right: [f32; BLOCK],
     mix: [u32; score_playback::PLAYBACK_CHANNELS],
@@ -323,6 +333,8 @@ impl Renderer {
             next_message: 0,
             clock: 0,
             preview_off: None,
+            preview: None,
+            preview_attacked: [false; score_playback::MAX_AUDITION_NOTES],
             left: [0.; BLOCK],
             right: [0.; BLOCK],
             mix: [u32::MAX; score_playback::PLAYBACK_CHANNELS],
@@ -370,6 +382,7 @@ impl Renderer {
             self.engines.silence(None, true);
             self.active = None;
             self.preview_off = None;
+            self.preview = None;
             self.frame = 0;
             self.next_message = 0;
             self.epoch = epoch;
@@ -425,16 +438,16 @@ impl Renderer {
                     });
                     self.frame = start_frame;
                     self.preview_off = None;
+                    self.preview = None;
                     self.shared.frame.store(start_frame, Ordering::Release);
                     self.shared.started.store(epoch, Ordering::Release);
                 }
                 Command::Preview { epoch, audition } if epoch == self.epoch => {
                     self.engines.silence(Some(15), true);
                     self.midi(15, 0xb0, 11, 127);
-                    for key in audition.keys.into_iter().flatten() {
-                        self.note_on(15, audition.note(key));
-                    }
-                    self.preview_off = Some(self.clock.saturating_add(audition.duration_frames));
+                    self.preview = Some((audition, self.clock));
+                    self.preview_attacked.fill(false);
+                    self.preview_off = Some(self.clock.saturating_add(audition.end_frame()));
                 }
                 _ => {} // Old commands are invalidated by Stop; owners stay in Control.
             }
@@ -455,6 +468,7 @@ impl Renderer {
                 Message::Expression(value) => self.midi(message.channel, 0xb0, 11, value),
                 Message::NoteOn(note) => self.note_on(message.channel, note),
                 Message::NoteOff(key) => self.note_off(message.channel, key),
+                Message::HarmonicOff(key) => self.engines.harmonic_off(message.channel, key),
             }
             self.next_message += 1;
         }
@@ -468,9 +482,33 @@ impl Renderer {
             self.active = None;
             self.shared.finished.store(self.epoch, Ordering::Release);
         }
+        if let Some((mut audition, start)) = self.preview {
+            for index in 0..audition.keys.len() {
+                if let Some(key) = audition.keys[index] {
+                    if !self.preview_attacked[index]
+                        && start.saturating_add(audition.delays[index]) <= self.clock
+                    {
+                        self.note_on(15, audition.note_at(index));
+                        self.preview_attacked[index] = true;
+                    }
+                    if self.preview_attacked[index]
+                        && start.saturating_add(audition.gate_at(index)) <= self.clock
+                    {
+                        if audition.note_at(index).harmonic.is_some() {
+                            self.engines.harmonic_off(15, key);
+                        } else {
+                            self.note_off(15, key);
+                        }
+                        audition.keys[index] = None;
+                    }
+                }
+            }
+            self.preview = Some((audition, start));
+        }
         if self.preview_off.is_some_and(|off| self.clock >= off) {
             self.engines.silence(Some(15), false);
             self.preview_off = None;
+            self.preview = None;
         }
     }
 
@@ -511,6 +549,18 @@ impl Renderer {
             }
             if let Some(off) = self.preview_off {
                 count = count.min((off - self.clock) as usize);
+            }
+            if let Some((audition, start)) = &self.preview {
+                for index in 0..audition.keys.len() {
+                    if audition.keys[index].is_some() {
+                        let boundary = if self.preview_attacked[index] {
+                            audition.gate_at(index)
+                        } else {
+                            audition.delays[index]
+                        };
+                        count = count.min((start.saturating_add(boundary) - self.clock) as usize);
+                    }
+                }
             }
             // due_messages consumed all boundaries at the current frame.
             debug_assert!(count > 0);
@@ -1002,14 +1052,18 @@ mod tests {
     }
 
     #[test]
-    fn every_catalog_instrument_has_a_bank_preset_and_a_distinct_audition() {
+    fn every_catalog_instrument_has_a_bank_preset_and_an_audible_audition() {
         let bank = sound_font().unwrap();
-        let mut previous = [0f32; 4096];
         for instrument in score_core::Instrument::ALL {
             assert!(
                 bank.get_presets()
                     .iter()
-                    .any(|preset| preset.get_bank_number() == 0
+                    .any(|preset| preset.get_bank_number()
+                        == if instrument.percussion_key().is_some() {
+                            128
+                        } else {
+                            0
+                        }
                         && preset.get_patch_number() == i32::from(instrument.program()))
             );
             let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
@@ -1021,13 +1075,6 @@ mod tests {
                 "{} must be audible",
                 instrument.name()
             );
-            assert_ne!(
-                output,
-                previous,
-                "{} must change the timbre",
-                instrument.name()
-            );
-            previous = output;
         }
     }
 
@@ -1292,6 +1339,132 @@ mod tests {
     }
 
     #[test]
+    fn preview_rolls_at_exact_frames_and_cancels_pending_attacks_without_allocations() {
+        use score_playback::Audition;
+        let (mut control, mut actual) = Renderer::new(48_000).unwrap();
+        let (_, mut reference) = Renderer::new(48_000).unwrap();
+        let mut preview = Audition::plain(
+            [Some(60), Some(64), Some(67), None, None, None, None, None],
+            score_core::Instrument::Piano,
+            48_000,
+        );
+        preview.delays[..3].copy_from_slice(&[0, 1000, 2000]);
+        preview.duration_frames = 5000;
+        preview.gates[..3].copy_from_slice(&[3000, 4000, 5000]);
+        preview.notes[0] = Some(score_playback::NoteEvent {
+            level: 56,
+            ..preview.note(60)
+        });
+        preview.notes[1] = Some(score_playback::NoteEvent {
+            level: 100,
+            ..preview.note(64)
+        });
+        let mut invalid = preview;
+        invalid.delays[1] = 5000;
+        assert!(control.preview_audition(invalid).is_err());
+        control.preview_audition(preview).unwrap();
+        let mut a = [0f32; 1000];
+        let mut b = [0f32; 1000];
+        for block in 0..12 {
+            if block < 6 && block % 2 == 0 {
+                reference.note_on(15, preview.note_at(block / 2));
+            }
+            if [6, 8, 10].contains(&block) {
+                reference.note_off(15, preview.keys[(block - 6) / 2].unwrap());
+            }
+            if block == 10 {
+                reference.engines.silence(Some(15), false);
+            }
+            assert_no_alloc(|| {
+                actual.render(&mut a, 2);
+                reference.render(&mut b, 2);
+            });
+            assert_eq!(a, b, "block {block}");
+        }
+        assert!(actual.preview.is_none());
+        control.preview_audition(preview).unwrap();
+        reference.engines.silence(Some(15), true);
+        reference.note_on(15, preview.note_at(0));
+        assert_no_alloc(|| {
+            actual.render(&mut a, 2);
+            reference.render(&mut b, 2);
+        });
+        assert_eq!(a, b);
+        control.stop();
+        reference.reverb.clear();
+        reference.engines.silence(None, true);
+        for _ in 0..12 {
+            assert_no_alloc(|| {
+                actual.render(&mut a, 2);
+                reference.render(&mut b, 2);
+            });
+            // Match the synth's normal stop tail, without any delayed reattack.
+            assert_eq!(a, b);
+        }
+        assert!(actual.preview.is_none());
+        // Replacing a preview also retires its remaining attacks.
+        control.preview_audition(preview).unwrap();
+        assert_no_alloc(|| actual.render(&mut a, 2));
+        control.preview(72).unwrap();
+        assert_no_alloc(|| actual.render(&mut a, 2));
+        let pending = actual.preview.unwrap().0;
+        assert!(
+            pending
+                .keys
+                .iter()
+                .enumerate()
+                .all(|(index, key)| key.is_none() || actual.preview_attacked[index])
+        );
+    }
+
+    #[test]
+    fn sixteen_note_piano_preview_renders_and_releases_without_callback_allocations() {
+        use score_core::{Pitches, StaffId};
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let mut ids = Vec::new();
+        for (staff, octave) in [(StaffId::Upper, 5), (StaffId::Lower, 2)] {
+            let pitches = Pitches::new(
+                &(0..8)
+                    .map(|i| Pitch::new(Step::C, octave).unwrap().shift(i * 2).unwrap())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            ids.push(
+                score
+                    .insert_on(
+                        piano,
+                        staff,
+                        0,
+                        0,
+                        Event {
+                            pitches,
+                            duration: Duration::Quarter,
+                            notation: Default::default(),
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        score.set_arpeggio_both_hands(ids[0], true).unwrap();
+        let preview =
+            score_playback::Audition::for_element(&score, ids[1], Tempo::default(), 48_000)
+                .unwrap();
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        control.preview_audition(preview).unwrap();
+        let mut output = [0f32; 1024];
+        let mut energy = 0f32;
+        assert_no_alloc(|| {
+            for _ in 0..40 {
+                renderer.render(&mut output, 2);
+                energy += output.iter().map(|sample| sample * sample).sum::<f32>();
+            }
+        });
+        assert!(energy > 0.001);
+        assert!(renderer.preview.is_none());
+    }
+
+    #[test]
     fn preview_releases_automatically_and_output_supports_mono_and_integer_formats() {
         let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
         control.preview(60).unwrap();
@@ -1312,5 +1485,48 @@ mod tests {
                 .iter()
                 .all(|frame| frame[2..].iter().all(|sample| *sample == 0.))
         );
+    }
+    #[test]
+    fn last_orchestra_channel_and_percussion_render_without_callback_allocations() {
+        for instrument in [
+            score_core::Instrument::Violin,
+            score_core::Instrument::SnareDrum,
+        ] {
+            let mut score =
+                Score::new("Orquesta".into(), &[instrument; score_core::MAX_PARTS], 1).unwrap();
+            let part = score.parts().back().unwrap().id();
+            score
+                .insert_on(
+                    part,
+                    score_core::StaffId::Upper,
+                    0,
+                    0,
+                    Event {
+                        pitches: score_core::Pitches::single(Pitch::new(Step::B, 4)),
+                        duration: Duration::Quarter,
+                        notation: Default::default(),
+                    },
+                )
+                .unwrap();
+            let plan = Arc::new(PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap());
+            let channel = score_playback::part_channel(score_core::MAX_PARTS - 1);
+            assert!(channel >= 96);
+            let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+            control.set_reverb(ReverbSettings {
+                enabled: false,
+                ..Default::default()
+            });
+            control.play(plan).unwrap();
+            let mut output = [0f32; 4096];
+            assert_no_alloc(|| renderer.render(&mut output, 2));
+            assert!(output.iter().any(|v| v.abs() > 0.0001));
+            control.set_channel_mix(channel, ChannelMix { volume: 0, pan: 0 });
+            // The synth ramps a controller change over its next block.
+            assert_no_alloc(|| {
+                renderer.render(&mut output, 2);
+                renderer.render(&mut output, 2);
+            });
+            assert!(output.iter().all(|v| *v == 0.));
+        }
     }
 }

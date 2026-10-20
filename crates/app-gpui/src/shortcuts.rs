@@ -53,8 +53,7 @@ pub struct Shortcuts {
 
 impl Shortcuts {
     pub fn load() -> Self {
-        let path =
-            dirs::data_local_dir().map(|directory| directory.join("Partitura").join("atajos.json"));
+        let path = crate::data_path("atajos.json");
         let mut problems = Vec::new();
         let user = match path.as_deref().map(UserKeymap::load) {
             Some(Ok(user)) => user,
@@ -144,6 +143,7 @@ impl Shortcuts {
     pub fn install(&self, cx: &mut App) {
         cx.clear_key_bindings();
         cx.bind_keys(self.key_bindings());
+        cx.bind_keys(crate::ui::text_input::bindings());
         crate::menu_typography::install(self.menus(), cx);
     }
 
@@ -207,6 +207,8 @@ impl Shortcuts {
                 Some(id::NEXT_INSTRUMENT),
                 Some(id::PREVIOUS_INSTRUMENT),
                 Some(id::REMOVE_INSTRUMENT),
+                Some(id::DIVIDE_PART),
+                Some(id::JOIN_PART),
                 None,
                 Some(id::RIGHT_HAND),
                 Some(id::LEFT_HAND),
@@ -229,12 +231,19 @@ impl Shortcuts {
             .collect();
         let expression = self
             .items(&[
+                Some(id::TEMPO_TEXT),
+                None,
                 Some(id::STACCATO),
                 Some(id::TENUTO),
                 Some(id::ACCENT),
                 Some(id::MARCATO),
                 Some(id::CLEAR_ARTICULATION),
                 Some(id::FERMATA),
+                None,
+                Some(id::ARPEGGIO),
+                Some(id::ARPEGGIO_UP),
+                Some(id::ARPEGGIO_DOWN),
+                Some(id::ARPEGGIO_BOTH_HANDS),
                 None,
                 Some(id::CRESCENDO),
                 Some(id::DIMINUENDO),
@@ -244,6 +253,12 @@ impl Shortcuts {
                 Some(id::PIZZICATO),
                 Some(id::ARCO),
                 Some(id::CLEAR_TECHNIQUE),
+                None,
+                Some(id::HARMONIC_NATURAL),
+                Some(id::HARMONIC_ARTIFICIAL),
+                None,
+                Some(id::DIVISI),
+                Some(id::UNISON),
                 None,
             ])
             .into_iter()
@@ -285,9 +300,14 @@ impl Shortcuts {
                     None,
                     Some(id::REPEAT),
                     Some(id::DELETE),
+                    Some(id::REMOVE_TIME),
                     None,
                     Some(id::BAR_AT_END),
+                    Some(id::SINGLE_BAR),
+                    Some(id::DELETE_BAR),
                     None,
+                    Some(id::VOICE_1),
+                    Some(id::VOICE_2),
                     Some(id::TOGGLE_NOTE_INPUT),
                     Some(id::CHORD_MODE),
                     None,
@@ -332,6 +352,11 @@ impl Shortcuts {
                     Some(id::ZOOM_IN),
                     Some(id::ZOOM_OUT),
                     Some(id::ZOOM_ACTUAL),
+                    Some(id::ZOOM_FIT),
+                    None,
+                    Some(id::PAGE_VIEW),
+                    Some(id::CONTINUOUS_VIEW),
+                    Some(id::SINGLE_SYSTEM_VIEW),
                     None,
                     Some(id::FULL_SCREEN),
                     Some(id::TOGGLE_INSTRUMENTS_PANEL),

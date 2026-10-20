@@ -34,6 +34,14 @@ impl Articulation {
             Self::Marcato => "\u{e4ac}",
         }
     }
+    pub const fn glyph_below(self) -> &'static str {
+        match self {
+            Self::Staccato => "\u{e4a3}",
+            Self::Tenuto => "\u{e4a5}",
+            Self::Accent => "\u{e4a1}",
+            Self::Marcato => "\u{e4ad}",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Dynamic {
@@ -116,10 +124,41 @@ impl PlayingTechnique {
         }
     }
 }
+/// A chord rolled from the bass upwards (normal/up), or from its top downwards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Arpeggio {
+    Normal,
+    Up,
+    Down,
+}
+impl Arpeggio {
+    pub const ALL: [Self; 3] = [Self::Normal, Self::Up, Self::Down];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "Arpegio",
+            Self::Up => "Arpegio ascendente",
+            Self::Down => "Arpegio descendente",
+        }
+    }
+    /// Precomposed symbols for controls; engraving repeats the SMuFL segments.
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Normal => "\u{e63c}",
+            Self::Up => "\u{e634}",
+            Self::Down => "\u{e635}",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub division: Option<Division>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arpeggio: Option<Arpeggio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub technique: Option<PlayingTechnique>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harmonic: Option<Harmonic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub articulation: Option<Articulation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,43 +197,74 @@ pub struct Connection {
 
 impl Score {
     pub fn set_duration(&mut self, id: ElementId, duration: Duration) -> Result<(), ScoreError> {
-        let old = self
-            .event(id)
-            .ok_or(ScoreError("Selecciona una nota o silencio"))?
-            .duration;
-        let measure = &self
-            .part(id.part)
-            .unwrap()
-            .staff(id.staff)
-            .unwrap()
-            .measures()[id.measure];
-        if measure.used_ticks() - old.ticks() + duration.ticks() > self.time().capacity() {
-            return Err(ScoreError("La duración nueva no cabe en el compás"));
+        self.set_durations(&[(id, duration)])
+    }
+
+    /// Validate the final rhythmic totals, then prune relationships only once.
+    pub fn set_durations(&mut self, edits: &[(ElementId, Duration)]) -> Result<(), ScoreError> {
+        let mut totals = std::collections::HashMap::new();
+        let mut seen = std::collections::HashSet::new();
+        for &(id, duration) in edits {
+            if !seen.insert(id) {
+                return Err(ScoreError("La nota está repetida"));
+            }
+            let old = self
+                .event(id)
+                .ok_or(ScoreError("La nota no existe"))?
+                .duration;
+            let voice = self.voice_of(id).unwrap();
+            let used = self
+                .part(id.part)
+                .unwrap()
+                .staff(id.staff)
+                .unwrap()
+                .measures()[id.measure]
+                .voice_ticks(voice);
+            let total = totals
+                .entry((id.part, id.staff, id.measure, voice))
+                .or_insert(i32::from(used));
+            *total += i32::from(duration.ticks()) - i32::from(old.ticks());
         }
-        Arc::make_mut(
-            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
-        )[id.event]
-            .duration = duration;
+        for ((_, _, bar, _), used) in totals {
+            if used > i32::from(self.time_at(bar).capacity()) {
+                return Err(ScoreError("La duración nueva no cabe en el compás"));
+            }
+        }
+        for &(id, duration) in edits {
+            Arc::make_mut(
+                &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+            )[id.event]
+                .duration = duration;
+        }
         self.prune_connections();
         Ok(())
     }
 
     /// Effective instruction at this event, including its own mark.
     pub fn technique_at(&self, id: ElementId) -> Option<PlayingTechnique> {
-        let staff = self.part(id.part)?.staff(id.staff)?;
-        let mut technique = PlayingTechnique::Arco;
-        for (measure, bar) in staff.measures().iter().enumerate().take(id.measure + 1) {
-            for (event_id, event) in bar.iter() {
-                if let Some(mark) = event.notation.technique {
-                    technique = mark;
-                }
-                if measure == id.measure && event_id == id.event {
-                    return Some(technique);
+        let part = self.part(id.part)?;
+        part.staff(id.staff)?;
+        let tick = self.event_tick(id)?;
+        let mut marks = std::collections::BTreeMap::new();
+        for staff in part.expression_staves(id.staff) {
+            for (index, bar) in staff.measures().iter().enumerate().take(id.measure + 1) {
+                for (_, onset, _, event) in bar.timed_iter() {
+                    let at = self.measure_start_tick(index) + u64::from(onset);
+                    if at <= tick
+                        && let Some(mark) = event.notation.technique
+                    {
+                        marks.insert(at, mark);
+                    }
                 }
             }
         }
-        None
+        Some(
+            marks
+                .last_key_value()
+                .map_or(PlayingTechnique::Arco, |(_, mark)| *mark),
+        )
     }
+
     pub fn set_technique(
         &mut self,
         id: ElementId,
@@ -226,23 +296,26 @@ impl Score {
             .staff(id.staff)?
             .measures()
             .get(id.measure)?;
-        let mut tick = id.measure as u64 * u64::from(self.time.capacity());
-        for (event, value) in measure.iter() {
+        let tick = self.measure_start_tick(id.measure);
+        for (_, onset, event, _) in measure.timed_iter() {
             if event == id.event {
-                return Some(tick);
+                return Some(tick + u64::from(onset));
             }
-            tick += u64::from(value.duration.ticks());
         }
         None
     }
     pub fn next_event(&self, id: ElementId) -> Option<ElementId> {
         let staff = self.part(id.part)?.staff(id.staff)?;
-        let index = staff.measures().get(id.measure)?.index_of(id.event)?;
-        if let Some(event) = staff.measures()[id.measure].id_at(index + 1) {
+        let voice = self.voice_of(id)?;
+        let index = staff
+            .measures()
+            .get(id.measure)?
+            .voice_index_of(voice, id.event)?;
+        if let Some(event) = staff.measures()[id.measure].voice_id_at(voice, index + 1) {
             return Some(ElementId { event, ..id });
         }
         for measure in id.measure + 1..staff.measures().len() {
-            if let Some(event) = staff.measures()[measure].id_at(0) {
+            if let Some(event) = staff.measures()[measure].voice_id_at(voice, 0) {
                 return Some(ElementId {
                     event,
                     measure,
@@ -262,6 +335,7 @@ impl Score {
             return false;
         };
         c.start.part == c.end.part
+            && self.voice_of(c.start) == self.voice_of(c.end)
             && c.start.staff == c.end.staff
             && start < end
             && (c.kind.is_hairpin() || (!a.pitches.is_empty() && !b.pitches.is_empty()))
@@ -269,13 +343,14 @@ impl Score {
                 || c.kind == ConnectionKind::Slur
                 || (end == start + u64::from(a.duration.ticks())
                     && self.next_event(c.start) == Some(c.end)
+                    && a.notation.harmonic == b.notation.harmonic
                     && a.pitches
-                        .in_key(self.key_signature)
+                        .in_key(self.written_key_at(c.start.part, c.start.measure))
                         .iter()
                         .map(|p| (p.diatonic(), p.alteration()))
                         .eq(b
                             .pitches
-                            .in_key(self.key_signature)
+                            .in_key(self.written_key_at(c.end.part, c.end.measure))
                             .iter()
                             .map(|p| (p.diatonic(), p.alteration())))))
     }
@@ -309,7 +384,9 @@ impl Score {
                 } else {
                     other.kind == c.kind
                 }) && other.start.part == c.start.part
-                    && other.start.staff == c.start.staff
+                    && (other.start.staff == c.start.staff
+                        || (c.kind.is_hairpin() && self.part(c.start.part).unwrap().is_divisi()))
+                    && (c.kind.is_hairpin() || self.voice_of(other.start) == self.voice_of(c.start))
                     && self.event_tick(other.start).unwrap() < end
                     && self.event_tick(other.end).unwrap() > start
             }) {
@@ -351,6 +428,7 @@ impl Score {
             .filter(|c| self.valid_connection(*c))
             .collect();
         self.connections = valid;
+        self.prune_piano_arpeggios();
     }
     pub(super) fn validate_connections(&self) -> Result<(), ScoreError> {
         if self.connections.len() > 4096 {
@@ -370,7 +448,11 @@ impl Score {
             if c.kind.is_hairpin() {
                 hairpins.push((
                     c.start.part.0,
-                    c.start.staff as u8,
+                    if self.part(c.start.part).unwrap().is_divisi() {
+                        0
+                    } else {
+                        c.start.staff as u8
+                    },
                     self.event_tick(c.start).unwrap(),
                     self.event_tick(c.end).unwrap(),
                 ));
@@ -378,7 +460,7 @@ impl Score {
             if c.kind == ConnectionKind::Slur {
                 slurs.push((
                     c.start.part.0,
-                    c.start.staff as u8,
+                    c.start.staff as u8 * 2 + self.voice_of(c.start).unwrap().number() - 1,
                     self.event_tick(c.start).unwrap(),
                     self.event_tick(c.end).unwrap(),
                 ));
@@ -398,6 +480,36 @@ impl Score {
         {
             return Err(ScoreError("Ligaduras de expresión solapadas"));
         }
+        Ok(())
+    }
+    pub fn set_arpeggio(
+        &mut self,
+        id: ElementId,
+        value: Option<Arpeggio>,
+    ) -> Result<(), ScoreError> {
+        if let Some(index) = self
+            .piano_arpeggios
+            .iter()
+            .position(|mark| mark.contains(id))
+        {
+            if let Some(kind) = value {
+                self.piano_arpeggios[index].kind = kind;
+            } else {
+                self.piano_arpeggios.remove(index);
+            }
+            return Ok(());
+        }
+        let event = self.event(id).ok_or(ScoreError("Selecciona un acorde"))?;
+        if value.is_some() && event.pitches.len() < 2 {
+            return Err(ScoreError(
+                "El arpegio requiere un acorde de al menos dos notas",
+            ));
+        }
+        Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation
+            .arpeggio = value;
         Ok(())
     }
     pub fn set_articulation(

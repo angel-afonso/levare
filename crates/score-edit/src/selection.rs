@@ -17,22 +17,26 @@ impl Editor {
         let position = |id: ElementId| {
             (
                 id.measure,
-                staff.measures()[id.measure].index_of(id.event).unwrap(),
+                staff.measures()[id.measure]
+                    .voice_index_of(self.cursor().voice, id.event)
+                    .unwrap(),
             )
         };
         let (a, b) = (position(anchor), position(focus));
         let (low, high) = (a.min(b), a.max(b));
+        let voice = self.cursor().voice;
         (low.0..=high.0)
             .flat_map(|measure| {
-                staff.measures()[measure].iter().enumerate().filter_map(
-                    move |(index, (event, _))| {
+                staff.measures()[measure]
+                    .voice_iter(voice)
+                    .enumerate()
+                    .filter_map(move |(index, (event, _))| {
                         ((measure, index) >= low && (measure, index) <= high).then_some(ElementId {
                             measure,
                             event,
                             ..focus
                         })
-                    },
-                )
+                    })
             })
             .collect()
     }
@@ -41,7 +45,10 @@ impl Editor {
         self.select(id);
         if self.selection() == Some(id) {
             self.state.range_anchor = anchor.filter(|a| {
-                a.part == id.part && a.staff == id.staff && self.score().event(*a).is_some()
+                a.part == id.part
+                    && a.staff == id.staff
+                    && self.score().voice_of(*a) == self.score().voice_of(id)
+                    && self.score().event(*a).is_some()
             });
         }
     }
@@ -74,7 +81,12 @@ impl Editor {
                     .staff(id.staff)
                     .unwrap()
                     .measures()[id.measure];
-                (id.measure, measure.index_of(id.event).unwrap())
+                (
+                    id.measure,
+                    measure
+                        .voice_index_of(self.cursor().voice, id.event)
+                        .unwrap(),
+                )
             };
             if forward {
                 ids.iter()
@@ -100,12 +112,13 @@ impl Editor {
             .iter()
             .enumerate()
             .flat_map(|(measure, bar)| {
-                bar.iter().map(move |(event, _)| ElementId {
-                    part: cursor.part,
-                    staff: cursor.staff,
-                    measure,
-                    event,
-                })
+                bar.voice_iter(cursor.voice)
+                    .map(move |(event, _)| ElementId {
+                        part: cursor.part,
+                        staff: cursor.staff,
+                        measure,
+                        event,
+                    })
             })
             .collect()
     }

@@ -63,7 +63,7 @@ impl Default for Metrics {
             tile: 32.,
             small_base: 34.,
             char_width: 6.6,
-            gap: 2.,
+            gap: 4.,
             group_padding: 16.,
             separator: 1.,
             folded: 64.,
@@ -214,27 +214,27 @@ fn expanded_items(controls: &[ControlView]) -> Vec<Item> {
         .collect()
 }
 
-fn item_width(item: &Item, metrics: &Metrics) -> f32 {
-    match item {
-        Item::Large(control) => metrics
-            .large
-            .max(text_width(&control.label, metrics.char_width) + 12.),
-        Item::Tile(_) => metrics.tile,
-        Item::LabeledTile(control) => metrics
-            .labeled_tile
-            .max(text_width(&control.label, metrics.caption_char_width) + 8.),
-        Item::Column(column) => column
-            .iter()
-            .map(|control| small_width(control, metrics))
-            .fold(0., f32::max),
+impl Item {
+    /// The renderer uses the same slot widths as the fold calculation.
+    pub fn width(&self, metrics: &Metrics) -> f32 {
+        match self {
+            Item::Large(control) => metrics
+                .large
+                .max(text_width(&control.label, metrics.char_width) + 12.),
+            Item::Tile(_) => metrics.tile,
+            Item::LabeledTile(control) => metrics
+                .labeled_tile
+                .max(text_width(&control.label, metrics.caption_char_width) + 8.),
+            Item::Column(column) => column
+                .iter()
+                .map(|control| small_width(control, metrics))
+                .fold(0., f32::max),
+        }
     }
 }
 
 fn row_width(items: &[Item], metrics: &Metrics) -> f32 {
-    items
-        .iter()
-        .map(|item| item_width(item, metrics))
-        .sum::<f32>()
+    items.iter().map(|item| item.width(metrics)).sum::<f32>()
         + (items.len().saturating_sub(1)) as f32 * metrics.gap
 }
 
@@ -493,8 +493,9 @@ mod tests {
     #[test]
     fn spare_room_is_used_by_expanding_groups() {
         let metrics = Metrics::default();
+        let available = 1600.;
         for spec in TABS.iter().filter(|spec| !spec.groups.is_empty()) {
-            let row = view(spec.id, 1420., &Fake(vec![]));
+            let row = view(spec.id, available, &Fake(vec![]));
             let used = row.width(&metrics);
             // Maximal: no group left at normal size could still expand.
             for group in row
@@ -504,14 +505,14 @@ mod tests {
             {
                 assert!(
                     group.expanded_width <= group.width
-                        || used - group.width + group.expanded_width > 1420.,
+                        || used - group.width + group.expanded_width > available,
                     "{:?}: {} could expand",
                     spec.id,
                     group.title
                 );
             }
         }
-        let input = view(TabId::NoteInput, 1420., &Fake(vec![]));
+        let input = view(TabId::NoteInput, available, &Fake(vec![]));
         let duration = input
             .groups
             .iter()

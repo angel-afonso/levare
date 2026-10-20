@@ -19,7 +19,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘W` | Cerrar ventana |  |
 | `⌘Q` | Salir de Partitura |  |
 | `⌘P` | Imprimir… | Pendiente |
-| — | Exportar… | Pendiente |
+| — | Exportar partitura y partes… |  |
+| — | Exportar MusicXML… |  |
 | `⌘,` | Preferencias de atajos… |  |
 | — | Borrar la lista de recientes |  |
 | `Esc` | Cerrar el panel abierto |  |
@@ -34,7 +35,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘C` | Copiar |  |
 | `⌘V` | Pegar |  |
 | `⌘A` | Seleccionar todo el pentagrama |  |
-| `⌫` · `⌦` | Eliminar la selección |  |
+| `⌫` · `⌦` | Convertir en silencios |  |
+| — | Eliminar notas y su tiempo |  |
 | `Esc` | Detener, cancelar o quitar la selección |  |
 | `R` | Repetir la nota, acorde o silencio |  |
 
@@ -71,8 +73,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥⌫` | Quitar la nota más aguda del acorde |  |
 | — | Subir la octava de entrada |  |
 | — | Bajar la octava de entrada |  |
-| `⌥1` | Voz 1 | Pendiente |
-| `⌥2` | Voz 2 | Pendiente |
+| `⌥1` | Voz 1 |  |
+| `⌥2` | Voz 2 |  |
 | `⌥3` | Voz 3 | Pendiente |
 | `⌥4` | Voz 4 | Pendiente |
 | `;` | Convertir en nota de adorno | Pendiente |
@@ -120,8 +122,14 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Quitar diminuendo |  |
 | — | Pizzicato |  |
 | — | Arco |  |
+| — | Armónico natural |  |
+| — | Armónico artificial |  |
 | — | Quitar indicación de técnica |  |
 | — | Quitar articulación |  |
+| — | Arpegio en ambas manos |  |
+| — | Arpegio |  |
+| — | Arpegio ascendente |  |
+| — | Arpegio descendente |  |
 | — | Calderón |  |
 | — | Dinámica ppp |  |
 | — | Dinámica pp |  |
@@ -134,7 +142,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Quitar dinámica |  |
 | `⌘E` | Texto de expresión | Pendiente |
 | `⌘T` | Texto de técnica | Pendiente |
-| `⌥⌘T` | Texto de tempo | Pendiente |
+| `⌥⌘T` | Indicación de tempo… |  |
 | `⌘L` | Letra | Pendiente |
 | `⌘K` | Cifrado de acordes | Pendiente |
 | `⌘R` | Letra de ensayo | Pendiente |
@@ -143,8 +151,10 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 
 | Atajo | Comando | Estado |
 |---|---|---|
+| — | Indicación div. |  |
+| — | Indicación unis. |  |
 | `K` | Tonalidad… |  |
-| `T` | Compás de tiempo… | Pendiente |
+| `T` | Compás de tiempo… |  |
 | `Q` | Clave… | Pendiente |
 | `L` | Líneas… | Pendiente |
 | `Z` | Símbolo… | Pendiente |
@@ -154,14 +164,16 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | Atajo | Comando | Estado |
 |---|---|---|
 | `⌘B` | Añadir un compás al final |  |
-| `⇧⌘B` | Insertar un compás | Pendiente |
-| `⌘⌫` | Eliminar compases | Pendiente |
+| `⇧⌘B` | Insertar un compás antes del actual |  |
+| `⌘⌫` | Eliminar compases seleccionados |  |
 | `⌥⌘G` | Ir al compás… | Pendiente |
 
 ## Instrumentos
 
 | Atajo | Comando | Estado |
 |---|---|---|
+| — | Dividir el pasaje en dos pentagramas |  |
+| — | Volver a un pentagrama desde esta posición |  |
 | `I` | Añadir instrumentos… |  |
 | — | Añadir piano a dos manos |  |
 | — | Ossia | Pendiente |
@@ -213,8 +225,10 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘+` · `⌘=` | Acercar |  |
 | `⌘-` | Alejar |  |
 | `⌘1` | Tamaño real (100 %) |  |
-| `⌘0` | Ajustar a la página | Pendiente |
+| `⌘0` | Ajustar a la página |  |
 | `⌘U` | Pantalla completa |  |
 | — | Mostrar u ocultar instrumentos |  |
 | — | Mostrar u ocultar propiedades |  |
-| — | Vista de página | Pendiente |
+| — | Vista de página |  |
+| — | Vista continua |  |
+| — | Vista de pentagrama |  |

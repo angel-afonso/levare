@@ -6,27 +6,33 @@ use super::*;
 /// A fermata holds its note or rest for twice its written length.
 pub const FERMATA_HOLD: u64 = 2;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
+struct Segment {
+    tick: u64,
+    seconds: f64,
+    seconds_per_tick: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Timeline {
+    /// Rehearsal speed relative to quarter = 120 (120 means written tempo).
     tempo: Tempo,
-    /// Merged written spans `[start, end)` in ticks under a fermata.
-    holds: Vec<(u64, u64)>,
+    segments: Vec<Segment>,
 }
 
 impl Timeline {
     pub fn new(score: &Score, tempo: Tempo) -> Self {
-        let capacity = u64::from(score.time().capacity());
         let mut spans = Vec::new();
         for part in score.parts() {
             for staff in part.staves() {
                 for (index, measure) in staff.measures().iter().enumerate() {
-                    let mut tick = index as u64 * capacity;
-                    for (_, event) in measure.iter() {
+                    let begin = score.measure_start_tick(index);
+                    for (_, onset, _, event) in measure.timed_iter() {
+                        let tick = begin + u64::from(onset);
                         let end = tick + u64::from(event.duration.ticks());
                         if event.notation.fermata {
                             spans.push((tick, end));
                         }
-                        tick = end;
                     }
                 }
             }
@@ -40,60 +46,91 @@ impl Timeline {
                 _ => holds.push((start, end)),
             }
         }
-        Self { tempo, holds }
+        let marks: Vec<_> = score
+            .tempo_marks()
+            .map(|(bar, mark)| (score.measure_start_tick(bar), mark))
+            .collect();
+        let mut boundaries: Vec<_> = marks
+            .iter()
+            .map(|(tick, _)| *tick)
+            .chain(holds.iter().flat_map(|(a, b)| [*a, *b]))
+            .collect();
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        let mut segments: Vec<Segment> = Vec::new();
+        let mut mark_index = 0;
+        let mut hold_index = 0;
+        for tick in boundaries {
+            while marks.get(mark_index + 1).is_some_and(|(at, _)| *at <= tick) {
+                mark_index += 1;
+            }
+            while holds.get(hold_index).is_some_and(|(_, end)| *end <= tick) {
+                hold_index += 1;
+            }
+            let seconds = segments.last().map_or(0., |last| {
+                last.seconds + (tick - last.tick) as f64 * last.seconds_per_tick
+            });
+            let mark = marks[mark_index].1;
+            let held = if holds
+                .get(hold_index)
+                .is_some_and(|(start, end)| *start <= tick && tick < *end)
+            {
+                FERMATA_HOLD as f64
+            } else {
+                1.
+            };
+            let seconds_per_tick = 60. * 120. * held
+                / (f64::from(mark.bpm) * f64::from(mark.beat.ticks()) * f64::from(tempo.bpm()));
+            segments.push(Segment {
+                tick,
+                seconds,
+                seconds_per_tick,
+            });
+        }
+        Self { tempo, segments }
     }
     pub fn plain(tempo: Tempo) -> Self {
         Self {
             tempo,
-            holds: Vec::new(),
+            segments: vec![Segment {
+                tick: 0,
+                seconds: 0.,
+                seconds_per_tick: 60. / (f64::from(tempo.bpm()) * TICKS_PER_QUARTER as f64),
+            }],
         }
     }
     pub fn tempo(&self) -> Tempo {
         self.tempo
     }
-    /// Ticks of beat that have elapsed by `tick`, counting held spans longer.
-    fn held(&self, tick: u64) -> u64 {
-        tick + self
-            .holds
-            .iter()
-            .take_while(|(start, _)| *start < tick)
-            .map(|(start, end)| (tick.min(*end) - start) * (FERMATA_HOLD - 1))
-            .sum::<u64>()
-    }
-    fn held_fraction(&self, tick: f64) -> f64 {
-        tick + self
-            .holds
-            .iter()
-            .take_while(|(start, _)| (*start as f64) < tick)
-            .map(|(start, end)| (tick.min(*end as f64) - *start as f64) * (FERMATA_HOLD - 1) as f64)
-            .sum::<f64>()
-    }
-    fn ticks_per_second(&self) -> f64 {
-        f64::from(self.tempo.bpm()) * TICKS_PER_QUARTER as f64 / 60.
+    pub(crate) fn boundaries(&self) -> impl Iterator<Item = u64> + '_ {
+        self.segments.iter().map(|s| s.tick)
     }
     pub fn frame_at(&self, tick: u64, sample_rate: u32) -> u64 {
-        self.tempo.frame_at(self.held(tick), sample_rate)
+        // A tiny tolerance prevents a mathematically integral frame rounding
+        // down because of floating point accumulation between tempo segments.
+        (self.seconds_at(tick as f64) * f64::from(sample_rate) + 1e-6).floor() as u64
     }
     pub fn seconds_at(&self, tick: f64) -> f64 {
-        self.held_fraction(tick) / self.ticks_per_second()
+        let tick = tick.max(0.);
+        let index = self
+            .segments
+            .partition_point(|s| s.tick as f64 <= tick)
+            .saturating_sub(1);
+        let segment = &self.segments[index];
+        segment.seconds + (tick - segment.tick as f64) * segment.seconds_per_tick
     }
-    /// The musical position sounding at an audio frame, the inverse of
-    /// `frame_at`. Inside a hold, the position advances at half speed.
+    /// Inverse of the complete tempo/fermata map, including fractional ticks.
     pub fn tick_at(&self, frame: u64, sample_rate: u32) -> f64 {
-        let beat = frame as f64 * self.ticks_per_second() / f64::from(sample_rate);
-        let mut extra = 0.;
-        for (start, end) in &self.holds {
-            let (start, length) = (*start as f64, (end - start) as f64);
-            let held_start = start + extra;
-            if beat < held_start {
-                break;
-            }
-            if beat < held_start + length * FERMATA_HOLD as f64 {
-                return start + (beat - held_start) / FERMATA_HOLD as f64;
-            }
-            extra += length * (FERMATA_HOLD - 1) as f64;
+        if sample_rate == 0 {
+            return 0.;
         }
-        beat - extra
+        let seconds = frame as f64 / f64::from(sample_rate);
+        let index = self
+            .segments
+            .partition_point(|s| s.seconds <= seconds)
+            .saturating_sub(1);
+        let segment = &self.segments[index];
+        segment.tick as f64 + (seconds - segment.seconds) / segment.seconds_per_tick
     }
 }
 
@@ -111,6 +148,80 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    #[test]
+    fn written_tempos_integrate_beats_meters_and_fermatas_and_invert_at_each_boundary() {
+        use score_core::{TempoBeat, TempoMark, TimeSignature};
+        let mut score = Score::default();
+        score
+            .set_time_signature_at(
+                1,
+                TimeSignature {
+                    numerator: 3,
+                    denominator: 4,
+                },
+            )
+            .unwrap();
+        score
+            .set_tempo_at(
+                1,
+                TempoMark {
+                    bpm: 60,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        score
+            .set_tempo_at(
+                2,
+                TempoMark {
+                    bpm: 120,
+                    beat: TempoBeat::DottedQuarter,
+                    text: "Allegro".into(),
+                },
+            )
+            .unwrap();
+        score
+            .set_tempo_at(
+                3,
+                TempoMark {
+                    bpm: 60,
+                    beat: TempoBeat::Half,
+                    text: String::new(),
+                },
+            )
+            .unwrap();
+        score
+            .insert(
+                0,
+                0,
+                Event {
+                    duration: Duration::Whole,
+                    ..note(Step::C, false)
+                },
+            )
+            .unwrap();
+        score.insert(1, 0, note(Step::D, false)).unwrap();
+        score.insert(1, 1, note(Step::E, true)).unwrap();
+        let after = score.insert(2, 0, note(Step::F, false)).unwrap();
+        let timeline = Timeline::new(&score, Tempo::default());
+        assert_eq!(timeline.frame_at(192, 48_000), 96_000);
+        assert_eq!(timeline.frame_at(336, 48_000), 288_000);
+        assert_eq!(timeline.frame_at(480, 48_000), 336_000);
+        assert_eq!(timeline.frame_at(624, 48_000), 408_000);
+        let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+        assert_eq!(plan.frame_for_element(after), Some(288_000));
+        for rate in [44_100, 48_000, 96_000] {
+            for tick in [
+                0, 1, 191, 192, 239, 240, 270, 287, 288, 335, 336, 479, 480, 623, 624, 700,
+            ] {
+                let frame = timeline.frame_at(tick, rate);
+                assert!((timeline.tick_at(frame, rate) - tick as f64).abs() < 0.003);
+            }
+        }
+        let slower = Timeline::new(&score, Tempo::new(60).unwrap());
+        assert_eq!(slower.frame_at(624, 48_000), 816_000);
     }
 
     #[test]

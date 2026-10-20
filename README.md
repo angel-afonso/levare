@@ -33,7 +33,7 @@ muestra ni conexiones MIDI simuladas. Puedes abrir
 [`examples/cuarteto-en-sol.partitura`](examples/cuarteto-en-sol.partitura) para
 ver el conjunto de cinco instrumentos.
 
-- **Archivo:** nueva, abrir, guardar y guardar como. Los iconos de la cabecera
+- **Archivo:** nueva, abrir, guardar, guardar como y exportar PDF o MusicXML. Los iconos de la cabecera
   permiten guardar, deshacer y rehacer.
 - **Cinta:** las pestañas siguen la organización de Sibelius y MuseScore.
   **Inicio** reúne portapapeles, instrumentos, compases y selección; **Entrada**,
@@ -57,15 +57,14 @@ ver el conjunto de cinco instrumentos.
   Reproducción incluye tempo y audición.
 - **Transporte:** reproducir/pausar, detener e iniciar desde el principio sin
   borrar la selección. Reloj y regla siguen la posición musical real.
-- **Vista:** desplazamiento continuo y zoom entre 50 y 150 %, con selección y
-  seguimiento ajustados a la escala. El zoom inicial es 70 %.
+- **Vista:** página, desplazamiento continuo o un solo sistema y zoom entre 50 y 150 %,
+  con selección y seguimiento ajustados a la escala. El zoom inicial es 70 %.
 
-Los controles que llevan **TODO** son pendientes: varias
-pestañas de documentos, búsqueda, exportación/impresión, entrada MIDI/tiempo real,
-puntillos, tresillos, calderones, reguladores crescendo/decrescendo, voces 2–4, plicas manuales,
-velocidad/duración sonora por nota, edición de duración existente, silencio/solo,
-cambio de timbre, paginación y vista de pentagrama individual.
-El guardado sigue siendo manual; el indicador muestra el estado real del archivo.
+Los controles que llevan **TODO** son pendientes: varias pestañas de documentos,
+búsqueda, impresión directa, entrada MIDI/tiempo real, voces 3–4, plicas manuales,
+velocidad/duración sonora por nota, silencio/solo y cambio de timbre.
+Guardar actualiza el archivo elegido; la recuperación automática conserva además
+una copia de la sesión para reabrirla después de un cierre inesperado.
 
 ## Uso
 
@@ -82,6 +81,7 @@ visibles como referencia, sin repetirlas permanentemente junto a los botones.
 | Tecla / acción | Resultado |
 |---|---|
 | `N` | Activar / desactivar la entrada de notas |
+| `⌥1` / `⌥2` | Seleccionar la voz 1 / 2 del pentagrama activo |
 | `A`–`G` | Escribir La–Sol con la octava y duración actuales |
 | `⇧A`–`⇧G` | Añadir esa nota encima del acorde seleccionado |
 | `⇧2`–`⇧9` | Añadir una segunda … novena encima (según la armadura) |
@@ -100,14 +100,15 @@ visibles como referencia, sin repetirlas permanentemente junto a los botones.
 | `Esc` | Detener; si ya está detenido, quitar la selección |
 | `⌘B` | Añadir un compás al final |
 | `I` / `K` / `M` | Instrumentos / tonalidad / mezclador |
+| `T` | Cambiar la métrica desde el inicio o el compás seleccionado |
 | `⌥A` / `⌥⌫` | Modo acorde / quitar la nota más aguda (propios de Partitura) |
 | `⌘Z` / `⌘Y` (o `⇧⌘Z`) | Deshacer / rehacer |
 | `⌘+` / `⌘−` / `⌘1` | Acercar / alejar / 100 % |
 | Clic en una nota | Seleccionarla; la entrada continúa después de ella |
 | Clic en un compás vacío | Mover el punto de entrada allí |
 
-Las teclas de Sibelius sin función todavía (`T` compás de tiempo, `Q` clave, `L`
-líneas, `H` reguladores, `⌥1`–`⌥4` voces, `.` puntillo, `1` fusa, `⌘C`/`⌘V`…)
+Las teclas de Sibelius sin función todavía (`Q` clave, `L`
+líneas, `⌥3`/`⌥4` voces adicionales, `1` fusa…)
 están reservadas y muestran «Pendiente». Las articulaciones no tienen atajo por
 defecto, como en Sibelius portátil; asígnalas en Preferencias si las usas a menudo.
 
@@ -118,10 +119,32 @@ documento. Cambiar la duración afecta a la próxima entrada. Puedes abrir
 
 ## Copiar, cortar y pegar música
 
-- **Arrastra sobre las notas o el pentagrama** para seleccionar un pasaje completo,
+- **Shift + arrastre sobre las notas, o arrastre desde el pentagrama vacío**, para seleccionar un pasaje completo,
   hacia delante o hacia atrás, incluso entre compases y renglones. La franja azul
   indica el pasaje y la barra superior muestra cuántos elementos contiene, con
-  botones **Copiar** y **Cortar**. Un clic sigue seleccionando una sola nota.
+  botones **Copiar** y **Cortar**. **Shift + arrastre** selecciona un pasaje en cualquier
+  dirección. Un clic selecciona una nota y sitúa la reproducción en su entrada.
+
+- **Arrastra una cabeza de nota hacia arriba o abajo** para cambiar su altura.
+  El grabado muestra una vista previa mientras mueves el ratón; al soltar se aplica
+  un solo cambio que puedes deshacer con **⌘Z**. **Esc** cancela. En un acorde se
+  mueve únicamente la cabeza elegida. Se conservan duración, voz y posición
+  rítmica. Los silencios
+  conservan el gesto de selección de pasajes. Si estás reproduciendo, empezar a
+  cambiar una altura detiene el audio; al soltar se escucha la nota editada si la
+  audición está activada.
+- **Arrastra una nota horizontalmente** para mover la figura completa (todo el
+  acorde si tiene varias cabezas) a otro tiempo o compás, dentro de su voz y
+  pentagrama. Una copia azul indica el destino; al soltar se aplica una sola
+  edición. **Esc** cancela y **⌘Z** deshace. Se conserva la duración y quedan
+  silencios en el origen, sin desplazar las demás notas. El destino se ajusta
+  a semicorcheas, semicorcheas de tresillo para figuras de tresillo, o entradas
+  existentes. Si hay una nota/acorde de igual duración, las figuras se
+  intercambian. Los solapamientos incompatibles o una figura que no cabe se
+  rechazan con explicación, sin modificar la obra. Al atravesar una armadura
+  se añaden las alteraciones necesarias para conservar las alturas sonoras.
+  Las ligaduras incompatibles con los nuevos tiempos se retiran y se recuperan
+  al deshacer; un arpegio entre manos separadas queda local donde hay un acorde.
 - **Shift + clic** o **Shift + ←/→** amplía la selección dentro del mismo
   pentagrama; **⌘A** selecciona todos sus elementos escritos.
 - **⌘C** copia, **⌘X** corta y **⌘V** pega. También están disponibles en la
@@ -194,7 +217,7 @@ anteriores. No cambian las duraciones ni la reproducción. Ejemplo:
 ## Ligaduras, dinámicas y articulaciones
 
 La cinta (**Entrada** para articulaciones y ligaduras, **Notación** para dinámicas,
-reguladores y técnica), el inspector **Expresión** y el menú nativo **Expresión**
+reguladores, arpegios y técnica), el inspector **Expresión** y el menú nativo **Expresión**
 permiten editar estas marcas en notas y acordes de cualquier pentagrama. Todos los
 cambios se guardan y admiten deshacer/rehacer. Ejemplo:
 [`examples/piano-expresion.partitura`](examples/piano-expresion.partitura).
@@ -206,8 +229,8 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
 - **Expresión (`S`):** selecciona el inicio, pulsa `S`, selecciona la nota final del mismo
   pentagrama y pulsa `S` otra vez. Esc cancela la operación. Pulsar `S` con la primera
   nota de una frase seleccionada la quita. La frase se dibuja con
-  una curva, incluso entre sistemas. Esta versión no admite frases solapadas en un
-  mismo pentagrama. En la reproducción, las notas de la frase se unen con un breve
+  una curva, incluso entre sistemas. Los extremos pertenecen a la misma voz;
+  pueden coincidir frases de voces diferentes, pero no solaparse dos de una misma voz. En la reproducción, las notas de la frase se unen con un breve
   solapamiento (legato); la última se separa como de costumbre y un staccato dentro
   de la frase suena portato (75 %).
 - **Dinámicas:** ppp, pp, p, mp, mf, f, ff y fff. Se aplican desde la posición marcada
@@ -223,12 +246,29 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   ligada se conserva el ataque inicial; un staccato final acorta al 50 % la duración
   sonora conjunta. Esto conserva el sonido al dividir una figura durante el pegado.
 
+- **Arpegios:** selecciona un acorde y elige **Notación › Arpegios** (también en el inspector y el menú **Expresión**).
+  Hay indicación normal, ascendente y descendente. La línea de Bravura se ajusta
+  a la altura del acorde y queda a la izquierda de sus alteraciones. Normal y
+  ascendente suenan de grave a agudo; descendente, de agudo a grave. Las notas se
+  escalonan sin alargar el compás; una cadena ligada conserva un solo ataque.
+  **Ambas manos** une las notas que empiezan simultáneamente en los dos
+  pentagramas del mismo piano. Selecciona una nota o acorde en cualquiera de las
+  manos y activa esa opción; puede haber una sola nota en cada mano. La línea
+  atraviesa ambos pentagramas y todas las notas forman un único arpegio. Cambiar
+  la dirección desde cualquiera de las manos actualiza la marca compartida.
+  Desactivar **Ambas manos** deja un arpegio local en el acorde seleccionado;
+  si es una nota sola, retira la indicación.
+  Volver a pulsar la misma opción de dirección quita el arpegio. Si el acorde queda con una
+  sola nota, se retira la indicación; deshacer la recupera. Al pegar una figura
+  dividida entre compases, el arpegio queda en el primer fragmento.
+  Ejemplo: [`examples/piano-arpegios.partitura`](examples/piano-arpegios.partitura).
+
 - **Calderón:** en **Entrada › Articulaciones y ligaduras**, el inspector o el menú
   **Expresión**. Va sobre notas o silencios, junto a cualquier articulación. Al
   reproducir, ese momento dura el doble en todas las partes y la música sigue
   después; la regla y el reloj lo tienen en cuenta.
 
-**Editar marcas en la partitura:** un clic sobre una articulación, calderón, dinámica,
+**Editar marcas en la partitura:** un clic sobre un arpegio, articulación, calderón, dinámica,
 técnica, ligadura o regulador selecciona solo esa marca (se resalta en azul; la nota no).
 **Backspace** la borra sin tocar la nota. Pulsar otra marca de la misma familia en la
 cinta la cambia (por ejemplo, staccato por acento, *p* por *f*, o crescendo por
@@ -274,7 +314,7 @@ un extremo. Ejemplo: [`examples/reguladores.partitura`](examples/reguladores.par
 
 ## Pizzicato y arco
 
-Selecciona una nota, acorde o silencio de **violín, viola, violonchelo o contrabajo**.
+Selecciona una nota, acorde o silencio de **violín, viola, violoncello o contrabajo**.
 En la cinta **Notación › Técnica de cuerda**, el inspector **Expresión** o el menú
 **Expresión**, elige **pizz.** para tocar pulsando la cuerda y **arco** para volver al
 sonido habitual. La indicación aparece en cursiva sobre el pentagrama y se mantiene
@@ -295,9 +335,9 @@ Puedes asignar atajos en Preferencias. Ejemplo:
 Pulsa **+ Añadir instrumentos** en el panel izquierdo para abrir el diálogo.
 Marca varios instrumentos y ajusta sus cantidades con **− / +**; **Añadir** incorpora
 el conjunto en una sola operación que puedes deshacer. **Cancelar** o **Esc** cierra
-sin cambiar la partitura. También puedes usar el menú **Instrumentos**. Hay piano, guitarra, violín, viola, violonchelo,
-contrabajo, flauta, oboe, clarinete, fagot, trompeta, trompa y trombón; se admiten
-hasta **14 partes**, incluyendo instrumentos repetidos.
+sin cambiar la partitura. También puedes usar el menú **Instrumentos**. El catálogo incluye **49 perfiles** de maderas,
+metales, percusión, teclados y cuerdas; admite hasta **48 partes**, con instrumentos repetidos.
+
 
 Selecciona una parte en el panel o pulsa su pentagrama para escribir en ella.
 **⌥↑ / ⌥↓** pasa al pentagrama vecino (y, en un acorde, primero recorre sus notas). Cada parte conserva sus notas; los compases
@@ -309,9 +349,9 @@ La partitura conserva al menos un instrumento. Si eliminas la parte activa, qued
 seleccionado el instrumento vecino; al eliminar otra, se conserva tu selección.
 
 Al abrir una partitura o añadir instrumentos, el score y el panel se ordenan
-por familias: maderas, metales, teclados, cuerdas pulsadas y cuerdas. Dentro de
+por familias: maderas, metales, percusión, teclados, cuerdas pulsadas y cuerdas. Dentro de
 cada familia se mantiene el orden del catálogo orquestal (flauta–oboe–clarinete–fagot,
-trompa–trompeta–trombón, violín–viola–violonchelo–contrabajo). Los instrumentos
+corno–trompeta–trombón, violín–viola–violoncello–contrabajo). Los instrumentos
 repetidos conservan su orden relativo y sus notas; los IDs no cambian.
 
 Cada renglón presenta **corchetes de familia** y barras de compás unidas dentro
@@ -319,16 +359,97 @@ de cada grupo, con separación entre familias. El piano conserva su **llave de d
 manos**. La barra inicial fina conecta todo el sistema. El orden se guarda en el
 archivo nativo y no requiere convertir las partituras anteriores.
 
-Cada parte usa su timbre y su clave de sol, do o fa. La escritura es en **altura
-real**: los instrumentos transpositores todavía no cambian automáticamente la
-notación. Hay una voz por pentagrama. El piano tiene un gran pentagrama de dos
-manos; los demás instrumentos conservan un pentagrama.
+Cada parte usa su timbre y su clave de sol, do, fa o percusión. Las nuevas partes
+transpositoras se escriben en **altura escrita** y suenan en la altura real correspondiente.
+La tonalidad general se elige en altura real: en una obra en Do mayor, el clarinete en
+Si♭ muestra Re mayor y su Do natural escrito suena Si♭. Se adaptan también los
+cambios de tonalidad durante la pieza, las audiciones, el copiado entre partes y las
+exportaciones de score y partes a PDF y MusicXML.
 
-Los archivos nuevos usan el esquema 10 y guardan partes, pentagramas, acordes, alteraciones, tonalidad y expresión. Se abren los
-esquemas 1–9; los esquemas 1–5 usan Do mayor para conservar su sonido original: las notas existentes de piano permanecen en la mano derecha y se
+Hay clarinetes en Do, Si♭ y La, clarinete en Mi♭, clarinete bajo, corno inglés,
+corno en Fa, trompetas en Do, Si♭ y Re, corneta y saxofones; se incluyen las
+transposiciones de octava de piccolo, contrafagot, contrabajo, guitarra, celesta,
+xilófono y glockenspiel. Arpa, piano, órgano, celesta, marimba y vibráfono usan dos pentagramas.
+Los scores de 12 partes o más se exportan a PDF en A3; las partes individuales siguen en A4.
+Caja, bombo, platillos, triángulo, pandereta y tam-tam tienen clave de percusión
+sin armadura y un golpe por voz. Sus sonidos se aproximan con el banco integrado
+General MIDI; los perfiles con el mismo programa comparten timbre.
+
+Cada pentagrama admite dos voces; los instrumentos de un pentagrama pueden
+usar divisi. Los documentos anteriores conservan sus alturas y sonido originales,
+incluido el contrabajo escrito anteriormente en altura real.
+Puedes abrir [`examples/orquesta-completa.partitura`](examples/orquesta-completa.partitura)
+para comprobar la plantilla y los cambios de armadura de cada instrumento.
+
+[`examples/menuetto-y-trio-orquesta.partitura`](examples/menuetto-y-trio-orquesta.partitura)
+adapta el Menuetto de cuerdas a **32 partes y 84 compases**: piccolo, maderas a dos,
+corno inglés, clarinete bajo, contrafagot, cuatro cornos en Fa, dos trompetas en Si♭,
+tres trombones, tuba, timbales, bombo, platillos, triángulo, arpa y las cinco secciones
+de cuerdas. Conserva divisi, armónicos, pizzicato, reguladores y cambios de tempo,
+métrica y tonalidad. El contrabajo pasa a escritura de octava sin cambiar su sonido.
+Los compases **17 y 65** permiten comparar el tutti; el **33** inicia el Trio y el
+**49** cambia a 6/8. En Re mayor real, los clarinetes y trompetas en Si♭ muestran
+Mi mayor y los cornos en Fa muestran La mayor. Se puede regenerar con:
+
+```bash
+cargo run -p score-io --example menuetto_orquesta -- examples/menuetto-y-trio-cuerdas.partitura examples/menuetto-y-trio-orquesta.partitura
+```
+
+Los archivos nuevos usan el esquema 19 y guardan partes, pentagramas, acordes, alteraciones, tonalidad y expresión. Se abren los
+esquemas 1–18; los esquemas 1–5 usan Do mayor para conservar su sonido original: las notas existentes de piano permanecen en la mano derecha y se
 añade la izquierda vacía. Puedes abrir
 [`examples/trio.partitura`](examples/trio.partitura) para escuchar un conjunto de
-piano, flauta y violonchelo.
+piano, flauta y violoncello.
+
+## Dos voces y divisi
+
+Elige **Voz 1** o **Voz 2** en **Entrada › Voces**, en Propiedades o con
+**⌥1 / ⌥2**. Cada voz tiene sus propias notas, silencios y duraciones dentro del
+mismo compás; no consume el espacio rítmico de la otra. Al elegir una voz vacía
+se activa la escritura desde el inicio del compás. Si ya contiene música, se
+selecciona su primera nota: usa las flechas para recorrerla y **N** para continuar
+escribiendo después de la selección. Usa silencios para retrasar una entrada.
+
+Cuando conviven ambas voces, la voz 1 lleva plicas hacia arriba y la 2 hacia abajo.
+Las barras, tresillos, ligaduras y articulaciones pertenecen a su voz. Seleccionar,
+copiar, pegar y borrar un pasaje actúa sobre la voz activa; al pulsar una nota se
+activa su voz. En un unísono con cabezas coincidentes, se elige la voz activa.
+Cada mano del piano admite también sus dos voces.
+
+Para una sección instrumental, **div.** abre dos pentagramas desde la nota o silencio
+seleccionado: voz 1 en **Divisi I** y voz 2 en **Divisi II**, conservando la clave.
+**unis.** marca el regreso a la ejecución conjunta en la posición elegida. Las
+notas conservan su voz, identidad, ritmo y conexiones; cambiar la presentación
+no cambia la reproducción. Los botones están en **Entrada › Voces**, Propiedades
+y el menú Expresión. También puedes usar **Inicio › Instrumentos › Dividir pasaje**
+y **Volver a unis.**, incluso en un compás vacío.
+
+Para dividir únicamente un rango, selecciona sus notas con **Mayús + clic** o
+arrastrando y pulsa **div.** o **Dividir pasaje**. El tramo comienza en la primera
+nota y termina al finalizar la última; allí se restaura la presentación previa.
+Puedes abrir y cerrar varios tramos dentro de un mismo compás. Sin selección se
+usa la posición de entrada. Para facilitar la lectura, el pentagrama inferior
+se muestra completo en cada compás que contiene divisi, con su clave y armadura.
+Las marcas «div.» y «unis.» conservan sus tiempos exactos dentro del compás;
+fuera de los compases afectados vuelve un solo pentagrama. Las notas sostenidas
+conservan su figura y su línea, sin ligaduras artificiales entre pentagramas.
+El documento y la reproducción no cambian. Los cortes que necesitarían figuras
+más pequeñas que las disponibles se rechazan sin modificar la música.
+Pulsar otra vez una indicación activa
+quita esa frontera; Deshacer recupera el cambio completo. Selecciona las líneas
+con **Divisi I / II**, **⌥↑ / ⌥↓**, un clic o **⌥1 / ⌥2**.
+
+Las dinámicas, reguladores y técnicas se comparten entre las dos voces de la
+sección; ritmo y articulaciones siguen siendo independientes. El guardado, la
+recuperación y el PDF conservan los pasajes. Los archivos anteriores de divisi
+completo se abren como antes; al editar su primer pasaje se reúnen internamente
+las líneas sin perder música. Si contienen más de dos voces, primero vacía las
+sobrantes. El piano conserva sus dos manos y no usa esta conversión.
+
+Ejemplos: [`divisi-dentro-del-compas.partitura`](examples/divisi-dentro-del-compas.partitura),
+[`divisi-por-pasaje.partitura`](examples/divisi-por-pasaje.partitura),
+[`voces-y-divisi.partitura`](examples/voces-y-divisi.partitura) y
+[`divisi-dos-pentagramas.partitura`](examples/divisi-dos-pentagramas.partitura).
 
 ## Piano a dos manos
 
@@ -361,9 +482,26 @@ figura. Si no hay una nota seleccionada, el modo introduce la primera normalment
 
 Un clic en cualquier cabeza selecciona el acorde completo. Las flechas lo transponen;
 **⌥Backspace** elimina su nota más alta, conservando al menos
-una. **Backspace** elimina el acorde entero. Puedes deshacer cada cambio.
+una. **Backspace** convierte el acorde entero en silencio conservando su duración. Puedes deshacer cada cambio.
 La audición, reproducción, pausa y seguimiento incluyen todas sus notas.
 Abre [`examples/piano-acordes.partitura`](examples/piano-acordes.partitura) para probarlo.
+
+## Vistas de la partitura
+
+El selector inferior permite alternar entre **Página**, **Continua** y
+**Pentagrama**. También están en el menú **Vista**.
+
+- **Página:** hojas numeradas con saltos entre sistemas. Usa las flechas del
+  panel izquierdo para pasar de página. El zoom y el tamaño de ventana conservan
+  la distribución de las hojas.
+- **Continua:** renglones que se adaptan al ancho disponible y desplazamiento vertical.
+- **Pentagrama:** todos los compases en una franja horizontal, con los instrumentos
+  alineados y desplazamiento lateral.
+
+**⌘0** ajusta una hoja completa a la ventana. Los botones **− / +** y los atajos de
+zoom funcionan en las tres vistas. Cambiar de vista conserva la selección, el
+punto de entrada y la reproducción. Si un sistema completo requiere más espacio
+por su densidad o número de instrumentos, las hojas se amplían para conservarlo.
 
 ## Sostenidos, bemoles y becuadros
 
@@ -402,15 +540,45 @@ ante cada nota. **Aplicar ♮** (`7`) permite escribir un Fa natural; **Seguir a
 o volver a pulsar `7` lo devuelve a Fa♯. Los nombres de **Nota elegida** muestran la altura que
 sonará. La audición, el inicio desde selección y la pausa usan la misma tonalidad.
 
-Cambiar la tonalidad afecta a **toda la partitura**, incluidas las notas ya
-escritas que siguen la armadura. Conserva sus posiciones y las alteraciones
-individuales. Puedes deshacer el cambio; no es una transposición cromática.
-Por ahora hay una tonalidad global, sin cambios a mitad de la obra. Las menores
+En **Aplicar desde**, elige **Inicio de la pieza** o el **compás seleccionado**.
+El cambio afecta a todos los pentagramas desde ese compás hasta el siguiente
+cambio de tonalidad, incluidas las notas escritas que siguen la armadura. Conserva
+sus posiciones y las alteraciones individuales. Puedes deshacerlo o usar
+**Quitar cambio de tonalidad** para recuperar la armadura anterior. Las menores
 usan su armadura habitual; las alteraciones de la menor armónica o melódica se
 escriben individualmente.
 
 Prueba [`piano-sol-mayor.partitura`](examples/piano-sol-mayor.partitura) o
 [`piano-mi-bemol-mayor.partitura`](examples/piano-mi-bemol-mayor.partitura).
+
+## Cambios de métrica
+
+Selecciona un compás, incluso vacío, y pulsa **T** o el botón **4/4** de la cabecera.
+Elige **Inicio de la pieza** para cambiar la métrica inicial, o **Compás N
+seleccionado** para introducir un cambio durante la pieza. Puedes elegir una
+métrica habitual o ajustar numerador y denominador y pulsar **Aplicar**.
+
+La nueva métrica rige en todos los pentagramas hasta el siguiente cambio. Conserva
+las notas y los compases existentes; si alguna nota no cabe en la nueva duración,
+la aplicación muestra el motivo y deja la pieza intacta. **Quitar cambio de
+métrica** recupera el compás anterior. Los cambios de métrica y tonalidad se pueden
+deshacer y rehacer, se guardan en el archivo y se reflejan en la reproducción,
+el contador y la regla temporal.
+
+## Indicación de tempo
+
+Pulsa el valor de **Tempo**, **Texto → Tempo** o **⌥⌘T**. Elige **Inicio de la
+pieza** o el compás donde quieres comenzar el cambio. Escribe una indicación
+como «Andante cantabile», introduce de **20 a 400 pulsos por minuto** y elige
+la figura del pulso, con puntillo si lo necesitas. **Aplicar tempo** o **Enter**
+escribe la indicación sobre el primer pentagrama. Puedes usar también las
+indicaciones habituales del panel; sus valores son editables.
+
+El tempo rige en todos los instrumentos hasta el siguiente cambio. Haz clic sobre
+una indicación escrita para modificarla o usa **Quitar cambio de tempo** para
+recuperar el anterior. Los cambios se guardan y se pueden deshacer. El transporte
+muestra el tempo de su posición; **− / +** modifican ese valor y conservan la
+posición, deteniendo la secuencia para reconstruirla al volver a reproducir.
 
 ## Escuchar mientras escribes
 
@@ -437,7 +605,7 @@ continua con el audio, también entre notas y durante silencios. La regla inferi
 muestra compases y tiempos: haz clic para colocar el cabezal en el tiempo más cercano
 y pulsa **Espacio** o **Reproducir** para empezar desde ahí. Durante la reproducción,
 el clic salta directamente al punto elegido; en pausa, conserva la pausa en la nueva
-posición. La selección de notas se conserva. El contador principal indica compás y tiempo y conserva
+posición. La selección de notas se conserva al usar la regla. El contador principal indica compás y tiempo y conserva
 el tiempo transcurrido debajo. La vista se desplaza automáticamente cuando hace falta
 para mantenerla visible, también al cambiar de renglón o en compases muy anchos.
 
@@ -446,7 +614,13 @@ o **Continuar** reanuda desde el mismo punto, incluso a mitad de una nota o un
 silencio. La pausa conserva el estado de todos los instrumentos y no vuelve a atacar la nota.
 Durante la pausa puedes desplazarte libremente; al continuar, la vista vuelve a
 seguir el punto de reproducción.
-Si cambias la selección durante una pausa, Continuar conserva el punto pausado;
+También puedes situar el cabezal haciendo **clic directamente en la partitura**:
+una nota o silencio elige su entrada exacta y el espacio del pentagrama elige el
+tiempo más cercano. Funciona parado, reproduciendo y en pausa; solo modifica la
+posición del transporte. **Shift + clic/arrastre** conserva el cabezal para ampliar
+la selección musical.
+
+Si amplías la selección con Shift durante una pausa, Continuar conserva el punto pausado;
 para empezar desde la nueva selección, pulsa **Detener** y después **Reproducir**.
 
 **Esc** y **Detener** cancelan la reproducción y la pausa, conservando la selección.
@@ -455,10 +629,9 @@ desde el inicio. Al editar o deshacer se detiene la secuencia anterior y, si cor
 suena la nueva nota. Se respetan los silencios y la duración restante de los compases
 interiores y finales que muestra la regla.
 
-El tempo inicial es **120 negras por minuto**, ajustable entre 30 y 240. Cambiarlo
-detiene la secuencia; vuelve a pulsar Espacio para oírla al nuevo tempo. El volumen
-se ajusta sin detener la reproducción. Estos ajustes son de sesión y aún no se
-guardan en `.partitura`.
+El tempo inicial es **120 negras por minuto**. Sus indicaciones y cambios forman
+parte del archivo `.partitura`. El volumen se ajusta sin detener la reproducción
+y sigue siendo un ajuste de sesión.
 
 El sonido usa la salida predeterminada del sistema. Si no está disponible, la
 edición sigue funcionando y aparece **Reintentar audio** para volver a conectarla.
@@ -470,10 +643,133 @@ cargo run -p score-platform --example audio_smoke
 
 Los archivos `.partitura` son JSON con esquema versionado. Se escriben mediante
 reemplazo atómico; abrir, crear o cerrar pide descartar los cambios si los hay.
-Al salir desde el Dock/sistema se intenta conservar una copia para el siguiente
-inicio, que se abre como documento sin guardar. **Todavía no hay autoguardado
-periódico ni recuperación ante un bloqueo o cierre forzado.** Usa una sola sesión
-de la aplicación a la vez en esta primera versión.
+Los cambios se copian automáticamente a recuperación tras 750 ms sin edición
+(o a los 3 segundos si sigues escribiendo). Esta copia separada no modifica tu
+archivo original. Ante un cierre forzado, el próximo inicio recupera la última
+copia completada, conserva la ruta original y la muestra con cambios sin guardar.
+Guardar o descartar explícitamente limpia la recuperación. La salida desde el
+Dock también espera al escritor. Si no se puede escribir, aparece el error en la
+barra de estado. Solo una sesión puede usar el mismo directorio de recuperación.
+
+## Corregir notas y compases
+
+Haz clic en una nota para salir de la entrada y editarla: **A–G** reemplaza la
+altura elegida; las figuras de **Entrada** cambian su duración, incluyendo el
+puntillo o tresillo que ya tuviera. En acordes se conserva el resto de las notas.
+Si la nueva duración no cabe, la operación se rechaza completa. **N** vuelve a
+activar la entrada de notas nuevas.
+
+**Backspace/Delete** convierte las notas seleccionadas en silencios de la misma
+duración; las notas posteriores conservan su tiempo. **Edición › Eliminar notas y
+su tiempo** y **Cortar** quitan los elementos y adelantan los siguientes dentro
+del compás. Todo admite deshacer y rehacer.
+
+En **Inicio › Compases**, **Insertar antes** (⇧⌘B) añade un compás vacío antes del
+actual y **Eliminar compases** (⌘Backspace) borra los compases que abarca la
+selección, o el actual si no hay un pasaje. Afectan a todos los instrumentos y
+manos; desplazan las indicaciones con la música y conservan la métrica, tonalidad
+y tempo efectivos del primer compás retenido. Siempre queda al menos un compás.
+
+## Exportar partitura general y partes
+
+**Exportar…** en la cabecera o **Archivo › Exportar partitura y partes…** abre un
+selector con la **partitura general** y cada **parte instrumental**. Puedes
+marcarlas por separado, seleccionar todo o quitar todas las marcas. Elige **PDF**,
+**MusicXML** o ambos; el diálogo muestra cuántos archivos se generarán.
+
+**Elegir destino…** permite dar nombre y ubicación a una carpeta nueva. Cada
+documento y formato produce un archivo independiente: `00 - Partitura general.pdf`,
+`01 - Violín I.pdf`, `02 - Violín II.pdf`, etc. También puedes exportar solo una
+parte. Si la carpeta ya existe se pide otro nombre, sin mezclar ni reemplazar su
+contenido. Cancelar el destino conserva la selección.
+
+Las partes conservan todas sus voces y pentagramas (incluidas ambas manos del
+piano y los pasajes divisi), además de notas, expresiones y cambios globales de
+compás, tonalidad y tempo. Mantienen los nombres de sección «Violín I» y «Violín II».
+Se recalcula su presentación como partituras independientes. Las alturas son de
+concierto, igual que en el editor; todavía no se generan partes transpuestas.
+Exportar no modifica la obra ni marca sus cambios como guardados.
+
+```sh
+cargo run -p score-export --example export -- examples/menuetto-y-trio-cuerdas.partitura output/menuetto-partes
+```
+
+El directorio padre debe existir y `menuetto-partes` debe ser nuevo. En macOS este
+ejemplo genera la partitura general y todas las partes en ambos formatos.
+
+## Exportar PDF
+
+Selecciona **PDF** en el diálogo de exportación para guardar todas las
+páginas en A4. El PDF usa trazos vectoriales de Bravura, incluye las indicaciones
+y arpegios entre las manos, y calcula las páginas independientemente de la vista
+y el zoom de la pantalla. No incluye selecciones ni controles de la interfaz.
+Las partes individuales llevan el instrumento en el encabezado, sin repetirlo en cada sistema. Usan un pentagrama más compacto y hasta seis compases por sistema; mantienen las etiquetas de divisi y de las manos del piano. El espacio vertical se calcula con la tinta real y las indicaciones se acercan a la música que tienen debajo. La partitura general usa el mismo espaciado compacto en la app (Página, Continua y Pentagrama) y al exportar PDF.
+La app instalable para Mac queda para otra entrega.
+
+Para exportar un ejemplo sin abrir la interfaz:
+
+```sh
+cargo run -p score-pdf --example export -- examples/piano-arpegios.partitura exports/piano.pdf
+```
+El directorio de destino debe existir.
+
+## Exportar MusicXML
+
+**Archivo › Exportar MusicXML…** abre el mismo selector con MusicXML marcado.
+Cada documento seleccionado se guarda como **.musicxml** sin comprimir
+(MusicXML 4.0) para intercambiar la obra con otros editores. Incluye instrumentos,
+claves, notas, acordes, silencios, dos voces, puntillos y tresillos; cambios de
+compás, tonalidad y tempo; dinámicas, articulaciones, ligaduras, reguladores,
+fermatas, técnicas, armónicos y arpegios, incluidos los que abarcan ambas manos.
+
+El divisi conserva las voces en un mismo instrumento, reserva un segundo
+pentagrama y lo oculta en los compases fuera del pasaje. Los cambios dentro del
+compás conservan su posición; si cortan una nota sostenida, sus fragmentos se
+unen con ligaduras. La presentación exacta depende del editor receptor.
+Las alturas se exportan en la escritura de cada instrumento, con su armadura y transposición. Los armónicos
+artificiales incluyen la nota pisada y la nota de contacto en rombo; su sonido,
+como el resto de la reproducción, depende del programa receptor. El timbre
+sintetizado propio de Partitura no se incorpora al archivo.
+
+La exportación escribe una copia y no sustituye el documento nativo ni cambia
+su estado de guardado. La exportación comprimida **.mxl** todavía no está disponible.
+
+```sh
+cargo run -p score-io --example export_musicxml -- examples/menuetto-y-trio-cuerdas.partitura output/menuetto.musicxml
+```
+
+El directorio de destino debe existir.
+
+## Abrir MusicXML
+
+**Archivo › Abrir…** (⌘O) admite documentos nativos **.partitura**, MusicXML
+**.musicxml** y **.xml**, y archivos comprimidos **.mxl**. Se reconocen por su
+contenido y se admiten las estructuras partwise y timewise.
+
+La importación crea una copia editable sin ruta nativa y la marca como pendiente
+de guardar. **Guardar** pide un archivo **.partitura**; el original MusicXML no se
+modifica. La copia importada también participa en el autoguardado y recuperación.
+
+Se conservan notas, acordes de duración uniforme, silencios, hasta dos voces por
+pentagrama y dos pentagramas por instrumento; compás, armadura, tempo, dinámicas,
+articulaciones básicas, ligaduras completas, reguladores, fermatas, arco/pizzicato,
+armónicos y arpegios. Las partes transpositoras conservan su intervalo de transposición y se reconstruyen en altura escrita. Las
+anacrusas se representan con un compás inicial de duración reducida. El divisi
+puede reconstruirse desde las indicaciones div./unis. o la visibilidad del segundo
+pentagrama. La distribución de página se recalcula con el grabado de Partitura.
+
+Si se omite o adapta algún elemento, aparece un aviso al abrir: por ejemplo,
+letras, textos libres, adornos, cifrados, repeticiones, instrumentos sin equivalente
+y ligaduras que afectan solo a algunas notas de un acorde. Los casos que no
+pueden representar la música correctamente se rechazan con una explicación,
+incluidos más de dos voces por pentagrama, ritmos fuera de la resolución admitida,
+microtonos, métricas simultáneas distintas y armónicos de contacto sin altura
+sonora deducible. Los armónicos naturales sin tipo de altura se interpretan a la
+altura escrita con un aviso. Los armónicos artificiales admitidos son de cuarta.
+
+```sh
+cargo run -p score-io --example import_musicxml -- obra.musicxml copia-editable.partitura
+```
 
 ## Verificar
 
@@ -495,14 +791,46 @@ La arquitectura, decisiones y siguientes entregas están en
 
 ## Alcance actual
 
-Una voz por pentagrama, acordes de hasta ocho notas con sostenidos, bemoles y becuadros y silencios sin puntillo, cinco duraciones
-y claves de sol, do y fa. El layout inicial añade líneas adicionales y banderas individuales, con
-caché por compás; todavía no tiene barrado ni grabado profesional.
+Dos voces por pentagrama y divisi en uno o dos pentagramas, acordes de hasta ocho notas con sostenidos, bemoles y becuadros, cinco duraciones con puntillos y tresillos,
+y claves de sol, do y fa. El grabado incluye barrado, líneas adicionales,
+articulaciones, dinámicas, ligaduras y reguladores, con caché por compás.
 La reproducción mezcla las partes en un reloj común, con inicio desde selección,
-pausa y continuación. Aún no hay repeticiones, MIDI externo, MusicXML ni PDF.
+pausa y continuación. Aún no hay reproducción de repeticiones ni MIDI externo.
 
 Se incluye [Bravura 1.392](https://github.com/steinbergmedia/bravura/tree/bravura-1.392),
 copyright Steinberg Media Technologies GmbH, bajo la
 [SIL Open Font License](assets/fonts/OFL.txt).
 También se incluye [GeneralUser GS 2.0.3](assets/sounds/README.md) de S. Christian
 Collins, con su [licencia original](assets/sounds/LICENSE.txt).
+
+## Armónicos de cuerda
+
+Selecciona una nota o un pasaje y usa **Expresión › Armónico natural** o
+**Armónico artificial**, también disponibles en la cinta y en Propiedades.
+Pulsa de nuevo la misma opción para quitarla; también puedes seleccionar el
+círculo o el rombo y borrar únicamente esa marca. Se conserva el historial de
+Deshacer, el portapapeles, el autoguardado y la exportación a PDF.
+
+- **Natural:** escribe la altura que debe sonar. Se añade el círculo de Bravura.
+- **Artificial:** escribe una sola nota pisada; el programa añade el rombo a una
+  cuarta justa por encima y reproduce únicamente el sonido dos octavas más alto.
+  Admite notas pisadas de C0 a B6 para mantener el sonido dentro del rango del editor.
+
+Son marcas de cada evento, compatibles con arco, pizzicato, articulaciones,
+ligaduras, dos voces y divisi. En un pasaje se aplican a todas las notas
+seleccionadas en una sola operación; los silencios no admiten armónicos.
+La reproducción respeta la altura sonora y usa un timbre sintetizado propio para
+los armónicos: sostenido y aéreo al arco, con ataque breve y resonancia que decae
+en pizzicato. Funciona también al escuchar notas y al continuar desde una
+selección, tanto con GeneralUser como con VSCO CE. Es una aproximación por síntesis;
+no son grabaciones de armónicos de una biblioteca orquestal.
+Ejemplo: `examples/armonicos-cuerdas.partitura`.
+
+Para comparar a la misma altura y dinámica el arco normal, el armónico al arco,
+el pizzicato normal y el armónico pizzicato:
+
+```sh
+cargo run --offline --locked -p score-platform --example harmonics_compare
+```
+
+Genera `output/audio/comparacion-armonicos.wav` con el mismo motor de la app.

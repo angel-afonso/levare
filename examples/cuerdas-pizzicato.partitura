@@ -1,11 +1,16 @@
 {
   "format": "partitura",
-  "version": 10,
+  "version": 14,
   "score": {
     "title": "Cuarteto en Sol",
     "time": {
       "numerator": 4,
       "denominator": 4
+    },
+    "tempo": {
+      "bpm": 120,
+      "beat": "Quarter",
+      "text": ""
     },
     "key_signature": {
       "fifths": 1,
@@ -560,7 +565,9 @@
                   },
                   {
                     "value": {
-                      "notation": {},
+                      "notation": {
+                        "fermata": true
+                      },
                       "pitches": [
                         {
                           "step": "G",
@@ -893,7 +900,9 @@
                   },
                   {
                     "value": {
-                      "notation": {},
+                      "notation": {
+                        "fermata": true
+                      },
                       "pitches": [
                         {
                           "step": "B",
@@ -1226,7 +1235,9 @@
                   },
                   {
                     "value": {
-                      "notation": {},
+                      "notation": {
+                        "fermata": true
+                      },
                       "pitches": [
                         {
                           "step": "G",
@@ -1627,7 +1638,9 @@
                   },
                   {
                     "value": {
-                      "notation": {},
+                      "notation": {
+                        "fermata": true
+                      },
                       "pitches": [
                         {
                           "step": "G",

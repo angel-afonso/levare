@@ -4,22 +4,20 @@ use score_core::{
     PlayingTechnique, Score, ScoreError, StaffId, Step,
 };
 
+mod arpeggio;
 mod audition;
 mod dynamics;
 mod interpretation;
 mod timeline;
-pub use audition::Audition;
+pub use audition::{Audition, MAX_AUDITION_NOTES};
 pub use timeline::{FERMATA_HOLD, Timeline};
 
-pub const PLAYBACK_CHANNELS: usize = 32;
+pub const PLAYBACK_CHANNELS: usize = 128;
 /// Channel for a validated score's part index; percussion and audition are reserved.
 pub fn part_channel(index: usize) -> u8 {
     debug_assert!(index < score_core::MAX_PARTS);
-    if index < 9 {
-        index as u8
-    } else {
-        index as u8 + 1
-    }
+    let slot = index % 14;
+    ((index / 14) * 32 + slot + usize::from(slot >= 9)) as u8
 }
 pub const TICKS_PER_QUARTER: u64 = score_core::TICKS_PER_QUARTER as u64;
 
@@ -68,6 +66,8 @@ pub struct NoteEvent {
     pub instrument: Instrument,
     /// Inherited bowed-string technique; `Arco` for every other instrument.
     pub technique: PlayingTechnique,
+    /// Per-attack harmonic timbre, independent of bowed/plucked technique.
+    pub harmonic: Option<score_core::Harmonic>,
     /// Written articulation of this attack.
     pub articulation: Option<Articulation>,
     /// Under a slur. The plan already overlaps connected notes; a slurred
@@ -79,6 +79,8 @@ pub struct NoteEvent {
 pub enum Message {
     Expression(u8),
     NoteOff(u8),
+    /// Release only the harmonic timbre when it shares a key with normal strings.
+    HarmonicOff(u8),
     NoteOn(NoteEvent),
 }
 
@@ -107,10 +109,15 @@ pub struct HeldNote {
 /// Sounding intervals differ from notation for articulation, slurs and tied chains.
 #[derive(Clone, Copy, Debug)]
 struct SoundSpan {
+    element: ElementId,
+    arpeggio: Option<score_core::Arpeggio>,
+    /// Original first fragment, so tied continuations never widen the roll.
+    attack_duration: u64,
     articulation: Option<Articulation>,
     boost: u8,
     reference_level: u8,
     technique: PlayingTechnique,
+    harmonic: Option<score_core::Harmonic>,
     instrument: Instrument,
     legato: bool,
     /// The slur continues from this sound into the next written note.
@@ -133,6 +140,7 @@ struct KeySound {
 /// audio callback and with the view's playback cursor.
 #[derive(Debug)]
 pub struct Track {
+    pub voice: score_core::Voice,
     pub staff: StaffId,
     pub part: PartId,
     pub channel: u8,
@@ -153,7 +161,7 @@ pub struct PlaybackPlan {
     pub spans: Vec<Span>,
     sounds: Vec<SoundSpan>,
     expression: Vec<ExpressionPoint>,
-    key_sounds: std::collections::HashMap<(u8, u8), Vec<KeySound>>,
+    key_sounds: std::collections::HashMap<(u8, u8, bool), Vec<KeySound>>,
     pub duration_frames: u64,
     pub sample_rate: u32,
     /// Musical to audio time for this score, fermatas included.
@@ -199,13 +207,14 @@ impl PlaybackPlan {
             .collect();
         let tied_starts: std::collections::HashSet<_> = ties.iter().map(|c| c.start).collect();
         let tied_ends: std::collections::HashSet<_> = ties.iter().map(|c| c.end).collect();
-        let capacity = u64::from(score.time().capacity());
         let mut duration_frames = 0;
         let mut tracks = Vec::new();
         let mut expression: Vec<ExpressionPoint> = Vec::new();
         for (part_index, part) in score.parts().iter().enumerate() {
             let channel = part_channel(part_index);
-            let split_hands = part.instrument() == score_core::Instrument::Piano
+            let first_part_sound = sounds.len();
+            let first_part_track = tracks.len();
+            let split_hands = part.instrument().is_grand_staff()
                 && score
                     .connections()
                     .iter()
@@ -220,110 +229,149 @@ impl PlaybackPlan {
                     };
                 let first_expression = expression.len();
                 let expressive = score.connections().iter().any(|c| {
-                    c.kind.is_hairpin() && c.start.part == part.id() && c.start.staff == staff.id()
+                    c.kind.is_hairpin()
+                        && c.start.part == part.id()
+                        && (c.start.staff == staff.id() || part.is_divisi())
                 });
-                let first_span = spans.len();
                 let first_sound = sounds.len();
-                let mut dynamic = score_core::Dynamic::Mf;
-                let mut technique = PlayingTechnique::Arco;
-                let slurs = interpretation::Slurs::new(score, part.id(), staff.id());
-                for (index, measure) in staff.measures().iter().enumerate() {
-                    let mut tick = index as u64 * capacity;
-                    for (id, event) in measure.iter() {
-                        let written_tick = tick;
-                        let start = timeline.frame_at(tick, sample_rate);
-                        tick += u64::from(event.duration.ticks());
-                        let end = timeline.frame_at(tick, sample_rate);
-                        let pitches = event.pitches.in_key(score.key_signature());
-                        let element = ElementId {
-                            staff: staff.id(),
-                            part: part.id(),
-                            measure: index,
-                            event: id,
-                        };
-                        spans.push(Span {
-                            element,
-                            start,
-                            end,
-                            channel,
-                            pitches,
-                        });
-                        if let Some(mark) = event.notation.technique {
-                            technique = mark;
+                let mut dynamics = std::collections::BTreeMap::new();
+                let mut techniques = std::collections::BTreeMap::new();
+                for source in part.expression_staves(staff.id()) {
+                    for (bar, measure) in source.measures().iter().enumerate() {
+                        for (_, onset, _, event) in measure.timed_iter() {
+                            let tick = score.measure_start_tick(bar) + u64::from(onset);
+                            if let Some(mark) = event.notation.dynamic {
+                                dynamics.insert(tick, mark);
+                            }
+                            if let Some(mark) = event.notation.technique {
+                                techniques.insert(tick, mark);
+                            }
                         }
-                        if let Some(mark) = event.notation.dynamic {
-                            dynamic = mark;
-                        }
-                        let articulation = event.notation.articulation;
-                        let slurred = slurs.continues(written_tick);
-                        if !pitches.is_empty() {
-                            if tied_ends.contains(&element) {
-                                // Whole chords tie as a unit; the original attack and level survive.
-                                let sound =
-                                    sounds.last_mut().expect("validated consecutive tied chord");
-                                // The final articulation shapes the combined tied duration.
-                                // This also preserves staccato when paste splits a long note.
-                                sound.written_end = end;
-                                sound.slurred = slurred;
-                                sound.end = if tied_starts.contains(&element) {
-                                    end
-                                } else {
-                                    interpretation::sounding_end(
-                                        sound.start,
-                                        end,
-                                        articulation,
-                                        slurred,
-                                        sample_rate,
-                                    )
-                                };
-                                // Paste may put the release articulation on the
-                                // final tied fragment. Preserve its short sample
-                                // choice as well as the combined duration.
-                                if !tied_starts.contains(&element)
-                                    && articulation == Some(Articulation::Staccato)
-                                {
-                                    sound.articulation = articulation;
-                                }
-                            } else {
-                                let tied = tied_starts.contains(&element);
-                                sounds.push(SoundSpan {
-                                    articulation: if tied
-                                        && articulation == Some(Articulation::Staccato)
-                                    {
-                                        None
-                                    } else {
-                                        articulation
-                                    },
-                                    boost: interpretation::accent_boost(articulation),
-                                    reference_level: dynamic.velocity(),
-                                    technique,
-                                    instrument: part.instrument(),
-                                    legato: slurs.contains(written_tick),
-                                    slurred,
-                                    start,
-                                    end: if tied {
+                    }
+                }
+                let mut voice_ranges = Vec::new();
+                for voice in score_core::Voice::ALL {
+                    if voice == score_core::Voice::Two
+                        && staff.measures().iter().all(|m| m.voice_len(voice) == 0)
+                    {
+                        continue;
+                    }
+                    let first_voice_span = spans.len();
+                    let first_voice_sound = sounds.len();
+                    let slurs = interpretation::Slurs::new(score, part.id(), staff.id(), voice);
+                    for (index, measure) in staff.measures().iter().enumerate() {
+                        let mut tick = score.measure_start_tick(index);
+                        for (id, event) in measure.voice_iter(voice) {
+                            let written_tick = tick;
+                            let start = timeline.frame_at(tick, sample_rate);
+                            tick += u64::from(event.duration.ticks());
+                            let end = timeline.frame_at(tick, sample_rate);
+                            let element = ElementId {
+                                staff: staff.id(),
+                                part: part.id(),
+                                measure: index,
+                                event: id,
+                            };
+                            let pitches = score.sounding_pitches(element)?;
+                            spans.push(Span {
+                                element,
+                                start,
+                                end,
+                                channel,
+                                pitches,
+                            });
+                            let technique = techniques
+                                .range(..=written_tick)
+                                .next_back()
+                                .map_or(PlayingTechnique::Arco, |(_, mark)| *mark);
+                            let dynamic = dynamics
+                                .range(..=written_tick)
+                                .next_back()
+                                .map_or(score_core::Dynamic::Mf, |(_, mark)| *mark);
+                            let articulation = event.notation.articulation;
+                            let slurred = slurs.continues(written_tick);
+                            if !pitches.is_empty() {
+                                if tied_ends.contains(&element) {
+                                    // Whole chords tie as a unit; the original attack and level survive.
+                                    let sound = sounds
+                                        .last_mut()
+                                        .expect("validated consecutive tied chord");
+                                    // The final articulation shapes the combined tied duration.
+                                    // This also preserves staccato when paste splits a long note.
+                                    sound.written_end = end;
+                                    sound.slurred = slurred;
+                                    sound.end = if tied_starts.contains(&element) {
                                         end
                                     } else {
                                         interpretation::sounding_end(
-                                            start,
+                                            sound.start,
                                             end,
                                             articulation,
                                             slurred,
                                             sample_rate,
                                         )
-                                    },
-                                    written_end: end,
-                                    channel,
-                                    pitches,
-                                    level: interpretation::level(dynamic.velocity(), articulation),
-                                });
+                                    };
+                                    // Paste may put the release articulation on the
+                                    // final tied fragment. Preserve its short sample
+                                    // choice as well as the combined duration.
+                                    if !tied_starts.contains(&element)
+                                        && articulation == Some(Articulation::Staccato)
+                                    {
+                                        sound.articulation = articulation;
+                                    }
+                                } else {
+                                    let tied = tied_starts.contains(&element);
+                                    sounds.push(SoundSpan {
+                                        element,
+                                        arpeggio: event.notation.arpeggio,
+                                        attack_duration: end - start,
+                                        articulation: if tied
+                                            && articulation == Some(Articulation::Staccato)
+                                        {
+                                            None
+                                        } else {
+                                            articulation
+                                        },
+                                        boost: interpretation::accent_boost(articulation),
+                                        reference_level: dynamic.velocity(),
+                                        technique,
+                                        harmonic: event.notation.harmonic,
+                                        instrument: part.instrument(),
+                                        legato: slurs.contains(written_tick),
+                                        slurred,
+                                        start,
+                                        end: if tied {
+                                            end
+                                        } else {
+                                            interpretation::sounding_end(
+                                                start,
+                                                end,
+                                                articulation,
+                                                slurred,
+                                                sample_rate,
+                                            )
+                                        },
+                                        written_end: end,
+                                        channel,
+                                        pitches,
+                                        level: interpretation::level(
+                                            dynamic.velocity(),
+                                            articulation,
+                                        ),
+                                    });
+                                }
                             }
+                            duration_frames = duration_frames.max(end);
                         }
-                        duration_frames = duration_frames.max(end);
                     }
+                    connect_slurred(&mut sounds[first_voice_sound..], sample_rate);
+                    voice_ranges.push((
+                        voice,
+                        first_voice_span..spans.len(),
+                        first_voice_sound..sounds.len(),
+                    ));
                 }
-                connect_slurred(&mut sounds[first_sound..], sample_rate);
-                if expressive {
+                if expressive && !part.is_divisi() {
                     let envelope =
                         score_core::DynamicEnvelope::new(score, part.id(), staff.id()).unwrap();
                     let points = dynamics::prepare(
@@ -341,28 +389,99 @@ impl PlaybackPlan {
                     }
                     expression.extend(points);
                 }
-                tracks.push(Track {
-                    staff: staff.id(),
-                    part: part.id(),
-                    channel,
-                    instrument: part.instrument(),
-                    spans: first_span..spans.len(),
-                    sounds: first_sound..sounds.len(),
-                    expression: first_expression..expression.len(),
-                });
+                for (voice, span_range, sound_range) in voice_ranges {
+                    tracks.push(Track {
+                        voice,
+                        staff: staff.id(),
+                        part: part.id(),
+                        channel,
+                        instrument: part.instrument(),
+                        spans: span_range,
+                        sounds: sound_range,
+                        expression: first_expression..expression.len(),
+                    });
+                }
+            }
+            if part.is_divisi()
+                && score
+                    .connections()
+                    .iter()
+                    .any(|c| c.kind.is_hairpin() && c.start.part == part.id())
+            {
+                let first = expression.len();
+                let envelope =
+                    score_core::DynamicEnvelope::new(score, part.id(), StaffId::Upper).unwrap();
+                let points = dynamics::prepare(
+                    envelope,
+                    &mut sounds[first_part_sound..],
+                    &timeline,
+                    sample_rate,
+                );
+                for point in &points {
+                    messages.push(ScheduledMessage {
+                        frame: point.frame,
+                        channel,
+                        message: Message::Expression(point.value),
+                    });
+                }
+                expression.extend(points);
+                for track in &mut tracks[first_part_track..] {
+                    track.expression = first..expression.len();
+                }
             }
         }
+        let sound_indices: std::collections::HashMap<_, _> = sounds
+            .iter()
+            .enumerate()
+            .map(|(index, span)| (span.element, index))
+            .collect();
+        let piano_arpeggios: std::collections::HashMap<_, _> = score
+            .piano_arpeggios()
+            .iter()
+            .flat_map(|mark| [(mark.upper, mark), (mark.lower, mark)])
+            .collect();
         for span in &sounds {
-            for pitch in span.pitches.iter() {
-                let key = midi_key(pitch);
+            let group = piano_arpeggios.get(&span.element);
+            let mut keys = [None; MAX_AUDITION_NOTES];
+            let mut count = 0;
+            let mut gate = span.attack_duration.min(span.end - span.start);
+            let members = group.map_or([Some(span.element), None], |mark| {
+                [Some(mark.upper), Some(mark.lower)]
+            });
+            for id in members.into_iter().flatten() {
+                // A tied continuation has no new sound; preserve that sustain.
+                if let Some(index) = sound_indices.get(&id) {
+                    let member = sounds[*index];
+                    gate = gate.min(member.attack_duration.min(member.end - member.start));
+                    for pitch in member.pitches.iter() {
+                        keys[count] = Some(midi_key(pitch));
+                        count += 1;
+                    }
+                }
+            }
+            let (keys, delays) = arpeggio::attacks(
+                keys,
+                group.map(|mark| mark.kind).or(span.arpeggio),
+                gate,
+                sample_rate,
+            );
+            for (key, delay) in keys
+                .into_iter()
+                .zip(delays)
+                .filter_map(|(key, delay)| key.map(|key| (key, delay)))
+            {
+                if !span.pitches.iter().any(|pitch| midi_key(pitch) == key) {
+                    continue;
+                }
                 messages.push(ScheduledMessage {
-                    frame: span.start,
+                    frame: span.start + delay,
                     channel: span.channel,
                     message: Message::NoteOn(NoteEvent {
                         key,
                         level: span.level,
                         instrument: span.instrument,
                         technique: span.technique,
+                        harmonic: span.harmonic,
                         articulation: span.articulation,
                         legato: span.legato,
                     }),
@@ -370,7 +489,11 @@ impl PlaybackPlan {
                 messages.push(ScheduledMessage {
                     frame: span.end,
                     channel: span.channel,
-                    message: Message::NoteOff(key),
+                    message: if span.harmonic.is_some() {
+                        Message::HarmonicOff(key)
+                    } else {
+                        Message::NoteOff(key)
+                    },
                 });
             }
         }
@@ -379,50 +502,54 @@ impl PlaybackPlan {
             (
                 message.frame,
                 match message.message {
-                    Message::NoteOff(_) => 0,
+                    Message::NoteOff(_) | Message::HarmonicOff(_) => 0,
                     Message::Expression(_) => 1,
                     Message::NoteOn(_) => 2,
                 },
             )
         });
-        // Both piano hands share a timbre/channel. Overlapping unisons form
-        // one held key, so an early release from one hand cannot cut the other.
-        let mut held = [[0u8; 128]; PLAYBACK_CHANNELS];
+        // Overlapping unisons of the same timbre form one held key. Harmonics
+        // remain separate from normal notes in another voice on this channel.
+        let mut held = [[[0u8; 128]; 2]; PLAYBACK_CHANNELS];
         messages.retain(|scheduled| {
-            let key = match scheduled.message {
+            let (key, harmonic) = match scheduled.message {
                 Message::Expression(_) => return true,
-                Message::NoteOn(NoteEvent { key, .. }) | Message::NoteOff(key) => key,
+                Message::NoteOn(note) => (note.key, note.harmonic.is_some()),
+                Message::NoteOff(key) => (key, false),
+                Message::HarmonicOff(key) => (key, true),
             };
-            let count = &mut held[usize::from(scheduled.channel)][usize::from(key)];
+            let count =
+                &mut held[usize::from(scheduled.channel)][usize::from(harmonic)][usize::from(key)];
             match scheduled.message {
                 Message::Expression(_) => unreachable!(),
                 Message::NoteOn(_) => {
                     *count += 1;
                     *count == 1
                 }
-                Message::NoteOff(_) => {
+                Message::NoteOff(_) | Message::HarmonicOff(_) => {
                     *count -= 1;
                     *count == 0
                 }
             }
         });
         // Chase the actual merged attack, including overlap chains between hands.
-        let mut key_sounds: std::collections::HashMap<(u8, u8), Vec<KeySound>> =
+        let mut key_sounds: std::collections::HashMap<(u8, u8, bool), Vec<KeySound>> =
             std::collections::HashMap::new();
         for message in &messages {
             match message.message {
                 Message::Expression(_) => {}
                 Message::NoteOn(note) => key_sounds
-                    .entry((message.channel, note.key))
+                    .entry((message.channel, note.key, note.harmonic.is_some()))
                     .or_default()
                     .push(KeySound {
                         note,
                         start: message.frame,
                         end: 0,
                     }),
-                Message::NoteOff(key) => {
+                Message::NoteOff(key) | Message::HarmonicOff(key) => {
+                    let harmonic = matches!(message.message, Message::HarmonicOff(_));
                     key_sounds
-                        .get_mut(&(message.channel, key))
+                        .get_mut(&(message.channel, key, harmonic))
                         .unwrap()
                         .last_mut()
                         .unwrap()
@@ -454,8 +581,8 @@ impl PlaybackPlan {
         }
         values
     }
-    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_STAVES] {
-        let mut elements = [None; MAX_STAVES];
+    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_STAVES * 2] {
+        let mut elements = [None; MAX_STAVES * 2];
         for (index, track) in self.tracks.iter().enumerate() {
             let spans = &self.spans[track.spans.clone()];
             if let Some(span) = spans
@@ -472,12 +599,12 @@ impl PlaybackPlan {
         self.elements_at(frame).into_iter().flatten().next()
     }
 
-    /// Prepared before Play is queued: the callback inspects at most 224 notes,
+    /// Prepared before Play is queued: the callback inspects at most 448 notes,
     /// regardless of the score's length.
     pub fn held_notes_at(&self, frame: u64) -> [Option<HeldNote>; MAX_SOUNDING_NOTES] {
         let mut notes = [None; MAX_SOUNDING_NOTES];
         let mut count = 0;
-        let mut seen = [[false; 128]; PLAYBACK_CHANNELS];
+        let mut seen = [[[false; 128]; 2]; PLAYBACK_CHANNELS];
         for track in &self.tracks {
             let spans = &self.sounds[track.sounds.clone()];
             if let Some(span) = spans
@@ -488,11 +615,20 @@ impl PlaybackPlan {
             {
                 for pitch in span.pitches.iter() {
                     let key = midi_key(pitch);
-                    let seen = &mut seen[usize::from(span.channel)][usize::from(key)];
+                    let harmonic = span.harmonic.is_some();
+                    let seen = &mut seen[usize::from(span.channel)][usize::from(harmonic)]
+                        [usize::from(key)];
                     if !*seen {
-                        let intervals = &self.key_sounds[&(span.channel, key)];
-                        let index = intervals.partition_point(|sound| sound.start < frame) - 1;
-                        debug_assert!(frame < intervals[index].end);
+                        let intervals = &self.key_sounds[&(span.channel, key, harmonic)];
+                        let Some(index) = intervals
+                            .partition_point(|sound| sound.start < frame)
+                            .checked_sub(1)
+                        else {
+                            continue;
+                        };
+                        if frame >= intervals[index].end {
+                            continue;
+                        }
                         notes[count] = Some(HeldNote {
                             channel: span.channel,
                             note: intervals[index].note,
@@ -524,6 +660,7 @@ mod tests {
             level,
             instrument: Instrument::Piano,
             technique: PlayingTechnique::Arco,
+            harmonic: None,
             articulation: None,
             legato: false,
         }
@@ -1079,3 +1216,12 @@ mod tests {
 
 #[cfg(test)]
 mod expression_tests;
+
+#[cfg(test)]
+mod voice_tests;
+
+#[cfg(test)]
+mod harmonic_tests;
+
+#[cfg(test)]
+mod orchestra_tests;

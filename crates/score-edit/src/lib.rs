@@ -6,11 +6,14 @@ use score_core::{
 pub mod clipboard;
 #[cfg(test)]
 mod instrument_tests;
+#[cfg(test)]
+mod move_tests;
 mod selection;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cursor {
     pub staff: StaffId,
+    pub voice: score_core::Voice,
     pub part: PartId,
     pub measure: usize,
     pub index: usize,
@@ -19,7 +22,10 @@ pub struct Cursor {
 #[derive(Clone, Debug)]
 pub enum Command {
     Insert(Event),
+    SetPartDivisi(bool),
+    SetPassageDivisi(bool),
     SetArticulation(Option<score_core::Articulation>),
+    SetArpeggioBothHands(bool),
     SetDynamic(Option<score_core::Dynamic>),
     SetDotted(bool),
     SetTriplet(bool),
@@ -36,6 +42,16 @@ pub enum Command {
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
     Delete,
+    /// Clear pitches while keeping all event onsets unchanged.
+    Erase,
+    ReplacePitch(Pitch),
+    MoveSelectedEvent {
+        measure: usize,
+        tick: u16,
+    },
+    SetDuration(score_core::NoteValue),
+    InsertMeasure,
+    DeleteMeasures,
     Transpose(i16),
     AddPitch(Pitch),
     RemoveHighestPitch,
@@ -47,6 +63,12 @@ pub enum Command {
     RemovePart,
     RemovePartById(PartId),
     SetKeySignature(score_core::KeySignature),
+    SetKeySignatureAt(usize, score_core::KeySignature),
+    SetTimeSignatureAt(usize, score_core::TimeSignature),
+    RemoveKeyChange(usize),
+    RemoveTimeChange(usize),
+    SetTempoAt(usize, score_core::TempoMark),
+    RemoveTempoChange(usize),
 }
 
 #[derive(Clone)]
@@ -55,6 +77,7 @@ struct Snapshot {
     cursor: Cursor,
     selection: Option<ElementId>,
     range_anchor: Option<ElementId>,
+    divisi_anchor: Option<score_core::DivisiPoint>,
     tone: usize,
 }
 
@@ -87,6 +110,7 @@ impl Editor {
                 },
                 selection: None,
                 range_anchor: None,
+                divisi_anchor: None,
                 tone: 0,
             },
             undo: Vec::new(),
@@ -142,18 +166,22 @@ impl Editor {
     }
 
     pub fn select(&mut self, id: ElementId) {
+        self.state.divisi_anchor = None;
         if let Some(index) = self
             .score()
             .part(id.part)
             .and_then(|part| part.staff(id.staff))
             .and_then(|staff| staff.measures().get(id.measure))
-            .and_then(|measure| measure.index_of(id.event))
+            .and_then(|measure| {
+                measure.voice_index_of(self.score().voice_of(id).unwrap(), id.event)
+            })
         {
             let switched = self.cursor().part != id.part || self.cursor().staff != id.staff;
             self.state.selection = Some(id);
             self.state.range_anchor = None;
             self.state.tone = 0;
             self.state.cursor = Cursor {
+                voice: self.score().voice_of(id).unwrap(),
                 staff: id.staff,
                 part: id.part,
                 measure: id.measure,
@@ -175,13 +203,24 @@ impl Editor {
         }
     }
 
+    pub fn select_voice(&mut self, voice: score_core::Voice) {
+        if self.cursor().voice == voice {
+            return;
+        }
+        self.set_cursor(Cursor {
+            voice,
+            index: 0,
+            ..self.cursor()
+        });
+    }
+
     pub fn set_cursor(&mut self, cursor: Cursor) {
         if self
             .score()
             .part(cursor.part)
             .and_then(|part| part.staff(cursor.staff))
             .and_then(|staff| staff.measures().get(cursor.measure))
-            .is_some_and(|measure| cursor.index <= measure.len())
+            .is_some_and(|measure| cursor.index <= measure.voice_len(cursor.voice))
         {
             if self.cursor().part != cursor.part || self.cursor().staff != cursor.staff {
                 self.octave = self
@@ -190,6 +229,7 @@ impl Editor {
                     .expect("cursor part")
                     .entry_octave(cursor.staff);
             }
+            self.state.divisi_anchor = None;
             self.state.cursor = cursor;
             self.state.selection = None;
             self.state.range_anchor = None;
@@ -213,7 +253,7 @@ impl Editor {
         } else {
             cursor.index.checked_sub(1)
         };
-        if let Some(id) = index.and_then(|index| measure.id_at(index)) {
+        if let Some(id) = index.and_then(|index| measure.voice_id_at(cursor.voice, index)) {
             self.select(ElementId {
                 staff: cursor.staff,
                 part: cursor.part,
@@ -222,6 +262,7 @@ impl Editor {
             });
         } else if forward && cursor.measure + 1 < self.score().measures().len() {
             self.set_cursor(Cursor {
+                voice: cursor.voice,
                 staff: cursor.staff,
                 part: cursor.part,
                 measure: cursor.measure + 1,
@@ -229,6 +270,7 @@ impl Editor {
             });
         } else if !forward && cursor.index > 0 {
             self.set_cursor(Cursor {
+                voice: cursor.voice,
                 staff: cursor.staff,
                 part: cursor.part,
                 measure: cursor.measure,
@@ -243,8 +285,9 @@ impl Editor {
                 .staff(cursor.staff)
                 .expect("cursor staff")
                 .measures()[previous]
-                .len();
+                .voice_len(cursor.voice);
             self.set_cursor(Cursor {
+                voice: cursor.voice,
                 staff: cursor.staff,
                 part: cursor.part,
                 measure: previous,
@@ -252,10 +295,11 @@ impl Editor {
             });
         } else if forward {
             self.set_cursor(Cursor {
+                voice: cursor.voice,
                 staff: cursor.staff,
                 part: cursor.part,
                 measure: cursor.measure,
-                index: measure.len(),
+                index: measure.voice_len(cursor.voice),
             });
         }
     }
@@ -263,6 +307,64 @@ impl Editor {
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {
         let mut next = self.state.clone();
         match command {
+            Command::SetPassageDivisi(divided) => {
+                next.set_passage_divisi(divided, false)?;
+            }
+            Command::ToggleMark(score_core::MarkKind::Division(mark))
+                if !next
+                    .score
+                    .part(next.cursor.part)
+                    .unwrap()
+                    .instrument()
+                    .is_grand_staff() =>
+            {
+                next.set_passage_divisi(mark == score_core::Division::Divisi, true)?;
+            }
+            Command::SetPartDivisi(divided) => {
+                let part = next.cursor.part;
+                if next.score.part(part).unwrap().is_divisi() == divided {
+                    return Ok(false);
+                }
+                let remap = next.score.set_part_divisi(part, divided)?;
+                next.selection = next
+                    .selection
+                    .map(|id| remap.get(&id).copied().unwrap_or(id));
+                next.range_anchor = next
+                    .range_anchor
+                    .map(|id| remap.get(&id).copied().unwrap_or(id));
+                if divided && next.cursor.voice == score_core::Voice::Two {
+                    next.cursor.staff = StaffId::Lower;
+                    next.cursor.voice = score_core::Voice::One;
+                } else if !divided && next.cursor.staff == StaffId::Lower {
+                    next.cursor.staff = StaffId::Upper;
+                    next.cursor.voice = score_core::Voice::Two;
+                }
+                if let Some(id) = next.selection {
+                    next.cursor.staff = id.staff;
+                    next.cursor.voice = next.score.voice_of(id).unwrap();
+                    next.cursor.measure = id.measure;
+                    next.cursor.index = next
+                        .score
+                        .part(part)
+                        .unwrap()
+                        .staff(id.staff)
+                        .unwrap()
+                        .measures()[id.measure]
+                        .voice_index_of(next.cursor.voice, id.event)
+                        .unwrap()
+                        + 1;
+                } else {
+                    next.cursor.index = next.cursor.index.min(
+                        next.score
+                            .part(part)
+                            .unwrap()
+                            .staff(next.cursor.staff)
+                            .unwrap()
+                            .measures()[next.cursor.measure]
+                            .voice_len(next.cursor.voice),
+                    );
+                }
+            }
             Command::SetArticulation(value) => {
                 let id = next
                     .selection
@@ -286,23 +388,24 @@ impl Editor {
                 if ids.is_empty() {
                     return Err(ScoreError("Selecciona notas, acordes o silencios"));
                 }
-                let mut changed = false;
-                for id in ids {
-                    let old = next.score.event(id).unwrap().duration;
-                    let duration = if matches!(command, Command::SetDotted(_)) {
-                        old.with_dotted(value)
-                    } else {
-                        old.with_triplet(value)
-                    };
-                    if duration != old {
-                        next.score.set_duration(id, duration)?;
-                        changed = true;
-                    }
-                }
-                if !changed {
+                let edits: Vec<_> = ids
+                    .into_iter()
+                    .filter_map(|id| {
+                        let old = next.score.event(id).unwrap().duration;
+                        let new = if matches!(command, Command::SetDotted(_)) {
+                            old.with_dotted(value)
+                        } else {
+                            old.with_triplet(value)
+                        };
+                        (new != old).then_some((id, new))
+                    })
+                    .collect();
+                if edits.is_empty() {
                     return Ok(false);
                 }
+                next.score.set_durations(&edits)?;
             }
+
             Command::SetDynamic(value) => {
                 let id = next
                     .selection
@@ -335,6 +438,26 @@ impl Editor {
                 next.score.add_connection(new)?;
             }
             Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
+            Command::SetArpeggioBothHands(enabled) => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o acorde del piano"))?;
+                next.score.set_arpeggio_both_hands(id, enabled)?;
+            }
+            Command::ToggleMark(score_core::MarkKind::Harmonic(mark)) => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    return Err(ScoreError("Selecciona notas para aplicar el armónico"));
+                }
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.harmonic == Some(mark));
+                let edits: Vec<_> = ids
+                    .into_iter()
+                    .map(|id| (id, (!clear).then_some(mark)))
+                    .collect();
+                next.score.set_harmonics(&edits)?;
+            }
             Command::ToggleMark(kind) => {
                 let id = next
                     .selection
@@ -362,8 +485,9 @@ impl Editor {
                     .staff(next.cursor.staff)
                     .expect("cursor staff")
                     .measures()[next.cursor.measure];
-                if next.cursor.index == measure.len()
-                    && measure.used_ticks() == next.score.time().capacity()
+                if next.cursor.index == measure.voice_len(next.cursor.voice)
+                    && measure.voice_ticks(next.cursor.voice)
+                        == next.score.time_at(next.cursor.measure).capacity()
                 {
                     next.cursor.measure += 1;
                     next.cursor.index = 0;
@@ -371,16 +495,121 @@ impl Editor {
                         next.score.append_measure()?;
                     }
                 }
-                let id = next.score.insert_on(
+                let id = next.score.insert_in_voice(
                     next.cursor.part,
                     next.cursor.staff,
                     next.cursor.measure,
+                    next.cursor.voice,
                     next.cursor.index,
                     event,
                 )?;
                 next.cursor.index += 1;
                 next.selection = Some(id);
                 next.tone = 0;
+            }
+            Command::Erase => {
+                let ids = self.selected_ids();
+                if ids.is_empty()
+                    || ids
+                        .iter()
+                        .all(|id| next.score.event(*id).unwrap().pitches.is_empty())
+                {
+                    return Ok(false);
+                }
+                for id in ids {
+                    next.score.erase(id)?;
+                }
+            }
+            Command::MoveSelectedEvent { measure, tick } => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o acorde"))?;
+                if measure == id.measure
+                    && next.score.event_tick(id)
+                        == Some(next.score.measure_start_tick(measure) + u64::from(tick))
+                {
+                    return Ok(false);
+                }
+                let moved = next.score.move_event(id, measure, tick)?;
+                let voice = next.score.voice_of(moved).unwrap();
+                let index = next
+                    .score
+                    .part(moved.part)
+                    .unwrap()
+                    .staff(moved.staff)
+                    .unwrap()
+                    .measures()[measure]
+                    .voice_index_of(voice, moved.event)
+                    .unwrap();
+                next.selection = Some(moved);
+                next.cursor = Cursor {
+                    part: moved.part,
+                    staff: moved.staff,
+                    voice,
+                    measure,
+                    index,
+                };
+            }
+            Command::ReplacePitch(pitch) => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o silencio"))?;
+                if self.selected_pitch() == Some(pitch) {
+                    return Ok(false);
+                }
+                next.score.replace_pitch(id, next.tone, pitch)?;
+                next.tone = next
+                    .score
+                    .event(id)
+                    .unwrap()
+                    .pitches
+                    .iter()
+                    .position(|p| p == pitch)
+                    .unwrap();
+            }
+            Command::SetDuration(value) => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    return Err(ScoreError("Selecciona notas, acordes o silencios"));
+                }
+                let edits: Vec<_> = ids
+                    .into_iter()
+                    .filter_map(|id| {
+                        let old = next.score.event(id).unwrap().duration;
+                        let new = old.with_value(value);
+                        (old != new).then_some((id, new))
+                    })
+                    .collect();
+                if edits.is_empty() {
+                    return Ok(false);
+                }
+                next.score.set_durations(&edits)?;
+            }
+
+            Command::InsertMeasure => {
+                let bar = next.cursor.measure;
+                next.score.insert_measure(bar)?;
+                next.cursor = Cursor {
+                    index: 0,
+                    ..next.cursor
+                };
+                next.selection = None;
+            }
+            Command::DeleteMeasures => {
+                let ids = self.selected_ids();
+                let start = ids
+                    .iter()
+                    .map(|id| id.measure)
+                    .min()
+                    .unwrap_or(next.cursor.measure);
+                let end = ids.iter().map(|id| id.measure).max().unwrap_or(start);
+                next.score.remove_measures(start, end - start + 1)?;
+                next.cursor = Cursor {
+                    measure: start.min(next.score.measures().len() - 1),
+                    index: 0,
+                    ..next.cursor
+                };
+                next.selection = None;
             }
             Command::Delete => {
                 let ids = self.selected_ids();
@@ -394,12 +623,13 @@ impl Editor {
                     .staff(first.staff)
                     .unwrap()
                     .measures()[first.measure]
-                    .index_of(first.event)
+                    .voice_index_of(next.cursor.voice, first.event)
                     .unwrap();
                 for id in ids.iter().rev() {
                     next.score.remove(*id)?;
                 }
                 next.cursor = Cursor {
+                    voice: next.cursor.voice,
                     part: first.part,
                     staff: first.staff,
                     measure: first.measure,
@@ -455,9 +685,40 @@ impl Editor {
                 }
                 next.score.set_key_signature(key);
             }
+            Command::SetKeySignatureAt(bar, key) => {
+                if !next.score.set_key_signature_at(bar, key)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetTimeSignatureAt(bar, time) => {
+                if !next.score.set_time_signature_at(bar, time)? {
+                    return Ok(false);
+                }
+            }
+            Command::RemoveKeyChange(bar) => {
+                if !next.score.remove_key_change(bar) {
+                    return Ok(false);
+                }
+            }
+            Command::RemoveTimeChange(bar) => {
+                if !next.score.remove_time_change(bar)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetTempoAt(bar, ref mark) => {
+                if !next.score.set_tempo_at(bar, mark.clone())? {
+                    return Ok(false);
+                }
+            }
+            Command::RemoveTempoChange(bar) => {
+                if !next.score.remove_tempo_change(bar) {
+                    return Ok(false);
+                }
+            }
             Command::AppendMeasure => {
                 next.score.append_measure()?;
                 next.cursor = Cursor {
+                    voice: next.cursor.voice,
                     staff: next.cursor.staff,
                     part: next.cursor.part,
                     measure: next.score.measures().len() - 1,
@@ -469,6 +730,7 @@ impl Editor {
                 let part = next.score.add_part(instrument)?;
                 next.score.arrange_parts();
                 next.cursor = Cursor {
+                    voice: Default::default(),
                     staff: score_core::StaffId::Upper,
                     part,
                     measure: 0,
@@ -507,6 +769,7 @@ impl Editor {
                 if next.cursor.part == target {
                     let neighbor = next.score.parts()[index.min(next.score.parts().len() - 1)].id();
                     next.cursor = Cursor {
+                        voice: Default::default(),
                         staff: score_core::StaffId::Upper,
                         part: neighbor,
                         measure: next.cursor.measure,
@@ -518,11 +781,27 @@ impl Editor {
         }
         let remove_other =
             matches!(command, Command::RemovePartById(id) if id != self.cursor().part);
-        let preserve_range =
-            matches!(command, Command::SetDotted(_) | Command::SetTriplet(_)) || remove_other;
+        let preserve_range = matches!(
+            command,
+            Command::SetDotted(_)
+                | Command::SetTriplet(_)
+                | Command::ToggleMark(score_core::MarkKind::Harmonic(_))
+                | Command::SetDuration(_)
+                | Command::Erase
+                | Command::SetPartDivisi(_)
+                | Command::SetPassageDivisi(_)
+                | Command::ToggleMark(score_core::MarkKind::Division(_))
+        ) || remove_other;
         if !preserve_range {
             next.range_anchor = None;
         }
+        if !matches!(
+            command,
+            Command::SetPassageDivisi(_) | Command::ToggleMark(score_core::MarkKind::Division(_))
+        ) {
+            next.divisi_anchor = None;
+        }
+        next.score.validate()?;
         let entry_octave = self.octave;
         self.commit(next);
         if let Command::AddPitch(pitch) = command {
@@ -562,6 +841,7 @@ impl Editor {
             .is_some()
         {
             self.set_cursor(Cursor {
+                voice: Default::default(),
                 staff,
                 part,
                 measure: self.cursor().measure,
@@ -577,6 +857,7 @@ impl Editor {
         }
         if let Some(instrument) = self.score().part(part).map(|part| part.instrument()) {
             self.set_cursor(Cursor {
+                voice: Default::default(),
                 staff: score_core::StaffId::Upper,
                 part,
                 measure: self.cursor().measure,
@@ -630,6 +911,11 @@ impl Editor {
         }
     }
 }
+
+#[cfg(test)]
+mod mvp_tests;
+#[cfg(test)]
+mod voice_tests;
 
 #[cfg(test)]
 mod tests {
@@ -865,6 +1151,7 @@ mod tests {
     fn choosing_an_empty_left_hand_sets_its_entry_octave() {
         let mut editor = Editor::default();
         editor.set_cursor(Cursor {
+            voice: Default::default(),
             part: editor.cursor().part,
             staff: StaffId::Lower,
             measure: 2,
@@ -966,6 +1253,7 @@ mod tests {
         assert_eq!(
             editor.cursor(),
             Cursor {
+                voice: Default::default(),
                 staff: score_core::StaffId::Upper,
                 part: PartId(0),
                 measure: 1,
@@ -976,6 +1264,7 @@ mod tests {
         assert_eq!(
             editor.cursor(),
             Cursor {
+                voice: Default::default(),
                 staff: score_core::StaffId::Upper,
                 part: PartId(0),
                 measure: 0,
@@ -1059,3 +1348,180 @@ mod arrangement_tests;
 
 #[cfg(test)]
 mod clipboard_tests;
+
+#[cfg(test)]
+mod signature_tests;
+
+impl Editor {
+    pub fn select_display_staff(&mut self, staff: StaffId) {
+        let cursor = self.cursor();
+        let part = self.score().part(cursor.part).unwrap();
+        let tick = self.divisi_position().tick;
+        let (source, voice) = part.input_source(staff, cursor.measure);
+        let voice = voice.unwrap_or(cursor.voice);
+        let bar = &part.staff(source).unwrap().measures()[cursor.measure];
+        let wanted = tick;
+        let target = bar
+            .timed_iter()
+            .filter(|(v, _, _, _)| *v == voice)
+            .filter_map(|(_, start, event, value)| {
+                let at = if start <= wanted && wanted < start + value.duration.ticks() {
+                    wanted
+                } else {
+                    start
+                };
+                (part.displayed_staff(source, voice, cursor.measure, at) == staff)
+                    .then_some((event, at))
+            })
+            .min_by_key(|(_, at)| at.abs_diff(wanted))
+            .map(|(event, at)| {
+                (
+                    ElementId {
+                        part: cursor.part,
+                        staff: source,
+                        measure: cursor.measure,
+                        event,
+                    },
+                    at,
+                )
+            });
+        if let Some((id, at)) = target {
+            self.select(id);
+            self.select_divisi_position(score_core::DivisiPoint::new(cursor.measure, at));
+        } else {
+            self.set_cursor(Cursor {
+                staff: source,
+                voice,
+                index: bar.voice_len(voice),
+                ..cursor
+            });
+        }
+    }
+    pub fn divisi_position(&self) -> score_core::DivisiPoint {
+        self.state.divisi_position()
+    }
+    /// Retain an exact position inside a held note for editing division boundaries.
+    pub fn select_divisi_position(&mut self, point: score_core::DivisiPoint) {
+        if let Some(id) = self.selection() {
+            let start = (self.score().event_tick(id).unwrap()
+                - self.score().measure_start_tick(id.measure)) as u16;
+            let end = start + self.score().event(id).unwrap().duration.ticks();
+            if point.measure == id.measure && start <= point.tick && point.tick < end {
+                self.state.divisi_anchor = Some(point);
+            }
+        }
+    }
+}
+impl Snapshot {
+    fn divisi_position(&self) -> score_core::DivisiPoint {
+        if let Some(point) = self.divisi_anchor {
+            return point;
+        }
+        let tick = self.selection.map_or_else(
+            || {
+                self.score
+                    .part(self.cursor.part)
+                    .unwrap()
+                    .staff(self.cursor.staff)
+                    .unwrap()
+                    .measures()[self.cursor.measure]
+                    .voice_iter(self.cursor.voice)
+                    .take(self.cursor.index)
+                    .map(|(_, event)| event.duration.ticks())
+                    .sum()
+            },
+            |id| {
+                (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
+                    as u16
+            },
+        );
+        if tick == self.score.time_at(self.cursor.measure).capacity()
+            && self.cursor.measure + 1 < self.score.measures().len()
+        {
+            score_core::DivisiPoint::new(self.cursor.measure + 1, 0)
+        } else {
+            score_core::DivisiPoint::new(self.cursor.measure, tick)
+        }
+    }
+    fn set_passage_divisi(&mut self, divided: bool, toggle: bool) -> Result<(), ScoreError> {
+        let part = self.cursor.part;
+        let focus = self.divisi_position();
+        let (start, end) = if let Some(anchor) = self.range_anchor {
+            let position = |id: ElementId| {
+                score_core::DivisiPoint::new(
+                    id.measure,
+                    (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
+                        as u16,
+                )
+            };
+            let a = position(anchor);
+            let b = position(self.selection.unwrap());
+            let last = if a > b {
+                anchor
+            } else {
+                self.selection.unwrap()
+            };
+            let end = score_core::DivisiPoint::new(
+                last.measure,
+                position(last).tick + self.score.event(last).unwrap().duration.ticks(),
+            );
+            (a.min(b), Some(end))
+        } else {
+            (focus, None)
+        };
+        let requested = if divided {
+            score_core::Division::Divisi
+        } else {
+            score_core::Division::Unison
+        };
+        if toggle
+            && end.is_none()
+            && self
+                .score
+                .part(part)
+                .unwrap()
+                .divisi_change_at_tick(start.measure, start.tick)
+                == Some(requested)
+        {
+            return self.score.remove_divisi_change_at(part, start);
+        }
+        let was_lower = self.cursor.staff == StaffId::Lower;
+        let remap = self.score.set_divisi_span(part, start, end, divided)?;
+        self.selection = self
+            .selection
+            .map(|id| remap.get(&id).copied().unwrap_or(id));
+        self.range_anchor = self
+            .range_anchor
+            .map(|id| remap.get(&id).copied().unwrap_or(id));
+        if was_lower {
+            self.cursor.staff = StaffId::Upper;
+            self.cursor.voice = score_core::Voice::Two;
+        }
+        if let Some(id) = self.selection.filter(|id| {
+            id.measure == start.measure
+                && self.score.event_tick(*id).unwrap() - self.score.measure_start_tick(id.measure)
+                    == u64::from(start.tick)
+        }) {
+            self.score.set_division(id, Some(requested))?;
+        }
+        if let Some(id) = self.selection {
+            self.cursor.staff = id.staff;
+            self.cursor.voice = self.score.voice_of(id).unwrap();
+            self.cursor.measure = id.measure;
+            self.cursor.index = self
+                .score
+                .part(part)
+                .unwrap()
+                .staff(id.staff)
+                .unwrap()
+                .measures()[id.measure]
+                .voice_index_of(self.cursor.voice, id.event)
+                .unwrap()
+                + 1;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod harmonic_tests;

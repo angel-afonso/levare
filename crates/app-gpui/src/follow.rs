@@ -16,6 +16,26 @@ impl PlaybackViewport {
         self.painted_offset = self.scroll.offset();
     }
 
+    pub fn visible_page(&self, layout: &Layout) -> usize {
+        let origin = self.canvas_origin + self.scroll.offset() - self.painted_offset;
+        visible_page_at(layout, origin, self.scroll.bounds())
+    }
+
+    pub fn reveal_page(&self, layout: &Layout, index: usize) {
+        if let Some(page) = layout.pages.get(index) {
+            let offset = self.scroll.offset();
+            let origin = self.canvas_origin + offset - self.painted_offset;
+            self.scroll.set_offset(page_offset(
+                page,
+                layout.scale,
+                origin,
+                self.scroll.bounds(),
+                offset,
+                self.scroll.max_offset(),
+            ));
+        }
+    }
+
     pub fn follow(
         &self,
         layout: &Layout,
@@ -44,9 +64,13 @@ impl PlaybackViewport {
     }
 
     pub fn reveal_cursor(&self, layout: &Layout, cursor: score_edit::Cursor) {
-        if let Some(position) =
-            layout.cursor(cursor.part, cursor.staff, cursor.measure, cursor.index)
-        {
+        if let Some(position) = layout.voice_cursor(
+            cursor.part,
+            cursor.staff,
+            cursor.measure,
+            cursor.voice,
+            cursor.index,
+        ) {
             let target = Bounds::new(
                 point(px(position.x - 20.), px(position.y - 16.)),
                 size(px(40.), px(88.)),
@@ -91,6 +115,33 @@ impl PlaybackViewport {
     }
 }
 
+fn visible_page_at(layout: &Layout, origin: Point<Pixels>, viewport: Bounds<Pixels>) -> usize {
+    let y = f32::from(viewport.top() + viewport.size.height / 2. - origin.y) / layout.scale;
+    layout
+        .pages
+        .iter()
+        .rposition(|page| page.top <= y)
+        .unwrap_or(0)
+}
+
+fn page_offset(
+    page: &score_layout::Page,
+    scale: f32,
+    origin: Point<Pixels>,
+    viewport: Bounds<Pixels>,
+    offset: Point<Pixels>,
+    maximum: Size<Pixels>,
+) -> Point<Pixels> {
+    // Large sheets start at the top margin; a sheet that fits is centered. Merely
+    // revealing its first few pixels would leave navigation on the previous page.
+    let inset = px(24.).max((viewport.size.height - px(page.height * scale)) / 2.);
+    point(
+        offset.x,
+        (offset.y + viewport.top() + inset - origin.y - px(page.top * scale))
+            .clamp(-maximum.height, px(0.)),
+    )
+}
+
 fn follow_bounds(layout: &Layout, id: ElementId, height: Pixels) -> Option<Bounds<Pixels>> {
     let note = target_bounds(layout, id)?;
     for whole_system in [true, false] {
@@ -117,7 +168,7 @@ fn follow_bounds(layout: &Layout, id: ElementId, height: Pixels) -> Option<Bound
 }
 
 fn target_bounds(layout: &Layout, id: ElementId) -> Option<Bounds<Pixels>> {
-    let measure = layout.measure_on(id.part, id.staff, id.measure)?;
+    let measure = layout.event_measure(id)?;
     let mut heads = measure.content.events.iter().filter(|event| event.id == id);
     let first = heads.next()?;
     let (mut left, mut right, mut top, mut bottom) = (
@@ -142,6 +193,28 @@ fn target_bounds(layout: &Layout, id: ElementId) -> Option<Bounds<Pixels>> {
         right = right.max(glyph.position.x + 20.);
         top = top.min(glyph.position.y - 30.);
         bottom = bottom.max(glyph.position.y + 30.);
+    }
+    for mark in measure
+        .content
+        .marks
+        .iter()
+        .filter(|mark| mark.mark.anchor() == id)
+    {
+        left = left.min(mark.center.x - mark.half.0);
+        right = right.max(mark.center.x + mark.half.0);
+        top = top.min(mark.center.y - mark.half.1);
+        bottom = bottom.max(mark.center.y + mark.half.1);
+    }
+    for mark in layout
+        .piano_arpeggios
+        .iter()
+        .filter(|mark| mark.bounds.mark.anchor() == id || mark.other_hand == id)
+    {
+        let bounds = mark.bounds;
+        left = left.min(bounds.center.x - bounds.half.0 - measure.origin.x);
+        right = right.max(bounds.center.x + bounds.half.0 - measure.origin.x);
+        top = top.min(bounds.center.y - bounds.half.1 - measure.origin.y);
+        bottom = bottom.max(bounds.center.y + bounds.half.1 - measure.origin.y);
     }
     if let Some(stem) = measure.content.beam_stem(id) {
         top = top.min(stem.to.y - 6.);
@@ -233,6 +306,97 @@ mod tests {
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
         Bounds::new(point(px(x), px(y)), size(px(w), px(h)))
+    }
+
+    #[test]
+    fn page_navigation_advances_and_returns_at_normal_and_fit_zoom() {
+        let mut score = Score::default();
+        while score.measures().len() < 60 {
+            score.append_measure().unwrap();
+        }
+        let mut layout = score_layout::LayoutEngine::default().layout_view(
+            &score,
+            1000.,
+            score_layout::ViewMode::Page,
+        );
+        assert!(layout.pages.len() >= 3);
+        for scale in [0.28, 0.7, 1.5] {
+            layout.scale = scale;
+            let viewport = rect(0., 0., 800., 500.);
+            let maximum = size(
+                px((layout.width * scale - 800.).max(0.)),
+                px((layout.height * scale + 48. - 500.).max(0.)),
+            );
+            let canvas = point(px(64.), px(24.));
+            let mut offset = Point::default();
+            for index in (0..layout.pages.len()).chain((0..layout.pages.len()).rev()) {
+                offset = page_offset(
+                    &layout.pages[index],
+                    scale,
+                    canvas + offset,
+                    viewport,
+                    offset,
+                    maximum,
+                );
+                assert_eq!(visible_page_at(&layout, canvas + offset, viewport), index);
+                let repeated = page_offset(
+                    &layout.pages[index],
+                    scale,
+                    canvas + offset,
+                    viewport,
+                    offset,
+                    maximum,
+                );
+                assert!((repeated.y - offset.y).abs() < px(0.001));
+            }
+        }
+    }
+
+    #[test]
+    fn every_view_reveals_later_music_after_switching_without_scroll_drift() {
+        let mut score = Score::default();
+        while score.measures().len() < 40 {
+            score.append_measure().unwrap();
+        }
+        let id = score
+            .insert(
+                39,
+                0,
+                Event {
+                    pitches: score_core::Pitches::single(Pitch::new(Step::F, 4)),
+                    duration: Duration::Quarter,
+                    notation: Default::default(),
+                },
+            )
+            .unwrap();
+        let mut engine = score_layout::LayoutEngine::default();
+        for mode in [
+            score_layout::ViewMode::Page,
+            score_layout::ViewMode::SingleSystem,
+            score_layout::ViewMode::Continuous,
+        ] {
+            for scale in [0.28, 0.7, 1.5] {
+                let mut layout = engine.layout_view(&score, 960., mode);
+                layout.scale = scale;
+                let target = follow_bounds(&layout, id, px(500.)).unwrap();
+                let viewport = rect(0., 0., 800., 500.);
+                let maximum = size(px(layout.width * scale), px(layout.height * scale));
+                let offset = reveal_offset(target, viewport, Point::default(), maximum);
+                let visible = Bounds::new(target.origin + offset, target.size);
+                assert!(visible.left() >= px(24.) && visible.right() <= px(776.));
+                assert!(visible.top() >= px(24.) && visible.bottom() <= px(476.));
+                assert_eq!(reveal_offset(visible, viewport, offset, maximum), offset);
+                if mode == score_layout::ViewMode::SingleSystem {
+                    assert!(offset.x < px(-1000. * scale));
+                }
+                if mode == score_layout::ViewMode::Page {
+                    let mut view = PlaybackViewport::default();
+                    let index = layout.page_for_measure(39).unwrap();
+                    view.record_canvas(point(px(0.), px(-(layout.pages[index].top + 10.) * scale)));
+                    assert_eq!(view.visible_page(&layout), index);
+                }
+            }
+        }
     }
 
     #[test]
@@ -674,6 +838,50 @@ mod beam_tests {
                 let stem = m.content.beam_stem(id).unwrap();
                 let tip = px((m.origin.y + stem.to.y) * scale);
                 assert!(bounds.top() <= tip && bounds.bottom() >= tip);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod piano_arpeggio_tests {
+    use super::*;
+    use score_core::{Duration, Event, Pitch, Pitches, Score, StaffId, Step};
+    #[test]
+    fn following_either_hand_includes_the_complete_shared_mark_at_every_zoom() {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let make = |octave| Event {
+            pitches: Pitches::single(Pitch::new(Step::C, octave)),
+            duration: Duration::Whole,
+            notation: Default::default(),
+        };
+        let upper = score.insert(0, 0, make(6)).unwrap();
+        let lower = score
+            .insert_on(piano, StaffId::Lower, 0, 0, make(2))
+            .unwrap();
+        score.set_arpeggio_both_hands(lower, true).unwrap();
+        for mode in [
+            score_layout::ViewMode::Page,
+            score_layout::ViewMode::Continuous,
+            score_layout::ViewMode::SingleSystem,
+        ] {
+            let mut layout = score_layout::LayoutEngine::default().layout_view(&score, 1000., mode);
+            for scale in [0.28, 0.7, 1.5] {
+                layout.scale = scale;
+                for id in [upper, lower] {
+                    let target = target_bounds(&layout, id).unwrap();
+                    let mark = layout.piano_arpeggios[0].bounds;
+                    assert!(
+                        f32::from(target.top()) <= (mark.center.y - mark.half.1) * scale + 0.01
+                    );
+                    assert!(
+                        f32::from(target.bottom()) >= (mark.center.y + mark.half.1) * scale - 0.01
+                    );
+                    assert!(
+                        f32::from(target.left()) <= (mark.center.x - mark.half.0) * scale + 0.01
+                    );
+                }
             }
         }
     }

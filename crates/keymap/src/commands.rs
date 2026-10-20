@@ -176,6 +176,7 @@ pub mod id {
         QUIT = "archivo.salir";
         PRINT = "archivo.imprimir";
         EXPORT = "archivo.exportar";
+        EXPORT_MUSICXML = "archivo.exportar_musicxml";
         PREFERENCES = "archivo.preferencias";
         CLEAR_RECENT = "archivo.borrar-recientes";
         CLOSE_PANEL = "panel.cerrar";
@@ -187,6 +188,7 @@ pub mod id {
         PASTE = "edicion.pegar";
         SELECT_ALL = "edicion.seleccionar-todo";
         DELETE = "edicion.eliminar";
+        REMOVE_TIME = "edicion.eliminar-tiempo";
         ESCAPE = "edicion.escape";
         REPEAT = "edicion.repetir";
 
@@ -219,6 +221,10 @@ pub mod id {
         REMOVE_HIGHEST = "entrada.quitar-nota-aguda";
         ENTRY_OCTAVE_UP = "entrada.octava-mas";
         ENTRY_OCTAVE_DOWN = "entrada.octava-menos";
+        DIVISI = "notacion.divisi";
+        UNISON = "notacion.unisono";
+        DIVIDE_PART = "instrumentos.dividir";
+        JOIN_PART = "instrumentos.reunir";
         VOICE_1 = "entrada.voz.1";
         VOICE_2 = "entrada.voz.2";
         VOICE_3 = "entrada.voz.3";
@@ -256,8 +262,14 @@ pub mod id {
         REMOVE_DIMINUENDO = "expresion.quitar-diminuendo";
         PIZZICATO = "expresion.pizzicato";
         ARCO = "expresion.arco";
+        HARMONIC_NATURAL = "expresion.armonico-natural";
+        HARMONIC_ARTIFICIAL = "expresion.armonico-artificial";
         CLEAR_TECHNIQUE = "expresion.sin-tecnica";
         CLEAR_ARTICULATION = "expresion.sin-articulacion";
+        ARPEGGIO_BOTH_HANDS = "expresion.arpegio-ambas-manos";
+        ARPEGGIO = "expresion.arpegio";
+        ARPEGGIO_UP = "expresion.arpegio-ascendente";
+        ARPEGGIO_DOWN = "expresion.arpegio-descendente";
         FERMATA = "expresion.calderon";
         DYNAMIC_PPP = "expresion.dinamica.ppp";
         DYNAMIC_PP = "expresion.dinamica.pp";
@@ -330,6 +342,8 @@ pub mod id {
         TOGGLE_INSTRUMENTS_PANEL = "vista.panel-instrumentos";
         TOGGLE_INSPECTOR = "vista.panel-propiedades";
         PAGE_VIEW = "vista.pagina";
+        CONTINUOUS_VIEW = "vista.continua";
+        SINGLE_SYSTEM_VIEW = "vista.pentagrama";
     }
 }
 
@@ -364,7 +378,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CLOSE, C::File, "Cerrar ventana", G, false, R),
     spec(id::QUIT, C::File, "Salir de Partitura", G, false, R),
     spec(id::PRINT, C::File, "Imprimir…", G, false, P),
-    spec(id::EXPORT, C::File, "Exportar…", G, false, P),
+    spec(id::EXPORT, C::File, "Exportar partitura y partes…", G, false, R),
+    spec(id::EXPORT_MUSICXML, C::File, "Exportar MusicXML…", G, false, R),
     spec(id::PREFERENCES, C::File, "Preferencias de atajos…", G, false, R),
     spec(id::CLEAR_RECENT, C::File, "Borrar la lista de recientes", G, false, R),
     spec(id::CLOSE_PANEL, C::File, "Cerrar el panel abierto", M, false, R),
@@ -375,7 +390,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::COPY, C::Edit, "Copiar", G, false, R),
     spec(id::PASTE, C::Edit, "Pegar", G, true, R),
     spec(id::SELECT_ALL, C::Edit, "Seleccionar todo el pentagrama", G, false, R),
-    spec(id::DELETE, C::Edit, "Eliminar la selección", S, true, R),
+    spec(id::DELETE, C::Edit, "Convertir en silencios", S, true, R),
+    spec(id::REMOVE_TIME, C::Edit, "Eliminar notas y su tiempo", G, false, R),
     spec(id::ESCAPE, C::Edit, "Detener, cancelar o quitar la selección", S, false, R),
     spec(id::REPEAT, C::Edit, "Repetir la nota, acorde o silencio", S, true, R),
 
@@ -408,8 +424,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REMOVE_HIGHEST, C::NoteInput, "Quitar la nota más aguda del acorde", S, false, R),
     spec(id::ENTRY_OCTAVE_UP, C::NoteInput, "Subir la octava de entrada", S, false, R),
     spec(id::ENTRY_OCTAVE_DOWN, C::NoteInput, "Bajar la octava de entrada", S, false, R),
-    spec(id::VOICE_1, C::NoteInput, "Voz 1", S, false, P),
-    spec(id::VOICE_2, C::NoteInput, "Voz 2", S, false, P),
+    spec(id::DIVISI, C::Notation, "Indicación div.", S, false, R),
+    spec(id::UNISON, C::Notation, "Indicación unis.", S, false, R),
+    spec(id::DIVIDE_PART, C::Instruments, "Dividir el pasaje en dos pentagramas", S, false, R),
+    spec(id::JOIN_PART, C::Instruments, "Volver a un pentagrama desde esta posición", S, false, R),
+    spec(id::VOICE_1, C::NoteInput, "Voz 1", S, false, R),
+    spec(id::VOICE_2, C::NoteInput, "Voz 2", S, false, R),
     spec(id::VOICE_3, C::NoteInput, "Voz 3", S, false, P),
     spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, P),
     spec(id::GRACE_NOTE, C::NoteInput, "Convertir en nota de adorno", S, false, P),
@@ -445,8 +465,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REMOVE_DIMINUENDO, C::Expression, "Quitar diminuendo", S, false, R),
     spec(id::PIZZICATO, C::Expression, "Pizzicato", S, false, R),
     spec(id::ARCO, C::Expression, "Arco", S, false, R),
+    spec(id::HARMONIC_NATURAL, C::Expression, "Armónico natural", S, false, R),
+    spec(id::HARMONIC_ARTIFICIAL, C::Expression, "Armónico artificial", S, false, R),
     spec(id::CLEAR_TECHNIQUE, C::Expression, "Quitar indicación de técnica", S, false, R),
     spec(id::CLEAR_ARTICULATION, C::Expression, "Quitar articulación", S, false, R),
+    spec(id::ARPEGGIO_BOTH_HANDS, C::Expression, "Arpegio en ambas manos", S, false, R),
+    spec(id::ARPEGGIO, C::Expression, "Arpegio", S, false, R),
+    spec(id::ARPEGGIO_UP, C::Expression, "Arpegio ascendente", S, false, R),
+    spec(id::ARPEGGIO_DOWN, C::Expression, "Arpegio descendente", S, false, R),
     spec(id::FERMATA, C::Expression, "Calderón", S, false, R),
     spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
     spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
@@ -459,20 +485,20 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
     spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión", G, false, P),
     spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica", G, false, P),
-    spec(id::TEMPO_TEXT, C::Expression, "Texto de tempo", G, false, P),
+    spec(id::TEMPO_TEXT, C::Expression, "Indicación de tempo…", G, false, R),
     spec(id::LYRICS, C::Expression, "Letra", G, false, P),
     spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes", G, false, P),
     spec(id::REHEARSAL_MARK, C::Expression, "Letra de ensayo", G, false, P),
 
     spec(id::KEY_SIGNATURE, C::Notation, "Tonalidad…", S, false, R),
-    spec(id::TIME_SIGNATURE, C::Notation, "Compás de tiempo…", S, false, P),
+    spec(id::TIME_SIGNATURE, C::Notation, "Compás de tiempo…", S, false, R),
     spec(id::CLEF, C::Notation, "Clave…", S, false, P),
     spec(id::LINES, C::Notation, "Líneas…", S, false, P),
     spec(id::SYMBOL, C::Notation, "Símbolo…", S, false, P),
 
     spec(id::BAR_AT_END, C::Bars, "Añadir un compás al final", G, true, R),
-    spec(id::SINGLE_BAR, C::Bars, "Insertar un compás", G, false, P),
-    spec(id::DELETE_BAR, C::Bars, "Eliminar compases", G, false, P),
+    spec(id::SINGLE_BAR, C::Bars, "Insertar un compás antes del actual", G, false, R),
+    spec(id::DELETE_BAR, C::Bars, "Eliminar compases seleccionados", G, false, R),
     spec(id::GO_TO_BAR, C::Bars, "Ir al compás…", G, false, P),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
@@ -514,11 +540,13 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::ZOOM_IN, C::View, "Acercar", G, true, R),
     spec(id::ZOOM_OUT, C::View, "Alejar", G, true, R),
     spec(id::ZOOM_ACTUAL, C::View, "Tamaño real (100 %)", G, false, R),
-    spec(id::ZOOM_FIT, C::View, "Ajustar a la página", G, false, P),
+    spec(id::ZOOM_FIT, C::View, "Ajustar a la página", G, false, R),
     spec(id::FULL_SCREEN, C::View, "Pantalla completa", G, false, R),
     spec(id::TOGGLE_INSTRUMENTS_PANEL, C::View, "Mostrar u ocultar instrumentos", G, false, R),
     spec(id::TOGGLE_INSPECTOR, C::View, "Mostrar u ocultar propiedades", G, false, R),
-    spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, P),
+    spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, R),
+    spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
+    spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
 ];
 
 #[cfg(test)]

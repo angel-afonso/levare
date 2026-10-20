@@ -9,3 +9,8 @@ score-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+roxmltree = "=0.20.0"
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

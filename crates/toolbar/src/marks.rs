@@ -1,12 +1,18 @@
 //! The commands that write each catalog mark. Ribbon, menus, inspector and
 //! the app's dispatch all go through this one table.
 use score_core::{
-    Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind, PlayingTechnique as T,
+    Arpeggio as R, Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind,
+    PlayingTechnique as T,
 };
 use score_keymap::{CommandId, id};
 
 pub const fn command(kind: MarkKind) -> CommandId {
     match kind {
+        MarkKind::Division(score_core::Division::Divisi) => id::DIVISI,
+        MarkKind::Division(score_core::Division::Unison) => id::UNISON,
+        MarkKind::Arpeggio(R::Normal) => id::ARPEGGIO,
+        MarkKind::Arpeggio(R::Up) => id::ARPEGGIO_UP,
+        MarkKind::Arpeggio(R::Down) => id::ARPEGGIO_DOWN,
         MarkKind::Articulation(A::Staccato) => id::STACCATO,
         MarkKind::Articulation(A::Tenuto) => id::TENUTO,
         MarkKind::Articulation(A::Accent) => id::ACCENT,
@@ -22,6 +28,8 @@ pub const fn command(kind: MarkKind) -> CommandId {
         MarkKind::Dynamic(D::Fff) => id::DYNAMIC_FFF,
         MarkKind::Technique(T::Pizzicato) => id::PIZZICATO,
         MarkKind::Technique(T::Arco) => id::ARCO,
+        MarkKind::Harmonic(score_core::Harmonic::Natural) => id::HARMONIC_NATURAL,
+        MarkKind::Harmonic(score_core::Harmonic::Artificial) => id::HARMONIC_ARTIFICIAL,
         MarkKind::Connection(K::Tie) => id::TIE,
         MarkKind::Connection(K::Slur) => id::SLUR,
         MarkKind::Connection(K::Crescendo) => id::CRESCENDO,

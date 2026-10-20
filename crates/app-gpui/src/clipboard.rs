@@ -124,6 +124,9 @@ mod playback_tests {
             pitches: Pitches::single(Pitch::new(Step::C, 4)),
             duration: Duration::Whole,
             notation: Notation {
+                harmonic: None,
+                division: None,
+                arpeggio: None,
                 technique: None,
                 dynamic: Some(Dynamic::F),
                 articulation: Some(Articulation::Staccato),

@@ -42,6 +42,12 @@ impl ChannelMix {
             Trombone => 40,
             Piano => -20,
             Guitar => 0,
+            _ => match instrument.family() {
+                score_core::InstrumentFamily::Woodwinds => -10,
+                score_core::InstrumentFamily::Brass => 25,
+                score_core::InstrumentFamily::Percussion => 10,
+                _ => -20,
+            },
         };
         let ordinal = parts
             .iter()

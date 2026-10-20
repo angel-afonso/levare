@@ -130,6 +130,10 @@ fn patches(instrument: Instrument) -> Option<Patches> {
         Horn => ("FHornSus.sfz", None, Some("FHornStac.sfz")),
         Trombone => ("TromboneSus.sfz", None, Some("TromboneStac.sfz")),
         Guitar => return None,
+        ClarinetBb | ClarinetA | ClarinetEb => return patches(Clarinet),
+        HornF => return patches(Horn),
+        TrumpetBb | TrumpetD | PiccoloTrumpet | Cornet => return patches(Trumpet),
+        _ => return None,
     };
     Some(Patches {
         normal,

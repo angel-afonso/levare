@@ -157,3 +157,59 @@ fn repeated_flutes_have_independent_native_voices_and_strings_use_pizzicato() {
     });
     assert!(output.iter().map(|v| v * v).sum::<f32>() > 0.001);
 }
+
+#[test]
+#[ignore = "requires the optional local VSCO CE library and sfizz engine"]
+fn installed_vsco_preserves_the_integrated_harmonic_timbre() {
+    use score_core::{
+        Duration, Event, Harmonic, Notation, Pitch, Pitches, PlayingTechnique, StaffId, Step,
+    };
+    use score_platform::Renderer;
+    use score_playback::{PlaybackPlan, Tempo};
+    use std::sync::Arc;
+    let pack = VscoPack::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../soundpacks/vsco-ce/manifest.json"),
+    )
+    .unwrap();
+    for technique in [PlayingTechnique::Arco, PlayingTechnique::Pizzicato] {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let part = score.add_part(Instrument::Violin).unwrap();
+        score.remove_part(piano).unwrap();
+        score
+            .insert_on(
+                part,
+                StaffId::Upper,
+                0,
+                0,
+                Event {
+                    pitches: Pitches::single(Pitch::new(Step::A, 5)),
+                    duration: Duration::Whole,
+                    notation: Notation {
+                        harmonic: Some(Harmonic::Natural),
+                        technique: Some(technique),
+                        ..Default::default()
+                    },
+                },
+            )
+            .unwrap();
+        let plan = Arc::new(PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap());
+        let (mut optional_control, mut optional) =
+            Renderer::with_bank(48_000, &pack, &score, Instrument::Violin).unwrap();
+        let (mut direct_control, mut direct) = Renderer::new(48_000).unwrap();
+        optional.offline();
+        optional_control.play(plan.clone()).unwrap();
+        direct_control.play(plan).unwrap();
+        let mut actual = [0f32; 8192];
+        let mut expected = actual;
+        assert_no_alloc::assert_no_alloc(|| {
+            optional.render(&mut actual, 2);
+            direct.render(&mut expected, 2);
+        });
+        assert_eq!(
+            actual, expected,
+            "VSCO CE must decline harmonic attacks instead of playing a normal recording"
+        );
+        assert!(actual.iter().any(|v| v.abs() > 0.001));
+    }
+}

@@ -23,21 +23,28 @@ pub struct DynamicEnvelope {
 }
 impl DynamicEnvelope {
     pub fn new(score: &Score, part: PartId, staff: StaffId) -> Option<Self> {
-        let staff = score.part(part)?.staff(staff)?;
+        let part_value = score.part(part)?;
+        let staff_value = part_value.staff(staff)?;
         let mut marks = BTreeMap::new();
-        for (index, bar) in staff.measures().iter().enumerate() {
-            let mut tick = index as u64 * u64::from(score.time().capacity());
-            for (_, event) in bar.iter() {
-                if let Some(mark) = event.notation.dynamic {
-                    marks.insert(tick, mark.velocity());
+        for staff in part_value.expression_staves(staff) {
+            for (index, bar) in staff.measures().iter().enumerate() {
+                let begin = score.measure_start_tick(index);
+                for (_, onset, _, event) in bar.timed_iter() {
+                    let tick = begin + u64::from(onset);
+                    if let Some(mark) = event.notation.dynamic {
+                        marks.insert(tick, mark.velocity());
+                    }
                 }
-                tick += u64::from(event.duration.ticks());
             }
         }
         let mut hairpins: Vec<_> = score
             .connections()
             .iter()
-            .filter(|c| c.kind.is_hairpin() && c.start.part == part && c.start.staff == staff.id())
+            .filter(|c| {
+                c.kind.is_hairpin()
+                    && c.start.part == part
+                    && (c.start.staff == staff_value.id() || part_value.is_divisi())
+            })
             .collect();
         hairpins.sort_by_key(|c| score.event_tick(c.start).unwrap());
         let mut segments = Vec::new();
@@ -91,7 +98,7 @@ impl DynamicEnvelope {
             level = mark;
         }
         // Include the entire notated timeline, even incomplete/empty final bars.
-        let end = staff.measures().len() as u64 * u64::from(score.time().capacity());
+        let end = score.total_ticks();
         push(cursor, end, level, level);
         Some(Self { segments })
     }

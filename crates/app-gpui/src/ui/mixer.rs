@@ -134,9 +134,16 @@ fn slider(
                 .items_center()
                 .gap_1()
                 .child(
-                    button(format!("{id}-down"), "−", false, cx, move |v, _, cx| {
-                        set(v, target, value(v, target) - 5, cx);
-                    })
+                    button(
+                        view,
+                        format!("{id}-down"),
+                        "−",
+                        false,
+                        cx,
+                        move |v, _, cx| {
+                            set(v, target, value(v, target) - 5, cx);
+                        },
+                    )
                     .w(px(25.))
                     .h(px(25.)),
                 )
@@ -201,7 +208,7 @@ fn slider(
                         ),
                 )
                 .child(
-                    button(format!("{id}-up"), "+", false, cx, move |v, _, cx| {
+                    button(view, format!("{id}-up"), "+", false, cx, move |v, _, cx| {
                         set(v, target, value(v, target) + 5, cx);
                     })
                     .w(px(25.))
@@ -216,7 +223,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(div().mt_2().pt_3().border_t_1().border_color(rgb(BORDER)).flex().flex_col().gap_2()
             .child(div().flex().items_center().justify_between()
                 .child(caption("REVERBERACIÓN SUAVE"))
-                .child(button("reverb-enabled", if view.playback.reverb.enabled { "Activa" } else { "Apagada" }, view.playback.reverb.enabled, cx, |v, _, cx| {
+                .child(button(view, "reverb-enabled", if view.playback.reverb.enabled { "Activa" } else { "Apagada" }, view.playback.reverb.enabled, cx, |v, _, cx| {
                     v.playback.reverb.enabled = !v.playback.reverb.enabled;
                     v.playback.apply_mixer(v.document.editor.score(), v.document.editor.cursor().part);
                     cx.notify();
@@ -229,7 +236,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             div().flex().flex_col().gap_2().pt_3().mt_1().border_t_1().border_color(rgb(BORDER))
                 .child(div().flex().items_center().justify_between()
                     .child(div().text_size(px(12.)).child(instrument_name(view.document.editor.score(), id)))
-                    .child(button(format!("mix-reset-{}", id.0), "Restablecer", false, cx, move |v, _, cx| {
+                    .child(button(view, format!("mix-reset-{}", id.0), "Restablecer", false, cx, move |v, _, cx| {
                         v.playback.part_mix.remove(&id);
                         v.playback.apply_mixer(v.document.editor.score(), v.document.editor.cursor().part);
                         cx.notify();

@@ -2,10 +2,18 @@
 use super::*;
 use score_core::{InstrumentFamily, MAX_PARTS};
 
-#[derive(Default)]
 pub struct InstrumentPicker {
     counts: [u8; Instrument::ALL.len()],
     pub error: Option<String>,
+}
+
+impl Default for InstrumentPicker {
+    fn default() -> Self {
+        Self {
+            counts: [0; Instrument::ALL.len()],
+            error: None,
+        }
+    }
 }
 
 impl InstrumentPicker {
@@ -62,7 +70,11 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     div()
                         .text_size(px(12.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(if view.key_picker {
+                        .child(if view.tempo_picker.is_some() {
+                            "Tempo".to_owned()
+                        } else if view.time_picker {
+                            "Métrica".to_owned()
+                        } else if view.key_picker {
                             "Tonalidad".to_owned()
                         } else {
                             format!("Instrumentos  {}", score.parts().len())
@@ -70,6 +82,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 )
                 .child(
                     button(
+                        view,
                         "picker-add",
                         "+",
                         view.instrument_picker.is_some(),
@@ -91,6 +104,10 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex_col()
                 .gap_1()
                 .when(view.key_picker, |list| list.child(key_picker(view, cx)))
+                .when(view.time_picker, |list| list.child(time_picker(view, cx)))
+                .when(view.tempo_picker.is_some(), |list| {
+                    list.child(tempo_editor::panel(view, cx))
+                })
                 .children(
                     InstrumentFamily::ALL
                         .into_iter()
@@ -118,6 +135,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 )
                 .child(
                     button(
+                        view,
                         "add-instrument-bottom",
                         "+ Añadir instrumentos",
                         false,
@@ -142,66 +160,46 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_color(rgb(MUTED))
                 .child("Orden automático por familias"),
         )
-        .child(
-            div()
-                .border_t_1()
-                .border_color(rgb(BORDER))
-                .px_3()
-                .py_3()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .child("Páginas"),
-                        )
-                        .child(todo_badge()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_end()
-                        .child(
-                            action(
-                                "scroll-to-top",
-                                page_thumbnail(score.parts().len()),
-                                true,
-                                cx,
-                                |v, _, cx| {
-                                    v.viewport.scroll.set_offset(Point::default());
-                                    cx.notify();
-                                },
-                            )
-                            .p_1(),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(MUTED))
-                                .child("Vista continua\nPaginación pendiente"),
-                        ),
-                ),
-        )
+        .child(page_navigation(view, cx))
 }
 
 fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> Stateful<Div> {
     let id = part.id();
+    let divided = part.bar_has_divisi(view.document.editor.cursor().measure);
     let selected = view.document.editor.cursor().part == id;
+    let cursor = view.document.editor.cursor();
+    let active_staff = part.displayed_staff(
+        cursor.staff,
+        cursor.voice,
+        cursor.measure,
+        view.document.editor.divisi_position().tick,
+    );
     let can_remove = view.document.editor.score().parts().len() > 1;
     let name = instrument_name(view.document.editor.score(), id);
-    let description = if part.instrument() == Instrument::Piano {
+    let mut description = if divided {
+        format!(
+            "Divisi · dos pentagramas en clave de {}",
+            clef_name(part.clef(StaffId::Upper))
+        )
+    } else if part.staves().len() == 2 {
         "Claves sol / fa".to_owned()
     } else {
         format!("Clave de {}", clef_name(part.clef(StaffId::Upper)))
     };
+    if !part.transposition().is_concert() {
+        description.push_str(&format!(
+            " · Armadura: {}",
+            view.document
+                .editor
+                .score()
+                .written_key_at(id, cursor.measure)
+                .label()
+        ));
+    }
+    if part.transposition().is_concert() && !part.instrument().standard_transposition().is_concert()
+    {
+        description.push_str(" · Altura real");
+    }
     div()
         .id(("part-row", u64::from(id.0)))
         .flex()
@@ -233,13 +231,13 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                                 div()
                                     .text_size(px(12.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(name.clone()),
+                                    .child(inline_text(view.music_font.clone(), &name)),
                             )
                             .child(
                                 div()
                                     .text_size(px(9.))
                                     .text_color(rgb(if selected { 0xa9bfe7 } else { MUTED }))
-                                    .child(description),
+                                    .child(inline_text(view.music_font.clone(), description)),
                             ),
                         false,
                         cx,
@@ -277,38 +275,45 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                     )),
                 ),
         )
-        .when(part.instrument() == Instrument::Piano, |row| {
-            row.child(
-                div()
-                    .pl_2()
-                    .flex()
-                    .gap_1()
-                    .child(
-                        button(
-                            format!("right-{}", id.0),
-                            "M. derecha",
-                            selected && view.document.editor.cursor().staff == StaffId::Upper,
-                            cx,
-                            move |v, _, cx| v.select_hand(id, StaffId::Upper, cx),
+        .when(
+            part.display_staves(view.document.editor.cursor().measure)
+                .count()
+                == 2,
+            |row| {
+                row.child(
+                    div()
+                        .pl_2()
+                        .flex()
+                        .gap_1()
+                        .child(
+                            button(
+                                view,
+                                format!("right-{}", id.0),
+                                if divided { "Divisi I" } else { "M. derecha" },
+                                selected && active_staff == StaffId::Upper,
+                                cx,
+                                move |v, _, cx| v.select_hand(id, StaffId::Upper, cx),
+                            )
+                            .text_size(px(9.))
+                            .px_1()
+                            .h(px(23.)),
                         )
-                        .text_size(px(9.))
-                        .px_1()
-                        .h(px(23.)),
-                    )
-                    .child(
-                        button(
-                            format!("left-{}", id.0),
-                            "M. izquierda",
-                            selected && view.document.editor.cursor().staff == StaffId::Lower,
-                            cx,
-                            move |v, _, cx| v.select_hand(id, StaffId::Lower, cx),
-                        )
-                        .text_size(px(9.))
-                        .px_1()
-                        .h(px(23.)),
-                    ),
-            )
-        })
+                        .child(
+                            button(
+                                view,
+                                format!("left-{}", id.0),
+                                if divided { "Divisi II" } else { "M. izquierda" },
+                                selected && active_staff == StaffId::Lower,
+                                cx,
+                                move |v, _, cx| v.select_hand(id, StaffId::Lower, cx),
+                            )
+                            .text_size(px(9.))
+                            .px_1()
+                            .h(px(23.)),
+                        ),
+                )
+            },
+        )
 }
 
 pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
@@ -327,12 +332,12 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                 .child(div().flex_1().flex().flex_col().gap_2()
                     .child(div().text_size(px(18.)).font_weight(FontWeight::SEMIBOLD).child("Añadir instrumentos"))
                     .child(div().text_size(px(12.)).text_color(rgb(MUTED)).child("Elige los instrumentos y ajusta la cantidad de cada uno.")))
-                .child(button("instruments-close", "×", false, cx, |v, _, cx| v.close_instrument_picker(cx))
+                .child(button(view, "instruments-close", "×", false, cx, |v, _, cx| v.close_instrument_picker(cx))
                     .tooltip(hover_hint("Cerrar", None))))
             .child(div().id("instrument-catalog").flex_1().min_h_0().overflow_y_scroll().p_4().flex().flex_col().gap_3()
                 .children(InstrumentFamily::ALL.into_iter().map(|family| {
-                    div().flex().flex_col().gap_1().child(caption(family.label()).mb_1())
-                        .children(Instrument::ALL.into_iter().enumerate().filter(move |(_, instrument)| instrument.family() == family)
+                    div().flex().flex_col().flex_shrink_0().gap_1().child(caption(family.label()).mb_1())
+                        .children(catalog(family).into_iter()
                             .map(|(index, instrument)| catalog_row(view, index, instrument, available, cx)))
                 })))
             .child(div().p_4().flex().flex_col().gap_3().border_t_1().border_color(rgb(BORDER))
@@ -343,10 +348,20 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                     format!("{total} seleccionados · Puedes añadir hasta {available} instrumentos.")
                 }))
                 .child(div().flex().justify_end().gap_2()
-                    .child(button("instruments-cancel", "Cancelar", false, cx, |v, _, cx| v.close_instrument_picker(cx)).px_3())
-                    .child(button("instruments-confirm", match total { 0 => "Añadir instrumentos".into(), 1 => "Añadir 1 instrumento".into(), _ => format!("Añadir {total} instrumentos") },
+                    .child(button(view, "instruments-cancel", "Cancelar", false, cx, |v, _, cx| v.close_instrument_picker(cx)).px_3())
+                    .child(button(view, "instruments-confirm", match total { 0 => "Añadir instrumentos".into(), 1 => "Añadir 1 instrumento".into(), _ => format!("Añadir {total} instrumentos") },
                         true, cx, |v, _, cx| v.confirm_instruments(cx))
                         .px_3().when(total == 0, |button| button.opacity(0.4).cursor_default())))))
+}
+
+fn catalog(family: InstrumentFamily) -> Vec<(usize, Instrument)> {
+    let mut result: Vec<_> = Instrument::ALL
+        .into_iter()
+        .enumerate()
+        .filter(|(_, i)| i.family() == family)
+        .collect();
+    result.sort_by_key(|(_, i)| i.score_order());
+    result
 }
 
 fn catalog_row(
@@ -364,6 +379,8 @@ fn catalog_row(
     let can_add = picker.total() < available;
     div()
         .flex()
+        .flex_shrink_0()
+        .min_w_0()
         .items_center()
         .gap_2()
         .rounded_md()
@@ -373,16 +390,30 @@ fn catalog_row(
                 format!("choose-instrument-{index}"),
                 div()
                     .w_full()
+                    .min_w_0()
+                    .h_full()
+                    .overflow_hidden()
                     .flex()
                     .items_center()
                     .gap_3()
                     .child(
                         div()
                             .w(px(18.))
+                            .flex_shrink_0()
                             .text_color(rgb(if count > 0 { BLUE } else { MUTED }))
                             .child(if count > 0 { "☑" } else { "☐" }),
                     )
-                    .child(instrument.name()),
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .justify_center()
+                            .overflow_hidden()
+                            .child(inline_text(view.music_font.clone(), instrument.name()).w_full()),
+                    ),
                 false,
                 cx,
                 move |v, _, cx| {
@@ -401,12 +432,13 @@ fn catalog_row(
             )
             .flex_1()
             .min_w_0()
-            .h(px(37.))
+            .h(px(48.))
             .px_2()
             .bg(transparent_black()),
         )
         .child(
             button(
+                view,
                 format!("instrument-minus-{index}"),
                 "−",
                 false,
@@ -425,6 +457,7 @@ fn catalog_row(
         )
         .child(
             button(
+                view,
                 format!("instrument-plus-{index}"),
                 "+",
                 false,
@@ -463,5 +496,13 @@ mod tests {
         let mut full = InstrumentPicker::default();
         full.change(0, 1, 0);
         assert!(full.instruments().is_empty());
+    }
+    #[test]
+    fn catalog_is_sorted_in_orchestral_order() {
+        assert!(
+            catalog(InstrumentFamily::Woodwinds)
+                .windows(2)
+                .all(|w| w[0].1.score_order() <= w[1].1.score_order())
+        );
     }
 }

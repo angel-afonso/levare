@@ -6,24 +6,29 @@ pub enum Icon {
     Undo,
     Redo,
     Search,
+    ZoomIn,
+    ZoomOut,
+    ZoomActual,
+    FullScreen,
+    Page,
+    FitPage,
+    TempoUp,
+    TempoDown,
+    Repeats,
+    HalfSpeed,
     LeftPanel,
     RightPanel,
     Export,
     Clipboard,
-    AddStaff,
     First,
     Play,
     Pause,
     Stop,
     Loop,
     Speaker,
-    AddBar,
-    Chord,
     Mixer,
     Copy,
     Cut,
-    Tie,
-    Slur,
     Trash,
 }
 
@@ -34,21 +39,26 @@ impl Icon {
             "save" => Self::Save,
             "undo" => Self::Undo,
             "redo" => Self::Redo,
-            "tie" => Self::Tie,
-            "slur" => Self::Slur,
             "search" => Self::Search,
+            "zoom-in" => Self::ZoomIn,
+            "zoom-out" => Self::ZoomOut,
+            "zoom-actual" => Self::ZoomActual,
+            "full-screen" => Self::FullScreen,
+            "page" => Self::Page,
+            "fit-page" => Self::FitPage,
+            "tempo-up" => Self::TempoUp,
+            "tempo-down" => Self::TempoDown,
+            "repeats" => Self::Repeats,
+            "half-speed" => Self::HalfSpeed,
             "left-panel" => Self::LeftPanel,
             "right-panel" => Self::RightPanel,
             "export" => Self::Export,
             "clipboard" => Self::Clipboard,
-            "add-staff" => Self::AddStaff,
             "first" => Self::First,
             "play" => Self::Play,
             "stop" => Self::Stop,
             "loop" | "repeat" => Self::Loop,
             "speaker" => Self::Speaker,
-            "add-bar" => Self::AddBar,
-            "chord" => Self::Chord,
             "mixer" => Self::Mixer,
             "copy" => Self::Copy,
             "cut" => Self::Cut,
@@ -58,11 +68,16 @@ impl Icon {
 }
 
 pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
+    icon_sized(kind, color, 18.)
+}
+
+pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
-            let p = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-            let mut path = PathBuilder::stroke(px(1.3));
+            let scale = size / 18.;
+            let p = |x: f32, y: f32| bounds.origin + point(px(x * scale), px(y * scale));
+            let mut path = PathBuilder::stroke(px(1.3 * scale));
             let mut line = |points: &[(f32, f32)]| {
                 path.move_to(p(points[0].0, points[0].1));
                 for &(x, y) in &points[1..] {
@@ -98,19 +113,78 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                     line(&[(11., 4.), (15., 8.), (11., 12.)]);
                     line(&[(15., 8.), (7., 8.), (4., 10.), (4., 14.)]);
                 }
-                Icon::Search => {
-                    line(&[(13., 13.), (17., 17.)]);
+                Icon::Search | Icon::ZoomIn | Icon::ZoomOut => {
+                    line(&[(12., 12.), (16., 16.)]);
+                    if matches!(kind, Icon::ZoomIn | Icon::ZoomOut) {
+                        line(&[(4.5, 7.5), (10.5, 7.5)]);
+                    }
+                    if matches!(kind, Icon::ZoomIn) {
+                        line(&[(7.5, 4.5), (7.5, 10.5)]);
+                    }
+                    path.move_to(p(13., 7.5));
+                    path.cubic_bezier_to(p(7.5, 13.), p(13., 10.54), p(10.54, 13.));
+                    path.cubic_bezier_to(p(2., 7.5), p(4.46, 13.), p(2., 10.54));
+                    path.cubic_bezier_to(p(7.5, 2.), p(2., 4.46), p(4.46, 2.));
+                    path.cubic_bezier_to(p(13., 7.5), p(10.54, 2.), p(13., 4.46));
+                }
+                Icon::ZoomActual => {
+                    // A familiar 1:1 sign, fitted to the same icon grid.
+                    line(&[(2., 6.), (4., 4.), (4., 14.)]);
+                    line(&[(2., 14.), (6., 14.)]);
+                    line(&[(12., 6.), (14., 4.), (14., 14.)]);
+                    line(&[(12., 14.), (16., 14.)]);
+                    line(&[(9., 6.), (9., 7.5)]);
+                    line(&[(9., 10.5), (9., 12.)]);
+                }
+                Icon::FullScreen => {
+                    line(&[(2., 7.), (2., 2.), (7., 2.)]);
+                    line(&[(11., 2.), (16., 2.), (16., 7.)]);
+                    line(&[(16., 11.), (16., 16.), (11., 16.)]);
+                    line(&[(7., 16.), (2., 16.), (2., 11.)]);
+                }
+                Icon::Page => {
                     line(&[
-                        (5., 2.),
-                        (10., 2.),
-                        (13., 5.),
-                        (13., 10.),
-                        (10., 13.),
-                        (5., 13.),
-                        (2., 10.),
-                        (2., 5.),
-                        (5., 2.),
+                        (4., 1.),
+                        (10., 1.),
+                        (14., 5.),
+                        (14., 17.),
+                        (4., 17.),
+                        (4., 1.),
                     ]);
+                    line(&[(10., 1.), (10., 5.), (14., 5.)]);
+                    line(&[(6.5, 9.), (11.5, 9.)]);
+                    line(&[(6.5, 12.), (11.5, 12.)]);
+                }
+                Icon::FitPage => {
+                    line(&[(1., 6.), (1., 1.), (6., 1.)]);
+                    line(&[(12., 1.), (17., 1.), (17., 6.)]);
+                    line(&[(17., 12.), (17., 17.), (12., 17.)]);
+                    line(&[(6., 17.), (1., 17.), (1., 12.)]);
+                    line(&[(6., 4.), (12., 4.), (12., 14.), (6., 14.), (6., 4.)]);
+                }
+                Icon::TempoUp | Icon::TempoDown => {
+                    line(&[(2., 16.), (6., 2.), (9., 2.), (13., 16.), (2., 16.)]);
+                    line(&[(7.5, 13.), (4., 6.)]);
+                    line(&[(5., 13.), (10., 13.)]);
+                    line(&[(11., 5.), (17., 5.)]);
+                    if matches!(kind, Icon::TempoUp) {
+                        line(&[(14., 2.), (14., 8.)]);
+                    }
+                }
+                Icon::Repeats => {
+                    // Return arrow distinguishes following repeats from a playback loop.
+                    line(&[(5., 6.), (2., 9.), (5., 12.)]);
+                    line(&[(2., 9.), (13., 9.), (13., 3.), (8., 3.)]);
+                    line(&[(7., 15.), (16., 15.)]);
+                    line(&[(16., 4.), (16., 15.)]);
+                }
+                Icon::HalfSpeed => {
+                    line(&[(3., 15.), (15., 15.)]);
+                    line(&[(9., 11.), (5., 8.)]);
+                    line(&[(9., 3.), (9., 5.)]);
+                    path.move_to(p(2., 13.));
+                    path.cubic_bezier_to(p(9., 3.), p(0., 8.), p(4., 3.));
+                    path.cubic_bezier_to(p(16., 13.), p(14., 3.), p(18., 8.));
                 }
                 Icon::LeftPanel | Icon::RightPanel => {
                     line(&[(2., 3.), (16., 3.), (16., 15.), (2., 15.), (2., 3.)]);
@@ -139,15 +213,6 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                     line(&[(6., 9.), (12., 9.)]);
                     line(&[(6., 12.), (11., 12.)]);
                 }
-                Icon::AddStaff => {
-                    for y in [3., 6., 9., 12., 15.] {
-                        line(&[(2., y), (12., y)]);
-                    }
-                    if matches!(kind, Icon::AddStaff) {
-                        line(&[(15., 9.), (15., 17.)]);
-                        line(&[(11., 13.), (18., 13.)]);
-                    }
-                }
                 Icon::First => {
                     line(&[(3., 3.), (3., 15.)]);
                     line(&[(14., 3.), (5., 9.), (14., 15.), (14., 3.)]);
@@ -163,30 +228,10 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                     line(&[(4., 4.), (14., 4.), (14., 14.), (4., 14.), (4., 4.)]);
                 }
                 Icon::Loop => {
-                    line(&[(3., 7.), (3., 4.), (14., 4.), (14., 1.)]);
-                    line(&[(11., 2.), (14., 4.), (17., 2.)]);
-                    line(&[(15., 11.), (15., 14.), (4., 14.), (4., 17.)]);
-                    line(&[(1., 16.), (4., 14.), (7., 16.)]);
-                }
-                Icon::AddBar => {
-                    for y in [4., 7., 10., 13.] {
-                        line(&[(1., y), (11., y)]);
-                    }
-                    line(&[(6., 4.), (6., 13.)]);
-                    line(&[(15., 6.), (15., 14.)]);
-                    line(&[(11., 10.), (18., 10.)]);
-                }
-                Icon::Chord => {
-                    for (x, y) in [(5., 14.), (7., 10.), (5., 6.)] {
-                        line(&[
-                            (x - 3., y),
-                            (x, y - 2.),
-                            (x + 3., y),
-                            (x, y + 2.),
-                            (x - 3., y),
-                        ]);
-                    }
-                    line(&[(8.5, 13.), (8.5, 2.), (14., 4.)]);
+                    line(&[(3., 9.), (3., 5.), (15., 5.)]);
+                    line(&[(12., 2.), (15., 5.), (12., 8.)]);
+                    line(&[(15., 9.), (15., 13.), (3., 13.)]);
+                    line(&[(6., 10.), (3., 13.), (6., 16.)]);
                 }
                 Icon::Mixer => {
                     for (x, knob) in [(4., 11.), (9., 5.), (14., 9.)] {
@@ -203,14 +248,6 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
                     line(&[(14., 2.), (5., 12.)]);
                     line(&[(2., 13.), (5., 12.), (6., 15.), (3., 16.), (2., 13.)]);
                     line(&[(16., 13.), (13., 12.), (12., 15.), (15., 16.), (16., 13.)]);
-                }
-                Icon::Tie => {
-                    line(&[(2., 7.), (2.5, 7.5)]);
-                    line(&[(15.5, 7.), (16., 7.5)]);
-                    line(&[(2., 10.), (5., 13.), (9., 14.), (13., 13.), (16., 10.)]);
-                }
-                Icon::Slur => {
-                    line(&[(1., 14.), (4., 8.), (9., 6.), (14., 8.), (17., 14.)]);
                 }
                 Icon::Speaker => {
                     line(&[
@@ -230,7 +267,7 @@ pub fn icon(kind: Icon, color: u32) -> impl IntoElement {
             }
         },
     )
-    .w(px(18.))
-    .h(px(18.))
+    .w(px(size))
+    .h(px(size))
     .flex_shrink_0()
 }

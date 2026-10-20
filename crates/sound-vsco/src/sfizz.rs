@@ -277,7 +277,7 @@ impl NativeBank {
             })
             .collect();
         routes.push((15, audition));
-        let mut seen = [false; 32];
+        let mut seen = [false; score_playback::PLAYBACK_CHANNELS];
         let mut lanes = Vec::new();
         for (channel, instrument) in routes {
             if std::mem::replace(&mut seen[usize::from(channel)], true) {
@@ -361,6 +361,9 @@ impl SoundEngine for NativeBank {
     }
     /// Returns false when this channel/instrument/key needs the GM fallback.
     fn note_on(&mut self, channel: u8, note: NoteEvent) -> bool {
+        if note.harmonic.is_some() {
+            return false;
+        }
         let Some(lane) = self
             .lanes
             .iter_mut()
@@ -520,6 +523,7 @@ mod tests {
                 level: 88,
                 instrument,
                 technique: PlayingTechnique::Arco,
+                harmonic: None,
                 articulation: Some(Articulation::Staccato),
                 legato: false,
             };

@@ -40,6 +40,14 @@ pub(super) fn dots(
             6.
         };
     let mut ys: Vec<_> = heads.iter().map(|h| h.center.y).collect();
+    if event.notation.harmonic == Some(score_core::Harmonic::Artificial)
+        && let Some(mark) = result
+            .marks
+            .iter()
+            .find(|mark| mark.mark == MarkRef::Harmonic(id))
+    {
+        ys.push(mark.center.y);
+    }
     ys.sort_by(f32::total_cmp);
     let mut occupied = Vec::new();
     for y in ys {
@@ -55,6 +63,7 @@ pub(super) fn dots(
         }
         occupied.push(slot as i32);
         result.glyphs.push(Glyph {
+            rotated: false,
             text: "\u{e1e7}".into(),
             position: Point { x, y: slot },
             element: Some(id),
@@ -71,30 +80,32 @@ pub(super) fn groups(
     index: usize,
 ) -> Vec<Vec<ElementId>> {
     let mut groups = Vec::new();
-    let mut group = Vec::new();
-    let mut previous = None;
-    for (event, value) in measure.iter() {
-        if (!value.duration.is_triplet()
-            || previous.is_some_and(|d| d != value.duration)
-            || group.len() == 3)
-            && !group.is_empty()
-        {
-            groups.push(std::mem::take(&mut group));
+    for voice in Voice::ALL {
+        let mut group = Vec::new();
+        let mut previous = None;
+        for (event, value) in measure.voice_iter(voice) {
+            if (!value.duration.is_triplet()
+                || previous.is_some_and(|d| d != value.duration)
+                || group.len() == 3)
+                && !group.is_empty()
+            {
+                groups.push(std::mem::take(&mut group));
+            }
+            if value.duration.is_triplet() {
+                group.push(ElementId {
+                    part,
+                    staff,
+                    measure: index,
+                    event,
+                });
+                previous = Some(value.duration);
+            } else {
+                previous = None;
+            }
         }
-        if value.duration.is_triplet() {
-            group.push(ElementId {
-                part,
-                staff,
-                measure: index,
-                event,
-            });
-            previous = Some(value.duration);
-        } else {
-            previous = None;
+        if !group.is_empty() {
+            groups.push(group);
         }
-    }
-    if !group.is_empty() {
-        groups.push(group);
     }
     groups
 }
@@ -112,10 +123,28 @@ pub(super) fn tuplets(
     }
     let note_lines = result.lines.clone();
     for group in groups {
-        bracket(result, &group, &note_lines, metrics);
+        let visible: std::collections::HashSet<_> = result.events.iter().map(|e| e.id).collect();
+        for run in group
+            .split(|id| !visible.contains(id))
+            .filter(|run| !run.is_empty())
+        {
+            bracket(
+                result,
+                run,
+                &note_lines,
+                metrics,
+                measure.has_two_voices() && measure.voice_of(run[0].event) == Some(Voice::Two),
+            );
+        }
     }
 }
-fn bracket(result: &mut MeasureLayout, ids: &[ElementId], note_lines: &[Line], metrics: &Metrics) {
+fn bracket(
+    result: &mut MeasureLayout,
+    ids: &[ElementId],
+    note_lines: &[Line],
+    metrics: &Metrics,
+    below: bool,
+) {
     if ids.is_empty() {
         return;
     }
@@ -144,28 +173,34 @@ fn bracket(result: &mut MeasureLayout, ids: &[ElementId], note_lines: &[Line], m
             top = top.min(glyph.position.y + metrics.glyph_bounds.get(&c).map_or(-44., |b| b.0));
         }
     }
-    for label in result
-        .techniques
-        .iter()
-        .filter(|t| ids.contains(&t.element))
-    {
-        top = top.min(label.position.y - 16.);
-    }
+    // Technique and division text is arranged outside the musical symbols
+    // after the row is known; it must not lift the tuplet or its slur.
     for line in note_lines
         .iter()
         .filter(|l| l.from.x >= left && l.from.x <= right && l.to.x >= left && l.to.x <= right)
     {
         top = top.min(line.from.y.min(line.to.y));
     }
-    let y = top - 14.;
+    let bottom = heads
+        .iter()
+        .map(|head| head.center.y)
+        .fold(40., f32::max)
+        .max(
+            note_lines
+                .iter()
+                .filter(|l| l.element.is_some_and(|id| ids.contains(&id)))
+                .map(|l| l.from.y.max(l.to.y))
+                .fold(40., f32::max),
+        );
+    let y = if below { bottom + 20. } else { top - 14. };
     let center = (left + right) / 2.;
     let bracketed = !(ids.len() == 3 && result.beams.iter().any(|g| g.elements == ids));
     if bracketed {
         for (x1, y1, x2, y2) in [
-            (left, y + 6., left, y),
+            (left, y + if below { -6. } else { 6. }, left, y),
             (left, y, center - 8., y),
             (center + 8., y, right, y),
-            (right, y, right, y + 6.),
+            (right, y, right, y + if below { -6. } else { 6. }),
         ] {
             result.lines.push(Line {
                 from: Point { x: x1, y: y1 },
@@ -176,6 +211,7 @@ fn bracket(result: &mut MeasureLayout, ids: &[ElementId], note_lines: &[Line], m
         }
     }
     result.glyphs.push(Glyph {
+        rotated: false,
         text: "\u{e883}".into(),
         position: Point {
             x: center - 4.,
@@ -183,7 +219,11 @@ fn bracket(result: &mut MeasureLayout, ids: &[ElementId], note_lines: &[Line], m
         },
         element: Some(ids[0]),
     });
-    result.top = result.top.min(y - 16.);
+    if below {
+        result.bottom = result.bottom.max(y + 18.);
+    } else {
+        result.top = result.top.min(y - 16.);
+    }
     result.tuplets.push(TupletGroup {
         elements: ids.to_vec(),
         top: y - 16.,

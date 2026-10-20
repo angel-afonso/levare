@@ -8,15 +8,25 @@ use score_toolbar::{
     TABS, TabId, ToolbarView, Visual, project, project_menu,
 };
 
-const CONTROL_HEIGHT: f32 = 62.;
+const CONTROL_HEIGHT: f32 = 68.;
 const ROW_HEIGHT: f32 = 20.;
+const ROW_GAP: f32 = 4.;
 const GROUP_HEIGHT: f32 = 92.;
 
 fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyElement> {
     match visual {
-        Visual::Icon(name) => Icon::named(name).map(|glyph| icon(glyph, color).into_any_element()),
+        Visual::Icon(name) => {
+            Icon::named(name).map(|glyph| icons::icon_sized(glyph, color, size).into_any_element())
+        }
         Visual::Music(text) => {
             Some(music_symbol(view, text, size, (size * 0.7, size * 0.8), color).into_any_element())
+        }
+        Visual::Chord => Some(music_chord(view, size, color).into_any_element()),
+        Visual::Tie | Visual::Slur => {
+            Some(music_connection(view, size, color, visual == Visual::Slur).into_any_element())
+        }
+        Visual::Staff | Visual::Bar => {
+            Some(music_staff(view, size, color, visual == Visual::Bar).into_any_element())
         }
         Visual::Text(text) => Some(
             div()
@@ -77,14 +87,22 @@ fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Statef
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .children(visual(view, control.visual, 30., ink(control)))
+            .gap(px(6.))
+            .child(
+                div()
+                    .h(px(36.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .children(visual(view, control.visual, 30., ink(control))),
+            )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_1()
                     .text_size(px(11.5))
+                    .line_height(px(14.))
                     .child(control.label.clone()),
             ),
         control,
@@ -131,7 +149,7 @@ fn tile(
     )
     .when(named, |tile| tile.min_w(px(metrics.labeled_tile)).px_1())
     .when(!named, |tile| tile.w(px(metrics.tile)))
-    .h(px(CONTROL_HEIGHT))
+    .h(px(if named { CONTROL_HEIGHT } else { 56. }))
 }
 
 fn row(
@@ -176,14 +194,19 @@ fn items(view: &AppView, group: &GroupView, cx: &Context<AppView>) -> Div {
         .gap(px(Metrics::default().gap))
         .h(px(CONTROL_HEIGHT))
         .children(group.items.iter().map(|item| {
+            let width = px(item.width(&Metrics::default()));
             match item {
-                Item::Large(control) => large(view, control, cx).into_any_element(),
+                Item::Large(control) => large(view, control, cx).w(width).into_any_element(),
                 Item::Tile(control) => tile(view, control, cx, false).into_any_element(),
-                Item::LabeledTile(control) => tile(view, control, cx, true).into_any_element(),
+                Item::LabeledTile(control) => {
+                    tile(view, control, cx, true).w(width).into_any_element()
+                }
                 Item::Column(column) => div()
                     .flex()
                     .flex_col()
-                    .gap(px(1.))
+                    .w(width)
+                    .flex_shrink_0()
+                    .gap(px(ROW_GAP))
                     .children(
                         column
                             .iter()
@@ -214,6 +237,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
     div()
         .flex()
         .flex_col()
+        .w_full()
         .child(
             action(
                 format!("fold-{title}"),
@@ -238,7 +262,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                 },
             )
             .when(!open, |button| button.bg(rgb(PANEL)))
-            .min_w(px(Metrics::default().folded))
+            .w_full()
             .h(px(CONTROL_HEIGHT))
             .px_1(),
         )
@@ -267,6 +291,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
 
 fn group(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>) -> Div {
     div()
+        .w(px(group.width_in(group.mode)))
         .h(px(GROUP_HEIGHT))
         .px_2()
         .flex()
@@ -622,8 +647,21 @@ mod tests {
                 let visuals = std::iter::once(group.visual)
                     .chain(group.controls.iter().map(|control| control.visual));
                 for visual in visuals {
-                    if let Visual::Music(text) = visual {
-                        assert!(font.covers(text), "{}: {text:?}", group.title);
+                    match visual {
+                        Visual::Music(text) => {
+                            assert!(font.covers(text), "{}: {text:?}", group.title)
+                        }
+                        Visual::Chord => assert!(font.covers(super::super::CHORD_NOTE)),
+                        Visual::Tie | Visual::Slur => {
+                            assert!(font.covers(super::super::CONNECTION_UP));
+                            assert!(font.covers(super::super::CONNECTION_DOWN));
+                            assert!(font.covers(super::super::CONNECTION_HEAD));
+                        }
+                        Visual::Staff | Visual::Bar => {
+                            assert!(font.covers(super::super::STAFF_SYMBOL));
+                            assert!(font.covers(super::super::BAR_SYMBOL));
+                        }
+                        _ => {}
                     }
                 }
             }

@@ -1,7 +1,9 @@
 //! Small, incremental, multi-staff engraver. All coordinates are UI-independent.
+#[cfg(test)]
+use score_core::Instrument;
 use score_core::{
-    Accidental, Clef, ElementId, Instrument, InstrumentFamily, KeySignature, Measure, PartId,
-    Score, StaffId, TimeSignature,
+    Clef, ElementId, InstrumentFamily, KeySignature, MarkRef, Measure, PartId, Score, StaffId,
+    TimeSignature, Voice,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -9,16 +11,22 @@ use std::{
 };
 
 #[cfg(test)]
-use score_core::Duration;
+use score_core::{Accidental, Duration};
+mod repertoire;
+pub use repertoire::{TextRun, bravura_character, glyph_codes, text_runs};
 mod beaming;
+mod divisi;
 pub use beaming::{BeamGroup, BeamSegment, BeamStem};
+mod views;
+pub use views::{Page, System, ViewMode};
 mod rhythm;
 pub use rhythm::TupletGroup;
 mod expression;
-pub use expression::{Curve, Hairpin, Hit, MarkBox};
+pub use expression::{Curve, Hairpin, Hit, MarkBox, PianoArpeggioLayout};
 
 pub const STAFF_SPACE: f32 = 10.;
 pub const MUSIC_SIZE: f32 = STAFF_SPACE * 4.;
+pub const STAFF_LABEL_SIZE: f32 = 16.;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
@@ -35,6 +43,8 @@ pub struct Line {
 }
 #[derive(Clone, Debug)]
 pub struct Glyph {
+    /// Turn the original outlines 90° counterclockwise (SMuFL line segments).
+    pub rotated: bool,
     pub text: String,
     pub position: Point,
     pub element: Option<ElementId>,
@@ -47,6 +57,9 @@ pub struct TechniqueLabel {
 }
 #[derive(Clone, Debug)]
 pub struct EventPosition {
+    pub voice: Voice,
+    pub tick: u16,
+    pub end_tick: u16,
     pub id: ElementId,
     pub pitch: Option<score_core::Pitch>,
     pub center: Point,
@@ -62,16 +75,33 @@ pub struct MeasureLayout {
     pub tuplets: Vec<TupletGroup>,
     pub beams: Vec<BeamGroup>,
     pub events: Vec<EventPosition>,
+    pub staff_spans: Vec<(f32, f32)>,
     pub cursor_x: Vec<f32>,
+    pub second_cursor_x: Vec<f32>,
     /// Shared rhythmic onsets, including bar end, for a continuous playhead.
     pub time_positions: Vec<(u16, f32)>,
     pub top: f32,
     pub bottom: f32,
     pub ink_top: f32,
     pub ink_bottom: f32,
+    /// Note/rest, stem and beam ink, before expression marks.
+    pub music_ink_bottom: f32,
 }
 
 impl MeasureLayout {
+    pub fn tick_at_x(&self, x: f32) -> f64 {
+        for pair in self.time_positions.windows(2) {
+            let [(a, x1), (b, x2)] = pair else {
+                unreachable!()
+            };
+            if x <= *x2 {
+                return f64::from(*a)
+                    + f64::from(*b - *a)
+                        * f64::from(((x - *x1) / (*x2 - *x1).max(0.001)).clamp(0., 1.));
+            }
+        }
+        f64::from(self.time_positions.last().unwrap().0)
+    }
     pub fn x_at_tick(&self, tick: f64) -> f32 {
         let Some(&(first, x)) = self.time_positions.first() else {
             return 0.;
@@ -92,14 +122,72 @@ impl MeasureLayout {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VoiceRegion {
+    pub voice: Voice,
+    pub start: u16,
+    pub end: u16,
+}
+impl VoiceRegion {
+    pub fn contains(&self, voice: Voice, tick: u16) -> bool {
+        self.voice == voice && self.start <= tick && tick < self.end
+    }
+}
 #[derive(Clone, Debug)]
 pub struct PlacedMeasure {
+    pub system_start: usize,
+    pub start_tick: u64,
     pub staff: StaffId,
+    /// Canonical musical source of this displayed row.
+    pub source_staff: StaffId,
+    pub source_voice: Option<Voice>,
+    pub regions: Vec<VoiceRegion>,
+    pub source_onsets: [Vec<u16>; 2],
     pub part: PartId,
     pub index: usize,
     pub origin: Point,
     pub width: f32,
     pub content: Arc<MeasureLayout>,
+}
+
+impl PlacedMeasure {
+    pub fn insertion_near(&self, preferred: Voice, x: f32) -> (Voice, usize) {
+        let tick = self.content.tick_at_x(x);
+        let voice = self.source_voice.unwrap_or_else(|| {
+            if self.regions.iter().any(|r| {
+                r.voice == preferred && f64::from(r.start) <= tick && tick < f64::from(r.end)
+            }) {
+                preferred
+            } else {
+                Voice::One
+            }
+        });
+        let onsets = &self.source_onsets[usize::from(voice == Voice::Two)];
+        let capacity = self.content.time_positions.last().unwrap().0;
+        let index = onsets
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| {
+                self.regions
+                    .iter()
+                    .any(|r| r.contains(voice, (**t).min(capacity - 1)))
+            })
+            .min_by(|(_, a), (_, b)| {
+                (self.content.x_at_tick(f64::from(**a)) - x)
+                    .abs()
+                    .total_cmp(&(self.content.x_at_tick(f64::from(**b)) - x).abs())
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(onsets.len() - 1);
+        (voice, index)
+    }
+}
+#[derive(Clone, Debug)]
+pub struct TempoLabel {
+    pub measure: usize,
+    pub mark: score_core::TempoMark,
+    pub position: Point,
+    pub width: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -127,22 +215,57 @@ pub struct Bracket {
 pub struct Layout {
     /// Presentation scale; musical geometry and cached measures remain unscaled.
     pub scale: f32,
+    pub mode: ViewMode,
+    pub pages: Vec<Page>,
+    pub systems: Vec<System>,
     pub width: f32,
     pub height: f32,
     pub measures: Vec<PlacedMeasure>,
     pub labels: Vec<StaffLabel>,
+    pub tempos: Vec<TempoLabel>,
     pub connectors: Vec<Line>,
     pub braces: Vec<Brace>,
     pub brackets: Vec<Bracket>,
     pub curves: Vec<Curve>,
     pub hairpins: Vec<Hairpin>,
+    pub piano_arpeggios: Vec<PianoArpeggioLayout>,
 }
 
 impl Layout {
+    pub fn hit_tempo(&self, point: Point) -> Option<usize> {
+        let p = Point {
+            x: point.x / self.scale,
+            y: point.y / self.scale,
+        };
+        self.tempos
+            .iter()
+            .find(|mark| {
+                p.x >= mark.position.x - 4.
+                    && p.x <= mark.position.x + mark.width
+                    && p.y >= mark.position.y - 30.
+                    && p.y <= mark.position.y + 5.
+            })
+            .map(|mark| mark.measure)
+    }
     pub fn hit_test(&self, point: Point) -> Option<ElementId> {
         self.hit_pitch(point).map(|(id, _)| id)
     }
     pub fn hit_pitch(&self, point: Point) -> Option<(ElementId, Option<score_core::Pitch>)> {
+        self.hit_pitch_in_voice(point, Voice::One)
+    }
+    pub fn hit_pitch_in_voice(
+        &self,
+        point: Point,
+        preferred: Voice,
+    ) -> Option<(ElementId, Option<score_core::Pitch>)> {
+        self.hit_pitch_with_position(point, preferred)
+            .map(|(id, pitch, _)| (id, pitch))
+    }
+    pub fn hit_pitch_with_position(
+        &self,
+        point: Point,
+        preferred: Voice,
+    ) -> Option<(ElementId, Option<score_core::Pitch>, u16)> {
         let point = Point {
             x: point.x / self.scale,
             y: point.y / self.scale,
@@ -159,11 +282,17 @@ impl Layout {
             .filter_map(|(measure, event)| {
                 let dx = point.x - measure.origin.x - event.center.x;
                 let dy = point.y - measure.origin.y - event.center.y;
-                (dx.abs() <= 15. && dy.abs() <= 18.)
-                    .then_some(((event.id, event.pitch), dx * dx + dy * dy))
+                (dx.abs() <= 15. && dy.abs() <= 18.).then_some((
+                    (event.id, event.pitch, event.tick),
+                    dx * dx + dy * dy,
+                    event.voice,
+                ))
             })
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(target, _)| target)
+            .min_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then_with(|| (a.2 != preferred).cmp(&(b.2 != preferred)))
+            })
+            .map(|(target, _, _)| target)
     }
 
     pub fn measure(&self, part: PartId, measure: usize) -> Option<&PlacedMeasure> {
@@ -179,6 +308,47 @@ impl Layout {
             .iter()
             .find(|placed| placed.part == part && placed.staff == staff && placed.index == measure)
     }
+    pub fn event_measure(&self, id: ElementId) -> Option<&PlacedMeasure> {
+        self.measures
+            .iter()
+            .filter_map(|m| {
+                m.content
+                    .events
+                    .iter()
+                    .filter(|e| e.id == id)
+                    .map(|e| e.tick)
+                    .min()
+                    .map(|tick| (m, tick))
+            })
+            .min_by_key(|(_, tick)| *tick)
+            .map(|(m, _)| m)
+    }
+    pub fn voice_measure(
+        &self,
+        part: PartId,
+        staff: StaffId,
+        measure: usize,
+        voice: Voice,
+    ) -> Option<&PlacedMeasure> {
+        self.voice_measure_at_tick(part, staff, measure, voice, 0.)
+    }
+    pub fn voice_measure_at_tick(
+        &self,
+        part: PartId,
+        staff: StaffId,
+        measure: usize,
+        voice: Voice,
+        tick: f64,
+    ) -> Option<&PlacedMeasure> {
+        self.measures.iter().find(|m| {
+            m.part == part
+                && m.source_staff == staff
+                && m.index == measure
+                && m.regions.iter().any(|r| {
+                    r.voice == voice && f64::from(r.start) <= tick && tick < f64::from(r.end)
+                })
+        })
+    }
     pub fn cursor(
         &self,
         part: PartId,
@@ -186,9 +356,37 @@ impl Layout {
         measure: usize,
         index: usize,
     ) -> Option<Point> {
-        let placed = self.measure_on(part, staff, measure)?;
+        self.voice_cursor(part, staff, measure, Voice::One, index)
+    }
+    pub fn voice_cursor(
+        &self,
+        part: PartId,
+        staff: StaffId,
+        measure: usize,
+        voice: Voice,
+        index: usize,
+    ) -> Option<Point> {
+        let source = self
+            .measures
+            .iter()
+            .find(|m| m.part == part && m.source_staff == staff && m.index == measure)?;
+        let tick = f64::from(*source.source_onsets[usize::from(voice == Voice::Two)].get(index)?);
+        let capacity = source.content.time_positions.last()?.0;
+        let placed = self.voice_measure_at_tick(
+            part,
+            staff,
+            measure,
+            voice,
+            tick.min(f64::from(capacity) - 0.001),
+        )?;
         Some(Point {
-            x: (placed.origin.x + *placed.content.cursor_x.get(index)?) * self.scale,
+            x: (placed.origin.x
+                + *if voice == Voice::One || placed.source_voice.is_some() {
+                    placed.content.cursor_x.get(index)?
+                } else {
+                    placed.content.second_cursor_x.get(index)?
+                })
+                * self.scale,
             y: placed.origin.y * self.scale,
         })
     }
@@ -201,9 +399,9 @@ impl Layout {
         self.measures
             .iter()
             .find(|measure| {
-                point.x >= measure.origin.x
-                    && point.x <= measure.origin.x + measure.width
-                    && point.y >= measure.origin.y - 30.
+                measure.content.staff_spans.iter().any(|(left, right)| {
+                    point.x >= measure.origin.x + left && point.x <= measure.origin.x + right
+                }) && point.y >= measure.origin.y - 30.
                     && point.y <= measure.origin.y + 70.
             })
             .map(|measure| (measure.part, measure.staff, measure.index))
@@ -216,23 +414,59 @@ struct Rhythm {
     positions: Vec<f32>,
 }
 impl Rhythm {
-    fn ticks(score: &Score, index: usize) -> (Vec<u16>, Vec<f32>, f32) {
-        let mut ticks = vec![0, score.time().capacity()];
+    fn ticks(score: &Score, index: usize, metrics: &Metrics) -> (Vec<u16>, Vec<f32>, f32) {
+        let mut ticks = vec![0, score.time_at(index).capacity()];
         let mut wide = HashSet::new();
         let mut left = HashMap::<u16, f32>::new();
+        let mut right = HashMap::<u16, f32>::new();
+        let piano_arpeggios: HashSet<_> = score
+            .piano_arpeggios()
+            .iter()
+            .filter(|mark| mark.upper.measure == index)
+            .flat_map(|mark| [mark.upper, mark.lower])
+            .collect();
         for part in score.parts() {
+            for (tick, _) in part.divisi_changes_in(index) {
+                ticks.push(tick);
+                wide.insert(tick);
+            }
             for staff in part.staves() {
-                let mut tick = 0;
-                let signs = measure_accidentals(&staff.measures()[index], score.key_signature());
-                for (id, event) in staff.measures()[index].iter() {
-                    if event.duration.is_dotted()
+                let signs = measure_accidentals(
+                    &staff.measures()[index],
+                    score.written_key_at(part.id(), index),
+                );
+                for (_, tick, id, event) in staff.measures()[index].timed_iter() {
+                    if staff.measures()[index].has_two_voices()
+                        || event.duration.is_dotted()
                         || event.notation.dynamic.is_some()
                         || event.notation.technique.is_some()
+                        || event.notation.harmonic.is_some()
                         || event.notation.fermata
                     {
                         wide.insert(tick);
                     }
-                    let padding = accidental_padding(&signs[&id]);
+                    if let Some(mark) = event.notation.dynamic {
+                        let (l, _, r, _) = metrics.bounds(mark.glyph(), false);
+                        let width =
+                            (r - l).max(mark.label().chars().count() as f32 * 14. + 6.) + 6.;
+                        right
+                            .entry(tick)
+                            .and_modify(|v| *v = v.max(width))
+                            .or_insert(width);
+                    }
+                    let padding = accidental_padding(&signs[&id])
+                        + if event.notation.arpeggio.is_some()
+                            || piano_arpeggios.contains(&ElementId {
+                                part: part.id(),
+                                staff: staff.id(),
+                                measure: index,
+                                event: id,
+                            })
+                        {
+                            20.
+                        } else {
+                            0.
+                        };
                     left.entry(tick)
                         .and_modify(|value| *value = value.max(padding))
                         .or_insert(padding);
@@ -245,8 +479,7 @@ impl Rhythm {
                     {
                         wide.insert(tick);
                     }
-                    tick += event.duration.ticks();
-                    ticks.push(tick);
+                    ticks.push(tick + event.duration.ticks());
                 }
             }
         }
@@ -256,10 +489,11 @@ impl Rhythm {
             .windows(2)
             .map(|pair| {
                 let normal: f32 = if wide.contains(&pair[0]) || wide.contains(&pair[1]) {
-                    72.
+                    40.
                 } else {
                     28.
                 };
+                let normal = normal.max(right.get(&pair[0]).copied().unwrap_or(0.));
                 let padding = left.get(&pair[1]).copied().unwrap_or(0.);
                 if padding > 0. {
                     normal.max(35. + padding)
@@ -295,12 +529,17 @@ impl Rhythm {
     }
 }
 struct CacheEntry {
+    regions: Vec<VoiceRegion>,
+    boundaries: Vec<(u16, score_core::Division)>,
+    source: (StaffId, Option<Voice>),
     measure: Measure,
     time: TimeSignature,
     width: f32,
     first: bool,
     clef: Clef,
     key_signature: KeySignature,
+    previous_key: Option<KeySignature>,
+    time_changed: bool,
     rhythm: Arc<Rhythm>,
     content: Arc<MeasureLayout>,
     ink_top: f32,
@@ -315,7 +554,11 @@ struct Engraving<'a> {
     time: TimeSignature,
     clef: Clef,
     key_signature: KeySignature,
+    previous_key: Option<KeySignature>,
+    time_changed: bool,
     rhythm: &'a Rhythm,
+    hidden: &'a HashSet<score_core::EventId>,
+    accidental_resets: &'a [u16],
 }
 
 struct Metrics {
@@ -326,7 +569,9 @@ struct Metrics {
     head: f32,
     whole: f32,
     stem: f32,
-    glyph_bounds: HashMap<char, (f32, f32)>,
+    hairpin: f32,
+    glyph_bounds: HashMap<char, (f32, f32, f32, f32, f32)>,
+    arpeggio_repeat: f32,
 }
 
 impl Metrics {
@@ -350,15 +595,20 @@ impl Metrics {
             .expect("bundled Bravura");
         let scale = MUSIC_SIZE / f32::from(face.units_per_em());
         let glyph_bounds = (0xe000..=0xe5ff)
-            .chain([0xe883])
+            .chain([
+                0xe614, 0xe883, 0xe634, 0xe635, 0xe63c, 0xeaa9, 0xeaaa, 0xeaad, 0xeaae,
+            ])
             .filter_map(|code| {
                 let character = char::from_u32(code)?;
                 let bounds = face.glyph_bounding_box(face.glyph_index(character)?)?;
                 Some((
                     character,
                     (
+                        f32::from(bounds.x_min) * scale,
                         -f32::from(bounds.y_max) * scale,
+                        f32::from(bounds.x_max) * scale,
                         -f32::from(bounds.y_min) * scale,
+                        f32::from(face.glyph_hor_advance(face.glyph_index(character)?)?) * scale,
                     ),
                 ))
             })
@@ -371,14 +621,47 @@ impl Metrics {
             head: width("noteheadBlack"),
             whole: width("noteheadWhole"),
             stem: value("stemThickness"),
+            hairpin: value("hairpinThickness"),
             glyph_bounds,
+            arpeggio_repeat: data["glyphsWithAnchors"]["wiggleArpeggiatoUp"]["repeatOffset"][0]
+                .as_f64()
+                .expect("Bravura arpeggio repeat") as f32
+                * STAFF_SPACE,
         }
+    }
+    fn bounds(&self, text: &str, rotated: bool) -> (f32, f32, f32, f32) {
+        let (mut left, mut top, mut right, mut bottom) = (
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        );
+        let mut advance = 0.;
+        for character in text.chars() {
+            let (l, t, r, b, width) = self
+                .glyph_bounds
+                .get(&character)
+                .copied()
+                .unwrap_or((0., -44., 20., 44., 20.));
+            let (l, t, r, b) = if rotated {
+                (t, -r - advance, b, -l - advance)
+            } else {
+                (l + advance, t, r + advance, b)
+            };
+            left = left.min(l);
+            top = top.min(t);
+            right = right.max(r);
+            bottom = bottom.max(b);
+            advance += width;
+        }
+        (left, top, right, bottom)
     }
 }
 
 pub struct LayoutEngine {
     cache: HashMap<(PartId, StaffId, usize), CacheEntry>,
     metrics: Metrics,
+    orchestra_page: Option<(Score, f32)>,
     pub recomputed_measures: usize,
 }
 impl Default for LayoutEngine {
@@ -386,6 +669,7 @@ impl Default for LayoutEngine {
         Self {
             cache: HashMap::new(),
             metrics: Metrics::bravura(),
+            orchestra_page: None,
             recomputed_measures: 0,
         }
     }
@@ -393,42 +677,70 @@ impl Default for LayoutEngine {
 
 impl LayoutEngine {
     pub fn layout(&mut self, score: &Score, width: f32) -> Layout {
-        self.layout_with_spacing(score, width, false)
+        self.layout_with_spacing(score, width, false, false, None, false)
     }
     pub fn layout_compact(&mut self, score: &Score, width: f32) -> Layout {
-        self.layout_with_spacing(score, width, true)
+        self.layout_with_spacing(score, width, true, false, None, false)
     }
-    fn layout_with_spacing(&mut self, score: &Score, width: f32, compact: bool) -> Layout {
+    fn layout_with_spacing(
+        &mut self,
+        score: &Score,
+        width: f32,
+        compact: bool,
+        unwrapped: bool,
+        pinned: Option<&Layout>,
+        part_layout: bool,
+    ) -> Layout {
         let width = if width.is_finite() {
             width.max(500.)
         } else {
             960.
         };
-        let left = 160.;
+        let left =
+            if part_layout {
+                if score.parts().iter().any(|p| {
+                    p.instrument().is_grand_staff() || p.has_passage_divisi() || p.is_divisi()
+                }) {
+                    96.
+                } else {
+                    56.
+                }
+            } else {
+                160.
+            };
         let available = width - left - 32.;
         self.cache.retain(|(part, staff, index), _| {
-            score
-                .part(*part)
-                .and_then(|part| part.staff(*staff))
-                .is_some()
-                && *index < score.measures().len()
+            *index < score.measures().len()
+                && score
+                    .part(*part)
+                    .is_some_and(|part| part.display_staves(*index).any(|id| id == *staff))
         });
         self.recomputed_measures = 0;
+        let mut systems = Vec::new();
         let mut placed = Vec::new();
         let mut labels = Vec::new();
         let mut connectors = Vec::new();
         let mut braces = Vec::new();
         let mut brackets = Vec::new();
         // Index connection lanes once; avoid scanning every link for every staff row.
-        let lanes: HashSet<_> = score
-            .connections()
-            .iter()
-            .filter(|c| !c.kind.is_hairpin())
-            .flat_map(|c| {
-                (c.start.measure..=c.end.measure)
-                    .map(move |index| (c.start.part, c.start.staff, index))
-            })
-            .collect();
+        let mut curve_lanes = HashMap::<_, (bool, bool)>::new();
+        for c in score.connections().iter().filter(|c| !c.kind.is_hairpin()) {
+            let below = score.voice_of(c.start) == Some(Voice::Two);
+            for index in c.start.measure..=c.end.measure {
+                let lanes = curve_lanes
+                    .entry((c.start.part, c.start.staff, index))
+                    .or_default();
+                if c.kind == score_core::ConnectionKind::Tie {
+                    // Ties can turn either way, depending on the chord/stem.
+                    lanes.0 = true;
+                    lanes.1 = true;
+                } else if below {
+                    lanes.1 = true;
+                } else {
+                    lanes.0 = true;
+                }
+            }
+        }
         let hairpin_lanes: HashSet<_> = score
             .connections()
             .iter()
@@ -441,30 +753,125 @@ impl LayoutEngine {
         let mut row_start = 0;
         let mut y = if compact { 20. } else { 40. };
         while row_start < score.measures().len() {
+            let system_top = y;
             let mut columns = Vec::new();
             let mut occupied = 0.;
-            for index in row_start..(row_start + 4).min(score.measures().len()) {
-                let prefix = music_prefix(columns.is_empty(), score.key_signature());
-                let ticks = Rhythm::ticks(score, index);
-                let minimum = (prefix + ticks.2 + ticks.1.iter().sum::<f32>() + 22.).max(155.);
-                if !columns.is_empty() && occupied + minimum > available {
+            let mut tempo_right = f32::NEG_INFINITY;
+            let pinned_system = pinned
+                .and_then(|layout| layout.systems.iter().find(|s| s.first_measure == row_start));
+            let row_end = if let Some(system) = pinned_system {
+                system.last_measure + 1
+            } else if unwrapped {
+                score.measures().len()
+            } else {
+                (row_start + if part_layout { 6 } else { 4 }).min(score.measures().len())
+            };
+            for index in row_start..row_end {
+                let prefix = signature_prefix(score, index, columns.is_empty());
+                let ticks = Rhythm::ticks(score, index, &self.metrics);
+                let minimum = pinned
+                    .and_then(|layout| layout.measures.iter().find(|m| m.index == index))
+                    .map(|m| m.width)
+                    .unwrap_or_else(|| {
+                        (prefix + ticks.2 + ticks.1.iter().sum::<f32>() + 22.)
+                            .max(155.)
+                            .max(score.tempo_change_at(index).map_or(0., |mark| {
+                                let label = prefix + tempo_width(mark) + 20.;
+                                if !part_layout || label > available {
+                                    label
+                                } else {
+                                    0.
+                                }
+                            }))
+                    });
+                if pinned.is_none()
+                    && !unwrapped
+                    && !columns.is_empty()
+                    && occupied + minimum > available
+                {
                     break;
+                }
+                // A tempo heading may span several bars in a part. Break
+                // before a heading that would overlap another or leave the row.
+                if part_layout
+                    && !unwrapped
+                    && pinned.is_none()
+                    && let Some(mark) = score.tempo_change_at(index)
+                {
+                    let start = occupied + prefix + ticks.2;
+                    let right = start + tempo_width(mark) + 20.;
+                    if !columns.is_empty() && (start < tempo_right || right > available) {
+                        break;
+                    }
+                    tempo_right = right;
                 }
                 occupied += minimum;
                 columns.push((ticks, minimum));
             }
-            let extra = (available - occupied).max(0.) / columns.len() as f32;
+            let extra = if unwrapped || pinned.is_some() {
+                0.
+            } else {
+                (available - occupied).max(0.) / columns.len() as f32
+            };
+            let mut column_extra = vec![extra; columns.len()];
+            if part_layout {
+                let mut preceding_width = 0.;
+                for (offset, (ticks, minimum)) in columns.iter().enumerate() {
+                    if let Some(mark) = score.tempo_change_at(row_start + offset) {
+                        let label_start = preceding_width
+                            + signature_prefix(score, row_start + offset, offset == 0)
+                            + ticks.2;
+                        let allowance = (available - label_start - tempo_width(mark) - 20.).max(0.);
+                        let before: f32 = column_extra[..offset].iter().sum();
+                        if before > allowance {
+                            // Keep the heading inside the page while preserving
+                            // the justified right edge: stretch its own bar instead.
+                            for stretch in &mut column_extra[..offset] {
+                                *stretch *= allowance / before;
+                            }
+                            column_extra[offset] += before - allowance;
+                        }
+                    }
+                    preceding_width += minimum;
+                }
+            }
             let rhythms: Vec<_> = columns
                 .iter()
                 .enumerate()
                 .map(|(offset, (ticks, minimum))| {
+                    if let Some(measure) = pinned.and_then(|layout| {
+                        layout
+                            .measures
+                            .iter()
+                            .find(|m| m.index == row_start + offset)
+                    }) {
+                        return Arc::new(Rhythm {
+                            ticks: measure
+                                .content
+                                .time_positions
+                                .iter()
+                                .map(|(t, _)| *t)
+                                .collect(),
+                            positions: measure
+                                .content
+                                .time_positions
+                                .iter()
+                                .map(|(_, x)| x + 8.)
+                                .collect(),
+                        });
+                    }
                     Arc::new(Rhythm::new(
                         ticks.clone(),
-                        music_prefix(offset == 0, score.key_signature()),
-                        minimum + extra,
+                        signature_prefix(score, row_start + offset, offset == 0),
+                        minimum + column_extra[offset],
                     ))
                 })
                 .collect();
+            if (row_start..row_start + columns.len())
+                .any(|bar| score.tempo_change_at(bar).is_some())
+            {
+                y += 40.;
+            }
             let mut groups: Vec<(InstrumentFamily, f32, f32, usize)> = Vec::new();
             let row_first = placed.len();
             let mut first_staff_y = None;
@@ -477,43 +884,80 @@ impl LayoutEngine {
                 let part_start = placed.len();
                 let mut part_top = None;
                 let mut part_bottom = 0.;
-                for staff in part.staves() {
+                let row_divisi =
+                    (row_start..row_start + columns.len()).any(|bar| part.bar_has_divisi(bar));
+                let row_staves = std::iter::once(StaffId::Upper).chain(
+                    (part.instrument().is_grand_staff() || row_divisi).then_some(StaffId::Lower),
+                );
+                for staff in row_staves {
                     let first_placed = placed.len();
                     let mut x = left;
                     let mut top = if compact { -24f32 } else { -42f32 };
                     let mut bottom = if compact { 64f32 } else { 80f32 };
                     for (offset, (_, minimum)) in columns.iter().enumerate() {
                         let index = row_start + offset;
-                        let width = minimum + extra;
-                        let first = offset == 0;
-                        let measure = &staff.measures()[index];
-                        let clef = part.clef(staff.id());
+                        let width = minimum + column_extra[offset];
+                        if staff == StaffId::Lower
+                            && !part.instrument().is_grand_staff()
+                            && !part.bar_has_divisi(index)
+                        {
+                            x += width;
+                            continue;
+                        }
+                        let first = offset == 0
+                            || (staff == StaffId::Lower
+                                && !part.instrument().is_grand_staff()
+                                && !part.bar_has_divisi(index - 1));
+                        let previous_key = previous_signature(score, part.id(), index);
+                        let time_changed = score.time_change_at(index).is_some();
+                        let measure = part.display_measure(staff, index);
+                        let hidden = part.hidden_display_events(staff, index);
+                        let resets = Vec::new();
+                        let regions =
+                            divisi::regions(part, staff, index, score.time_at(index).capacity());
+                        let (source_staff, source_voice) = part.display_source(staff, index);
+                        let clef = part.clef(staff);
                         let rhythm = &rhythms[offset];
-                        let key = (part.id(), staff.id(), index);
+                        let key = (part.id(), staff, index);
                         if !self.cache.get(&key).is_some_and(|cached| {
-                            cached.measure == *measure
-                                && cached.time == score.time()
+                            cached.boundaries == part.divisi_changes_in(index).collect::<Vec<_>>()
+                                && cached.regions == regions
+                                && cached.source == (source_staff, source_voice)
+                                && cached.measure == measure
+                                && cached.time == score.time_at(index)
                                 && cached.width == width
                                 && cached.first == first
                                 && cached.clef == clef
-                                && cached.key_signature == score.key_signature()
+                                && cached.key_signature == score.written_key_at(part.id(), index)
+                                && cached.previous_key == previous_key
+                                && cached.time_changed == time_changed
                                 && cached.rhythm == *rhythm
                         }) {
-                            let content = Arc::new(engrave(
-                                measure,
+                            let mut content = Arc::new(engrave(
+                                &measure,
                                 Engraving {
                                     part: part.id(),
-                                    staff: staff.id(),
+                                    staff: source_staff,
                                     index,
                                     width,
                                     first,
-                                    time: score.time(),
+                                    time: score.time_at(index),
                                     clef,
-                                    key_signature: score.key_signature(),
+                                    key_signature: score.written_key_at(part.id(), index),
+                                    previous_key,
+                                    time_changed,
                                     rhythm,
+                                    hidden: &hidden,
+                                    accidental_resets: &resets,
                                 },
                                 &self.metrics,
                             ));
+                            if let Some(voice) = source_voice {
+                                for event in &mut Arc::make_mut(&mut content).events {
+                                    event.voice = voice;
+                                }
+                            }
+                            divisi::finish(Arc::make_mut(&mut content), part, staff, index, rhythm);
                             let mut ink_top = 0f32;
                             let mut ink_bottom = 40f32;
                             for line in &content.lines {
@@ -523,16 +967,10 @@ impl LayoutEngine {
                                     .max(line.from.y.max(line.to.y) + line.thickness / 2.);
                             }
                             for glyph in &content.glyphs {
-                                for character in glyph.text.chars() {
-                                    let (top, bottom) = self
-                                        .metrics
-                                        .glyph_bounds
-                                        .get(&character)
-                                        .copied()
-                                        .unwrap_or((-44., 44.));
-                                    ink_top = ink_top.min(glyph.position.y + top);
-                                    ink_bottom = ink_bottom.max(glyph.position.y + bottom);
-                                }
+                                let (_, top, _, bottom) =
+                                    self.metrics.bounds(&glyph.text, glyph.rotated);
+                                ink_top = ink_top.min(glyph.position.y + top);
+                                ink_bottom = ink_bottom.max(glyph.position.y + bottom);
                             }
                             for point in content
                                 .beams
@@ -547,18 +985,22 @@ impl LayoutEngine {
                                 ink_top = ink_top.min(text.position.y - 16.);
                                 ink_bottom = ink_bottom.max(text.position.y + 4.);
                             }
-                            let mut content = content;
                             Arc::make_mut(&mut content).ink_top = ink_top;
                             Arc::make_mut(&mut content).ink_bottom = ink_bottom;
                             self.cache.insert(
                                 key,
                                 CacheEntry {
+                                    regions: regions.clone(),
+                                    boundaries: part.divisi_changes_in(index).collect(),
+                                    source: (source_staff, source_voice),
                                     measure: measure.clone(),
-                                    time: score.time(),
+                                    time: score.time_at(index),
                                     width,
                                     first,
                                     clef,
-                                    key_signature: score.key_signature(),
+                                    key_signature: score.written_key_at(part.id(), index),
+                                    previous_key,
+                                    time_changed,
                                     rhythm: rhythm.clone(),
                                     content,
                                     ink_top,
@@ -576,8 +1018,22 @@ impl LayoutEngine {
                             content.bottom
                         });
                         placed.push(PlacedMeasure {
+                            system_start: row_start,
+                            start_tick: score.measure_start_tick(index),
                             part: part.id(),
-                            staff: staff.id(),
+                            staff,
+                            source_staff,
+                            source_voice,
+                            regions,
+                            source_onsets: std::array::from_fn(|v| {
+                                let voice = Voice::ALL[v];
+                                let bar = &part.staff(source_staff).unwrap().measures()[index];
+                                bar.timed_iter()
+                                    .filter(|(v, _, _, _)| *v == voice)
+                                    .map(|(_, tick, _, _)| tick)
+                                    .chain(std::iter::once(bar.voice_ticks(voice)))
+                                    .collect()
+                            }),
                             index,
                             origin: Point { x, y: 0. },
                             width,
@@ -585,39 +1041,122 @@ impl LayoutEngine {
                         });
                         x += width;
                     }
+                    if staff == StaffId::Upper {
+                        for measure in &placed[first_placed..] {
+                            for (tick, mark) in part.divisi_changes_in(measure.index) {
+                                if !part.measures()[measure.index]
+                                    .timed_iter()
+                                    .any(|(_, t, _, _)| t == tick)
+                                {
+                                    labels.push(StaffLabel {
+                                        staff: None,
+                                        text: mark.label().into(),
+                                        part: part.id(),
+                                        position: Point {
+                                            x: measure.origin.x
+                                                + measure.content.x_at_tick(f64::from(tick)),
+                                            y: 0.,
+                                        },
+                                    });
+                                }
+                            }
+                        }
+                    }
                     // Reserve curved-connection lanes separately from cached local ink.
-                    let has_connection = (row_start..row_start + columns.len())
-                        .any(|index| lanes.contains(&(part.id(), staff.id(), index)));
-                    if has_connection {
-                        top -= 30.;
-                        bottom += 22.;
-                    }
-                    if (row_start..row_start + columns.len())
-                        .any(|index| hairpin_lanes.contains(&(part.id(), staff.id(), index)))
+                    let (above, below) = (row_start..row_start + columns.len())
+                        .filter_map(|index| {
+                            curve_lanes.get(&(
+                                part.id(),
+                                part.display_source(staff, index).0,
+                                index,
+                            ))
+                        })
+                        .fold((false, false), |a, b| (a.0 || b.0, a.1 || b.1));
+                    let (notation_top, notation_bottom, division_y) =
+                        expression::arrange_indications(
+                            &mut placed[first_placed..],
+                            &self.metrics,
+                            above,
+                        );
+                    top = placed[first_placed..]
+                        .iter()
+                        .map(|bar| {
+                            if compact {
+                                bar.content.ink_top
+                            } else {
+                                bar.content.top
+                            }
+                        })
+                        .fold(if compact { -24f32 } else { -42f32 }, f32::min);
+                    if labels
+                        .iter()
+                        .any(|label| label.part == part.id() && label.position.y == 0.)
                     {
-                        bottom += 40.;
+                        top = top.min(division_y - 16.);
                     }
-                    let origin_y = y - top;
+                    if above {
+                        top = top.min(notation_top - 22.);
+                    }
+                    if below {
+                        bottom = bottom.max(notation_bottom + 22.);
+                    }
+                    if (row_start..row_start + columns.len()).any(|index| {
+                        hairpin_lanes.contains(&(
+                            part.id(),
+                            part.display_source(staff, index).0,
+                            index,
+                        ))
+                    }) {
+                        bottom = bottom.max(
+                            expression::hairpin_y(
+                                placed[first_placed..].iter().map(|m| m.content.as_ref()),
+                                below,
+                            ) + 6.,
+                        );
+                    }
+                    let origin_y = pinned
+                        .and_then(|layout| {
+                            layout.measures.iter().find(|m| {
+                                m.part == part.id()
+                                    && m.staff == staff
+                                    && m.system_start == row_start
+                            })
+                        })
+                        .map_or(y - top, |m| m.origin.y);
+                    for label in labels
+                        .iter_mut()
+                        .filter(|label| label.part == part.id() && label.position.y == 0.)
+                    {
+                        label.position.y = origin_y + division_y;
+                    }
                     for measure in &mut placed[first_placed..] {
                         measure.origin.y = origin_y;
                     }
-                    labels.push(StaffLabel {
-                        staff: Some(staff.id()),
-                        text: if part.instrument() == Instrument::Piano {
-                            match staff.id() {
-                                StaffId::Upper => "M. derecha",
-                                StaffId::Lower => "M. izquierda",
-                            }
-                            .into()
-                        } else {
-                            part.instrument().name().into()
-                        },
-                        position: Point {
-                            x: 24.,
-                            y: origin_y + 24.,
-                        },
-                        part: part.id(),
-                    });
+                    if !part_layout || row_divisi || part.instrument().is_grand_staff() {
+                        labels.push(StaffLabel {
+                            staff: Some(staff),
+                            text: if row_divisi {
+                                match staff {
+                                    StaffId::Upper => "div. I",
+                                    StaffId::Lower => "div. II",
+                                }
+                                .into()
+                            } else if part.instrument().is_grand_staff() {
+                                match staff {
+                                    StaffId::Upper => "M. derecha",
+                                    StaffId::Lower => "M. izquierda",
+                                }
+                                .into()
+                            } else {
+                                score.part_name(part.id())
+                            },
+                            position: Point {
+                                x: 24.,
+                                y: origin_y + 24.,
+                            },
+                            part: part.id(),
+                        });
+                    }
                     first_staff_y.get_or_insert(origin_y);
                     last_staff_y = origin_y;
                     part_top.get_or_insert(origin_y);
@@ -631,31 +1170,56 @@ impl LayoutEngine {
                 } else {
                     groups.push((family, top, part_bottom, 1));
                 }
-                if part.instrument() == Instrument::Piano {
-                    let top = part_top.expect("piano upper staff");
-                    braces.push(Brace {
-                        x: left - 16.,
-                        top,
-                        bottom: part_bottom,
-                    });
-                    labels.push(StaffLabel {
-                        staff: None,
-                        text: "Piano".into(),
-                        part: part.id(),
-                        position: Point {
-                            x: 24.,
-                            y: (top + part_bottom) / 2.,
-                        },
-                    });
+                if part.instrument().is_grand_staff() || row_divisi {
+                    let top = part_top.expect("two-staff part");
+                    if part.instrument().is_grand_staff() {
+                        braces.push(Brace {
+                            x: left - 16.,
+                            top,
+                            bottom: part_bottom,
+                        });
+                    } else if score.parts().len() == 1 && row_divisi {
+                        brackets.push(Bracket {
+                            x: left - 12.,
+                            top,
+                            bottom: part_bottom,
+                            family,
+                        });
+                    }
+                    if !part_layout {
+                        labels.push(StaffLabel {
+                            staff: None,
+                            text: score.part_name(part.id()),
+                            part: part.id(),
+                            position: Point {
+                                x: 24.,
+                                y: (top + part_bottom) / 2.,
+                            },
+                        });
+                    }
                     for x in std::iter::once(left).chain(
                         placed[part_start..part_start + columns.len()]
                             .iter()
                             .map(|measure| measure.origin.x + measure.width),
                     ) {
+                        let connected = part.instrument().is_grand_staff()
+                            || placed[part_start..part_start + columns.len()]
+                                .iter()
+                                .any(|m| {
+                                    (x == left && part.divisi_at(m.index))
+                                        || (x == m.origin.x + m.width
+                                            && part.divisi_at_tick(
+                                                m.index,
+                                                score.time_at(m.index).capacity() - 1,
+                                            ))
+                                });
+                        if !connected {
+                            continue;
+                        }
                         connectors.push(Line {
                             from: Point { x, y: top },
                             to: Point { x, y: part_bottom },
-                            thickness: 1.,
+                            thickness: self.metrics.bar,
                             element: None,
                         });
                     }
@@ -688,7 +1252,7 @@ impl LayoutEngine {
                                     x: measure.origin.x + measure.width,
                                     y: bottom,
                                 },
-                                thickness: 1.,
+                                thickness: self.metrics.bar,
                                 element: None,
                             });
                         }
@@ -703,19 +1267,49 @@ impl LayoutEngine {
                         x: left,
                         y: last_staff_y + 40.,
                     },
-                    thickness: 1.5,
+                    thickness: self.metrics.bar,
                     element: None,
                 });
             }
+            systems.push(System {
+                first_measure: row_start,
+                last_measure: row_start + columns.len() - 1,
+                top: system_top,
+                bottom: y,
+            });
             y += 32.;
             row_start += columns.len();
         }
-        let curves = expression::curves(score, &placed);
-        let hairpins = expression::hairpins(score, &placed);
+        let tempos = score
+            .tempo_marks()
+            .filter_map(|(measure, mark)| {
+                let bar = placed.iter().find(|bar| bar.index == measure)?;
+                let system = systems.iter().find(|system| {
+                    (system.first_measure..=system.last_measure).contains(&measure)
+                })?;
+                Some(TempoLabel {
+                    measure,
+                    mark: mark.clone(),
+                    width: tempo_width(mark),
+                    position: Point {
+                        x: bar.origin.x + bar.content.x_at_tick(0.),
+                        y: system.top + 28.,
+                    },
+                })
+            })
+            .collect();
+        let index = expression::PlacedIndex::new(&placed);
+        let curves = expression::curves(score, &index, &self.metrics);
+        let hairpins = expression::hairpins(score, &index, self.metrics.hairpin);
+        let piano_arpeggios = expression::piano_arpeggios(score, &placed, &self.metrics);
         Layout {
             curves,
             hairpins,
+            piano_arpeggios,
             scale: 1.,
+            mode: ViewMode::Continuous,
+            pages: Vec::new(),
+            systems,
             width: placed
                 .iter()
                 .map(|m| m.origin.x + m.width + 32.)
@@ -723,11 +1317,32 @@ impl LayoutEngine {
             height: y + 24.,
             measures: placed,
             labels,
+            tempos,
             connectors,
             braces,
             brackets,
         }
     }
+}
+
+fn tempo_width(mark: &score_core::TempoMark) -> f32 {
+    // Conservative advances at 18px: ordinary words stay compact while wide
+    // letters and non-Latin text still leave clearance before the music.
+    mark.text
+        .chars()
+        .map(|c| match c {
+            'W' | 'M' | '@' => 18.,
+            'm' | 'w' => 15.,
+            'i' | 'l' | 'j' | 'I' | 'f' | 't' | 'r' => 7.,
+            ' ' => 5.,
+            c if c.is_ascii_uppercase() => 14.,
+            c if c.is_ascii_alphanumeric() => 10.,
+            c if c.is_ascii_punctuation() => 7.,
+            _ => 18.,
+        })
+        .sum::<f32>()
+        + if mark.text.is_empty() { 0. } else { 12. }
+        + 86.
 }
 
 fn key_width(key: KeySignature) -> f32 {
@@ -737,8 +1352,57 @@ fn key_width(key: KeySignature) -> f32 {
         key.count() as f32 * 11. + 8.
     }
 }
-fn music_prefix(first: bool, key: KeySignature) -> f32 {
-    if first { 88. + key_width(key) } else { 24. }
+fn previous_signature(score: &Score, part: PartId, index: usize) -> Option<KeySignature> {
+    (index > 0 && score.key_change_at(index).is_some())
+        .then(|| score.written_key_at(part, index - 1))
+}
+fn cancel_steps(old: KeySignature, key: KeySignature) -> Vec<score_core::Step> {
+    old.steps()
+        .iter()
+        .copied()
+        .filter(|step| old.accidental(*step) != key.accidental(*step))
+        .collect()
+}
+fn prefix_for(
+    first: bool,
+    key: KeySignature,
+    previous: Option<KeySignature>,
+    time_changed: bool,
+) -> f32 {
+    let cancellations = previous.map_or(0, |old| cancel_steps(old, key).len());
+    let cancel_width = if cancellations == 0 {
+        0.
+    } else {
+        cancellations as f32 * 11. + 8.
+    };
+    if first {
+        88. + key_width(key) + cancel_width
+    } else {
+        24. + if previous.is_some() {
+            key_width(key) + cancel_width + 8.
+        } else {
+            0.
+        } + if time_changed { 40. } else { 0. }
+    }
+}
+fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
+    let entering_staff = index > 0
+        && score
+            .parts()
+            .iter()
+            .any(|part| part.bar_has_divisi(index) && !part.bar_has_divisi(index - 1));
+    score
+        .parts()
+        .iter()
+        .map(|part| {
+            prefix_for(
+                first || entering_staff,
+                score.written_key_at(part.id(), index),
+                previous_signature(score, part.id(), index),
+                score.time_change_at(index).is_some(),
+            )
+        })
+        .fold(0., f32::max)
 }
 fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
     match (clef, flats) {
@@ -748,19 +1412,51 @@ fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
         (Clef::Alto, true) => [25., 10., 30., 15., 35., 20., 40.],
         (Clef::Bass, false) => [10., 25., 5., 20., 35., 15., 30.],
         (Clef::Bass, true) => [30., 15., 35., 20., 40., 25., 10.],
+        (Clef::Percussion, _) => [20.; 7],
     }
 }
 
 #[derive(Clone, Copy)]
 struct PlacedAccidental {
     pitch: score_core::Pitch,
-    sign: Accidental,
+    sign: i8,
+    touch: bool,
     column: usize,
+}
+
+fn written_pitches(
+    event: score_core::Event,
+    key: KeySignature,
+) -> Vec<(score_core::Pitch, i8, bool, bool)> {
+    event
+        .pitches
+        .iter()
+        .map(|pitch| {
+            (
+                pitch,
+                pitch.in_key(key).alteration(),
+                false,
+                pitch.accidental().is_some(),
+            )
+        })
+        .chain(
+            event
+                .harmonic_touch(key)
+                .map(|(pitch, alteration)| (pitch, alteration, true, false)),
+        )
+        .collect()
 }
 
 fn measure_accidentals(
     measure: &Measure,
     key: KeySignature,
+) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
+    measure_accidentals_with_resets(measure, key, &[])
+}
+fn measure_accidentals_with_resets(
+    measure: &Measure,
+    key: KeySignature,
+    resets: &[u16],
 ) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
     // Unmarked pitches follow the key; explicit signs override it. Remember local
     // notation per octave and reset to the signature at each measure boundary.
@@ -770,19 +1466,48 @@ fn measure_accidentals(
             state[octave * 7 + step.index() as usize] = key.accidental(*step).unwrap().semitones();
         }
     }
-    measure
-        .iter()
-        .map(|(id, event)| {
+    let initial = state;
+    let mut previous = None;
+    let mut events: Vec<_> = measure.timed_iter().collect();
+    events.sort_by_key(|(voice, tick, _, _)| (*tick, *voice));
+    let mut alterations = HashMap::new();
+    let mut conflicts = HashSet::new();
+    for (_, tick, _, event) in &events {
+        for (pitch, alteration, _, _) in written_pitches(**event, key) {
+            let position = (*tick, pitch.diatonic());
+            if alterations
+                .insert(position, alteration)
+                .is_some_and(|old| old != alteration)
+            {
+                conflicts.insert(position);
+            }
+        }
+    }
+    events
+        .into_iter()
+        .map(|(_, tick, id, event)| {
+            if resets
+                .iter()
+                .any(|&at| at <= tick && previous.is_none_or(|before| at > before))
+            {
+                state = initial;
+            }
+            previous = Some(tick);
             let mut signs = Vec::<PlacedAccidental>::new();
             let mut columns = Vec::<i16>::new();
-            for pitch in event.pitches.iter().rev() {
+            for (pitch, alteration, touch, explicit) in
+                written_pitches(*event, key).into_iter().rev()
+            {
                 let position = pitch.diatonic() as usize;
-                let alteration = pitch.in_key(key).alteration();
-                let sign = pitch.accidental().or_else(|| {
-                    (state[position] != alteration)
-                        .then_some(key.accidental(pitch.step).unwrap_or(Accidental::Natural))
-                });
-                state[position] = alteration;
+                let sign = (explicit
+                    || state[position] != alteration
+                    || conflicts.contains(&(tick, pitch.diatonic())))
+                .then_some(alteration);
+                state[position] = if conflicts.contains(&(tick, pitch.diatonic())) {
+                    i8::MAX
+                } else {
+                    alteration
+                };
                 if let Some(sign) = sign {
                     // Seven diatonic steps leave 35 px between the tallest signs.
                     let column = columns
@@ -797,6 +1522,7 @@ fn measure_accidentals(
                     signs.push(PlacedAccidental {
                         pitch,
                         sign,
+                        touch,
                         column,
                     });
                 }
@@ -824,19 +1550,33 @@ fn engrave_accidentals(
         .map(|head| head.center.x - head_width / 2.)
         .fold(f32::INFINITY, f32::min);
     for sign in signs {
-        let y = result
-            .events
-            .iter()
-            .find(|head| head.id == id && head.pitch == Some(sign.pitch))
-            .expect("engraved pitch")
-            .center
-            .y;
+        let y = if sign.touch {
+            result
+                .marks
+                .iter()
+                .find(|mark| mark.mark == MarkRef::Harmonic(id))
+                .expect("engraved touch head")
+                .center
+                .y
+        } else {
+            result
+                .events
+                .iter()
+                .find(|head| head.id == id && head.pitch == Some(sign.pitch))
+                .expect("engraved pitch")
+                .center
+                .y
+        };
         let code = match sign.sign {
-            Accidental::Flat => 0xe260,
-            Accidental::Natural => 0xe261,
-            Accidental::Sharp => 0xe262,
+            -2 => 0xe264,
+            -1 => 0xe260,
+            0 => 0xe261,
+            1 => 0xe262,
+            2 => 0xe263,
+            _ => unreachable!("supported accidental"),
         };
         result.glyphs.push(Glyph {
+            rotated: false,
             text: char::from_u32(code).unwrap().to_string(),
             position: Point {
                 x: left - 8. - (sign.column + 1) as f32 * 14.,
@@ -844,6 +1584,40 @@ fn engrave_accidentals(
             },
             element: Some(id),
         });
+    }
+}
+
+fn voice_offset(measure: &Measure, voice: Voice, tick: u16) -> f32 {
+    if voice != Voice::Two {
+        return 0.;
+    }
+    let one = measure
+        .timed_iter()
+        .find(|(v, t, _, _)| *v == Voice::One && *t == tick);
+    let two = measure
+        .timed_iter()
+        .find(|(v, t, _, _)| *v == Voice::Two && *t == tick);
+    match (one, two) {
+        (Some((_, _, _, a)), Some((_, _, _, b)))
+            if a.pitches == b.pitches
+                && a.duration == b.duration
+                && a.notation.harmonic == b.notation.harmonic
+                && a.notation.harmonic != Some(score_core::Harmonic::Artificial) =>
+        {
+            0.
+        }
+        (Some((_, _, _, a)), Some((_, _, _, b)))
+            if written_pitches(*a, KeySignature::default())
+                .iter()
+                .any(|(a, _, _, _)| {
+                    written_pitches(*b, KeySignature::default())
+                        .iter()
+                        .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
+                }) =>
+        {
+            14.
+        }
+        _ => 0.,
     }
 }
 
@@ -857,7 +1631,11 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         time,
         clef,
         key_signature,
+        previous_key,
+        time_changed,
         rhythm,
+        hidden,
+        accidental_resets,
     } = options;
     let mut result = MeasureLayout {
         lines: Vec::new(),
@@ -867,7 +1645,9 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         tuplets: Vec::new(),
         beams: Vec::new(),
         events: Vec::new(),
+        staff_spans: vec![(0., width)],
         cursor_x: Vec::new(),
+        second_cursor_x: Vec::new(),
         time_positions: rhythm
             .ticks
             .iter()
@@ -878,6 +1658,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         bottom: 80.,
         ink_top: 0.,
         ink_bottom: 40.,
+        music_ink_bottom: 40.,
     };
     let mut line = |x1, y1, x2, y2, thickness| {
         result.lines.push(Line {
@@ -902,10 +1683,12 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     }
     if first {
         result.glyphs.push(Glyph {
+            rotated: false,
             text: match clef {
                 Clef::Treble => "\u{e050}",
                 Clef::Alto => "\u{e05c}",
                 Clef::Bass => "\u{e062}",
+                Clef::Percussion => "\u{e069}",
             }
             .into(),
             position: Point {
@@ -914,13 +1697,39 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                     Clef::Treble => 30.,
                     Clef::Alto => 20.,
                     Clef::Bass => 10.,
+                    Clef::Percussion => 20.,
                 },
             },
             element: None,
         });
+    }
+    let key_x = if first { 42. } else { 10. };
+    let cancellations = previous_key.map_or_else(Vec::new, |old| cancel_steps(old, key_signature));
+    let cancel_width = if cancellations.is_empty() {
+        0.
+    } else {
+        cancellations.len() as f32 * 11. + 8.
+    };
+    if first || previous_key.is_some() {
+        if let Some(old) = previous_key {
+            let positions = key_positions(clef, old.fifths() < 0);
+            for (column, step) in cancellations.iter().enumerate() {
+                let row = old.steps().iter().position(|s| s == step).unwrap();
+                result.glyphs.push(Glyph {
+                    rotated: false,
+                    text: "\u{e261}".into(),
+                    position: Point {
+                        x: key_x + column as f32 * 11.,
+                        y: positions[row],
+                    },
+                    element: None,
+                });
+            }
+        }
         let positions = key_positions(clef, key_signature.fifths() < 0);
-        for (index, _) in key_signature.steps().iter().enumerate() {
+        for (column, _) in key_signature.steps().iter().enumerate() {
             result.glyphs.push(Glyph {
+                rotated: false,
                 text: if key_signature.fifths() < 0 {
                     "\u{e260}"
                 } else {
@@ -928,51 +1737,70 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 }
                 .into(),
                 position: Point {
-                    x: 42. + index as f32 * 11.,
-                    y: positions[index],
+                    x: key_x + cancel_width + column as f32 * 11.,
+                    y: positions[column],
                 },
                 element: None,
             });
         }
-        if index == 0 {
-            for (number, y) in [(time.numerator, 10.), (time.denominator, 30.)] {
-                let text = number
-                    .to_string()
-                    .chars()
-                    .map(|c| char::from_u32(0xe080 + c.to_digit(10).unwrap()).unwrap())
-                    .collect();
-                result.glyphs.push(Glyph {
-                    text,
-                    position: Point {
-                        x: 48. + key_width(key_signature),
-                        y,
-                    },
-                    element: None,
-                });
-            }
+    }
+    if time_changed {
+        let key_space = if first || previous_key.is_some() {
+            key_width(key_signature) + cancel_width
+        } else {
+            0.
+        };
+        for (number, y) in [(time.numerator, 10.), (time.denominator, 30.)] {
+            let text = number
+                .to_string()
+                .chars()
+                .map(|c| char::from_u32(0xe080 + c.to_digit(10).unwrap()).unwrap())
+                .collect();
+            result.glyphs.push(Glyph {
+                rotated: false,
+                text,
+                position: Point {
+                    x: if first { 48. } else { 10. } + key_space,
+                    y,
+                },
+                element: None,
+            });
         }
     }
-    let start = music_prefix(first, key_signature);
-    let mut tick = 0;
-    let signs = measure_accidentals(measure, key_signature);
+    let start = prefix_for(first, key_signature, previous_key, time_changed);
+    let signs = measure_accidentals_with_resets(measure, key_signature, accidental_resets);
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
-    for (id, event) in measure.iter() {
-        result.cursor_x.push(rhythm.x(tick) - 8.);
+    for (voice, tick, id, event) in measure.timed_iter() {
+        let onset = rhythm.x(tick) + voice_offset(measure, voice, tick);
+        let forced = measure.has_two_voices().then_some(voice == Voice::Two);
+        if voice == Voice::One {
+            result.cursor_x.push(onset - 8.);
+        } else {
+            result.second_cursor_x.push(onset - 8.);
+        }
+        if hidden.contains(&id) {
+            continue;
+        }
         let element = ElementId {
             staff,
             part,
             measure: index,
             event: id,
         };
-        if event.pitches.len() > 1 {
+        if event.pitches.len() > 1
+            || event.notation.harmonic == Some(score_core::Harmonic::Artificial)
+        {
             engrave_chord(
                 &mut result,
                 *event,
                 element,
-                rhythm.x(tick),
+                onset,
                 clef,
                 metrics,
-                beams.direction(element),
+                forced.or(beams.direction(element)),
+                beams.direction(element).is_some(),
+                voice,
+                key_signature,
             );
             engrave_accidentals(
                 &mut result,
@@ -984,26 +1812,36 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                     metrics.head
                 },
             );
+            expression::arpeggio(&mut result, *event, element, metrics);
             rhythm::dots(&mut result, *event, element, metrics);
-            tick += event.duration.ticks();
             continue;
         }
         let y = event
             .pitches
             .first()
-            .map(|pitch| 40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.)
-            .unwrap_or(20.);
+            .map(|pitch| {
+                if clef == Clef::Percussion {
+                    20.
+                } else {
+                    40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
+                }
+            })
+            .unwrap_or(if measure.has_two_voices() {
+                if voice == Voice::One { 5. } else { 35. }
+            } else {
+                20.
+            });
         let head_width = if event.duration.value() == score_core::NoteValue::Whole {
             metrics.whole
         } else {
             metrics.head
         };
         // Align notehead centers, including the wider whole-note glyph.
-        let x = rhythm.x(tick) + (metrics.head - head_width) / 2.;
+        let x = onset + (metrics.head - head_width) / 2.;
         let code = if beams.direction(element).is_some() {
             0xe0a4 // A beamed note has a separate stem and no flag.
         } else if event.pitches.first().is_some() {
-            let down = u32::from(y <= 20.);
+            let down = u32::from(forced.unwrap_or(y <= 20.));
             match event.duration.value() {
                 score_core::NoteValue::Whole => 0xe1d2,
                 score_core::NoteValue::Half => 0xe1d3 + down,
@@ -1023,16 +1861,24 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         let glyph_y = if event.pitches.first().is_none()
             && event.duration.value() == score_core::NoteValue::Whole
         {
-            10.
+            if measure.has_two_voices() {
+                if voice == Voice::One { 0. } else { 30. }
+            } else {
+                10.
+            }
         } else {
             y
         };
         result.glyphs.push(Glyph {
+            rotated: false,
             text: char::from_u32(code).unwrap().to_string(),
             position: Point { x, y: glyph_y },
             element: Some(element),
         });
         result.events.push(EventPosition {
+            tick: 0,
+            end_tick: 0,
+            voice,
             id: element,
             pitch: event.pitches.first(),
             center: Point {
@@ -1078,21 +1924,58 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             }
         }
         rhythm::dots(&mut result, *event, element, metrics);
-        tick += event.duration.ticks();
     }
-    result.cursor_x.push(rhythm.x(tick) - 8.);
-    if measure.is_empty() {
+    result
+        .cursor_x
+        .push(rhythm.x(measure.voice_ticks(Voice::One)) - 8.);
+    result
+        .second_cursor_x
+        .push(rhythm.x(measure.voice_ticks(Voice::Two)) - 8.);
+    if measure.voice_len(Voice::One) == 0 {
         result.glyphs.push(Glyph {
+            rotated: false,
             text: "\u{e4e3}".into(),
             position: Point {
                 x: start + (width - start) * 0.4,
-                y: 10.,
+                y: if measure.has_two_voices() { 0. } else { 10. },
             },
             element: None,
         });
     }
     beams.engrave(&mut result, metrics);
-    for (event, value) in measure.iter() {
+    let timing: HashMap<_, _> = measure
+        .timed_iter()
+        .map(|(_, tick, id, event)| (id, (tick, tick + event.duration.ticks())))
+        .collect();
+    for head in &mut result.events {
+        let (start, end) = timing[&head.id.event];
+        head.tick = start;
+        head.end_tick = end;
+    }
+    // Measure the actual musical ink before adding expression lanes. A head
+    // does not occupy a hypothetical 44 units on both sides of the staff.
+    result.ink_top = 0.;
+    result.ink_bottom = 40.;
+    for glyph in result.glyphs.iter().filter(|g| g.element.is_some()) {
+        let (_, top, _, bottom) = metrics.bounds(&glyph.text, glyph.rotated);
+        result.ink_top = result.ink_top.min(glyph.position.y + top);
+        result.ink_bottom = result.ink_bottom.max(glyph.position.y + bottom);
+    }
+    for line in result.lines.iter().filter(|l| l.element.is_some()) {
+        result.ink_top = result.ink_top.min(line.from.y.min(line.to.y));
+        result.ink_bottom = result.ink_bottom.max(line.from.y.max(line.to.y));
+    }
+    for point in result
+        .beams
+        .iter()
+        .flat_map(|g| &g.segments)
+        .flat_map(|s| s.corners)
+    {
+        result.ink_top = result.ink_top.min(point.y);
+        result.ink_bottom = result.ink_bottom.max(point.y);
+    }
+    result.music_ink_bottom = result.ink_bottom;
+    for (event, value) in measure.iter().filter(|(id, _)| !hidden.contains(id)) {
         expression::marks(
             &mut result,
             *value,
@@ -1108,6 +1991,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn engrave_chord(
     result: &mut MeasureLayout,
     event: score_core::Event,
@@ -1116,11 +2000,20 @@ fn engrave_chord(
     clef: Clef,
     metrics: &Metrics,
     forced_direction: Option<bool>,
+    beamed: bool,
+    voice: Voice,
+    key: KeySignature,
 ) {
-    let y_at =
-        |pitch: score_core::Pitch| 40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.;
+    let y_at = |pitch: score_core::Pitch| {
+        if clef == Clef::Percussion {
+            20.
+        } else {
+            40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
+        }
+    };
     let low = y_at(event.pitches.first().expect("chord"));
-    let high = y_at(event.pitches.last().expect("chord"));
+    let touch = event.harmonic_touch(key).map(|(pitch, _)| pitch);
+    let high = y_at(touch.or_else(|| event.pitches.last()).expect("chord"));
     let down = forced_direction.unwrap_or((low + high) / 2. <= 20.);
     let head_width = if event.duration.value() == score_core::NoteValue::Whole {
         metrics.whole
@@ -1133,13 +2026,18 @@ fn engrave_chord(
         score_core::NoteValue::Half => 0xe0a3,
         _ => 0xe0a4,
     };
-    let mut pitches: Vec<_> = event.pitches.iter().collect();
+    let mut pitches: Vec<_> = event
+        .pitches
+        .iter()
+        .map(|pitch| (pitch, false))
+        .chain(touch.map(|pitch| (pitch, true)))
+        .collect();
     if down {
         pitches.reverse();
     }
     let mut previous: Option<i16> = None;
     let mut shifted = false;
-    for pitch in pitches {
+    for (pitch, generated) in pitches {
         shifted = if previous.is_some_and(|previous| (pitch.diatonic() - previous).abs() == 1) {
             !shifted
         } else {
@@ -1153,19 +2051,55 @@ fn engrave_chord(
                 0.
             };
         let y = y_at(pitch);
+        // Keep the touched diamond attached to the same stem. Whole notes
+        // have no stem, so center it over the stopped note instead.
+        let diamond = score_core::Harmonic::Artificial.glyph();
+        let (l, _, r, _) = metrics.bounds(diamond, false);
+        let x = if generated {
+            x + if event.duration.value() == score_core::NoteValue::Whole {
+                (head_width - (r - l)) / 2. - l
+            } else if down {
+                -l
+            } else {
+                head_width - r
+            }
+        } else {
+            x
+        };
+        let glyph_index = result.glyphs.len();
         result.glyphs.push(Glyph {
-            text: char::from_u32(head).unwrap().to_string(),
+            rotated: false,
+            text: if generated {
+                diamond.into()
+            } else {
+                char::from_u32(head).unwrap().to_string()
+            },
             position: Point { x, y },
             element: Some(id),
         });
-        result.events.push(EventPosition {
-            id,
-            pitch: Some(pitch),
-            center: Point {
-                x: x + head_width / 2.,
-                y,
-            },
-        });
+        if generated {
+            result.marks.push(expression::MarkBox {
+                mark: MarkRef::Harmonic(id),
+                glyph: Some(glyph_index),
+                center: Point {
+                    x: x + (l + r) / 2.,
+                    y,
+                },
+                half: ((r - l) / 2. + 3., 7.),
+            });
+        } else {
+            result.events.push(EventPosition {
+                tick: 0,
+                end_tick: 0,
+                voice,
+                id,
+                pitch: Some(pitch),
+                center: Point {
+                    x: x + head_width / 2.,
+                    y,
+                },
+            });
+        }
         result.top = result.top.min(y - 44.);
         result.bottom = result.bottom.max(y + 44.);
         let mut ledger = -10.;
@@ -1201,7 +2135,7 @@ fn engrave_chord(
             ledger += 10.;
         }
     }
-    if forced_direction.is_none() && event.duration.value() != score_core::NoteValue::Whole {
+    if !beamed && event.duration.value() != score_core::NoteValue::Whole {
         let stem_x = if down { onset } else { onset + metrics.head };
         let end_y = if down { low + 35. } else { high - 35. };
         result.lines.push(Line {
@@ -1223,6 +2157,7 @@ fn engrave_chord(
         };
         if let Some(flag) = flag {
             result.glyphs.push(Glyph {
+                rotated: false,
                 text: char::from_u32(flag).unwrap().to_string(),
                 position: Point {
                     x: stem_x,
@@ -2136,3 +3071,26 @@ mod grouping_tests;
 
 #[cfg(test)]
 mod beaming_tests;
+
+#[cfg(test)]
+mod views_tests;
+
+#[cfg(test)]
+mod voice_tests;
+
+#[cfg(test)]
+mod engraving_regression_tests;
+
+#[cfg(test)]
+mod harmonic_tests;
+
+#[cfg(test)]
+mod part_tests;
+
+mod spacing;
+
+#[cfg(test)]
+mod spacing_tests;
+
+#[cfg(test)]
+mod orchestra_tests;

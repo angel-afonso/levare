@@ -1,10 +1,17 @@
 //! Native editor chrome. Pending controls are visibly marked TODO; score data
 //! and transport readouts always come from the current document/session.
 mod command_state;
+mod export_picker;
+pub use export_picker::ExportPicker;
 mod icons;
 mod instrument_panel;
 mod mixer;
+mod music_text;
+mod tempo_editor;
+pub mod text_input;
 pub use mixer::MixerDrag;
+use music_text::inline_text;
+pub use tempo_editor::TempoEditor;
 mod preferences;
 mod toolbar;
 use super::*;
@@ -13,6 +20,7 @@ pub use instrument_panel::InstrumentPicker;
 pub use preferences::{Preferences, PreferencesConflict};
 use score_core::Duration;
 use score_keymap::{CommandId, id};
+use score_toolbar::CommandStates;
 
 pub const BG: u32 = 0x131417;
 pub const TEXT: u32 = 0xe8e9ee;
@@ -31,6 +39,7 @@ pub struct UiState {
     pub note_entry: bool,
     pub compact: bool,
     pub zoom: f32,
+    pub view_mode: score_layout::ViewMode,
     pub tab: score_toolbar::TabId,
     pub inspector: &'static str,
     /// Archivo dropdown and its "Abrir reciente" submenu.
@@ -49,6 +58,7 @@ impl Default for UiState {
             note_entry: true,
             compact: false,
             zoom: 0.7,
+            view_mode: Default::default(),
             tab: score_toolbar::TabId::NoteInput,
             inspector: "Propiedades",
             file_menu: false,
@@ -60,13 +70,16 @@ impl Default for UiState {
 }
 
 fn button(
+    view: &AppView,
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
     selected: bool,
     cx: &Context<AppView>,
     click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
 ) -> Stateful<Div> {
-    action(id, div().child(label.into()), selected, cx, click)
+    let font = view.music_font.clone();
+    let label: SharedString = label.into();
+    action(id, inline_text(font, label.as_ref()), selected, cx, click)
         .px_2()
         .h(px(29.))
 }
@@ -229,7 +242,7 @@ fn command_button(
     cx: &Context<AppView>,
     command: CommandId,
 ) -> Stateful<Div> {
-    button(element, label, selected, cx, move |v, window, cx| {
+    button(view, element, label, selected, cx, move |v, window, cx| {
         v.run(command, window, cx)
     })
     .tooltip(command_hint(view, command))
@@ -256,6 +269,7 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
             MouseButton::Left,
             cx.listener(|v, event, window, cx| {
                 mixer::end(v, event, cx);
+                v.cancel_note_drag(cx);
                 v.end_passage_selection(event, window, cx);
             }),
         )
@@ -280,6 +294,9 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         })
         .when(view.instrument_picker.is_some(), |root| {
             root.child(instrument_panel::dialog(view, cx))
+        })
+        .when(view.export_picker.is_some(), |root| {
+            root.child(export_picker::dialog(view, cx))
         })
 }
 
@@ -416,19 +433,17 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
         ))
         .child(
             action(
-                "export-todo",
+                "export-pdf",
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
                     .child(icon(Icon::Export, 0x222329))
-                    .child("Exportar")
-                    .child(todo_badge()),
+                    .child("Exportar…"),
                 false,
                 cx,
                 |v, _, cx| {
-                    v.status = "TODO · Exportar MusicXML, MIDI y PDF".into();
-                    cx.notify();
+                    v.export_pdf(cx);
                 },
             )
             .px_3()
@@ -444,25 +459,183 @@ fn music_symbol(
     frame: (f32, f32),
     color: u32,
 ) -> impl IntoElement {
+    music_glyphs(
+        view,
+        [(text.into(), Point::default(), font_size)],
+        frame,
+        color,
+    )
+}
+
+const CHORD_NOTE: &str = "\u{e1d5}";
+const STAFF_SYMBOL: &str = "\u{e014}";
+const BAR_SYMBOL: &str = "\u{e030}";
+
+fn music_staff(view: &AppView, size: f32, color: u32, bar: bool) -> impl IntoElement {
+    let font_size = size * 0.8;
+    let staff = view.music_font.bounds(STAFF_SYMBOL, font_size);
+    div().flex().items_center().child(if bar {
+        music_glyphs(
+            view,
+            [
+                (STAFF_SYMBOL.into(), Point::default(), font_size),
+                (
+                    BAR_SYMBOL.into(),
+                    point(staff.size.width * 0.6, px(0.)),
+                    font_size,
+                ),
+            ],
+            (size * 0.7, size * 0.8),
+            color,
+        )
+        .into_any_element()
+    } else {
+        music_symbol(
+            view,
+            STAFF_SYMBOL,
+            font_size,
+            (size * 0.7, size * 0.8),
+            color,
+        )
+        .into_any_element()
+    })
+}
+
+fn music_chord(view: &AppView, size: f32, color: u32) -> impl IntoElement {
+    let font_size = size * 0.8;
+    // Thirds are one staff space apart. Identical x positions make the original
+    // Bravura stems overlap into one stem without altering any glyph outlines.
+    let space = font_size / 4.;
+    music_glyphs(
+        view,
+        [0., space, 2. * space].map(|y| (CHORD_NOTE.into(), point(px(0.), px(y)), font_size)),
+        (size * 0.7, size * 0.8),
+        color,
+    )
+}
+
+pub(crate) const CONNECTION_HEAD: &str = "\u{e0a4}"; // Bravura noteheadBlack.
+pub(crate) const CONNECTION_UP: &str = "\u{e1d5}"; // Bravura noteQuarterUp.
+pub(crate) const CONNECTION_DOWN: &str = "\u{e1d6}"; // Bravura noteQuarterDown.
+
+/// An engraved curve: thin at both ends, `thickness` thick in the middle,
+/// bowing by `bend` (negative bends upward).
+fn engraved_curve(
+    from: Point<Pixels>,
+    to: Point<Pixels>,
+    bend: f32,
+    thickness: f32,
+) -> Option<Path<Pixels>> {
+    let span = to.x - from.x;
+    let control = |t: f32, bend: f32| point(from.x + span * t, from.y + px(bend));
+    let inner = bend - thickness.copysign(bend);
+    let mut path = PathBuilder::fill();
+    path.move_to(from);
+    path.cubic_bezier_to(to, control(0.25, bend * 1.33), control(0.75, bend * 1.33));
+    path.cubic_bezier_to(
+        from,
+        control(0.75, inner * 1.33),
+        control(0.25, inner * 1.33),
+    );
+    path.close();
+    path.build().ok()
+}
+
+/// Ribbon icons for the two connections, engraved as notation programs show
+/// them: a tie joins two quarter notes on the same pitch under their heads; a
+/// slur arches over two stem-down quarters a step apart. Stems keep both
+/// readable as notes at toolbar size.
+fn music_connection(view: &AppView, size: f32, color: u32, slur: bool) -> impl IntoElement {
     let font = view.music_font.clone();
-    let text = text.into();
-    let ink = font.bounds(&text, font_size);
+    let note_size = size * 0.72;
+    let space = note_size / 4.;
+    let head = f32::from(font.bounds(CONNECTION_HEAD, note_size).size.width);
+    let width = size * 1.05;
+    let ink = if slur { 6.1 * space } else { 5.1 * space };
+    let height = (size * 0.8).max(ink + 2.);
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let top = f32::from(bounds.size.height) / 2. - ink / 2.;
+            let at = |x: f32, y: f32| bounds.origin + point(px(x), px(top + y));
+            let xs = [width * 0.24, width * 0.76];
+            // Bravura notes sit with their head centred on the baseline.
+            if slur {
+                let ys = [2.6 * space, 1.6 * space];
+                for (x, y) in xs.into_iter().zip(ys) {
+                    font.paint_sized(
+                        CONNECTION_DOWN,
+                        at(x - head / 2., y),
+                        color,
+                        note_size,
+                        window,
+                    );
+                }
+                if let Some(path) = engraved_curve(
+                    at(xs[0] - head * 0.3, ys[0] - 0.85 * space),
+                    at(xs[1] + head * 0.3, ys[1] - 0.85 * space),
+                    -0.9 * space,
+                    0.3 * space,
+                ) {
+                    window.paint_path(path, rgb(color));
+                }
+            } else {
+                let y = 3.6 * space;
+                for x in xs {
+                    font.paint_sized(
+                        CONNECTION_UP,
+                        at(x - head / 2., y),
+                        color,
+                        note_size,
+                        window,
+                    );
+                }
+                if let Some(path) = engraved_curve(
+                    at(xs[0] + head * 0.25, y + 0.75 * space),
+                    at(xs[1] - head * 0.25, y + 0.75 * space),
+                    0.8 * space,
+                    0.3 * space,
+                ) {
+                    window.paint_path(path, rgb(color));
+                }
+            }
+        },
+    )
+    .w(px(width))
+    .h(px(height))
+    .flex_shrink_0()
+}
+
+/// Center the combined ink of original Bravura glyphs at their own baselines.
+fn music_glyphs<const N: usize>(
+    view: &AppView,
+    glyphs: [(SharedString, Point<Pixels>, f32); N],
+    frame: (f32, f32),
+    color: u32,
+) -> impl IntoElement {
+    let font = view.music_font.clone();
+    let ink = glyphs
+        .iter()
+        .map(|(text, offset, font_size)| {
+            let mut bounds = font.bounds(text, *font_size);
+            bounds.origin += *offset;
+            bounds
+        })
+        .reduce(|bounds, next| bounds.union(&next))
+        .unwrap_or_default();
     let width = px(frame.0).max(ink.size.width + px(4.));
     let height = px(frame.1).max(ink.size.height + px(4.));
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
-            font.paint_sized(
-                &text,
-                bounds.origin
-                    + point(
-                        (bounds.size.width - ink.size.width) / 2. - ink.origin.x,
-                        (bounds.size.height - ink.size.height) / 2. - ink.origin.y,
-                    ),
-                color,
-                font_size,
-                window,
-            )
+            let origin = bounds.origin
+                + point(
+                    (bounds.size.width - ink.size.width) / 2. - ink.origin.x,
+                    (bounds.size.height - ink.size.height) / 2. - ink.origin.y,
+                );
+            for (text, offset, font_size) in &glyphs {
+                font.paint_sized(text, origin + *offset, color, *font_size, window);
+            }
         },
     )
     .w(width)
@@ -550,34 +723,15 @@ fn accidental_label(view: &AppView, sign: Option<Accidental>, selected: bool) ->
     }
 }
 pub(super) fn instrument_name(score: &score_core::Score, id: PartId) -> String {
-    let Some(part) = score.part(id) else {
-        return String::new();
-    };
-    let matches: Vec<_> = score
-        .parts()
-        .iter()
-        .filter(|p| p.instrument() == part.instrument())
-        .map(|p| p.id())
-        .collect();
-    if matches.len() > 1 {
-        let index = matches.iter().position(|part| *part == id).unwrap_or(0);
-        format!(
-            "{} {}",
-            part.instrument().name(),
-            [
-                "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII",
-                "XIV"
-            ][index]
-        )
-    } else {
-        part.instrument().name().to_owned()
-    }
+    score.part_name(id)
 }
+
 fn clef_name(clef: score_core::Clef) -> &'static str {
     match clef {
         score_core::Clef::Treble => "sol",
         score_core::Clef::Alto => "do",
         score_core::Clef::Bass => "fa",
+        score_core::Clef::Percussion => "percusión",
     }
 }
 fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
@@ -588,12 +742,15 @@ fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
         .pb_3()
         .border_b_1()
         .border_color(rgb(BORDER))
+        .child(signature_scope(view, cx))
+        .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("Tonalidad de la obra en altura real. Cada parte adapta su armadura."))
         .child(
             div().flex().gap_1().children(
                 [(KeyMode::Major, "Mayores"), (KeyMode::Minor, "Menores")]
                     .into_iter()
                     .map(|(mode, label)| {
                         button(
+                            view,
                             format!("keys-{label}"),
                             label,
                             view.key_mode == mode,
@@ -612,7 +769,7 @@ fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_size(px(10.))
                 .text_color(rgb(MUTED))
                 .py_2()
-                .child("Para toda la partitura. Los signos individuales tienen prioridad."),
+                .child("Hasta el siguiente cambio, en todos los instrumentos. Los signos individuales tienen prioridad."),
         )
         .children(
             [0, 1, 2, 3, 4, 5, 6, 7, -1, -2, -3, -4, -5, -6, -7]
@@ -620,37 +777,194 @@ fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .map(|fifths| {
                     let key = KeySignature::new(fifths, view.key_mode).unwrap();
                     button(
+                        view,
                         format!("key-{fifths}"),
                         key.label(),
-                        view.document.editor.score().key_signature() == key,
+                        view.document.editor.score().key_signature_at(view.signature_measure()) == key,
                         cx,
                         move |v, _, cx| v.choose_key(key, cx),
                     )
                     .w_full()
                 }),
         )
+        .when(view.signature_measure() > 0 && view.document.editor.score().key_change_at(view.signature_measure()).is_some(), |picker| {
+            picker.child(button(view, "remove-key-change", "Quitar cambio de tonalidad", false, cx, |v, _, cx| {
+                v.edit(Command::RemoveKeyChange(v.signature_measure()), cx);
+            }).w_full())
+        })
 }
-fn page_thumbnail(parts: usize) -> impl IntoElement {
-    canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            window.paint_quad(fill(bounds, rgb(0xf4f0e6)));
-            for staff in 0..parts.clamp(1, 5) {
-                for line in 0..5 {
-                    window.paint_quad(fill(
-                        Bounds::new(
-                            bounds.origin
-                                + point(px(7.), px(24. + staff as f32 * 11. + line as f32 * 1.4)),
-                            size(px(43.), px(0.5)),
+
+fn signature_scope(view: &AppView, cx: &Context<AppView>) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(caption("APLICAR DESDE"))
+        .children(
+            [
+                (true, "Inicio de la pieza".to_owned()),
+                (
+                    false,
+                    format!(
+                        "Compás {}",
+                        view.tempo_picker
+                            .as_ref()
+                            .map_or(view.document.editor.cursor().measure, |editor| editor
+                                .measure)
+                            + 1
+                    ),
+                ),
+            ]
+            .into_iter()
+            .map(|(from_start, label)| {
+                button(
+                    view,
+                    format!("signature-scope-{from_start}"),
+                    label,
+                    view.signature_from_start == from_start,
+                    cx,
+                    move |v, _, cx| {
+                        v.signature_from_start = from_start;
+                        v.sync_signature_controls(cx);
+                        cx.notify();
+                    },
+                )
+                .w_full()
+            }),
+        )
+        .child(
+            button(
+                view,
+                "close-signature-picker",
+                "Volver a instrumentos",
+                false,
+                cx,
+                |v, _, cx| {
+                    v.time_picker = false;
+                    v.tempo_picker = None;
+                    v.key_picker = false;
+                    cx.notify();
+                },
+            )
+            .w_full(),
+        )
+}
+
+fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
+    let time = view.pending_time;
+    div().flex().flex_col().gap_2().pb_3().border_b_1().border_color(rgb(BORDER))
+        .child(signature_scope(view, cx))
+        .child(caption("MÉTRICAS HABITUALES").mt_2())
+        .child(div().flex().flex_wrap().gap_1().children([(2,4), (3,4), (4,4), (5,4), (6,8), (7,8), (9,8), (12,8)].into_iter().map(|(numerator, denominator)| {
+            let value = score_core::TimeSignature { numerator, denominator };
+            button(view, format!("meter-{numerator}-{denominator}"), format!("{numerator}/{denominator}"), view.document.editor.score().time_at(view.signature_measure()) == value, cx, move |v, _, cx| v.choose_time(value, cx))
+        })))
+        .child(caption("PERSONALIZADA").mt_2())
+        .child(div().flex().items_center().gap_2()
+            .child(button(view, "meter-numerator-minus", "−", false, cx, |v, _, cx| { v.pending_time.numerator = v.pending_time.numerator.saturating_sub(1).max(1); cx.notify(); }))
+            .child(div().flex_1().text_center().child(format!("Numerador: {}", time.numerator)))
+            .child(button(view, "meter-numerator-plus", "+", false, cx, |v, _, cx| { v.pending_time.numerator = (v.pending_time.numerator + 1).min(16); cx.notify(); })))
+        .child(caption("DENOMINADOR"))
+        .child(div().flex().flex_wrap().gap_1().children([1,2,4,8,16].into_iter().map(|denominator| button(view, format!("meter-denominator-{denominator}"), denominator.to_string(), time.denominator == denominator, cx, move |v, _, cx| { v.pending_time.denominator = denominator; cx.notify(); }))))
+        .child(button(view, "apply-meter", format!("Aplicar {}/{}", time.numerator, time.denominator), false, cx, |v, _, cx| v.choose_time(v.pending_time, cx)).w_full())
+        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("Hasta el siguiente cambio, en todos los instrumentos. Se conservan las notas y los compases existentes."))
+        .when(view.signature_measure() > 0 && view.document.editor.score().time_change_at(view.signature_measure()).is_some(), |picker| {
+            picker.child(button(view, "remove-meter-change", "Quitar cambio de métrica", false, cx, |v, _, cx| v.edit(Command::RemoveTimeChange(v.signature_measure()), cx)).w_full())
+        })
+}
+fn page_navigation(view: &AppView, cx: &Context<AppView>) -> Div {
+    let paged = view.ui.view_mode == score_layout::ViewMode::Page;
+    let index = view
+        .viewport
+        .visible_page(&view.layout)
+        .min(view.layout.pages.len().saturating_sub(1));
+    div()
+        .border_t_1()
+        .border_color(rgb(BORDER))
+        .px_3()
+        .py_3()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(caption(if paged { "PÁGINAS" } else { "VISTA" }))
+        .when(paged, |panel| {
+            panel
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            button(view, "previous-page", "‹", false, cx, move |v, _, cx| {
+                                v.pending_page = Some(index.saturating_sub(1));
+                                cx.notify();
+                            })
+                            .opacity(if index > 0 {
+                                1.
+                            } else {
+                                0.35
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_center()
+                                .text_size(px(12.))
+                                .child(format!(
+                                    "Página {} de {}",
+                                    index + 1,
+                                    view.layout.pages.len()
+                                )),
+                        )
+                        .child(
+                            button(view, "next-page", "›", false, cx, move |v, _, cx| {
+                                v.pending_page =
+                                    Some((index + 1).min(v.layout.pages.len().saturating_sub(1)));
+                                cx.notify();
+                            })
+                            .opacity(
+                                if index + 1 < view.layout.pages.len() {
+                                    1.
+                                } else {
+                                    0.35
+                                },
+                            ),
                         ),
-                        rgb(0x8c8c88),
-                    ));
-                }
-            }
-        },
-    )
-    .w(px(57.))
-    .h(px(79.))
+                )
+                .when_some(view.layout.pages.get(index), |panel, page| {
+                    panel.child(
+                        div()
+                            .text_size(px(10.))
+                            .text_color(rgb(MUTED))
+                            .child(format!(
+                                "Compases {}–{}",
+                                page.first_measure + 1,
+                                page.last_measure + 1
+                            )),
+                    )
+                })
+        })
+        .when(!paged, |panel| {
+            panel
+                .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(
+                    if view.ui.view_mode == score_layout::ViewMode::Continuous {
+                        "Continua · Desplazamiento vertical"
+                    } else {
+                        "Pentagrama · Desplazamiento horizontal"
+                    },
+                ))
+                .child(
+                    button(
+                        view,
+                        "show-pages",
+                        "Mostrar páginas",
+                        false,
+                        cx,
+                        |v, _, cx| v.set_view_mode(score_layout::ViewMode::Page, cx),
+                    )
+                    .w_full(),
+                )
+        })
 }
 
 fn selected_beat(view: &AppView) -> f32 {
@@ -666,15 +980,16 @@ fn selected_beat(view: &AppView) -> f32 {
     };
     let count = editor
         .selection()
-        .and_then(|id| measure.index_of(id.event))
+        .and_then(|id| measure.voice_index_of(cursor.voice, id.event))
         .unwrap_or(cursor.index);
     let tick: u16 = measure
-        .iter()
+        .voice_iter(cursor.voice)
         .take(count)
         .map(|(_, e)| e.duration.ticks())
         .sum();
     1. + f32::from(tick)
-        / (f32::from(score_core::TICKS_PER_WHOLE) / f32::from(editor.score().time().denominator))
+        / (f32::from(score_core::TICKS_PER_WHOLE)
+            / f32::from(editor.score().time_at(cursor.measure).denominator))
 }
 fn beat_label(beat: f32) -> String {
     let text = format!("{beat:.2}");
@@ -718,7 +1033,7 @@ fn passage_bar(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(if count > 1 {
             format!("{count} elementos seleccionados")
         } else {
-            "Arrastra sobre las notas para seleccionar · Shift + clic amplía".to_owned()
+            "Clic sitúa la reproducción · Arrastra arriba/abajo para cambiar altura; horizontal para mover; Shift para seleccionar".to_owned()
         })
         .when(count > 1, |bar| {
             bar.child(
@@ -732,8 +1047,8 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
     let score = editor.score();
     let cursor = editor.cursor();
-    let time = score.time();
-    let position = view.playback.position(score, cursor);
+    let position = view.position;
+    let time = score.time_at(position.measure);
     div()
         .flex_1()
         .min_w_0()
@@ -788,21 +1103,33 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                         ))
                         .child(readout_content(
                             "TEMPO",
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .child(music_symbol(view, "\u{e1d5}", 24., (12., 20.), TEXT))
-                                .child(view.playback.tempo.bpm().to_string()),
-                        ))
-                        .child(readout(
-                            "MÉTRICA",
-                            format!("{}/{}", time.numerator, time.denominator),
+                            button(
+                                view,
+                                "tempo-readout",
+                                score.tempo_at(position.measure).label(),
+                                view.tempo_picker.is_some(),
+                                cx,
+                                move |v, _, cx| v.toggle_tempo_at(position.measure, cx),
+                            )
+                            .tooltip(command_hint(view, id::TEMPO_TEXT)),
                         ))
                         .child(
                             button(
+                                view,
+                                "meter-readout",
+                                format!("{}/{}", time.numerator, time.denominator),
+                                view.time_picker,
+                                cx,
+                                |v, _, cx| v.toggle_time_picker(cx),
+                            )
+                            .tooltip(command_hint(view, id::TIME_SIGNATURE))
+                            .mx_2(),
+                        )
+                        .child(
+                            button(
+                                view,
                                 "key-readout",
-                                score.key_signature().label(),
+                                score.key_signature_at(position.measure).label(),
                                 view.key_picker,
                                 cx,
                                 |v, _, cx| {
@@ -814,7 +1141,11 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                         )
                         .child(readout(
                             "PENTAGRAMA",
-                            format!("{} · Voz 1", instrument_name(score, cursor.part)),
+                            format!(
+                                "{} · Voz {}",
+                                instrument_name(score, cursor.part),
+                                cursor.voice.number()
+                            ),
                         )),
                 ),
         )
@@ -832,77 +1163,7 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                         .track_scroll(&view.viewport.scroll)
                         .py_6()
                         .px(px(64.))
-                        .child(
-                            div()
-                                .w(px(view.layout.width * view.layout.scale))
-                                .min_h(px(1050.))
-                                .bg(rgb(0xfbf9f3))
-                                .shadow_lg()
-                                .border_1()
-                                .border_color(rgb(0xe1ded6))
-                                .child(
-                                    div()
-                                        .pt(px(32.))
-                                        .pb_2()
-                                        .px_10()
-                                        .text_center()
-                                        .text_color(rgb(0x242323))
-                                        .font_family("Times New Roman")
-                                        .child(
-                                            div()
-                                                .text_size(px(29.))
-                                                .child(score.title().to_owned()),
-                                        )
-                                        .child(
-                                            div()
-                                                .mt_2()
-                                                .text_size(px(13.))
-                                                .text_color(rgb(0x67635c))
-                                                .child(format!(
-                                                    "{} · {}",
-                                                    score.key_signature().label(),
-                                                    if score.parts().len() == 1 {
-                                                        "para un instrumento".to_owned()
-                                                    } else {
-                                                        format!(
-                                                            "para {} instrumentos",
-                                                            score.parts().len()
-                                                        )
-                                                    }
-                                                )),
-                                        )
-                                        .child(
-                                            div()
-                                                .mt_3()
-                                                .text_right()
-                                                .text_size(px(10.))
-                                                .text_color(rgb(0x878277))
-                                                .child("Compositor · TODO"),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(AppView::begin_passage_selection),
-                                        )
-                                        .child(paint::score_canvas(
-                                            view.layout.clone(),
-                                            paint::CanvasState {
-                                                selection: editor.selection(),
-                                                selection_range: editor.selected_ids(),
-                                                cursor,
-                                                selected_pitch: editor.selected_pitch(),
-                                                selected_mark: view.selected_mark(),
-                                                playheads: view.playback.playheads.clone(),
-                                                position,
-                                                capacity: time.capacity(),
-                                            },
-                                            cx.weak_entity(),
-                                            view.music_font.clone(),
-                                        )),
-                                ),
-                        ),
+                        .child(score_surface(view, cx)),
                 )
                 .child(
                     div()
@@ -918,17 +1179,24 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                         .bg(rgb(PANEL))
                         .border_1()
                         .border_color(rgb(0x3a3d46))
-                        .child(pending("page-mode-todo", "Página", cx))
-                        .child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x373a43))
-                                .text_size(px(11.))
-                                .child("Continua"),
+                        .children(
+                            [
+                                score_layout::ViewMode::Page,
+                                score_layout::ViewMode::Continuous,
+                                score_layout::ViewMode::SingleSystem,
+                            ]
+                            .into_iter()
+                            .map(|mode| {
+                                button(
+                                    view,
+                                    format!("score-view-{mode:?}"),
+                                    mode.label(),
+                                    view.ui.view_mode == mode,
+                                    cx,
+                                    move |v, _, cx| v.set_view_mode(mode, cx),
+                                )
+                            }),
                         )
-                        .child(pending("single-staff-todo", "Pentagrama", cx))
                         .child(
                             div()
                                 .text_size(px(10.))
@@ -936,13 +1204,112 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
                                 .px_2()
                                 .child(format!("{} %", (view.ui.zoom * 100.).round() as u16)),
                         )
-                        .child(button("zoom-out", "−", false, cx, |v, window, cx| {
-                            v.run(id::ZOOM_OUT, window, cx)
-                        }))
-                        .child(button("zoom-in", "+", false, cx, |v, window, cx| {
+                        .child(button(
+                            view,
+                            "zoom-out",
+                            "−",
+                            false,
+                            cx,
+                            |v, window, cx| v.run(id::ZOOM_OUT, window, cx),
+                        ))
+                        .child(button(view, "zoom-in", "+", false, cx, |v, window, cx| {
                             v.run(id::ZOOM_IN, window, cx)
                         }))
                         .child(div()),
+                ),
+        )
+}
+
+fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
+    let editor = &view.document.editor;
+    let score = editor.score();
+    let scale = view.layout.scale;
+    let header_width = if view.ui.view_mode == score_layout::ViewMode::SingleSystem {
+        view.layout.width.min(1000.)
+    } else {
+        view.layout.width
+    };
+    div()
+        .relative()
+        .flex_shrink_0()
+        .w(px(view.layout.width * scale))
+        .h(px(view.layout.height * scale))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(AppView::begin_passage_selection),
+        )
+        .child(paint::score_canvas(
+            view.layout.clone(),
+            paint::CanvasState {
+                notation_point: view.document.editor.divisi_position(),
+                selection: editor.selection(),
+                selection_range: editor.selected_ids(),
+                cursor: editor.cursor(),
+                selected_pitch: view
+                    .note_drag
+                    .as_ref()
+                    .and_then(|d| d.target)
+                    .or_else(|| editor.selected_pitch()),
+                selected_mark: view.selected_mark(),
+                playheads: view.playback.playheads.clone(),
+                position: view.position,
+                time_target: view.note_drag.as_ref().and_then(|drag| drag.time_target),
+            },
+            cx.weak_entity(),
+            view.music_font.clone(),
+        ))
+        .child(
+            div()
+                .absolute()
+                .top(px(35. * scale))
+                .left_0()
+                .w(px(header_width * scale))
+                .px(px(48. * scale))
+                .text_center()
+                .text_color(rgb(0x242323))
+                .font_family("Times New Roman")
+                .child(
+                    div()
+                        .text_size(px(40. * scale))
+                        .line_height(px(46. * scale))
+                        .h(px(46. * scale))
+                        .truncate()
+                        .child(
+                            inline_text(view.music_font.clone(), score.title()).justify_center(),
+                        ),
+                )
+                .child(
+                    div()
+                        .mt(px(12. * scale))
+                        .text_size(px(18. * scale))
+                        .line_height(px(24. * scale))
+                        .h(px(24. * scale))
+                        .truncate()
+                        .text_color(rgb(0x67635c))
+                        .child(
+                            inline_text(
+                                view.music_font.clone(),
+                                format!(
+                                    "{} · {}",
+                                    score.key_signature().label(),
+                                    if score.parts().len() == 1 {
+                                        "para un instrumento".to_owned()
+                                    } else {
+                                        format!("para {} instrumentos", score.parts().len())
+                                    }
+                                ),
+                            )
+                            .justify_center(),
+                        ),
+                )
+                .child(
+                    div()
+                        .mt(px(18. * scale))
+                        .text_right()
+                        .text_size(px(14. * scale))
+                        .line_height(px(18. * scale))
+                        .text_color(rgb(0x878277))
+                        .child("Compositor · TODO"),
                 ),
         )
 }
@@ -987,6 +1354,7 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                         .into_iter()
                         .map(|tab| {
                             button(
+                                view,
                                 format!("inspector-{tab}"),
                                 tab,
                                 view.ui.inspector == tab,
@@ -1036,7 +1404,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
     let score = editor.score();
     let cursor = editor.cursor();
-    let key = score.key_signature();
+    let key = score.written_key_at(cursor.part, cursor.measure);
     let event = editor.selection().and_then(|id| score.event(id));
     let pitch = editor.selected_pitch();
     let selected_count = editor.selected_ids().len();
@@ -1093,11 +1461,11 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                                     .border_color(rgb(BORDER))
                                     .bg(rgb(FIELD))
                                     .text_size(px(12.))
-                                    .child(
+                                    .child(inline_text(view.music_font.clone(),
                                         pitch
                                             .map(|p| note_name(p.in_key(key)))
                                             .unwrap_or_else(|| format!("Octava {}", editor.octave)),
-                                    ),
+                                    )),
                             ),
                     )
                     .child(
@@ -1117,15 +1485,15 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                                     .border_color(rgb(BORDER))
                                     .bg(rgb(FIELD))
                                     .text_size(px(12.))
-                                    .child(event.map_or(editor.duration, |e| e.duration).label()),
+                                    .child(active_duration(view).label()),
                             )
-                            .when(event.is_some(), |column| column.child(todo_badge())),
+                            .child(caption("Elige la figura en la cinta de Entrada")),
                     ),
             )
             .when(event.is_some_and(|e| e.pitches.len() > 1), |body| {
                 body.child(div().flex().flex_wrap().gap_1().children(
                     event.unwrap().pitches.iter().enumerate().map(|(index, p)| {
-                        button(
+                        button(view,
                             format!("tone-{index}"),
                             note_name(p.in_key(key)),
                             Some(p) == pitch,
@@ -1144,7 +1512,8 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
             .child(div().flex().flex_wrap().gap_1()
                 .child(command_button("property-dotted", "Puntillo", active_duration(view).is_dotted(), view, cx, id::DOT))
                 .child(command_button("property-triplet", "Tresillo 3:2", active_duration(view).is_triplet(), view, cx, id::TRIPLET)))
-            .child(caption("En entrada se conserva el modo. Los tresillos se agrupan de tres en tres con la misma figura."))
+            .child(caption(if view.ui.note_entry { "N desactiva la entrada para corregir notas existentes." } else { "A–G cambia la nota seleccionada. Backspace la convierte en silencio. N activa la entrada." }))
+            .child(caption("Los tresillos se agrupan de tres en tres con la misma figura."))
             .child(caption("Alteración de la nota"))
             .child(
                 div().flex().gap_1().children(
@@ -1168,49 +1537,15 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     }),
                 ),
             )
-            .child(caption("Voz"))
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_center()
-                            .rounded_md()
-                            .p_2()
-                            .text_size(px(11.))
-                            .text_color(rgb(BLUE))
-                            .bg(rgb(SELECT))
-                            .child("●  1"),
-                    )
-                    .children(["2", "3", "4"].into_iter().map(|voice| {
-                        div()
-                            .flex_1()
-                            .text_center()
-                            .rounded_md()
-                            .p_2()
-                            .text_size(px(10.))
-                            .text_color(rgb(MUTED))
-                            .bg(rgb(FIELD))
-                            .child(format!("● {voice}"))
-                            .child(todo_badge())
-                    })),
-            )
-            .child(caption("Plica · TODO"))
-            .child(div().flex().gap_1().children(
-                ["Auto", "Arriba", "Abajo"].into_iter().map(|text| {
-                    div()
-                        .flex_1()
-                        .rounded_md()
-                        .py_1()
-                        .text_center()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .bg(rgb(FIELD))
-                        .child(text)
-                }),
-            )),
+            .child(caption("Voz activa"))
+            .child(div().flex().gap_2()
+                .child(command_button("property-voice-one", "Voz 1", cursor.voice == score_core::Voice::One, view, cx, id::VOICE_1))
+                .child(command_button("property-voice-two", "Voz 2", cursor.voice == score_core::Voice::Two, view, cx, id::VOICE_2)))
+            .child(caption("Dos voces: plicas arriba para la voz 1 y abajo para la voz 2. Cada una conserva su propio ritmo."))
+            .child(div().flex().flex_wrap().gap_2()
+                .child(command_button("property-divisi", "div.", view.state(id::DIVISI).checked, view, cx, id::DIVISI))
+                .child(command_button("property-unison", "unis.", view.state(id::UNISON).checked, view, cx, id::UNISON)))
+            .child(caption("div. abre dos pentagramas desde la posición elegida; unis. vuelve a uno. También dentro de un compás."))
         )
         .child(expression_properties(view, cx))
         .child(
@@ -1247,7 +1582,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     div()
                         .flex()
                         .gap_2()
-                        .child(button(
+                        .child(button(view,
                             "octave-down",
                             "− Octava",
                             false,
@@ -1260,7 +1595,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                                 }
                             },
                         ))
-                        .child(button("octave-up", "+ Octava", false, cx, |v, _, cx| {
+                        .child(button(view, "octave-up", "+ Octava", false, cx, |v, _, cx| {
                             if !v.busy && !v.confirming {
                                 v.document.editor.octave = (v.document.editor.octave + 1).min(8);
                                 cx.notify();
@@ -1268,7 +1603,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                         })),
                 )
                 .child(
-                    button(
+                    button(view,
                         "insert-rest",
                         "Introducir silencio",
                         false,
@@ -1282,14 +1617,14 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     )
                     .tooltip(command_hint(view, id::REST)),
                 )
-                .child(button(
+                .child(button(view,
                     "property-chord",
                     "Añadir notas al acorde",
                     view.chord_entry,
                     cx,
                     |v, _, cx| v.toggle_chord(cx),
                 ))
-                .child(button(
+                .child(button(view,
                     "property-key",
                     format!("Tonalidad: {}", key.label()),
                     view.key_picker,
@@ -1304,7 +1639,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
             section("REPRODUCCIÓN")
                 .child(slider_placeholder("Velocidad personalizada", "TODO", 0.69))
                 .child(slider_placeholder("Duración personalizada", "TODO", 1.))
-                .child(button(
+                .child(button(view,
                     "audition-property",
                     if view.playback.audition {
                         "● Audición al escribir"
@@ -1329,6 +1664,9 @@ fn selected_articulation(view: &AppView) -> Option<Articulation> {
 }
 fn active_duration(view: &AppView) -> Duration {
     let editor = &view.document.editor;
+    if view.ui.note_entry {
+        return editor.duration;
+    }
     editor
         .selection()
         .and_then(|id| editor.score().event(id))
@@ -1447,12 +1785,15 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     )))
             },
         )
-        .child(caption("Articulación y calderón del acorde o nota"))
+        .child(caption("Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo."))
+        .child(caption("Articulación, calderón, arpegio y armónico"))
         .child(
             div().flex().flex_wrap().gap_1().children(
                 MarkFamily::Articulation
                     .kinds()
                     .chain(MarkFamily::Fermata.kinds())
+                    .chain(MarkFamily::Arpeggio.kinds())
+                    .chain(MarkFamily::Harmonic.kinds())
                     .map(|kind| {
                         let written = view.document.editor.selection().and_then(|id| {
                             view.document.editor.score().point_mark(id, kind.family())
@@ -1469,11 +1810,24 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
             ),
         )
         .child(button(
+            view,
             "clear-articulation",
             "Sin articulación",
             selected_articulation(view).is_none(),
             cx,
             |v, _, cx| v.edit(Command::SetArticulation(None), cx),
+        ))
+        .child(command_button(
+            "arpeggio-both-hands",
+            "Arpegio en ambas manos",
+            view.document
+                .editor
+                .selection()
+                .and_then(|id| view.document.editor.score().arpeggio_at(id))
+                .is_some_and(|mark| mark.other_hand.is_some()),
+            view,
+            cx,
+            id::ARPEGGIO_BOTH_HANDS,
         ))
         .child(caption("Reguladores"))
         .child(hairpin_controls(view, cx, "property-hairpin"))
@@ -1507,6 +1861,7 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
             ),
         )
         .child(button(
+            view,
             "clear-dynamic",
             "Quitar indicación",
             false,
@@ -1551,6 +1906,7 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
                 .filter(|kind| selected_connection(view, *kind))
                 .map(|kind| {
                     button(
+                        view,
                         format!("remove-connection-{}", kind.label()),
                         format!("Quitar {}", kind.label().to_lowercase()),
                         false,
@@ -1599,9 +1955,9 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
         .instrument();
     section("SONIDO DEL INSTRUMENTO")
         .child(caption("FUENTE DE SONIDO"))
-        .child(button("sound-generaluser", "GeneralUser GS", view.playback.selected_bank.is_none(), cx, |v, _, cx| v.choose_sound(None, cx)).w_full())
+        .child(button(view, "sound-generaluser", "GeneralUser GS", view.playback.selected_bank.is_none(), cx, |v, _, cx| v.choose_sound(None, cx)).w_full())
         .children(view.playback.banks.iter().enumerate().map(|(index, bank)| {
-            button(format!("sound-{}", bank.id()), bank.name(), view.playback.selected_bank == Some(index), cx,
+            button(view, format!("sound-{}", bank.id()), bank.name(), view.playback.selected_bank == Some(index), cx,
                 move |v, _, cx| v.choose_sound(Some(index), cx)).w_full()
         }))
         .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
@@ -1612,7 +1968,9 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             div()
                 .text_size(px(11.))
                 .text_color(rgb(MUTED))
-                .child(format!(
+                .child(if let Some(harmonic) = editor.selection().and_then(|id| editor.score().event(id)).and_then(|event| event.notation.harmonic) {
+                    format!("{} · {}\nSíntesis de armónicos", harmonic.label(), editor.selection().and_then(|id| editor.score().technique_at(id)).unwrap_or_default().label())
+                } else { format!(
                     "General MIDI {}\n{}",
                     editor
                         .selection()
@@ -1621,10 +1979,11 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
                         .program(instrument)
                         + 1,
                     view.playback.sound_name(),
-                )),
+                ) }),
         )
+        .when(instrument.family() == score_core::InstrumentFamily::Strings, |body| body.child(caption("Armónicos con timbre sintetizado: sostenidos al arco y resonantes en pizzicato.")))
         .when_some(view.playback.sound_description(), |body, description| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(description)))
-        .child(button(
+        .child(button(view,
             "add-from-sounds",
             "+ Añadir instrumento",
             false,
@@ -1633,11 +1992,13 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
                 v.ui.show_instruments = true;
                 v.open_instrument_picker(cx);
                 v.key_picker = false;
+                v.time_picker = false;
+                    v.tempo_picker = None;
                 cx.notify();
             },
         ))
         .when(editor.score().parts().len() > 1, |body| {
-            body.child(button(
+            body.child(button(view,
                 "remove-part",
                 "Quitar instrumento",
                 false,
@@ -1652,7 +2013,7 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
                     .text_color(rgb(0xf2b282))
                     .child(view.playback.error.clone().unwrap()),
             )
-            .child(button(
+            .child(button(view,
                 "reconnect-audio",
                 "Reintentar audio",
                 false,
@@ -1666,11 +2027,10 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
 }
 fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();
-    let position = view.playback.position(score, view.document.editor.cursor());
+    let position = view.position;
     let seconds = position.seconds;
     let bar = position.measure;
     let beat = position.beat;
-    let bars = score.measures().len();
     let progress = position.progress;
     div()
         .h(px(67.))
@@ -1726,8 +2086,11 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                     cx.notify();
                 },
             )
-            .w(px(56.))
+            .min_w(px(76.))
+            .px_2()
+            .gap_2()
             .h(px(28.))
+            .tooltip(hover_hint("Reproducción en bucle · pendiente", None))
             .child(todo_badge()),
         )
         .child(
@@ -1780,21 +2143,28 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                         .items_center()
                         .gap_1()
                         .child(
-                            button("tempo-minus", "−", false, cx, |v, _, cx| {
-                                v.playback.change_tempo(-5);
+                            button(view, "tempo-minus", "−", false, cx, |v, _, cx| {
+                                v.change_written_tempo(-5, cx);
                                 cx.notify();
                             })
                             .h(px(22.))
                             .px_1(),
                         )
                         .child(
-                            div()
-                                .text_size(px(12.))
-                                .child(view.playback.tempo.bpm().to_string()),
+                            button(
+                                view,
+                                "tempo-value",
+                                score.tempo_at(position.measure).bpm.to_string(),
+                                view.tempo_picker.is_some(),
+                                cx,
+                                move |v, _, cx| v.toggle_tempo_at(position.measure, cx),
+                            )
+                            .h(px(22.))
+                            .px_1(),
                         )
                         .child(
-                            button("tempo-plus", "+", false, cx, |v, _, cx| {
-                                v.playback.change_tempo(5);
+                            button(view, "tempo-plus", "+", false, cx, |v, _, cx| {
+                                v.change_written_tempo(5, cx);
                                 cx.notify();
                             })
                             .h(px(22.))
@@ -1802,7 +2172,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                         ),
                 ),
         )
-        .child(timeline(bars, score.time().numerator, progress, cx))
+        .child(timeline(score, progress, cx))
         .child(
             div()
                 .id("sound-source")
@@ -1839,7 +2209,18 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                 .child(todo_badge()),
         )
 }
-fn timeline(bars: usize, beats: u8, progress: f32, cx: &Context<AppView>) -> impl IntoElement {
+fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> impl IntoElement {
+    let bars = score.measures().len();
+    let total = score.total_ticks() as f32;
+    let boundaries: Vec<_> = (0..bars)
+        .map(|bar| {
+            (
+                score.measure_start_tick(bar) as f32 / total,
+                score.measure_start_tick(bar + 1) as f32 / total,
+                score.time_at(bar).numerator,
+            )
+        })
+        .collect();
     let hit_bounds = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
     let painted_bounds = hit_bounds.clone();
     div()
@@ -1858,7 +2239,7 @@ fn timeline(bars: usize, beats: u8, progress: f32, cx: &Context<AppView>) -> imp
                         f32::from(bounds.size.width),
                     );
                     view.focus.focus(window);
-                    view.seek_playback(tick, cx);
+                    view.seek_playback(tick, true, cx);
                     cx.stop_propagation();
                 }
             }),
@@ -1880,32 +2261,30 @@ fn timeline(bars: usize, beats: u8, progress: f32, cx: &Context<AppView>) -> imp
                     let width = f32::from(bounds.size.width);
                     let usable = (width - 16.).max(1.);
                     let step = (bars as f32 * 48. / usable).ceil().max(1.) as usize;
-                    let bar_width = usable / bars.max(1) as f32;
-                    for index in (0..bars).step_by(step) {
-                        let x = 8. + bar_width * index as f32;
-                        paint::text_at(
-                            &(index + 1).to_string(),
-                            font(".SystemUIFont"),
-                            9.,
-                            bounds.origin + point(px(x + 3.), px(12.)),
-                            MUTED,
-                            window,
-                            cx,
-                        );
-                        window.paint_quad(fill(
-                            Bounds::new(
-                                bounds.origin + point(px(x), px(17.)),
-                                size(px(1.), px(17.)),
-                            ),
-                            rgb(0x606572),
-                        ));
-                    }
-                    if bar_width / f32::from(beats) >= 7. {
-                        for index in 0..bars {
-                            for beat in 1..beats {
-                                let x = 8.
-                                    + bar_width
-                                        * (index as f32 + f32::from(beat) / f32::from(beats));
+                    for (index, (start, end, beats)) in boundaries.iter().enumerate() {
+                        let x = 8. + usable * start;
+                        let bar_width = usable * (end - start);
+                        if index % step == 0 {
+                            paint::text_at(
+                                &(index + 1).to_string(),
+                                font(".SystemUIFont"),
+                                9.,
+                                bounds.origin + point(px(x + 3.), px(12.)),
+                                MUTED,
+                                window,
+                                cx,
+                            );
+                            window.paint_quad(fill(
+                                Bounds::new(
+                                    bounds.origin + point(px(x), px(17.)),
+                                    size(px(1.), px(17.)),
+                                ),
+                                rgb(0x606572),
+                            ));
+                        }
+                        if bar_width / f32::from(*beats) >= 7. {
+                            for beat in 1..*beats {
+                                let x = x + bar_width * f32::from(beat) / f32::from(*beats);
                                 window.paint_quad(fill(
                                     Bounds::new(
                                         bounds.origin + point(px(x), px(27.)),
@@ -1931,7 +2310,12 @@ fn timeline(bars: usize, beats: u8, progress: f32, cx: &Context<AppView>) -> imp
 
 fn statusbar(view: &AppView) -> Div {
     let score = view.document.editor.score();
-    let time = score.time();
+    let measure = view.position.measure;
+    let time = score.time_at(measure);
+    let recovery_ready = view
+        .quit_snapshot
+        .as_ref()
+        .is_some_and(|recovery| recovery.last_error().is_none());
     let status = if view.busy {
         "Procesando archivo…".to_owned()
     } else if let Some(error) = &view.playback.error {
@@ -1959,25 +2343,44 @@ fn statusbar(view: &AppView) -> Div {
                     div()
                         .text_color(rgb(0xb8ceff))
                         .child(if view.ui.note_entry {
-                            "Entrada de notas · Voz 1"
+                            format!(
+                                "Entrada de notas · Voz {}",
+                                view.document.editor.cursor().voice.number()
+                            )
                         } else {
-                            "Selección · Voz 1"
+                            format!(
+                                "Selección · Voz {}",
+                                view.document.editor.cursor().voice.number()
+                            )
                         }),
                 )
-                .child(div().text_color(rgb(MUTED)).child(format!(
-                    "{} · {}/{} · {} instrumentos",
-                    score.key_signature().label(),
-                    time.numerator,
-                    time.denominator,
-                    score.parts().len()
+                .child(div().text_color(rgb(MUTED)).child(inline_text(
+                    view.music_font.clone(),
+                    format!(
+                        "{} · {}/{} · {} instrumentos",
+                        score.key_signature_at(measure).label(),
+                        time.numerator,
+                        time.denominator,
+                        score.parts().len()
+                    ),
                 )))
                 .child(
                     div()
                         .min_w_0()
                         .truncate()
                         .text_color(rgb(MUTED))
-                        .child(status),
+                        .child(inline_text(view.music_font.clone(), status)),
                 ),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_color(rgb(if recovery_ready { MUTED } else { 0xe69292 }))
+                .child(if recovery_ready {
+                    "Autoguardado activo"
+                } else {
+                    "Autoguardado no disponible"
+                }),
         )
         .child(
             div()

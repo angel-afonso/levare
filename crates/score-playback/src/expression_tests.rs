@@ -1,4 +1,90 @@
 use super::*;
+
+#[test]
+fn tempo_changes_keep_a_tied_crescendos_level_on_its_musical_slope() {
+    use score_core::{Connection, ConnectionKind, Dynamic, TempoMark};
+    let mut score = Score::default();
+    let mut ids = Vec::new();
+    for bar in 0..4 {
+        ids.push(
+            score
+                .insert(
+                    bar,
+                    0,
+                    score_core::Event {
+                        pitches: score_core::Pitches::single(score_core::Pitch::new(
+                            score_core::Step::C,
+                            4,
+                        )),
+                        duration: score_core::Duration::Whole,
+                        notation: Default::default(),
+                    },
+                )
+                .unwrap(),
+        );
+    }
+    score.set_dynamic(ids[0], Some(Dynamic::Pp)).unwrap();
+    score.set_dynamic(ids[3], Some(Dynamic::Ff)).unwrap();
+    for pair in ids.windows(2) {
+        score
+            .add_connection(Connection {
+                start: pair[0],
+                end: pair[1],
+                kind: ConnectionKind::Tie,
+            })
+            .unwrap();
+    }
+    score
+        .add_connection(Connection {
+            start: ids[0],
+            end: ids[3],
+            kind: ConnectionKind::Crescendo,
+        })
+        .unwrap();
+    score
+        .set_tempo_at(
+            1,
+            TempoMark {
+                bpm: 60,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    score
+        .set_tempo_at(
+            2,
+            TempoMark {
+                bpm: 180,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    let reference = f64::from(plan.sounds[0].reference_level);
+    for tick in [96, 192, 240, 384, 480, 575] {
+        let frame = plan.timeline.frame_at(tick, 48_000);
+        let cc = plan
+            .messages
+            .iter()
+            .filter(|m| m.frame <= frame)
+            .filter_map(|m| {
+                if let Message::Expression(value) = m.message {
+                    Some(value)
+                } else {
+                    None
+                }
+            })
+            .next_back()
+            .unwrap();
+        let level = f64::from(Dynamic::Pp.velocity())
+            + (f64::from(Dynamic::Ff.velocity()) - f64::from(Dynamic::Pp.velocity())) * tick as f64
+                / 576.;
+        assert!(
+            (f64::from(cc) - (level * 127. / reference).round()).abs() <= 1.,
+            "tick {tick}: {cc}"
+        );
+    }
+}
 use score_core::{Articulation, Connection, ConnectionKind, Duration, Dynamic, Event, Notation};
 fn note(step: Step, duration: Duration) -> Event {
     Event {
@@ -568,4 +654,481 @@ fn slurs_connect_notes_with_a_short_overlap_and_unslurred_notes_detach() {
             .unwrap()
             .legato
     );
+}
+
+#[test]
+fn local_keys_and_meters_schedule_notes_and_fermata_on_the_shared_timeline() {
+    use score_core::{KeyMode, KeySignature, TimeSignature};
+    let mut score = Score::default();
+    score
+        .set_time_signature_at(
+            1,
+            TimeSignature {
+                numerator: 3,
+                denominator: 4,
+            },
+        )
+        .unwrap();
+    score
+        .set_key_signature_at(2, KeySignature::new(1, KeyMode::Major).unwrap())
+        .unwrap();
+    let a = score
+        .insert(1, 0, note(Step::F, Duration::Quarter))
+        .unwrap();
+    let b = score
+        .insert(2, 0, note(Step::F, Duration::Quarter))
+        .unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    assert!(
+        plan.messages
+            .iter()
+            .any(|m| m.frame == 96_000
+                && matches!(m.message, Message::NoteOn(note) if note.key == 65))
+    );
+    assert!(plan.messages.iter().any(
+        |m| m.frame == 168_000 && matches!(m.message, Message::NoteOn(note) if note.key == 66)
+    ));
+    let preview = Audition::for_element(&score, b, Tempo::default(), 48_000).unwrap();
+    assert_eq!(preview.keys[0], Some(66));
+    score.set_fermata(a, true).unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    assert!(plan.messages.iter().any(
+        |m| m.frame == 192_000 && matches!(m.message, Message::NoteOn(note) if note.key == 66)
+    ));
+}
+
+#[test]
+fn arpeggios_roll_sounding_keys_and_seek_chases_only_attacked_tones() {
+    use score_core::{Arpeggio, Connection, ConnectionKind, Duration, Event, Notation};
+    for mark in Arpeggio::ALL {
+        for rate in [16_000, 48_000, 192_000] {
+            let mut score = Score::default();
+            let event = Event {
+                pitches: Pitches::new(&[
+                    Pitch::new(Step::C, 4).unwrap(),
+                    Pitch::new(Step::E, 4).unwrap(),
+                    Pitch::new(Step::G, 4).unwrap(),
+                ])
+                .unwrap(),
+                duration: Duration::Quarter,
+                notation: Notation::default(),
+            };
+            let first = score.insert(0, 0, event).unwrap();
+            let second = score.insert(0, 1, event).unwrap();
+            score.set_arpeggio(first, Some(mark)).unwrap();
+            score
+                .add_connection(Connection {
+                    start: first,
+                    end: second,
+                    kind: ConnectionKind::Tie,
+                })
+                .unwrap();
+            let plan = PlaybackPlan::new(&score, Tempo::default(), rate).unwrap();
+            let attacks: Vec<_> = plan
+                .messages
+                .iter()
+                .filter_map(|m| {
+                    if let Message::NoteOn(note) = m.message {
+                        Some((m.frame, note.key))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let expected = if mark == Arpeggio::Down {
+                [67, 64, 60]
+            } else {
+                [60, 64, 67]
+            };
+            assert_eq!(
+                attacks.iter().map(|(_, key)| *key).collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                attacks.iter().map(|(frame, _)| *frame).collect::<Vec<_>>(),
+                [0, u64::from(rate) * 30 / 1000, u64::from(rate) * 60 / 1000]
+            );
+            assert_eq!(
+                plan.held_notes_at(attacks[1].0 - 1)
+                    .into_iter()
+                    .flatten()
+                    .count(),
+                1
+            );
+            assert_eq!(
+                plan.held_notes_at(attacks[2].0 + 1)
+                    .into_iter()
+                    .flatten()
+                    .count(),
+                3
+            );
+            let releases: Vec<_> = plan
+                .messages
+                .iter()
+                .filter(|m| matches!(m.message, Message::NoteOff(_)))
+                .map(|m| m.frame)
+                .collect();
+            assert_eq!(releases.len(), 3);
+            assert!(
+                releases
+                    .iter()
+                    .all(|frame| *frame == releases[0] && *frame > attacks[2].0)
+            );
+            let preview = Audition::for_element(&score, first, Tempo::default(), rate).unwrap();
+            assert_eq!(
+                preview.keys.into_iter().flatten().collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                preview.delays[..3],
+                [attacks[0].0, attacks[1].0, attacks[2].0]
+            );
+        }
+    }
+}
+
+#[test]
+fn fast_arpeggios_fit_the_gate_and_enharmonic_unisons_attack_once() {
+    use score_core::{Accidental, Arpeggio, Duration, Event, Notation, TempoMark};
+    let mut score = Score::default();
+    score
+        .set_tempo_at(
+            0,
+            TempoMark {
+                bpm: 400,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let event = Event {
+        pitches: Pitches::new(&[
+            Pitch::new(Step::C, 4)
+                .unwrap()
+                .with_accidental(Some(Accidental::Sharp)),
+            Pitch::new(Step::D, 4)
+                .unwrap()
+                .with_accidental(Some(Accidental::Flat)),
+            Pitch::new(Step::E, 4).unwrap(),
+            Pitch::new(Step::G, 4).unwrap(),
+        ])
+        .unwrap(),
+        duration: Duration::Sixteenth,
+        notation: Notation {
+            arpeggio: Some(Arpeggio::Up),
+            articulation: Some(Articulation::Staccato),
+            ..Default::default()
+        },
+    };
+    let id = score.insert(0, 0, event).unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    let ons: Vec<_> = plan
+        .messages
+        .iter()
+        .filter(|m| matches!(m.message, Message::NoteOn(_)))
+        .collect();
+    let off = plan
+        .messages
+        .iter()
+        .find(|m| matches!(m.message, Message::NoteOff(_)))
+        .unwrap()
+        .frame;
+    assert_eq!(ons.len(), 3);
+    assert!(ons.windows(2).all(|pair| pair[0].frame < pair[1].frame));
+    assert!(ons.last().unwrap().frame <= off / 2);
+    let preview = Audition::for_element(&score, id, Tempo::default(), 48_000).unwrap();
+    assert_eq!(preview.keys.iter().flatten().count(), 3);
+    assert!(
+        preview
+            .keys
+            .iter()
+            .zip(preview.delays)
+            .all(|(key, delay)| key.is_none() || delay < preview.duration_frames)
+    );
+}
+
+#[test]
+fn piano_hands_form_one_roll_with_their_own_levels_gates_and_tied_attacks() {
+    use score_core::{
+        Arpeggio, Articulation, Connection, ConnectionKind, Duration, Dynamic, Event, Notation,
+    };
+    for direction in Arpeggio::ALL {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let upper_event = Event {
+            pitches: Pitches::new(&[
+                Pitch::new(Step::C, 4).unwrap(),
+                Pitch::new(Step::E, 4).unwrap(),
+                Pitch::new(Step::G, 4).unwrap(),
+            ])
+            .unwrap(),
+            duration: Duration::Quarter,
+            notation: Notation::default(),
+        };
+        let lower_event = Event {
+            pitches: Pitches::new(&[
+                Pitch::new(Step::C, 3).unwrap(),
+                Pitch::new(Step::E, 3).unwrap(),
+                Pitch::new(Step::G, 3).unwrap(),
+            ])
+            .unwrap(),
+            ..upper_event
+        };
+        let upper = score.insert(0, 0, upper_event).unwrap();
+        let upper2 = score.insert(0, 1, upper_event).unwrap();
+        let lower = score
+            .insert_on(piano, StaffId::Lower, 0, 0, lower_event)
+            .unwrap();
+        let lower2 = score
+            .insert_on(piano, StaffId::Lower, 0, 1, lower_event)
+            .unwrap();
+        score.set_dynamic(upper, Some(Dynamic::F)).unwrap();
+        score.set_dynamic(lower, Some(Dynamic::P)).unwrap();
+        score
+            .set_articulation(lower2, Some(Articulation::Staccato))
+            .unwrap();
+        for (start, end) in [(upper, upper2), (lower, lower2)] {
+            score
+                .add_connection(Connection {
+                    start,
+                    end,
+                    kind: ConnectionKind::Tie,
+                })
+                .unwrap();
+        }
+        score.set_arpeggio_both_hands(lower, true).unwrap();
+        score.set_arpeggio(lower, Some(direction)).unwrap();
+        let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+        let attacks: Vec<_> = plan
+            .messages
+            .iter()
+            .filter_map(|m| {
+                if let Message::NoteOn(note) = m.message {
+                    Some((m.frame, note))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let expected = if direction == Arpeggio::Down {
+            vec![67, 64, 60, 55, 52, 48]
+        } else {
+            vec![48, 52, 55, 60, 64, 67]
+        };
+        assert_eq!(
+            attacks.iter().map(|(_, note)| note.key).collect::<Vec<_>>(),
+            expected
+        );
+        assert!(attacks.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(attacks.last().unwrap().0, 5760);
+        assert!(attacks.iter().all(|(_, note)| note.level
+            == if note.key < 60 {
+                Dynamic::P.velocity()
+            } else {
+                Dynamic::F.velocity()
+            }));
+        assert_eq!(
+            plan.held_notes_at(attacks[1].0 - 1)
+                .into_iter()
+                .flatten()
+                .count(),
+            1
+        );
+        assert_eq!(
+            plan.held_notes_at(attacks[5].0 + 1)
+                .into_iter()
+                .flatten()
+                .count(),
+            6
+        );
+        let off = |key| {
+            plan.messages
+                .iter()
+                .find(|m| m.message == Message::NoteOff(key))
+                .unwrap()
+                .frame
+        };
+        assert!(off(48) < off(60));
+        let preview = Audition::for_element(&score, lower, Tempo::default(), 48_000).unwrap();
+        assert_eq!(
+            preview.keys.into_iter().flatten().collect::<Vec<_>>(),
+            expected
+        );
+        for index in 0..6 {
+            assert_eq!(
+                preview.note_at(index).level,
+                if preview.keys[index].unwrap() < 60 {
+                    Dynamic::P.velocity()
+                } else {
+                    Dynamic::F.velocity()
+                }
+            );
+            assert!(preview.delays[index] < preview.gate_at(index));
+        }
+        let same = Audition::for_element(&score, upper, Tempo::default(), 48_000).unwrap();
+        assert_eq!(preview.keys, same.keys);
+        assert_eq!(preview.delays, same.delays);
+    }
+}
+
+#[test]
+fn full_sixteen_tone_piano_preview_and_plan_keep_one_bounded_roll_and_separate_releases() {
+    use score_core::{Arpeggio, Articulation, Duration, Event, Notation};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let make = |octave| Event {
+        pitches: Pitches::new(
+            &(0..8)
+                .map(|i| Pitch::new(Step::C, octave).unwrap().shift(i * 2).unwrap())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    let upper = score.insert(0, 0, make(5)).unwrap();
+    let lower = score
+        .insert_on(piano, StaffId::Lower, 0, 0, make(2))
+        .unwrap();
+    score
+        .set_articulation(lower, Some(Articulation::Staccato))
+        .unwrap();
+    score.set_arpeggio_both_hands(upper, true).unwrap();
+    score.set_arpeggio(lower, Some(Arpeggio::Up)).unwrap();
+    let preview = Audition::for_element(&score, lower, Tempo::default(), 48_000).unwrap();
+    assert_eq!(preview.keys.iter().flatten().count(), 16);
+    let lower_index = preview
+        .keys
+        .iter()
+        .position(|key| *key == Some(36))
+        .unwrap();
+    let upper_index = preview
+        .keys
+        .iter()
+        .position(|key| *key == Some(72))
+        .unwrap();
+    assert!(preview.gate_at(lower_index) < preview.gate_at(upper_index));
+    assert!(
+        preview
+            .keys
+            .iter()
+            .enumerate()
+            .all(|(index, key)| key.is_none() || preview.delays[index] < preview.gate_at(index))
+    );
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    assert_eq!(
+        plan.messages
+            .iter()
+            .filter(|m| matches!(m.message, Message::NoteOn(_)))
+            .count(),
+        16
+    );
+}
+
+#[test]
+fn shared_arpeggios_preserve_incoming_ties_and_merge_enharmonic_unisons() {
+    use score_core::{Accidental, Connection, ConnectionKind, Duration, Event, Notation};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let event = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    let first = score.insert(0, 0, event).unwrap();
+    let continued = score.insert(0, 1, event).unwrap();
+    score
+        .add_connection(Connection {
+            start: first,
+            end: continued,
+            kind: ConnectionKind::Tie,
+        })
+        .unwrap();
+    score
+        .insert_on(
+            piano,
+            StaffId::Lower,
+            0,
+            0,
+            Event {
+                pitches: Pitches::default(),
+                ..event
+            },
+        )
+        .unwrap();
+    let lower = score
+        .insert_on(
+            piano,
+            StaffId::Lower,
+            0,
+            1,
+            Event {
+                pitches: Pitches::single(Pitch::new(Step::G, 3)),
+                ..event
+            },
+        )
+        .unwrap();
+    score.set_arpeggio_both_hands(continued, true).unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    let attacks: Vec<_> = plan
+        .messages
+        .iter()
+        .filter_map(|message| {
+            if let Message::NoteOn(note) = message.message {
+                Some((message.frame, note.key))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(attacks, [(0, 60), (24_000, 55)]);
+    assert_eq!(plan.held_notes_at(24_001).into_iter().flatten().count(), 2);
+    assert_eq!(score.piano_partner(continued), Some(lower));
+
+    let mut score = Score::default();
+    let upper = score
+        .insert(
+            0,
+            0,
+            Event {
+                pitches: Pitches::single(Some(
+                    Pitch::new(Step::C, 4)
+                        .unwrap()
+                        .with_accidental(Some(Accidental::Sharp)),
+                )),
+                ..event
+            },
+        )
+        .unwrap();
+    let lower = score
+        .insert_on(
+            piano,
+            StaffId::Lower,
+            0,
+            0,
+            Event {
+                pitches: Pitches::single(Some(
+                    Pitch::new(Step::D, 4)
+                        .unwrap()
+                        .with_accidental(Some(Accidental::Flat)),
+                )),
+                duration: Duration::Half,
+                ..event
+            },
+        )
+        .unwrap();
+    score.set_arpeggio_both_hands(lower, true).unwrap();
+    let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    assert_eq!(
+        plan.messages
+            .iter()
+            .filter(|message| matches!(message.message, Message::NoteOn(_)))
+            .count(),
+        1
+    );
+    let preview = Audition::for_element(&score, upper, Tempo::default(), 48_000).unwrap();
+    assert_eq!(
+        preview.keys.iter().flatten().copied().collect::<Vec<_>>(),
+        [61]
+    );
+    assert_eq!(preview.delays[0], 0);
 }

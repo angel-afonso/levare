@@ -63,6 +63,18 @@ impl Pitches {
             .sort_unstable_by_key(|pitch| pitch.map(|pitch| pitch.diatonic()).unwrap_or(i16::MAX));
         Ok(result)
     }
+    pub fn replaced(self, index: usize, pitch: Pitch) -> Result<Self, ScoreError> {
+        if index >= self.len() {
+            return Err(ScoreError("La nota del acorde no existe"));
+        }
+        Self::new(
+            &self
+                .iter()
+                .enumerate()
+                .map(|(i, old)| if i == index { pitch } else { old })
+                .collect::<Vec<_>>(),
+        )
+    }
     pub fn in_key(mut self, key: KeySignature) -> Self {
         for pitch in self.0.iter_mut().flatten() {
             *pitch = pitch.in_key(key);

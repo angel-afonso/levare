@@ -33,7 +33,47 @@ impl CommandStates for AppView {
             enabled,
             ..CommandState::default()
         };
+        if let Some(score_core::MarkKind::Harmonic(mark)) = score_toolbar::marks::kind(command) {
+            let ids = editor.selected_ids();
+            let checked = !ids.is_empty()
+                && ids
+                    .iter()
+                    .all(|id| editor.score().event(*id).unwrap().notation.harmonic == Some(mark));
+            let enabled = !ids.is_empty()
+                && ids.iter().all(|id| {
+                    let mut event = *editor.score().event(*id).unwrap();
+                    event.notation.harmonic = Some(mark);
+                    event
+                        .validate_harmonic(editor.score().part(id.part).unwrap().instrument())
+                        .is_ok()
+                });
+            return CommandState {
+                checked,
+                enabled,
+                ..Default::default()
+            };
+        }
         // Every point mark of the catalog: lit while the selection carries it.
+        if let Some(score_core::MarkKind::Division(mark)) = score_toolbar::marks::kind(command)
+            && !editor
+                .score()
+                .part(editor.cursor().part)
+                .unwrap()
+                .instrument()
+                .is_grand_staff()
+        {
+            return CommandState::checked(
+                editor
+                    .score()
+                    .part(editor.cursor().part)
+                    .unwrap()
+                    .divisi_change_at_tick(
+                        editor.divisi_position().measure,
+                        editor.divisi_position().tick,
+                    )
+                    == Some(mark),
+            );
+        }
         if let Some(kind) = score_toolbar::marks::kind(command).filter(|kind| kind.is_point()) {
             return CommandState::checked(
                 editor
@@ -43,10 +83,29 @@ impl CommandStates for AppView {
             );
         }
         match command {
+            id::ARPEGGIO_BOTH_HANDS => {
+                let id = editor.selection();
+                CommandState {
+                    checked: id
+                        .and_then(|id| editor.score().arpeggio_at(id))
+                        .is_some_and(|mark| mark.other_hand.is_some()),
+                    enabled: id.and_then(|id| editor.score().piano_partner(id)).is_some(),
+                    ..CommandState::default()
+                }
+            }
             id::UNDO => enabled(editor.can_undo()),
             id::REDO => enabled(editor.can_redo()),
             id::REMOVE_INSTRUMENT => enabled(editor.score().parts().len() > 1),
 
+            id::VOICE_1 => CommandState::checked(editor.cursor().voice == score_core::Voice::One),
+            id::VOICE_2 => CommandState::checked(editor.cursor().voice == score_core::Voice::Two),
+            id::DIVIDE_PART | id::JOIN_PART => {
+                let part = editor.score().part(editor.cursor().part).unwrap();
+                CommandState {
+                    enabled: !part.instrument().is_grand_staff(),
+                    ..Default::default()
+                }
+            }
             id::TOGGLE_NOTE_INPUT => CommandState::checked(self.ui.note_entry),
             id::STEP_TIME => CommandState::checked(true),
             id::CHORD_MODE => CommandState::checked(self.chord_entry),
@@ -76,6 +135,8 @@ impl CommandStates for AppView {
             id::DIMINUENDO => hairpin(ConnectionKind::Diminuendo),
 
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
+            id::TEMPO_TEXT => CommandState::checked(self.tempo_picker.is_some()),
+            id::TIME_SIGNATURE => CommandState::checked(self.time_picker),
             id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker.is_some()),
 
             id::PLAY => CommandState {
@@ -89,6 +150,15 @@ impl CommandStates for AppView {
             }
 
             id::TOGGLE_INSTRUMENTS_PANEL => CommandState::checked(self.ui.show_instruments),
+            id::PAGE_VIEW => {
+                CommandState::checked(self.ui.view_mode == score_layout::ViewMode::Page)
+            }
+            id::CONTINUOUS_VIEW => {
+                CommandState::checked(self.ui.view_mode == score_layout::ViewMode::Continuous)
+            }
+            id::SINGLE_SYSTEM_VIEW => {
+                CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
+            }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             _ => CommandState::default(),
         }

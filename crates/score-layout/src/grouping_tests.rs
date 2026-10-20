@@ -98,3 +98,44 @@ fn piano_braces_remain_inside_the_ensemble_and_solo_has_no_family_bracket() {
     assert_eq!(brace.bottom, lower.origin.y + 40.);
     assert!(layout.measure(flute, 0).unwrap().origin.y < brace.top);
 }
+
+#[test]
+fn repeated_violin_names_distinguish_sections_and_divisi_in_engraving() {
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let first = s.add_part(Instrument::Violin).unwrap();
+    let second = s.add_part(Instrument::Violin).unwrap();
+    let viola = s.add_part(Instrument::Viola).unwrap();
+    s.remove_part(piano).unwrap();
+    s.set_divisi_span(
+        first,
+        score_core::DivisiPoint::new(0, 0),
+        Some(score_core::DivisiPoint::new(1, 0)),
+        true,
+    )
+    .unwrap();
+    let layout = LayoutEngine::default().layout_compact(&s, 960.);
+    assert_eq!(s.part_name(first), "Violín I");
+    assert_eq!(s.part_name(second), "Violín II");
+    assert_eq!(s.part_name(viola), "Viola");
+    assert!(
+        layout
+            .labels
+            .iter()
+            .any(|l| l.part == first && l.staff.is_none() && l.text == "Violín I")
+    );
+    assert!(
+        layout
+            .labels
+            .iter()
+            .any(|l| l.part == second && l.text == "Violín II")
+    );
+    assert!(
+        layout
+            .labels
+            .iter()
+            .any(|l| l.part == first && l.text == "div. II")
+    );
+    s.remove_part(second).unwrap();
+    assert_eq!(s.part_name(first), "Violín");
+}

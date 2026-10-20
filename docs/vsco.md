@@ -39,8 +39,8 @@ incluido el proyecto cuando se abre `target/Partitura.app`.
 
 ## Cobertura de esta primera integración
 
-- Piano vertical; violín solista; secciones de viola, violonchelo y contrabajo;
-  flauta, oboe, clarinete, fagot, trompeta, trompa y trombón.
+- Piano vertical; violín solista; secciones de viola, violoncello y contrabajo;
+  flauta, oboe, clarinete, fagot, trompeta, corno y trombón.
 - El cambio **pizzicato / arco** usa grabaciones distintas de cada instrumento de
   cuerda. Se conservan las capas de intensidad y las variaciones que contiene el SFZ.
 - Los reguladores modifican la expresión de cada canal, también en notas sostenidas.
@@ -56,7 +56,7 @@ incluido el proyecto cuando se abre `target/Partitura.app`.
 - La guitarra y las notas fuera del rango numérico de los parches cargados usan
   GeneralUser automáticamente. Instrumentos repetidos tienen sintetizadores separados.
 - El staccato usa grabaciones **staccato** en flauta, oboe, clarinete, fagot,
-  trompeta, trompa y trombón, y **spiccato** en violín, viola, violonchelo y contrabajo.
+  trompeta, corno y trombón, y **spiccato** en violín, viola, violoncello y contrabajo.
   Esto se aplica a la audición breve y a la reproducción completa. La marca escrita
   sigue siendo staccato; spiccato es la muestra corta elegida por este adaptador.
 - Un staccato bajo una ligadura de expresión es portato: usa la grabación sostenida

@@ -1,6 +1,9 @@
 //! Versioned native documents. Export formats will use independent adapters.
+pub mod musicxml;
 mod recent;
+mod recovery;
 pub use recent::RecentFiles;
+pub use recovery::{RecoveredScore, Recovery, load_recovery};
 use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,7 +13,7 @@ use std::{
     path::Path,
 };
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 19;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -180,6 +183,53 @@ pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
     }
     if envelope["version"].as_u64() == Some(9) {
         // Ordinary duration strings retain their meaning; ticks are not serialized.
+        envelope["version"] = 10.into();
+    }
+    if envelope["version"].as_u64() == Some(10) {
+        // Missing per-bar signatures retain the original global meter and key.
+        envelope["version"] = 11.into();
+    }
+    if envelope["version"].as_u64() == Some(11) {
+        // Missing written tempo defaults to quarter = 120, without later changes.
+        envelope["version"] = 12.into();
+    }
+    if envelope["version"].as_u64() == Some(12) {
+        // Arpeggios are optional; older notes remain simultaneous.
+        envelope["version"] = 13.into();
+    }
+    if envelope["version"].as_u64() == Some(13) {
+        // Existing arpeggios keep their single-staff scope.
+        envelope["version"] = 14.into();
+    }
+    if envelope["version"].as_u64() == Some(14) {
+        // Empty second voices and undivided parts preserve every previous document.
+        envelope["version"] = 15.into();
+    }
+    if envelope["version"].as_u64() == Some(15) {
+        // Empty passage maps retain the existing whole-part presentation.
+        envelope["version"] = 16.into();
+    }
+    if envelope["version"].as_u64() == Some(16) {
+        if let Some(parts) = envelope
+            .get_mut("score")
+            .and_then(|v| v.get_mut("parts"))
+            .and_then(|v| v.as_array_mut())
+        {
+            for part in parts {
+                if let Some(changes) = part
+                    .get_mut("divisi_changes")
+                    .and_then(|v| v.as_object_mut())
+                {
+                    for value in changes.values_mut() {
+                        *value = serde_json::json!({"0": value.clone()});
+                    }
+                }
+            }
+        }
+        envelope["version"] = 17.into();
+    }
+    if matches!(envelope["version"].as_u64(), Some(17 | 18)) {
+        // Harmonics default to absent in earlier documents.
         envelope["version"] = SCHEMA_VERSION.into();
     }
     if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {
@@ -198,6 +248,39 @@ pub fn load(path: &Path) -> Result<Score, FileError> {
         .read_to_end(&mut bytes)
         .map_err(error)?;
     decode(&bytes)
+}
+
+pub struct OpenedScore {
+    pub score: Score,
+    pub imported: bool,
+    pub warnings: Vec<String>,
+}
+
+/// Detect native JSON, plain MusicXML or compressed MXL by their contents.
+/// Imported documents have no native save path; the UI must request a new one.
+pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(error)?
+        .take((MAX_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(error)?;
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(error("El archivo supera el límite de 16 MiB"));
+    }
+    if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{') {
+        return Ok(OpenedScore {
+            score: decode(&bytes)?,
+            imported: false,
+            warnings: Vec::new(),
+        });
+    }
+    let result = musicxml::decode(&bytes)?;
+    Ok(OpenedScore {
+        score: result.score,
+        imported: true,
+        warnings: result.warnings,
+    })
 }
 
 /// Write beside the destination, flush, then replace atomically. A failed write
@@ -535,3 +618,12 @@ mod tests {
 
 #[cfg(test)]
 mod expression_tests;
+
+#[cfg(test)]
+mod voice_tests;
+
+#[cfg(test)]
+mod harmonic_tests;
+
+#[cfg(test)]
+mod orchestra_tests;

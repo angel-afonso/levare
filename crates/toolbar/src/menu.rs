@@ -22,6 +22,7 @@ pub const FILE_MENU: &[MenuEntry] = &[
     C(id::SAVE),
     C(id::SAVE_AS),
     C(id::EXPORT),
+    C(id::EXPORT_MUSICXML),
     C(id::PRINT),
     S,
     C(id::PREFERENCES),

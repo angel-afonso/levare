@@ -109,63 +109,73 @@ impl Plan {
         let boundaries = beats(time);
         let mut groups = Vec::new();
         let mut notes: Vec<Note> = Vec::new();
-        let mut previous = None;
-        let mut tick = 0;
-        let flush = |notes: &mut Vec<Note>, groups: &mut Vec<Group>| {
-            if notes.len() >= 2 {
-                let high = notes.iter().map(|n| n.high).fold(f32::INFINITY, f32::min);
-                let low = notes
-                    .iter()
-                    .map(|n| n.low)
-                    .fold(f32::NEG_INFINITY, f32::max);
-                groups.push(Group {
-                    notes: std::mem::take(notes),
-                    down: (high + low) / 2. <= 20.,
-                });
-            } else {
-                notes.clear();
-            }
-        };
-        for (event, value) in measure.iter() {
-            let id = ElementId {
-                part,
-                staff,
-                measure: index,
-                event,
+        for voice in Voice::ALL {
+            let mut previous = None;
+            let mut tick = 0;
+            let flush = |notes: &mut Vec<Note>, groups: &mut Vec<Group>| {
+                if notes.len() >= 2 {
+                    let high = notes.iter().map(|n| n.high).fold(f32::INFINITY, f32::min);
+                    let low = notes
+                        .iter()
+                        .map(|n| n.low)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    groups.push(Group {
+                        notes: std::mem::take(notes),
+                        down: if measure.has_two_voices() {
+                            voice == Voice::Two
+                        } else {
+                            (high + low) / 2. <= 20.
+                        },
+                    });
+                } else {
+                    notes.clear();
+                }
             };
-            let end = tick + value.duration.ticks();
-            let level = levels(value.duration.value());
-            let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
-            let key = if level == 0 || value.pitches.is_empty() {
-                None
-            } else if value.duration.is_triplet() {
-                Some(Boundary::Tuplet(tuplets[&id]))
-            } else if end <= boundaries[beat + 1] {
-                Some(Boundary::Beat(beat))
-            } else {
-                None
-            };
-            if key.is_none() || key != previous {
-                flush(&mut notes, &mut groups);
-            }
-            if key.is_some() {
-                let y = |pitch: score_core::Pitch| {
-                    40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
+            for (event, value) in measure.voice_iter(voice) {
+                let id = ElementId {
+                    part,
+                    staff,
+                    measure: index,
+                    event,
                 };
-                notes.push(Note {
-                    element: id,
-                    tick,
-                    onset: rhythm.x(tick),
-                    high: y(value.pitches.last().unwrap()),
-                    low: y(value.pitches.first().unwrap()),
-                    levels: level,
-                    triplet: value.duration.is_triplet(),
-                });
+                let end = tick + value.duration.ticks();
+                let level = levels(value.duration.value());
+                let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
+                let key = if level == 0 || value.pitches.is_empty() {
+                    None
+                } else if value.duration.is_triplet() {
+                    Some(Boundary::Tuplet(tuplets[&id]))
+                } else if end <= boundaries[beat + 1] {
+                    Some(Boundary::Beat(beat))
+                } else {
+                    None
+                };
+                if key.is_none() || key != previous {
+                    flush(&mut notes, &mut groups);
+                }
+                if key.is_some() {
+                    let y = |pitch: score_core::Pitch| {
+                        40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
+                    };
+                    notes.push(Note {
+                        element: id,
+                        tick,
+                        onset: rhythm.x(tick) + voice_offset(measure, voice, tick),
+                        high: y(value
+                            .harmonic_touch(KeySignature::default())
+                            .map(|(pitch, _)| pitch)
+                            .or_else(|| value.pitches.last())
+                            .unwrap()),
+                        low: y(value.pitches.first().unwrap()),
+                        levels: level,
+                        triplet: value.duration.is_triplet(),
+                    });
+                }
+                previous = key;
+                tick = end;
             }
-            previous = key;
-            tick = end;
+            flush(&mut notes, &mut groups);
         }
-        flush(&mut notes, &mut groups);
         let members = groups
             .iter()
             .flat_map(|g| g.notes.iter().map(move |n| (n.element, g.down)))

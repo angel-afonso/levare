@@ -1,0 +1,15 @@
+[package]
+name = "score-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+score-core.workspace = true
+score-io.workspace = true
+score-pdf.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+roxmltree = "=0.20.0"

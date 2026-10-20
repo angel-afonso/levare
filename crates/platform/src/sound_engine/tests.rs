@@ -200,3 +200,140 @@ fn gm_audition_dynamics_and_accent_change_actual_audio_without_optional_banks() 
     assert!(energy(Dynamic::F, None) > quiet * 2.);
     assert!(energy(Dynamic::P, Some(Articulation::Accent)) > quiet * 1.3);
 }
+
+#[test]
+fn harmonic_timbre_reaches_fallback_audition_playback_pause_and_seek() {
+    use score_core::{Harmonic, PlayingTechnique, StaffId};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let part = score.add_part(Instrument::Violin).unwrap();
+    score.remove_part(piano).unwrap();
+    let id = score
+        .insert_on(
+            part,
+            StaffId::Upper,
+            0,
+            0,
+            Event {
+                pitches: Pitches::single(Pitch::new(Step::A, 5)),
+                duration: Duration::Whole,
+                notation: Notation {
+                    harmonic: Some(Harmonic::Natural),
+                    ..Default::default()
+                },
+            },
+        )
+        .unwrap();
+    let bank = Bank::new(false);
+    let (mut fallback_control, mut fallback) =
+        Renderer::with_bank(48_000, &bank, &score, Instrument::Violin).unwrap();
+    let (mut direct_control, mut direct) = Renderer::new(48_000).unwrap();
+    let preview = Audition::for_element(&score, id, Tempo::default(), 48_000).unwrap();
+    assert_eq!(preview.note_at(0).harmonic, Some(Harmonic::Natural));
+    fallback_control.preview_audition(preview).unwrap();
+    direct_control.preview_audition(preview).unwrap();
+    let mut actual = [0f32; 8192];
+    let mut expected = actual;
+    assert_no_alloc::assert_no_alloc(|| {
+        fallback.render(&mut actual, 2);
+        direct.render(&mut expected, 2);
+    });
+    assert_eq!(
+        actual, expected,
+        "an unsupported optional provider uses the same harmonic timbre"
+    );
+    assert!(actual.iter().any(|v| v.abs() > 0.001));
+    let harmonic = actual;
+    let (mut plain_control, mut plain) = Renderer::new(48_000).unwrap();
+    let mut normal = preview;
+    normal.harmonic = None;
+    plain_control.preview_audition(normal).unwrap();
+    plain.render(&mut expected, 2);
+    assert_ne!(
+        harmonic, expected,
+        "the same sounding key must change timbre"
+    );
+    // A sustained harmonic keeps its phase and envelope across a pause.
+    let plan = Arc::new(PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap());
+    let (mut a_control, mut a) = Renderer::new(48_000).unwrap();
+    let (mut b_control, mut b) = Renderer::new(48_000).unwrap();
+    a_control.play(plan.clone()).unwrap();
+    b_control.play(plan.clone()).unwrap();
+    a.render(&mut actual, 2);
+    b.render(&mut expected, 2);
+    assert_eq!(actual, expected);
+    a_control.pause();
+    assert_no_alloc::assert_no_alloc(|| a.render(&mut actual, 2));
+    assert!(actual.iter().all(|v| *v == 0.));
+    a_control.resume();
+    a.render(&mut actual, 2);
+    b.render(&mut expected, 2);
+    assert_eq!(
+        actual, expected,
+        "resume continues the same oscillator rather than retriggering"
+    );
+    a_control.play_from_frame(plan, 24_000).unwrap();
+    assert_no_alloc::assert_no_alloc(|| a.render(&mut actual, 2));
+    assert!(actual.iter().any(|v| v.abs() > 0.001));
+    a_control.stop();
+    a.render(&mut actual, 2);
+    assert!(actual.iter().all(|v| *v == 0.));
+    // Natural/artificial notation shares timbre at the same sounding pitch.
+    let mut artificial = preview;
+    artificial.harmonic = Some(Harmonic::Artificial);
+    assert_eq!(artificial.note_at(0).technique, PlayingTechnique::Arco);
+    assert_eq!(artificial.note_at(0).harmonic, Some(Harmonic::Artificial));
+}
+
+#[test]
+fn releasing_one_timbre_does_not_cut_a_same_pitch_normal_or_harmonic_voice() {
+    use score_core::{Harmonic, PlayingTechnique};
+    for release_harmonic in [false, true] {
+        let normal = NoteEvent {
+            key: 81,
+            level: 88,
+            instrument: Instrument::Violin,
+            technique: PlayingTechnique::Arco,
+            harmonic: None,
+            articulation: None,
+            legato: false,
+        };
+        let harmonic = NoteEvent {
+            harmonic: Some(Harmonic::Natural),
+            ..normal
+        };
+        let mut mixed = GeneralMidi::new(48_000).unwrap();
+        let mut reference = GeneralMidi::new(48_000).unwrap();
+        mixed.note_on(0, normal);
+        mixed.note_on(0, harmonic);
+        reference.note_on(0, if release_harmonic { normal } else { harmonic });
+        for block in 0..1100 {
+            if block == 50 {
+                if release_harmonic {
+                    mixed.harmonic_off(0, 81);
+                } else {
+                    mixed.note_off(0, 81);
+                }
+            }
+            let mut actual = [0.; 64];
+            let mut right = actual;
+            let mut expected = actual;
+            let mut expected_right = actual;
+            assert_no_alloc::assert_no_alloc(|| {
+                mixed.render(&mut actual, &mut right);
+                reference.render(&mut expected, &mut expected_right);
+            });
+            if block > 1000 {
+                let error = actual
+                    .iter()
+                    .zip(expected)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0., f32::max);
+                assert!(
+                    error < 1e-5,
+                    "release of harmonic={release_harmonic} damaged the surviving timbre: {error}"
+                );
+            }
+        }
+    }
+}

@@ -3991,10 +3991,12 @@ dependencies = [
  "core-text",
  "dirs 6.0.0",
  "gpui",
+ "lyon",
  "objc",
  "score-core",
  "score-document",
  "score-edit",
+ "score-export",
  "score-io",
  "score-keymap",
  "score-layout",
@@ -4004,6 +4006,7 @@ dependencies = [
  "score-toolbar",
  "serde_json",
  "ttf-parser 0.25.1",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -5035,13 +5038,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "score-export"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+ "score-core",
+ "score-io",
+ "score-pdf",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "score-io"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "roxmltree",
  "score-core",
  "serde",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]
@@ -5059,6 +5077,22 @@ version = "0.1.0"
 dependencies = [
  "score-core",
  "serde_json",
+ "ttf-parser 0.25.1",
+]
+
+[[package]]
+name = "score-pdf"
+version = "0.1.0"
+dependencies = [
+ "core-foundation 0.10.0",
+ "core-graphics 0.24.0",
+ "core-text",
+ "foreign-types",
+ "score-core",
+ "score-io",
+ "score-layout",
+ "serde_json",
+ "tempfile",
  "ttf-parser 0.25.1",
 ]
 
@@ -6156,6 +6190,12 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typeid"
@@ -7756,6 +7796,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "nix 0.31.3",
+ "typed-path",
 ]
 
 [[package]]

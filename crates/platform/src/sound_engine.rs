@@ -1,6 +1,7 @@
 //! Common contract for optional sound banks. The host always supplies General MIDI
 //! fallback, mixing, reverb and transport; providers only synthesize dry audio.
 mod general_midi;
+mod harmonics;
 #[cfg(test)]
 mod tests;
 pub(crate) use general_midi::GeneralMidi;
@@ -15,7 +16,7 @@ pub const MAX_BLOCK_FRAMES: usize = 64;
 
 /// A prepared, uniquely owned audio-thread adapter. All methods must be bounded,
 /// nonblocking and allocation-free. Preparation/loading/destruction is control-side.
-/// Channels are 0..32; channel 15 is reserved for audition, 9 for percussion.
+/// Channels are 0..128; channel 15 is reserved for audition, 9 for percussion.
 pub trait SoundEngine: Send {
     /// Standard MIDI controllers only (7 volume, 10 pan, 11 expression). Timbre
     /// travels with each attack; the host sends no program changes.
@@ -27,6 +28,10 @@ pub trait SoundEngine: Send {
     fn note_on(&mut self, channel: u8, note: NoteEvent) -> bool;
     /// May be called for keys this adapter declined; must be harmless.
     fn note_off(&mut self, channel: u8, key: u8);
+    /// Release a harmonic attack independently of normal notes at the same key.
+    /// Providers accepting `NoteEvent::harmonic` must implement this; providers
+    /// without harmonic sounds safely leave it alone.
+    fn harmonic_off(&mut self, _channel: u8, _key: u8) {}
     fn silence(&mut self, channel: Option<u8>, immediate: bool);
     /// ADD dry stereo audio to equally sized planes, at most MAX_BLOCK_FRAMES.
     fn render(&mut self, left: &mut [f32], right: &mut [f32]);
@@ -63,7 +68,7 @@ impl RoutingSignature {
                 .map(|part| {
                     (
                         part.instrument(),
-                        part.instrument() == Instrument::Piano
+                        part.instrument().is_grand_staff()
                             && score
                                 .connections()
                                 .iter()
@@ -105,6 +110,12 @@ impl SoundEngine for Engines {
         self.fallback.note_off(c, key);
         if let Some(extra) = &mut self.extra {
             extra.note_off(c, key);
+        }
+    }
+    fn harmonic_off(&mut self, c: u8, key: u8) {
+        self.fallback.harmonic_off(c, key);
+        if let Some(extra) = &mut self.extra {
+            extra.harmonic_off(c, key);
         }
     }
     fn silence(&mut self, channel: Option<u8>, immediate: bool) {

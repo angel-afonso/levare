@@ -296,13 +296,6 @@ impl Playback {
         }
         Ok(())
     }
-    pub fn change_tempo(&mut self, delta: i16) {
-        let seek_tick = self.seek_tick;
-        self.stop();
-        self.seek_tick = seek_tick;
-        let bpm = (self.tempo.bpm() as i16 + delta).clamp(30, 240) as u16;
-        self.tempo = Tempo::new(bpm).expect("bounded tempo");
-    }
     pub fn change_volume(&mut self, delta: i32) {
         self.volume = (self.volume as i32 + delta).clamp(0, 100) as u32;
         if let Some(output) = &mut self.output {
@@ -359,10 +352,7 @@ impl Playback {
 /// The visible ruler includes implicit rests through the final bar.
 fn transport_plan(score: &Score, tempo: Tempo, rate: u32) -> Result<PlaybackPlan, String> {
     let mut plan = PlaybackPlan::new(score, tempo, rate).map_err(|error| error.to_string())?;
-    plan.duration_frames = plan.timeline.frame_at(
-        score.measures().len() as u64 * u64::from(score.time().capacity()),
-        rate,
-    );
+    plan.duration_frames = plan.timeline.frame_at(score.total_ticks(), rate);
     Ok(plan)
 }
 
@@ -397,7 +387,7 @@ mod tests {
 
     #[test]
     fn idle_seek_is_independent_of_edit_cursor_and_survives_clock_polling_and_tempo() {
-        let score = Score::default();
+        let mut score = Score::default();
         let mut playback = offline();
         let cursor = score_edit::Cursor::default();
         playback.seek(&score, 432).unwrap();
@@ -411,7 +401,15 @@ mod tests {
             ..cursor
         };
         assert_eq!(playback.position(&score, moved_cursor).tick, chosen.tick);
-        playback.change_tempo(-5);
+        score
+            .set_tempo_at(
+                0,
+                score_core::TempoMark {
+                    bpm: 115,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         assert_eq!(playback.position(&score, cursor).tick, chosen.tick);
         playback.stop();
         assert!(!playback.has_ruler_position());

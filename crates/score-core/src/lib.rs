@@ -4,25 +4,40 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod tempo;
+pub use tempo::{TempoBeat, TempoMark};
 mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
+mod harmonics;
+pub use harmonics::Harmonic;
 mod expression;
 pub use expression::{
-    Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
+    Arpeggio, Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
 };
+mod piano_arpeggio;
+pub use piano_arpeggio::{ArpeggioMark, PianoArpeggio};
 mod marks;
 pub use marks::{MarkFamily, MarkKind, MarkRef, Placement};
+mod transposition;
+pub use transposition::Transposition;
 mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod key_signature;
 pub use key_signature::{KeyMode, KeySignature};
+mod event_move;
+mod measure_edit;
+mod voice;
+pub use voice::Voice;
+mod divisi;
+pub use divisi::{DivisiPoint, Division};
 mod pitches;
+mod signatures;
 pub use pitches::{MAX_CHORD_NOTES, Pitches};
 
-// Channel 9 is percussion; channel 15 is reserved for entry audition.
-pub const MAX_PARTS: usize = 14;
+// Bounded ensemble size; playback assigns independent channels for every part.
+pub const MAX_PARTS: usize = 48;
 pub const MAX_STAVES: usize = MAX_PARTS * 2;
-pub const MAX_SOUNDING_NOTES: usize = MAX_STAVES * MAX_CHORD_NOTES;
+pub const MAX_SOUNDING_NOTES: usize = MAX_STAVES * MAX_CHORD_NOTES * 2;
 
 /// Identity within a part. Piano hands keep separate event stores and cursors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -223,6 +238,8 @@ pub struct Event {
 pub struct Measure {
     events: Arc<SlotMap<EventId, Event>>,
     order: Vector<EventId>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    second_order: Vector<EventId>,
 }
 
 impl Default for Measure {
@@ -230,13 +247,16 @@ impl Default for Measure {
         Self {
             events: Arc::new(SlotMap::with_key()),
             order: Vector::new(),
+            second_order: Vector::new(),
         }
     }
 }
 
 impl PartialEq for Measure {
     fn eq(&self, other: &Self) -> bool {
-        self.iter().eq(other.iter())
+        Voice::ALL
+            .into_iter()
+            .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
     }
 }
 impl Eq for Measure {}
@@ -245,25 +265,30 @@ impl Measure {
     pub fn iter(&self) -> impl Iterator<Item = (EventId, &Event)> {
         self.order
             .iter()
+            .chain(self.second_order.iter())
             .filter_map(|id| self.events.get(*id).map(|event| (*id, event)))
     }
     pub fn len(&self) -> usize {
-        self.order.len()
+        self.order.len() + self.second_order.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.order.is_empty()
+        self.order.is_empty() && self.second_order.is_empty()
     }
     pub fn used_ticks(&self) -> u16 {
-        self.iter().map(|(_, event)| event.duration.ticks()).sum()
+        Voice::ALL
+            .into_iter()
+            .map(|v| self.voice_ticks(v))
+            .max()
+            .unwrap_or(0)
     }
     pub fn event(&self, id: EventId) -> Option<&Event> {
         self.events.get(id)
     }
     pub fn id_at(&self, index: usize) -> Option<EventId> {
-        self.order.get(index).copied()
+        self.iter().nth(index).map(|(id, _)| id)
     }
     pub fn index_of(&self, id: EventId) -> Option<usize> {
-        self.order.iter().position(|key| *key == id)
+        self.iter().position(|(key, _)| key == id)
     }
 }
 
@@ -291,28 +316,54 @@ impl Staff {
 pub struct Part {
     id: PartId,
     instrument: Instrument,
+    #[serde(default)]
+    transposition: Transposition,
+    /// Keeps the section's identity when extracted from an orchestral score.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    divided: bool,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    divisi_changes: std::collections::BTreeMap<usize, std::collections::BTreeMap<u16, bool>>,
     staves: Vector<Staff>,
+}
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 impl Part {
     fn new(id: PartId, instrument: Instrument, measures: usize) -> Self {
         let mut staves: Vector<_> = std::iter::once(Staff::new(StaffId::Upper, measures)).collect();
-        if instrument == Instrument::Piano {
+        if instrument.is_grand_staff() {
             staves.push_back(Staff::new(StaffId::Lower, measures));
         }
         Self {
             id,
             instrument,
+            transposition: instrument.standard_transposition(),
+            name: None,
+            divided: false,
+            divisi_changes: Default::default(),
             staves,
         }
     }
     pub fn id(&self) -> PartId {
         self.id
     }
+    pub fn is_divisi(&self) -> bool {
+        self.divided
+    }
     pub fn instrument(&self) -> Instrument {
         self.instrument
     }
     pub fn measures(&self) -> &Vector<Measure> {
         &self.staves[0].measures
+    }
+    /// A divided section retains the shared expressive instructions of its original staff.
+    /// Piano hands remain independent. Articulations and note rhythms are always local.
+    pub fn expression_staves(&self, staff: StaffId) -> impl Iterator<Item = &Staff> {
+        self.staves
+            .iter()
+            .filter(move |s| self.divided || s.id == staff)
     }
     pub fn staves(&self) -> &Vector<Staff> {
         &self.staves
@@ -327,14 +378,14 @@ impl Part {
             .ok_or(ScoreError("El pentagrama no existe"))
     }
     pub fn clef(&self, staff: StaffId) -> Clef {
-        if staff == StaffId::Lower {
+        if staff == StaffId::Lower && self.instrument.is_grand_staff() {
             Clef::Bass
         } else {
             self.instrument.clef()
         }
     }
     pub fn entry_octave(&self, staff: StaffId) -> u8 {
-        if staff == StaffId::Lower {
+        if staff == StaffId::Lower && self.instrument.is_grand_staff() {
             3
         } else {
             self.instrument.entry_octave()
@@ -347,11 +398,21 @@ pub struct Score {
     title: String,
     time: TimeSignature,
     #[serde(default)]
+    tempo: TempoMark,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    tempo_changes: std::collections::BTreeMap<usize, TempoMark>,
+    #[serde(default)]
     key_signature: KeySignature,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    time_changes: std::collections::BTreeMap<usize, TimeSignature>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    key_changes: std::collections::BTreeMap<usize, KeySignature>,
     parts: Vector<Part>,
     next_part_id: u32,
     #[serde(default)]
     connections: Vector<Connection>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    piano_arpeggios: Vector<PianoArpeggio>,
 }
 
 impl Default for Score {
@@ -359,10 +420,15 @@ impl Default for Score {
         Self {
             title: "Sin título".into(),
             time: TimeSignature::default(),
+            tempo: Default::default(),
+            tempo_changes: Default::default(),
             key_signature: KeySignature::default(),
+            time_changes: Default::default(),
+            key_changes: Default::default(),
             parts: std::iter::once(Part::new(PartId(0), Instrument::Piano, 4)).collect(),
             next_part_id: 1,
             connections: Vector::new(),
+            piano_arpeggios: Vector::new(),
         }
     }
 }
@@ -377,6 +443,34 @@ impl fmt::Display for ScoreError {
 impl std::error::Error for ScoreError {}
 
 impl Score {
+    /// A blank document with explicit instrumentation and length, e.g. for import.
+    pub fn new(
+        title: String,
+        instruments: &[Instrument],
+        measures: usize,
+    ) -> Result<Self, ScoreError> {
+        if title.len() > 1024 {
+            return Err(ScoreError("Título demasiado largo"));
+        }
+        if instruments.is_empty()
+            || instruments.len() > MAX_PARTS
+            || !(1..=MAX_MEASURES).contains(&measures)
+        {
+            return Err(ScoreError("Cantidad de instrumentos o compases inválida"));
+        }
+        let score = Self {
+            title,
+            parts: instruments
+                .iter()
+                .enumerate()
+                .map(|(i, &instrument)| Part::new(PartId(i as u32), instrument, measures))
+                .collect(),
+            next_part_id: instruments.len() as u32,
+            ..Self::default()
+        };
+        score.validate()?;
+        Ok(score)
+    }
     pub fn title(&self) -> &str {
         &self.title
     }
@@ -399,6 +493,21 @@ impl Score {
     pub fn part(&self, id: PartId) -> Option<&Part> {
         self.parts.iter().find(|part| part.id == id)
     }
+    /// An independent part, retaining its section name, all staves and global
+    /// changes. The original document and its stable element IDs are untouched.
+    pub fn extract_part(&self, id: PartId) -> Result<Self, ScoreError> {
+        self.validate()?;
+        let mut part = self
+            .part(id)
+            .ok_or(ScoreError("El instrumento no existe"))?
+            .clone();
+        part.name = Some(self.part_name(id));
+        let mut extracted = self.clone();
+        extracted.parts = std::iter::once(part).collect();
+        extracted.prune_connections();
+        extracted.validate()?;
+        Ok(extracted)
+    }
     fn part_mut(&mut self, id: PartId) -> Result<&mut Part, ScoreError> {
         self.parts
             .iter_mut()
@@ -407,7 +516,7 @@ impl Score {
     }
     pub fn add_part(&mut self, instrument: Instrument) -> Result<PartId, ScoreError> {
         if self.parts.len() >= MAX_PARTS {
-            return Err(ScoreError("Máximo de 14 instrumentos por partitura"));
+            return Err(ScoreError("Máximo de 48 instrumentos por partitura"));
         }
         let next = self
             .next_part_id
@@ -482,6 +591,18 @@ impl Score {
         index: usize,
         event: Event,
     ) -> Result<ElementId, ScoreError> {
+        self.insert_in_voice(part, staff, measure, Voice::One, index, event)
+    }
+
+    pub fn insert_in_voice(
+        &mut self,
+        part: PartId,
+        staff: StaffId,
+        measure: usize,
+        voice: Voice,
+        index: usize,
+        event: Event,
+    ) -> Result<ElementId, ScoreError> {
         let current = self
             .part(part)
             .ok_or(ScoreError("El instrumento no existe"))?
@@ -490,10 +611,15 @@ impl Score {
             .measures
             .get(measure)
             .ok_or(ScoreError("El compás no existe"))?;
-        if index > current.len() {
+        if index > current.voice_len(voice) {
             return Err(ScoreError("Posición de entrada inválida"));
         }
-        event.pitches.validate()?;
+        self.validate_event_pitches(part, measure, event)?;
+        if event.notation.arpeggio.is_some() && event.pitches.len() < 2 {
+            return Err(ScoreError(
+                "El arpegio requiere un acorde de al menos dos notas",
+            ));
+        }
         if event.notation.technique.is_some()
             && self.part(part).unwrap().instrument().family() != InstrumentFamily::Strings
         {
@@ -504,12 +630,12 @@ impl Score {
         if event.pitches.is_empty() && event.notation.articulation.is_some() {
             return Err(ScoreError("Un silencio no admite articulaciones"));
         }
-        if current.used_ticks() + event.duration.ticks() > self.time.capacity() {
+        if current.voice_ticks(voice) + event.duration.ticks() > self.time_at(measure).capacity() {
             return Err(ScoreError("La figura no cabe en el compás"));
         }
         let current = &mut self.part_mut(part)?.staff_mut(staff)?.measures[measure];
         let id = Arc::make_mut(&mut current.events).insert(event);
-        current.order.insert(index, id);
+        current.voice_order_mut(voice).insert(index, id);
         self.prune_connections();
         Ok(ElementId {
             part,
@@ -526,21 +652,33 @@ impl Score {
             .measures
             .get_mut(id.measure)
             .ok_or(ScoreError("El compás no existe"))?;
+        let voice = measure
+            .voice_of(id.event)
+            .ok_or(ScoreError("La nota no existe"))?;
         let index = measure
-            .index_of(id.event)
+            .voice_index_of(voice, id.event)
             .ok_or(ScoreError("La nota no existe"))?;
         Arc::make_mut(&mut measure.events).remove(id.event);
-        measure.order.remove(index);
+        measure.voice_order_mut(voice).remove(index);
         self.prune_connections();
         Ok(())
     }
 
     fn set_pitches(&mut self, id: ElementId, pitches: Pitches) -> Result<(), ScoreError> {
-        self.event(id).ok_or(ScoreError("La nota no existe"))?;
+        let mut candidate = *self.event(id).ok_or(ScoreError("La nota no existe"))?;
+        candidate.pitches = pitches;
+        self.validate_event_pitches(id.part, id.measure, candidate)?;
         Arc::make_mut(
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
             .pitches = pitches;
+        if pitches.len() < 2 {
+            Arc::make_mut(
+                &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+            )[id.event]
+                .notation
+                .arpeggio = None;
+        }
         self.prune_connections();
         Ok(())
     }
@@ -605,7 +743,15 @@ impl Score {
             return Err(ScoreError("Cantidad de instrumentos inválida"));
         }
         for part in &self.parts {
-            let expected = if part.instrument == Instrument::Piano {
+            if part.name.as_ref().is_some_and(|name| {
+                name.trim().is_empty() || name.len() > 128 || name.chars().any(char::is_control)
+            }) {
+                return Err(ScoreError("Nombre de instrumento inválido"));
+            }
+            if part.divided && part.instrument.is_grand_staff() {
+                return Err(ScoreError("Este instrumento ya tiene dos pentagramas"));
+            }
+            let expected = if part.instrument.is_grand_staff() || part.divided {
                 2
             } else {
                 1
@@ -620,11 +766,47 @@ impl Score {
         if self.measures().is_empty() || self.measures().len() > MAX_MEASURES {
             return Err(ScoreError("Cantidad de compases inválida"));
         }
+        for part in &self.parts {
+            if part
+                .divisi_changes
+                .keys()
+                .any(|&bar| bar >= self.measures().len())
+                || part.divisi_changes.iter().any(|(&bar, changes)| {
+                    changes.is_empty()
+                        || changes
+                            .keys()
+                            .any(|&tick| tick >= self.time_at(bar).capacity())
+                })
+                || (!part.divisi_changes.is_empty()
+                    && (part.divided || part.instrument.is_grand_staff()))
+            {
+                return Err(ScoreError("Cambio de divisi inválido"));
+            }
+        }
+        if self
+            .time_changes
+            .iter()
+            .any(|(&bar, time)| bar == 0 || bar >= self.measures().len() || !time.is_valid())
+            || self
+                .key_changes
+                .keys()
+                .any(|&bar| bar == 0 || bar >= self.measures().len())
+        {
+            return Err(ScoreError("Cambio de métrica o tonalidad inválido"));
+        }
+        self.tempo.validate()?;
+        for (&bar, mark) in &self.tempo_changes {
+            if bar == 0 || bar >= self.measures().len() {
+                return Err(ScoreError("Cambio de tempo inválido"));
+            }
+            mark.validate()?;
+        }
         if self.title.len() > 1024 {
             return Err(ScoreError("Título demasiado largo"));
         }
         let mut parts_seen = std::collections::HashSet::new();
         for part in &self.parts {
+            part.transposition.validate()?;
             if !parts_seen.insert(part.id) || part.id.0 >= self.next_part_id {
                 return Err(ScoreError("Estructura de instrumentos inválida"));
             }
@@ -632,15 +814,18 @@ impl Score {
                 if staff.measures.len() != self.measures().len() {
                     return Err(ScoreError("Compases desalineados entre pentagramas"));
                 }
-                for measure in &staff.measures {
-                    if measure.order.len() != measure.events.len()
-                        || measure.len() > MAX_EVENTS_PER_MEASURE
+                for (index, measure) in staff.measures.iter().enumerate() {
+                    if measure.len() != measure.events.len()
+                        || measure.len() > MAX_EVENTS_PER_MEASURE * 2
                     {
                         return Err(ScoreError("Índice de notas inválido"));
                     }
                     let mut seen = std::collections::HashSet::new();
-                    let mut ticks = 0u32;
-                    for id in &measure.order {
+                    let mut ticks = [0u32; 2];
+                    for (voice, id) in Voice::ALL
+                        .into_iter()
+                        .flat_map(|v| measure.voice_order(v).iter().map(move |id| (v, id)))
+                    {
                         let event = measure
                             .events
                             .get(*id)
@@ -648,7 +833,10 @@ impl Score {
                         if !seen.insert(*id) {
                             return Err(ScoreError("Referencia a nota duplicada"));
                         }
-                        event.pitches.validate()?;
+                        self.validate_event_pitches(part.id(), index, *event)?;
+                        if event.notation.arpeggio.is_some() && event.pitches.len() < 2 {
+                            return Err(ScoreError("Arpegio en un elemento sin acorde"));
+                        }
                         if event.notation.technique.is_some()
                             && part.instrument().family() != InstrumentFamily::Strings
                         {
@@ -659,15 +847,22 @@ impl Score {
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
                         }
-                        ticks += u32::from(event.duration.ticks());
+                        ticks[usize::from(voice.number() - 1)] += u32::from(event.duration.ticks());
                     }
-                    if ticks > u32::from(self.time.capacity()) {
+                    if ticks
+                        .into_iter()
+                        .any(|ticks| ticks > u32::from(self.time_at(index).capacity()))
+                    {
                         return Err(ScoreError("Compás excedido"));
                     }
                 }
             }
         }
+        for part in &self.parts {
+            part.validate_divisi_cuts()?;
+        }
         self.validate_connections()?;
+        self.validate_piano_arpeggios()?;
         Ok(())
     }
 }
@@ -675,6 +870,25 @@ impl Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_document_construction_validates_shape_and_allocates_stable_parts() {
+        assert!(Score::new("x".repeat(1025), &[Instrument::Piano], 1).is_err());
+        assert!(Score::new(String::new(), &[], 1).is_err());
+        assert!(Score::new(String::new(), &[Instrument::Violin], 0).is_err());
+        assert!(Score::new(String::new(), &[Instrument::Violin], MAX_MEASURES + 1).is_err());
+        assert!(Score::new(String::new(), &[Instrument::Violin; MAX_PARTS + 1], 1).is_err());
+        let score = Score::new(
+            "Importación".into(),
+            &[Instrument::Violin, Instrument::Piano],
+            2,
+        )
+        .unwrap();
+        score.validate().unwrap();
+        assert_eq!(score.title(), "Importación");
+        assert_eq!(score.parts()[1].id(), PartId(1));
+        assert_eq!(score.parts()[1].staves().len(), 2);
+        assert_eq!(score.measures().len(), 2);
+    }
     fn note() -> Event {
         Event {
             notation: Default::default(),

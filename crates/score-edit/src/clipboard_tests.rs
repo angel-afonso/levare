@@ -123,6 +123,9 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
     let mut source = Editor::default();
     let mut event = note(Step::C, Duration::Whole);
     event.notation = Notation {
+        harmonic: None,
+        division: None,
+        arpeggio: None,
         technique: None,
         dynamic: Some(Dynamic::Ff),
         articulation: Some(Articulation::Staccato),
@@ -268,7 +271,7 @@ fn clipboard_carries_inherited_technique_splits_once_and_rejects_incompatible_de
     e.select(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.initial_technique, T::Pizzicato);
-    assert_eq!(clip.version, 4);
+    assert_eq!(clip.version, 6);
     assert_eq!(clip.events[0].event.notation.technique, None);
     let mut target = Score::default();
     let violin = target.add_part(Instrument::Violin).unwrap();
@@ -320,7 +323,7 @@ fn hairpin_paste_remaps_end_to_first_split_note_and_carries_completed_levels() {
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.links.len(), 1);
-    assert_eq!(clip.version, 4);
+    assert_eq!(clip.version, 6);
     let mut dst = Editor::default();
     dst.execute(Command::Insert(note(Step::G, Duration::Half)))
         .unwrap();
@@ -361,7 +364,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     e.select(a);
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
-    assert_eq!(clip.version, 4);
+    assert_eq!(clip.version, 6);
     let mut dst = Editor::default();
     dst.paste(&clip).unwrap();
     let events: Vec<_> = dst.score().measures()[0]
@@ -386,7 +389,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     old.events[1].offset = 16;
     let upgraded = old.clone().upgraded().unwrap();
     assert_eq!(upgraded.events[1].offset, 48);
-    assert_eq!(upgraded.version, 4);
+    assert_eq!(upgraded.version, 6);
     let mut dst = Editor::default();
     dst.paste(&old).unwrap();
     assert_eq!(dst.score().measures()[0].used_ticks(), 96);
@@ -442,4 +445,131 @@ fn unrepresentable_paste_boundaries_fail_without_partial_music_or_panics() {
     assert!(dst.paste(&clip).is_err());
     assert_eq!(dst.score(), &before);
     assert_eq!(dst.selected_ids(), selected);
+}
+
+#[test]
+fn arpeggio_edits_undo_and_split_paste_keep_only_the_original_attack() {
+    use score_core::{Arpeggio, MarkKind, MarkRef};
+    let mut source = Editor::default();
+    let mut chord = note(Step::C, Duration::Whole);
+    chord.pitches = chord.pitches.with(Pitch::new(Step::G, 4).unwrap()).unwrap();
+    source.execute(Command::Insert(chord)).unwrap();
+    let id = source.selection().unwrap();
+    source
+        .execute(Command::ToggleMark(MarkKind::Arpeggio(Arpeggio::Down)))
+        .unwrap();
+    let clip = source.copy_selection().unwrap();
+    source.execute(Command::RemoveHighestPitch).unwrap();
+    assert!(!source.score().has_mark(MarkRef::Arpeggio(id)));
+    source.undo();
+    assert!(source.score().has_mark(MarkRef::Arpeggio(id)));
+    source
+        .execute(Command::RemoveMark(MarkRef::Arpeggio(id)))
+        .unwrap();
+    assert_eq!(source.score().event(id).unwrap().pitches.len(), 2);
+    source.undo();
+    source
+        .execute(Command::ToggleMark(MarkKind::Arpeggio(Arpeggio::Down)))
+        .unwrap();
+    assert!(!source.score().has_mark(MarkRef::Arpeggio(id)));
+    source.undo();
+    let mut target = Editor::default();
+    target
+        .execute(Command::Insert(note(Step::D, Duration::Quarter)))
+        .unwrap();
+    let before = target.score().clone();
+    target.paste(&clip).unwrap();
+    let pasted = target.selected_ids();
+    assert!(pasted.len() > 1);
+    for (index, id) in pasted.iter().enumerate() {
+        assert_eq!(
+            target.score().event(*id).unwrap().notation.arpeggio,
+            (index == 0).then_some(Arpeggio::Down)
+        );
+    }
+    target.score().validate().unwrap();
+    target.undo();
+    assert_eq!(target.score(), &before);
+    target.redo();
+    assert_eq!(
+        target.score().event(pasted[0]).unwrap().notation.arpeggio,
+        Some(Arpeggio::Down)
+    );
+}
+
+#[test]
+fn shared_arpeggio_edits_are_atomic_undoable_and_single_staff_copy_has_no_dangling_links() {
+    use score_core::{Arpeggio, MarkRef};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let mut chord = note(Step::C, Duration::Quarter);
+    chord.pitches = chord.pitches.with(Pitch::new(Step::G, 4).unwrap()).unwrap();
+    let upper = score.insert(0, 0, chord).unwrap();
+    let lower = score.insert_on(piano, StaffId::Lower, 0, 0, chord).unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(lower);
+    editor.execute(Command::SetArpeggioBothHands(true)).unwrap();
+    assert_eq!(editor.score().piano_arpeggios().len(), 1);
+    editor.undo();
+    assert!(editor.score().piano_arpeggios().is_empty());
+    editor.redo();
+    let clip = editor.copy_selection().unwrap();
+    assert_eq!(
+        clip.events[0].event.notation.arpeggio,
+        Some(Arpeggio::Normal)
+    );
+    let mut target = Editor::default();
+    target.paste(&clip).unwrap();
+    target.score().validate().unwrap();
+    assert!(target.score().piano_arpeggios().is_empty());
+    editor
+        .execute(Command::RemoveMark(MarkRef::Arpeggio(upper)))
+        .unwrap();
+    assert!(editor.score().piano_arpeggios().is_empty());
+    assert_eq!(editor.score().event(lower).unwrap().pitches.len(), 2);
+    editor.undo();
+    editor.execute(Command::Delete).unwrap();
+    assert!(editor.score().piano_arpeggios().is_empty());
+    editor.undo();
+    assert_eq!(editor.score().piano_arpeggios().len(), 1);
+}
+
+#[test]
+fn copying_between_concert_and_transposing_instruments_keeps_sounding_pitch() {
+    for source in [Instrument::Flute, Instrument::ClarinetBb, Instrument::HornF] {
+        let mut score = Score::new("Origen".into(), &[source], 1).unwrap();
+        let part = score.parts()[0].id();
+        let id = score
+            .insert_on(part, StaffId::Upper, 0, 0, note(Step::C, Duration::Quarter))
+            .unwrap();
+        let sounding = score.sounding_pitches(id).unwrap();
+        let mut editor = Editor::new(score).unwrap();
+        editor.select(id);
+        let clip = editor.copy_selection().unwrap();
+        for target in [Instrument::Flute, Instrument::ClarinetBb, Instrument::HornF] {
+            let mut dest =
+                Editor::new(Score::new("Destino".into(), &[target], 1).unwrap()).unwrap();
+            dest.paste(&clip).unwrap();
+            let absolute = |ps: Pitches| {
+                ps.iter()
+                    .map(|p| {
+                        i16::from(p.octave()) * 12
+                            + [0, 2, 4, 5, 7, 9, 11][p.step.index() as usize]
+                            + i16::from(p.alteration())
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                absolute(
+                    dest.score()
+                        .sounding_pitches(dest.selected_ids()[0])
+                        .unwrap()
+                ),
+                absolute(sounding),
+                "{source:?} → {target:?}"
+            );
+            assert!(dest.undo());
+            assert!(dest.score().measures()[0].is_empty());
+        }
+    }
 }

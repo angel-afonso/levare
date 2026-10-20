@@ -1,4 +1,47 @@
 use super::*;
+
+#[test]
+fn tempo_marks_round_trip_validate_and_legacy_eleven_keeps_quarter_120() {
+    use score_core::{TempoBeat, TempoMark};
+    let mut score = Score::default();
+    let mark = TempoMark {
+        bpm: 72,
+        text: "Adagio espressivo".into(),
+        beat: TempoBeat::Quarter,
+    };
+    score.set_tempo_at(0, mark).unwrap();
+    score
+        .set_tempo_at(
+            2,
+            TempoMark {
+                bpm: 108,
+                beat: TempoBeat::DottedQuarter,
+                text: "Andante".into(),
+            },
+        )
+        .unwrap();
+    let bytes = encode(&score).unwrap();
+    assert_eq!(decode(&bytes).unwrap(), score);
+    let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    legacy["version"] = 11.into();
+    legacy["score"].as_object_mut().unwrap().remove("tempo");
+    legacy["score"]
+        .as_object_mut()
+        .unwrap()
+        .remove("tempo_changes");
+    let old = decode(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+    assert_eq!(old.tempo_at(3), &TempoMark::default());
+    for invalid in [
+        serde_json::json!({"0":{"bpm":80}}),
+        serde_json::json!({"4":{"bpm":80}}),
+        serde_json::json!({"2":{"bpm":401}}),
+        serde_json::json!({"2":{"bpm":80,"text":"A\nB"}}),
+    ] {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value["score"]["tempo_changes"] = invalid;
+        assert!(decode(&serde_json::to_vec(&value).unwrap()).is_err());
+    }
+}
 use score_core::{
     Articulation, Connection, ConnectionKind, Duration, Dynamic, Event, Notation, Pitch, Pitches,
     Step,
@@ -176,7 +219,7 @@ fn schema_ten_round_trips_rhythms_and_legacy_values_keep_their_musical_meaning()
     let bytes = encode(&s).unwrap();
     assert_eq!(decode(&bytes).unwrap(), s);
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(value["version"], 10);
+    assert_eq!(value["version"], SCHEMA_VERSION);
     for duration in [
         serde_json::json!({"value":"Quarter","dotted":2}),
         serde_json::json!({"value":"Quarter","triplet":"yes"}),
@@ -222,4 +265,139 @@ fn the_largest_supported_bar_can_save_and_restore_all_384_triplet_events() {
     assert_eq!(s.measures()[0].len(), 384);
     assert_eq!(s.measures()[0].used_ticks(), s.time().capacity());
     assert_eq!(decode(&encode(&s).unwrap()).unwrap(), s);
+}
+
+#[test]
+fn signature_changes_round_trip_and_legacy_ten_keeps_its_global_signatures() {
+    use score_core::{KeyMode, KeySignature, TimeSignature};
+    let mut score = Score::default();
+    score
+        .set_time_signature_at(
+            1,
+            TimeSignature {
+                numerator: 3,
+                denominator: 4,
+            },
+        )
+        .unwrap();
+    score
+        .set_time_signature_at(
+            3,
+            TimeSignature {
+                numerator: 6,
+                denominator: 8,
+            },
+        )
+        .unwrap();
+    score
+        .set_key_signature_at(2, KeySignature::new(-3, KeyMode::Major).unwrap())
+        .unwrap();
+    assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&encode(&Score::default()).unwrap()).unwrap();
+    value["version"] = 10.into();
+    assert_eq!(
+        decode(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        Score::default()
+    );
+    for changes in [
+        serde_json::json!({"0":{"numerator":3,"denominator":4}}),
+        serde_json::json!({"4":{"numerator":3,"denominator":4}}),
+        serde_json::json!({"1":{"numerator":3,"denominator":0}}),
+    ] {
+        let mut bad = value.clone();
+        bad["version"] = SCHEMA_VERSION.into();
+        bad["score"]["time_changes"] = changes;
+        assert!(decode(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn arpeggios_round_trip_and_schema_twelve_defaults_to_simultaneous_chords() {
+    use score_core::Arpeggio;
+    let mut score = Score::default();
+    let mut event = Event {
+        pitches: Pitches::new(&[
+            Pitch::new(Step::C, 4).unwrap(),
+            Pitch::new(Step::G, 4).unwrap(),
+        ])
+        .unwrap(),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    for (index, mark) in Arpeggio::ALL.into_iter().enumerate() {
+        event.notation.arpeggio = Some(mark);
+        score.insert(0, index, event).unwrap();
+    }
+    let bytes = encode(&score).unwrap();
+    assert_eq!(decode(&bytes).unwrap(), score);
+    let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    legacy["version"] = 12.into();
+    let events = legacy["score"]["parts"][0]["staves"][0]["measures"][0]["events"]
+        .as_array_mut()
+        .unwrap();
+    for entry in events.iter_mut() {
+        if let Some(notation) = entry
+            .get_mut("value")
+            .and_then(|event| event.get_mut("notation"))
+            .and_then(|notation| notation.as_object_mut())
+        {
+            notation.remove("arpeggio");
+        }
+    }
+    let old = decode(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+    assert!(
+        old.measures()[0]
+            .iter()
+            .all(|(_, event)| event.notation.arpeggio.is_none())
+    );
+    let mut invalid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    invalid["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]["pitches"] =
+        serde_json::to_value(Pitches::single(Pitch::new(Step::C, 4))).unwrap();
+    assert!(decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
+}
+
+#[test]
+fn piano_arpeggios_round_trip_and_reject_dangling_duplicated_or_wrong_staff_members() {
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let event = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    let upper = score.insert(0, 0, event).unwrap();
+    let lower = score
+        .insert_on(piano, score_core::StaffId::Lower, 0, 0, event)
+        .unwrap();
+    score.set_arpeggio_both_hands(lower, true).unwrap();
+    let bytes = encode(&score).unwrap();
+    assert_eq!(decode(&bytes).unwrap(), score);
+    let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let mut old = original.clone();
+    old["version"] = 13.into();
+    old["score"]
+        .as_object_mut()
+        .unwrap()
+        .remove("piano_arpeggios");
+    assert!(
+        decode(&serde_json::to_vec(&old).unwrap())
+            .unwrap()
+            .piano_arpeggios()
+            .is_empty()
+    );
+    for invalid in [
+        serde_json::to_value(upper).unwrap(),
+        serde_json::json!({"part":99,"staff":"Lower","measure":0,"event":{"idx":1,"version":1}}),
+    ] {
+        let mut value = original.clone();
+        value["score"]["piano_arpeggios"][0]["lower"] = invalid;
+        assert!(decode(&serde_json::to_vec(&value).unwrap()).is_err());
+    }
+    let mut value = original.clone();
+    value["score"]["piano_arpeggios"]
+        .as_array_mut()
+        .unwrap()
+        .push(original["score"]["piano_arpeggios"][0].clone());
+    assert!(decode(&serde_json::to_vec(&value).unwrap()).is_err());
 }

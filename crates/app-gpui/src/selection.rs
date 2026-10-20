@@ -62,6 +62,12 @@ fn nearest_event(
     point: ScorePoint,
     same_measure: bool,
 ) -> Option<ElementId> {
+    let voice = layout
+        .measures
+        .iter()
+        .flat_map(|m| &m.content.events)
+        .find(|e| e.id == anchor)?
+        .voice;
     let point = ScorePoint {
         x: point.x / layout.scale,
         y: point.y / layout.scale,
@@ -71,18 +77,23 @@ fn nearest_event(
         .iter()
         .filter(|m| {
             m.part == anchor.part
-                && m.staff == anchor.staff
+                && m.source_staff == anchor.staff
+                && m.source_voice.is_none_or(|v| v == voice)
                 && (!same_measure || m.index == anchor.measure)
         })
         .collect();
     if let Some((id, _)) = measures
         .iter()
         .flat_map(|m| {
-            m.content.events.iter().filter_map(move |event| {
-                let dx = point.x - m.origin.x - event.center.x;
-                let dy = point.y - m.origin.y - event.center.y;
-                (dx.abs() <= 15. && dy.abs() <= 18.).then_some((event.id, dx * dx + dy * dy))
-            })
+            m.content
+                .events
+                .iter()
+                .filter(|e| e.voice == voice)
+                .filter_map(move |event| {
+                    let dx = point.x - m.origin.x - event.center.x;
+                    let dy = point.y - m.origin.y - event.center.y;
+                    (dx.abs() <= 15. && dy.abs() <= 18.).then_some((event.id, dx * dx + dy * dy))
+                })
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
     {
@@ -105,12 +116,16 @@ fn nearest_event(
         .iter()
         .flat_map(|m| {
             let (top, bottom) = rows[&m.origin.y.to_bits()];
-            m.content.events.iter().map(move |event| {
-                let row = (top - point.y).max(point.y - bottom).max(0.);
-                let center = (point.y - m.origin.y - 20.).abs();
-                let time = (point.x - m.origin.x - event.center.x).abs();
-                (event.id, row, center, time)
-            })
+            m.content
+                .events
+                .iter()
+                .filter(|e| e.voice == voice)
+                .map(move |event| {
+                    let row = (top - point.y).max(point.y - bottom).max(0.);
+                    let center = (point.y - m.origin.y - 20.).abs();
+                    let time = (point.x - m.origin.x - event.center.x).abs();
+                    (event.id, row, center, time)
+                })
         })
         .min_by(|a, b| {
             a.1.total_cmp(&b.1)
@@ -129,12 +144,22 @@ impl AppView {
     ) {
         self.focus.focus(window);
         self.selection_drag = None;
+        self.note_drag = None;
         if self.busy || self.confirming {
             return;
         }
         self.reveal_selection = false;
         let point = canvas_point(event.position, self.canvas_origin);
         self.clicked_mark = None;
+        if let Some(measure) = self.layout.hit_tempo(point) {
+            self.document.editor.set_cursor(score_edit::Cursor {
+                measure,
+                index: 0,
+                ..self.document.editor.cursor()
+            });
+            self.toggle_tempo_picker(cx);
+            return;
+        }
         let hit = self.layout.hit(point);
         if let Some(score_layout::Hit::Mark(mark)) = hit.filter(|_| !event.modifiers.shift) {
             let anchor = mark.anchor();
@@ -153,17 +178,45 @@ impl AppView {
             cx.notify();
             return;
         }
-        let note = match hit {
-            Some(score_layout::Hit::Note(id, pitch)) => Some((id, pitch)),
-            _ => self.layout.hit_pitch(point),
-        };
-        if let Some((id, pitch)) = note {
+        let note = self
+            .layout
+            .hit_pitch_with_position(point, self.document.editor.cursor().voice);
+        let seek_tick = (!event.modifiers.shift)
+            .then(|| {
+                crate::playhead::score_tick(
+                    self.document.editor.score(),
+                    &self.layout,
+                    point,
+                    self.document.editor.cursor().voice,
+                )
+            })
+            .flatten();
+        if let Some((id, pitch, tick)) = note {
+            self.ui.note_entry = false;
             if event.modifiers.shift {
                 self.document.editor.extend_selection(id);
             } else {
                 self.document.editor.select_pitch(id, pitch);
+                self.document
+                    .editor
+                    .select_divisi_position(score_core::DivisiPoint::new(id.measure, tick));
             }
             self.playback.follow_staff(id.part, id.staff);
+            if let Some(tick) = seek_tick {
+                self.seek_playback(tick, false, cx);
+            }
+            if !event.modifiers.shift
+                && let Some(pitch) = pitch
+            {
+                self.note_drag = crate::note_drag::NoteDrag::new(
+                    self.document.editor.score(),
+                    id,
+                    pitch,
+                    event.position,
+                    self.canvas_origin,
+                    &self.layout,
+                );
+            }
             self.selection_drag = Some(PassageDrag {
                 anchor: id,
                 start: event.position,
@@ -171,6 +224,12 @@ impl AppView {
                 select_anchor: false,
             });
         } else if let Some((part, staff, measure)) = self.layout.measure_at(point) {
+            let placed = self.layout.measure_on(part, staff, measure).unwrap();
+            let (voice, index) = placed.insertion_near(
+                self.document.editor.cursor().voice,
+                point.x / self.layout.scale - placed.origin.x,
+            );
+            let staff = placed.source_staff;
             let bar = &self
                 .document
                 .editor
@@ -180,9 +239,8 @@ impl AppView {
                 .staff(staff)
                 .unwrap()
                 .measures()[measure];
-            let index = bar.len();
             let anchor = bar
-                .id_at(0)
+                .voice_id_at(voice, 0)
                 .map(|event| ElementId {
                     part,
                     staff,
@@ -194,6 +252,7 @@ impl AppView {
                 self.document.editor.extend_selection(id);
             } else {
                 self.document.editor.set_cursor(Cursor {
+                    voice,
                     part,
                     staff,
                     measure,
@@ -201,6 +260,9 @@ impl AppView {
                 });
             }
             self.playback.follow_staff(part, staff);
+            if let Some(tick) = seek_tick {
+                self.seek_playback(tick, false, cx);
+            }
             self.selection_drag = anchor.map(|anchor| PassageDrag {
                 anchor,
                 start: event.position,
@@ -219,7 +281,7 @@ impl AppView {
                 "{count} elementos seleccionados · Copiar o cortar para llevar el pasaje a otro lugar"
             )
         } else {
-            "Arrastra sobre las notas para seleccionar un pasaje; Shift + clic amplía la selección"
+            "Clic sitúa la reproducción · Arrastra arriba/abajo para cambiar altura; horizontal para mover; Shift para seleccionar"
                 .into()
         };
     }
@@ -251,9 +313,10 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         if event.dragging() {
-            self.extend_passage_drag(event.position, cx);
+            self.move_score_pointer(event.position, cx);
         } else {
             self.selection_drag = None;
+            self.cancel_note_drag(cx);
         }
     }
 
@@ -263,8 +326,133 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.extend_passage_drag(event.position, cx);
+        self.move_score_pointer(event.position, cx);
+        if let Some(drag) = self.note_drag.take() {
+            if drag.active {
+                if drag.is_time() {
+                    if let Some(target) = drag.time_target {
+                        self.document
+                            .editor
+                            .select_pitch(drag.id, Some(drag.original));
+                        self.edit(
+                            Command::MoveSelectedEvent {
+                                measure: target.measure,
+                                tick: target.tick,
+                            },
+                            cx,
+                        );
+                        if let Some(id) = self.document.editor.selection()
+                            && self.document.editor.score().event_tick(id)
+                                == Some(
+                                    self.document
+                                        .editor
+                                        .score()
+                                        .measure_start_tick(target.measure)
+                                        + u64::from(target.tick),
+                                )
+                        {
+                            let tick = self.document.editor.score().event_tick(id).unwrap();
+                            self.seek_playback(tick, false, cx);
+                            self.status = format!(
+                                "{} al compás {} · ⌘Z para deshacer",
+                                if target.swap {
+                                    "Figuras intercambiadas"
+                                } else {
+                                    "Figura movida"
+                                },
+                                target.measure + 1
+                            );
+                            if let Err(error) =
+                                self.playback.preview(self.document.editor.score(), id)
+                            {
+                                self.status = format!("Figura movida · Audio: {error}");
+                            }
+                        }
+                    } else if let Some(error) = drag.error {
+                        self.status = error;
+                    }
+                } else if let Some(pitch) = drag.target {
+                    let tick = self.document.editor.score().event_tick(drag.id);
+                    self.document
+                        .editor
+                        .select_pitch(drag.id, Some(drag.original));
+                    self.edit(Command::ReplacePitch(pitch), cx);
+                    if self.document.editor.selected_pitch() == Some(pitch) {
+                        if let Some(tick) = tick {
+                            self.seek_playback(tick, false, cx);
+                        }
+                        self.status = format!("Nota cambiada a {pitch} · ⌘Z para deshacer");
+                        if let Err(error) =
+                            self.playback.preview(self.document.editor.score(), drag.id)
+                        {
+                            self.status = format!("Nota cambiada a {pitch} · Audio: {error}");
+                        }
+                    }
+                } else if let Some(error) = drag.error {
+                    self.status = error;
+                }
+            }
+            cx.notify();
+        }
         self.selection_drag = None;
+    }
+
+    fn move_score_pointer(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            self.cancel_note_drag(cx);
+            self.selection_drag = None;
+            return;
+        }
+        let motion = self.note_drag.as_ref().map(|drag| drag.motion(position));
+        match motion {
+            Some(crate::note_drag::Motion::Pending) => return,
+            Some(mode @ (crate::note_drag::Motion::Time | crate::note_drag::Motion::Pitch)) => {
+                let drag = self.note_drag.as_mut().unwrap();
+                let starting = !drag.active;
+                let changed = if mode == crate::note_drag::Motion::Time {
+                    drag.update_time(position, self.canvas_origin)
+                } else {
+                    drag.update(position, self.canvas_origin)
+                };
+                let id = drag.id;
+                let error = drag.error.clone();
+                let pitch = drag.target.unwrap_or(drag.original);
+                let time = drag.time_target;
+                self.selection_drag = None;
+                if starting {
+                    let tick = self.document.editor.score().event_tick(id);
+                    self.playback.stop();
+                    if let Some(tick) = tick {
+                        let _ = self.playback.seek(self.document.editor.score(), tick);
+                    }
+                }
+                if changed {
+                    self.status = error.unwrap_or_else(|| {
+                        if mode == crate::note_drag::Motion::Time {
+                            time.map_or_else(|| "Posición original · Esc cancela".into(), |t| {
+                                let time = self.document.editor.score().time_at(t.measure);
+                                let beat = 1. + f64::from(t.tick) / f64::from(score_core::TICKS_PER_WHOLE / u16::from(time.denominator));
+                                format!("{} · Compás {} · Tiempo {beat:.2} · Suelta para aplicar; Esc cancela", if t.swap { "Intercambiar figuras" } else { "Mover figura" }, t.measure + 1)
+                            })
+                        } else { format!("{pitch} · Suelta para aplicar; Esc cancela") }
+                    });
+                    cx.notify();
+                }
+                return;
+            }
+            None => {}
+        }
+        self.extend_passage_drag(position, cx);
+    }
+
+    pub(super) fn cancel_note_drag(&mut self, cx: &mut Context<Self>) {
+        if let Some(drag) = self.note_drag.take() {
+            if drag.active {
+                self.status = "Cambio de nota cancelado".into();
+            }
+            self.selection_drag = None;
+            cx.notify();
+        }
     }
 }
 
@@ -276,12 +464,43 @@ pub(super) fn passage_bounds(layout: &Layout, ids: &[ElementId]) -> Vec<Bounds<P
     if ids.len() < 2 {
         return Vec::new();
     }
+    let Some(voice) = layout
+        .event_measure(*first)
+        .and_then(|m| m.content.events.iter().find(|e| e.id == *first))
+        .map(|e| e.voice)
+    else {
+        return Vec::new();
+    };
+    let start = layout
+        .measures
+        .iter()
+        .flat_map(|m| {
+            m.content
+                .events
+                .iter()
+                .filter(move |e| e.id == *first)
+                .map(move |e| m.start_tick + u64::from(e.tick))
+        })
+        .min()
+        .unwrap();
+    let end = layout
+        .measures
+        .iter()
+        .flat_map(|m| {
+            m.content
+                .events
+                .iter()
+                .filter(move |e| e.id == *last)
+                .map(move |e| m.start_tick + u64::from(e.end_tick))
+        })
+        .max()
+        .unwrap();
     let mut measures: Vec<_> = layout
         .measures
         .iter()
         .filter(|m| {
             m.part == first.part
-                && m.staff == first.staff
+                && m.source_staff == first.staff
                 && m.index >= first.measure
                 && m.index <= last.measure
         })
@@ -295,51 +514,49 @@ pub(super) fn passage_bounds(layout: &Layout, ids: &[ElementId]) -> Vec<Bounds<P
     let mut bands: Vec<Bounds<Pixels>> = Vec::new();
     let mut row = None;
     for m in measures {
-        let left = if m.index == first.measure {
-            m.content
-                .events
-                .iter()
-                .filter(|e| e.id == *first)
-                .map(|e| e.center.x - 16.)
-                .min_by(f32::total_cmp)
-                .unwrap_or(0.)
-        } else {
-            0.
-        };
-        let right = if m.index == last.measure {
-            m.content
-                .events
-                .iter()
-                .filter(|e| e.id == *last)
-                .map(|e| e.center.x + 24.)
-                .max_by(f32::total_cmp)
-                .unwrap_or(m.width)
-        } else {
-            m.width
-        };
-        let top = (-12f32).min(m.content.ink_top - 6.);
-        let bottom = 52f32.max(m.content.ink_bottom + 6.);
-        let bounds = Bounds::new(
-            point(
-                px((m.origin.x + left) * layout.scale),
-                px((m.origin.y + top) * layout.scale),
-            ),
-            size(
-                px((right - left).max(1.) * layout.scale),
-                px((bottom - top) * layout.scale),
-            ),
-        );
-        if let Some(previous) = bands.last_mut().filter(|previous| {
-            row == Some(m.origin.y)
-                && (previous.right() - bounds.left()).abs() < px(1.)
-                && previous.top() <= bounds.bottom()
-                && previous.bottom() >= bounds.top()
-        }) {
-            *previous = previous.union(&bounds);
-        } else {
-            bands.push(bounds);
+        let capacity = m.content.time_positions.last().unwrap().0;
+        for r in m.regions.iter().filter(|r| r.voice == voice) {
+            let a = (m.start_tick + u64::from(r.start)).max(start);
+            let b = (m.start_tick + u64::from(r.end)).min(end);
+            if b <= a {
+                continue;
+            }
+            let a = (a - m.start_tick) as u16;
+            let b = (b - m.start_tick) as u16;
+            let left = if a == 0 {
+                0.
+            } else {
+                m.content.x_at_tick(f64::from(a)) - 12.
+            };
+            let right = if b == capacity {
+                m.width
+            } else {
+                m.content.x_at_tick(f64::from(b)) + 8.
+            };
+            let top = (-12f32).min(m.content.ink_top - 6.);
+            let bottom = 52f32.max(m.content.ink_bottom + 6.);
+            let bounds = Bounds::new(
+                point(
+                    px((m.origin.x + left) * layout.scale),
+                    px((m.origin.y + top) * layout.scale),
+                ),
+                size(
+                    px((right - left).max(1.) * layout.scale),
+                    px((bottom - top) * layout.scale),
+                ),
+            );
+            if let Some(previous) = bands.last_mut().filter(|old| {
+                row == Some(m.origin.y)
+                    && (old.right() - bounds.left()).abs() < px(1.)
+                    && old.top() <= bounds.bottom()
+                    && old.bottom() >= bounds.top()
+            }) {
+                *previous = previous.union(&bounds);
+            } else {
+                bands.push(bounds);
+            }
+            row = Some(m.origin.y);
         }
-        row = Some(m.origin.y);
     }
     bands
 }
@@ -550,5 +767,132 @@ mod tests {
                 .collect();
             assert_eq!(bands.len(), rows.len());
         }
+    }
+    #[::core::prelude::v1::test]
+    fn projected_second_voice_selection_highlights_and_drags_on_the_lower_staff() {
+        let mut score = Score::default();
+        let part = score.add_part(score_core::Instrument::Violin).unwrap();
+        score.remove_part(score.parts()[0].id()).unwrap();
+        let mut ids = Vec::new();
+        for bar in 0..2 {
+            ids.push(
+                score
+                    .insert_in_voice(
+                        part,
+                        StaffId::Upper,
+                        bar,
+                        score_core::Voice::Two,
+                        0,
+                        Event {
+                            pitches: Pitches::single(Pitch::new(Step::C, 4)),
+                            duration: Duration::Whole,
+                            notation: Default::default(),
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        score.set_passage_divisi(part, 0, Some(1), true).unwrap();
+        let layout = score_layout::LayoutEngine::default().layout_view(
+            &score,
+            1000.,
+            score_layout::ViewMode::Page,
+        );
+        let bands = passage_bounds(&layout, &ids);
+        for &id in &ids {
+            let m = layout.event_measure(id).unwrap();
+            assert_eq!(m.staff, StaffId::Lower);
+            let p = ScorePoint {
+                x: m.origin.x + m.content.events[0].center.x,
+                y: m.origin.y + m.content.events[0].center.y,
+            };
+            assert_eq!(nearest_event(&layout, ids[0], p, false), Some(id));
+            assert!(
+                bands
+                    .iter()
+                    .any(|b| b.top() <= px(m.origin.y + 20.) && b.bottom() >= px(m.origin.y + 20.))
+            );
+            let upper = layout.measure_on(part, StaffId::Upper, id.measure).unwrap();
+            assert!(
+                bands
+                    .iter()
+                    .all(|b| b.top() > px(upper.origin.y + 40.) || b.bottom() < px(upper.origin.y))
+            );
+        }
+    }
+    #[::core::prelude::v1::test]
+    fn midbar_passage_highlights_one_continuous_voice_row_and_keeps_blank_hits() {
+        let mut score = Score::default();
+        let part = score.add_part(score_core::Instrument::Violin).unwrap();
+        score.remove_part(score.parts()[0].id()).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..4 {
+            score
+                .insert_in(
+                    part,
+                    0,
+                    i,
+                    Event {
+                        pitches: Pitches::single(Pitch::new(Step::G, 5)),
+                        duration: Duration::Quarter,
+                        notation: Default::default(),
+                    },
+                )
+                .unwrap();
+            ids.push(
+                score
+                    .insert_in_voice(
+                        part,
+                        StaffId::Upper,
+                        0,
+                        score_core::Voice::Two,
+                        i,
+                        Event {
+                            pitches: Pitches::single(Pitch::new(Step::C, 4)),
+                            duration: Duration::Quarter,
+                            notation: Default::default(),
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        score
+            .set_divisi_span(
+                part,
+                score_core::DivisiPoint::new(0, 48),
+                Some(score_core::DivisiPoint::new(0, 144)),
+                true,
+            )
+            .unwrap();
+        let layout = score_layout::LayoutEngine::default().layout_view(
+            &score,
+            1000.,
+            score_layout::ViewMode::Page,
+        );
+        let bands = passage_bounds(&layout, &ids);
+        assert_eq!(bands.len(), 1);
+        for &id in &ids {
+            let m = layout.event_measure(id).unwrap();
+            let e = m.content.events.iter().find(|e| e.id == id).unwrap();
+            let p = point(px(m.origin.x + e.center.x), px(m.origin.y + e.center.y));
+            assert!(bands.iter().any(|b| b.contains(&p)));
+            assert_eq!(
+                nearest_event(
+                    &layout,
+                    ids[0],
+                    ScorePoint {
+                        x: m.origin.x + e.center.x,
+                        y: m.origin.y + e.center.y
+                    },
+                    false
+                ),
+                Some(id)
+            );
+        }
+        let lower = layout.measure_on(part, StaffId::Lower, 0).unwrap();
+        let (voice, index) =
+            lower.insertion_near(score_core::Voice::Two, lower.content.x_at_tick(96.));
+        assert_eq!(voice, score_core::Voice::Two);
+        assert_eq!(index, 2);
     }
 }

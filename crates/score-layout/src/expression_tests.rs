@@ -168,7 +168,8 @@ fn technique_text_clears_articulation_slurs_and_adjacent_staves_and_invalidates_
         .iter()
         .find(|c| c.connection.start == a)
         .unwrap();
-    assert!(curve.from.y < m.origin.y + label.position.y - 16.);
+    // Text remains in its own lane; the slur attaches below it, near the note.
+    assert!(curve.from.y > m.origin.y + label.position.y + 4.);
     assert!(m.origin.y + m.content.ink_top > 0.);
     engine.layout_compact(&s, 960.);
     assert_eq!(engine.recomputed_measures, 0);
@@ -226,7 +227,32 @@ fn hairpins_cross_systems_clear_dynamics_and_keep_openings_and_cache_correct() {
                     && h.upper.from.y < m.origin.y + 160.
             })
             .unwrap();
-        assert!(h.upper.from.y > m.origin.y + m.content.ink_bottom);
+        let lowest_head = m
+            .content
+            .events
+            .iter()
+            .map(|e| e.center.y)
+            .fold(40., f32::max);
+        assert!(h.upper.from.y > m.origin.y + lowest_head + 16.);
+        for same_row in layout
+            .measures
+            .iter()
+            .filter(|bar| bar.part == m.part && bar.origin.y == m.origin.y)
+        {
+            for mark in same_row
+                .content
+                .marks
+                .iter()
+                .filter(|mark| matches!(mark.mark, score_core::MarkRef::Dynamic(_)))
+            {
+                let left = same_row.origin.x + mark.center.x - mark.half.0;
+                let right = same_row.origin.x + mark.center.x + mark.half.0;
+                assert!(
+                    h.upper.to.x <= left - 5.9 || h.upper.from.x >= right + 5.9,
+                    "hairpin overlaps a dynamic"
+                );
+            }
+        }
         let lower = layout.measure_on(m.part, StaffId::Lower, m.index).unwrap();
         assert!(h.lower.from.y < lower.origin.y + lower.content.ink_top);
     }
@@ -335,7 +361,7 @@ fn clicks_pick_a_mark_around_its_note_but_the_notehead_still_picks_the_note() {
     assert_eq!(
         layout.hit(Point {
             x: middle.x,
-            y: middle.y - 60.
+            y: layout.systems[0].top - 60.
         }),
         None
     );
@@ -389,4 +415,232 @@ fn a_fermata_sits_above_the_articulation_and_is_clickable_on_notes_and_rests() {
         assert_eq!(layout.hit(point), Some(Hit::Mark(target)));
     }
     assert!(measure.content.top <= fermata.center.y - 9.);
+}
+
+#[test]
+fn changed_signatures_print_in_each_staff_with_cancellation_and_refresh_cached_bars() {
+    use score_core::{KeyMode, KeySignature, TimeSignature};
+    let mut score = Score::default();
+    score
+        .set_time_signature_at(
+            1,
+            TimeSignature {
+                numerator: 6,
+                denominator: 8,
+            },
+        )
+        .unwrap();
+    score
+        .set_key_signature_at(1, KeySignature::new(1, KeyMode::Major).unwrap())
+        .unwrap();
+    score
+        .set_key_signature_at(2, KeySignature::default())
+        .unwrap();
+    let mut engine = LayoutEngine::default();
+    for width in [500., 1420.] {
+        let layout = engine.layout(&score, width);
+        for staff in [StaffId::Upper, StaffId::Lower] {
+            let bar = layout.measure_on(score.parts()[0].id(), staff, 1).unwrap();
+            assert_eq!(bar.start_tick, 192);
+            for symbol in ["\u{e086}", "\u{e088}", "\u{e262}"] {
+                assert!(
+                    bar.content.glyphs.iter().any(|g| g.text == symbol),
+                    "missing {symbol:?}"
+                );
+            }
+            let bar = layout.measure_on(score.parts()[0].id(), staff, 2).unwrap();
+            assert_eq!(bar.start_tick, 336);
+            assert!(bar.content.glyphs.iter().any(|g| g.text == "\u{e261}"));
+        }
+    }
+    score.remove_time_change(1).unwrap();
+    score.remove_key_change(1);
+    let layout = engine.layout(&score, 1420.);
+    let bar = layout
+        .measure_on(score.parts()[0].id(), StaffId::Upper, 1)
+        .unwrap();
+    assert!(!bar.content.glyphs.iter().any(|g| g.text == "\u{e088}"));
+    assert!(engine.recomputed_measures > 0);
+}
+
+#[test]
+fn arpeggios_use_bravura_segments_fit_chords_and_remain_clickable_in_every_view() {
+    use score_core::{Accidental, Arpeggio, MarkRef, Pitches};
+    for mark in Arpeggio::ALL {
+        for interval in [1, 4, 14, 35] {
+            let mut score = Score::default();
+            let mut chord = note();
+            let bass = Pitch::new(Step::C, 3)
+                .unwrap()
+                .with_accidental(Some(Accidental::Sharp));
+            chord.pitches = Pitches::new(&[
+                bass,
+                bass.shift(interval)
+                    .unwrap()
+                    .with_accidental(Some(Accidental::Flat)),
+            ])
+            .unwrap();
+            chord.duration = Duration::Half;
+            let first = score.insert(0, 0, chord).unwrap();
+            let second = score.insert(0, 1, chord).unwrap();
+            let mut engine = LayoutEngine::default();
+            score.set_arpeggio(first, Some(mark)).unwrap();
+            score.set_arpeggio(second, Some(mark)).unwrap();
+            for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
+                let mut layout = engine.layout_view(&score, 1000., mode);
+                for scale in [0.28, 0.7, 1.5] {
+                    layout.scale = scale;
+                    for id in [first, second] {
+                        let measure = layout.measure_on(id.part, id.staff, id.measure).unwrap();
+                        let mark_box = measure
+                            .content
+                            .marks
+                            .iter()
+                            .find(|m| m.mark == MarkRef::Arpeggio(id))
+                            .unwrap();
+                        let glyph = &measure.content.glyphs[mark_box.glyph.unwrap()];
+                        assert!(glyph.rotated);
+                        assert!(glyph.text.chars().all(|c| matches!(
+                            c,
+                            '\u{eaa9}' | '\u{eaaa}' | '\u{eaad}' | '\u{eaae}'
+                        )));
+                        let (_, top, _, bottom) = engine.metrics.bounds(&glyph.text, true);
+                        let high = measure
+                            .content
+                            .events
+                            .iter()
+                            .filter(|e| e.id == id)
+                            .map(|e| e.center.y)
+                            .fold(f32::INFINITY, f32::min);
+                        let low = measure
+                            .content
+                            .events
+                            .iter()
+                            .filter(|e| e.id == id)
+                            .map(|e| e.center.y)
+                            .fold(f32::NEG_INFINITY, f32::max);
+                        assert!(glyph.position.y + top <= high - 4.);
+                        assert!(glyph.position.y + bottom >= low + 4.);
+                        assert!(measure.content.ink_top <= glyph.position.y + top);
+                        assert!(measure.content.ink_bottom >= glyph.position.y + bottom);
+                        assert_eq!(
+                            layout.hit(Point {
+                                x: (measure.origin.x + mark_box.center.x) * scale,
+                                y: (measure.origin.y + mark_box.center.y) * scale
+                            }),
+                            Some(Hit::Mark(MarkRef::Arpeggio(id)))
+                        );
+                        let right = mark_box.center.x + mark_box.half.0 - 3.;
+                        for other in measure
+                            .content
+                            .glyphs
+                            .iter()
+                            .filter(|g| g.element == Some(id) && !g.rotated)
+                        {
+                            let (left, _, _, _) = engine.metrics.bounds(&other.text, false);
+                            assert!(right + 6.9 <= other.position.x + left);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn one_bravura_arpeggio_spans_both_hands_after_wrapping_pagination_and_zoom() {
+    use score_core::{Accidental, Arpeggio, MarkRef, Pitches, StaffId};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    while score.measures().len() < 20 {
+        score.append_measure().unwrap();
+    }
+    let mut pairs = Vec::new();
+    for bar in 0..20 {
+        let upper = score
+            .insert(
+                bar,
+                0,
+                Event {
+                    pitches: Pitches::new(&[
+                        Pitch::new(Step::C, 5)
+                            .unwrap()
+                            .with_accidental(Some(Accidental::Sharp)),
+                        Pitch::new(Step::G, 5).unwrap(),
+                    ])
+                    .unwrap(),
+                    ..note()
+                },
+            )
+            .unwrap();
+        let lower = score
+            .insert_on(
+                piano,
+                StaffId::Lower,
+                bar,
+                0,
+                Event {
+                    pitches: Pitches::single(Pitch::new(Step::C, 3)),
+                    ..note()
+                },
+            )
+            .unwrap();
+        if [0, 8, 19].contains(&bar) {
+            score.set_arpeggio_both_hands(lower, true).unwrap();
+            score
+                .set_arpeggio(upper, Some(Arpeggio::ALL[pairs.len()]))
+                .unwrap();
+            pairs.push((upper, lower));
+        }
+    }
+    let mut engine = LayoutEngine::default();
+    for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
+        let mut layout = engine.layout_view(&score, 700., mode);
+        assert_eq!(layout.piano_arpeggios.len(), 3);
+        for scale in [0.28, 0.7, 1.5] {
+            layout.scale = scale;
+            for (upper, lower) in &pairs {
+                let mark = layout
+                    .piano_arpeggios
+                    .iter()
+                    .find(|mark| mark.bounds.mark == MarkRef::Arpeggio(*upper))
+                    .unwrap();
+                assert!(mark.glyph.rotated);
+                let (_, top, _, bottom) = engine.metrics.bounds(&mark.glyph.text, true);
+                for id in [upper, lower] {
+                    let bar = layout.measure_on(id.part, id.staff, id.measure).unwrap();
+                    assert!(
+                        !bar.content
+                            .glyphs
+                            .iter()
+                            .any(|glyph| glyph.element == Some(*id) && glyph.rotated)
+                    );
+                    for head in bar.content.events.iter().filter(|head| head.id == *id) {
+                        assert!(mark.glyph.position.y + top < bar.origin.y + head.center.y);
+                        assert!(mark.glyph.position.y + bottom > bar.origin.y + head.center.y);
+                    }
+                    for glyph in bar.content.glyphs.iter().filter(|glyph| {
+                        glyph.element == Some(*id)
+                            && glyph.text.chars().next().is_some_and(
+                                |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e262}'),
+                            )
+                    }) {
+                        assert!(
+                            mark.bounds.center.x + mark.bounds.half.0 + 3.9
+                                <= bar.origin.x
+                                    + glyph.position.x
+                                    + engine.metrics.bounds(&glyph.text, false).0
+                        );
+                    }
+                }
+                assert_eq!(
+                    layout.hit(Point {
+                        x: mark.bounds.center.x * scale,
+                        y: mark.bounds.center.y * scale
+                    }),
+                    Some(Hit::Mark(MarkRef::Arpeggio(*upper)))
+                );
+            }
+        }
+    }
 }

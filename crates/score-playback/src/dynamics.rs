@@ -6,13 +6,13 @@ use score_core::DynamicEnvelope;
 struct LevelSegment {
     start: u64,
     end: u64,
-    from: u8,
-    to: u8,
+    from: f64,
+    to: f64,
 }
 impl LevelSegment {
     fn at(&self, frame: u64) -> f64 {
-        f64::from(self.from)
-            + (f64::from(self.to) - f64::from(self.from))
+        self.from
+            + (self.to - self.from)
                 * (frame.saturating_sub(self.start).min(self.end - self.start)) as f64
                 / (self.end - self.start) as f64
     }
@@ -26,11 +26,29 @@ pub(super) fn prepare(
     let levels: Vec<_> = envelope
         .segments
         .into_iter()
-        .map(|s| LevelSegment {
-            start: timeline.frame_at(s.start, rate),
-            end: timeline.frame_at(s.end, rate),
-            from: s.from,
-            to: s.to,
+        .flat_map(|s| {
+            let ticks: Vec<_> = std::iter::once(s.start)
+                .chain(
+                    timeline
+                        .boundaries()
+                        .filter(|tick| *tick > s.start && *tick < s.end),
+                )
+                .chain(std::iter::once(s.end))
+                .collect();
+            let level = |tick: u64| {
+                f64::from(s.from)
+                    + (f64::from(s.to) - f64::from(s.from)) * (tick - s.start) as f64
+                        / (s.end - s.start) as f64
+            };
+            ticks
+                .windows(2)
+                .map(|pair| LevelSegment {
+                    start: timeline.frame_at(pair[0], rate),
+                    end: timeline.frame_at(pair[1], rate),
+                    from: level(pair[0]),
+                    to: level(pair[1]),
+                })
+                .collect::<Vec<_>>()
         })
         .collect();
     for sound in sounds.iter_mut() {
@@ -47,19 +65,42 @@ pub(super) fn prepare(
         sound.reference_level = peak;
         sound.level = peak.saturating_add(sound.boost).min(127);
     }
+    // A channel has one expression controller. Overlapping sounds must reserve
+    // the same headroom, including chains connected through a long second voice.
+    let mut order: Vec<_> = (0..sounds.len()).collect();
+    order.sort_by_key(|i| sounds[*i].start);
+    let mut start = 0;
+    while start < order.len() {
+        let mut end = start + 1;
+        let mut release = sounds[order[start]].end;
+        let mut reference = sounds[order[start]].reference_level;
+        while end < order.len() && sounds[order[end]].start < release {
+            release = release.max(sounds[order[end]].end);
+            reference = reference.max(sounds[order[end]].reference_level);
+            end += 1;
+        }
+        for index in &order[start..end] {
+            sounds[*index].reference_level = reference;
+            sounds[*index].level = reference.saturating_add(sounds[*index].boost).min(127);
+        }
+        start = end;
+    }
     let mut points: Vec<ExpressionPoint> = Vec::new();
     let mut sound_index = 0;
     let mut reference = 127;
     for segment in levels {
         let mut cursor = segment.start;
         while cursor < segment.end {
-            while sounds.get(sound_index).is_some_and(|s| s.start <= cursor) {
-                reference = sounds[sound_index].reference_level;
+            while order
+                .get(sound_index)
+                .is_some_and(|i| sounds[*i].start <= cursor)
+            {
+                reference = sounds[order[sound_index]].reference_level;
                 sound_index += 1;
             }
-            let end = sounds
+            let end = order
                 .get(sound_index)
-                .map_or(segment.end, |s| s.start.min(segment.end));
+                .map_or(segment.end, |i| sounds[*i].start.min(segment.end));
             let cc = |frame| {
                 (segment.at(frame) * 127. / f64::from(reference))
                     .round()

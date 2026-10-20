@@ -201,6 +201,7 @@ mod native {
                         MenuItem::action("Fa♯ mayor", ChooseKeySignature(KeySignature::default())),
                         MenuItem::action("Sostenido  (8)", MenuRun(command::SHARP)),
                         MenuItem::action("Crescendo  (H)", MenuRun(command::CRESCENDO)),
+                        MenuItem::action("Calderón", MenuRun(command::FERMATA)),
                     ])
                     .collect(),
             }]);
@@ -318,15 +319,10 @@ mod titles {
         let mut music: Vec<Range<usize>> = Vec::new();
         let mut offset = 0;
         for character in source.chars() {
-            let character = match character {
-                '♭' => '\u{e260}',
-                '♮' => '\u{e261}',
-                '♯' => '\u{e262}',
-                other => other,
-            };
+            let glyph = crate::music_font::bravura_character(character);
+            let character = glyph.unwrap_or(character);
             let end = offset + character.len_utf16();
-            if matches!(character, '\u{e260}'..='\u{e262}' | '\u{e1e7}' | '\u{e883}' | '\u{e4a0}' | '\u{e4a2}' | '\u{e4a4}' | '\u{e4ac}' | '\u{e53e}' | '\u{e53f}' | '\u{e520}'..='\u{e522}')
-            {
+            if glyph.is_some() {
                 if let Some(last) = music.last_mut().filter(|last| last.end == offset) {
                     last.end = end;
                 } else {
@@ -380,6 +376,27 @@ mod titles {
                 assert_eq!(title.music, vec![0..mark.glyph().encode_utf16().count()]);
             }
             assert!(title("Quitar dinámica", &ChooseDynamic(None)).is_none());
+        }
+
+        #[test]
+        fn every_catalog_symbol_is_styled_as_music_in_native_menus() {
+            let font = crate::music_font::MusicFont::new();
+            for mark in score_core::MarkKind::ALL {
+                let Some(symbol) = mark.symbol() else {
+                    continue;
+                };
+                let command = score_toolbar::marks::command(mark);
+                let styled = title(mark.name(), &MenuRun(command)).unwrap();
+                assert_eq!(
+                    styled.music[0],
+                    0..symbol.encode_utf16().count(),
+                    "{}",
+                    mark.name()
+                );
+                assert!(font.covers(symbol));
+            }
+            let fermata = title("Calderón", &MenuRun(id::FERMATA)).unwrap();
+            assert_eq!(fermata.music, vec![0..1]);
         }
 
         #[test]
