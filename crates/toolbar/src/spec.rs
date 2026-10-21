@@ -10,6 +10,7 @@ pub enum TabId {
     Notation,
     Text,
     Playback,
+    Layout,
     Review,
     View,
 }
@@ -22,6 +23,7 @@ impl TabId {
             Self::Notation => "Notación",
             Self::Text => "Texto",
             Self::Playback => "Reproducción",
+            Self::Layout => "Disposición",
             Self::Review => "Revisión",
             Self::View => "Vista",
         }
@@ -35,6 +37,7 @@ impl TabId {
             Self::Notation => id::TAB_NOTATION,
             Self::Text => id::TAB_TEXT,
             Self::Playback => id::TAB_PLAYBACK,
+            Self::Layout => id::TAB_LAYOUT,
             Self::Review => id::TAB_REVIEW,
             Self::View => id::TAB_VIEW,
         }
@@ -534,6 +537,21 @@ const VIEW_MODES: GroupSpec = GroupSpec {
         )),
     ],
 };
+/// The user's own system and page ends, after the selected bar.
+const BREAKS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Saltos",
+    visual: Icon("continuous"),
+    priority: 4,
+    controls: &[
+        toggle(large(
+            id::SYSTEM_BREAK,
+            Icon("continuous"),
+            "Salto de sistema",
+        )),
+        toggle(large(id::PAGE_BREAK, Icon("page"), "Salto de página")),
+    ],
+};
 const REVIEW_CHECKS: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Comprobar",
@@ -630,8 +648,8 @@ const PANELS: GroupSpec = GroupSpec {
 /// dropdown in `menu`. Undo and redo live in the title bar's quick access.
 /// There are no remove buttons: select the mark's note in the score and
 /// press its active control again, or delete the selection.
-/// A tab without real functions is not shown: Layout and Parts return when
-/// their functions exist.
+/// A tab without real functions is not shown: Parts returns when its
+/// functions exist.
 pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Home,
@@ -661,6 +679,10 @@ pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Playback,
         groups: &[TRANSPORT, SOUND, INTERPRETATION],
+    },
+    TabSpec {
+        id: TabId::Layout,
+        groups: &[BREAKS],
     },
     TabSpec {
         id: TabId::Review,
@@ -887,13 +909,14 @@ mod tests {
             TabId::Notation,
             TabId::Text,
             TabId::Playback,
+            TabId::Layout,
             TabId::Review,
             TabId::View,
         ] {
             assert_eq!(tab(id).id, id);
             assert!(!tab(id).groups.is_empty(), "{id:?}");
         }
-        assert_eq!(TABS.len(), 7);
+        assert_eq!(TABS.len(), 8);
     }
     #[test]
     fn every_form_command_is_ready_for_menu_and_custom_shortcuts() {

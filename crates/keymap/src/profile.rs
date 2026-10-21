@@ -146,6 +146,7 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("alt-cmd-5", id::TAB_PLAYBACK),
     ("alt-cmd-6", id::TAB_REVIEW),
     ("alt-cmd-7", id::TAB_VIEW),
+    ("alt-cmd-8", id::TAB_LAYOUT),
     ("cmd-t", id::TECHNIQUE_TEXT),
     ("alt-cmd-t", id::TEMPO_TEXT),
     ("cmd-l", id::LYRICS),

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod breaks;
 mod rehearsal;
+pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;
 pub use rehearsal::{RehearsalMark, RehearsalStyle, letter_label};
 mod tempo;
@@ -445,6 +447,8 @@ pub struct Score {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     rehearsals: std::collections::BTreeMap<usize, RehearsalMark>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    breaks: std::collections::BTreeMap<usize, LayoutBreak>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     bar_offsets: std::collections::BTreeMap<usize, BarOffsets>,
     #[serde(default, skip_serializing_if = "rehearsal_style_is_default")]
     rehearsal_style: RehearsalStyle,
@@ -479,6 +483,7 @@ impl Default for Score {
             tempo: Default::default(),
             tempo_changes: Default::default(),
             rehearsals: Default::default(),
+            breaks: Default::default(),
             bar_offsets: Default::default(),
             rehearsal_style: Default::default(),
             key_signature: KeySignature::default(),
@@ -877,6 +882,7 @@ impl Score {
         }
         self.validate_form()?;
         self.validate_rehearsals()?;
+        self.validate_breaks()?;
         self.validate_offsets()?;
         self.validate_bar_offsets()?;
         if self.title.len() > 1024 {

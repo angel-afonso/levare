@@ -1019,6 +1019,14 @@ impl AppView {
                 cx,
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            id::SYSTEM_BREAK => self.edit(
+                Command::ToggleLayoutBreak(score_core::LayoutBreak::System),
+                cx,
+            ),
+            id::PAGE_BREAK => self.edit(
+                Command::ToggleLayoutBreak(score_core::LayoutBreak::Page),
+                cx,
+            ),
             id::REHEARSAL_LETTERS => self.edit(
                 Command::SetRehearsalStyle(score_core::RehearsalStyle::Letters),
                 cx,
@@ -1279,6 +1287,7 @@ impl AppView {
             id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Notation),
             id::TAB_TEXT => self.show_tab(score_toolbar::TabId::Text),
             id::TAB_PLAYBACK => self.show_tab(score_toolbar::TabId::Playback),
+            id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Layout),
             id::TAB_REVIEW => self.show_tab(score_toolbar::TabId::Review),
             id::TAB_VIEW => self.show_tab(score_toolbar::TabId::View),
             id::TOGGLE_RIBBON => {

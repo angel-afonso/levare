@@ -975,6 +975,15 @@ impl LayoutEngine {
                 (row_start + if part_layout { 6 } else { 4 }).min(score.measures().len())
             };
             for index in row_start..row_end {
+                // The user ended the system after the previous bar.
+                if index > row_start
+                    && pinned.is_none()
+                    && !unwrapped
+                    && !part_layout
+                    && score.layout_break(index - 1).is_some()
+                {
+                    break;
+                }
                 let prefix = signature_prefix(score, index, columns.is_empty());
                 let ticks = Rhythm::ticks(score, index, &self.metrics);
                 let minimum = pinned
@@ -3710,6 +3719,8 @@ mod grouping_tests;
 #[cfg(test)]
 mod beaming_tests;
 
+#[cfg(test)]
+mod breaks_tests;
 #[cfg(test)]
 mod views_tests;
 

@@ -1,5 +1,7 @@
 //! Versioned native documents. Export formats will use independent adapters.
 #[cfg(test)]
+mod breaks_tests;
+#[cfg(test)]
 mod clef_tests;
 #[cfg(test)]
 mod comment_tests;
@@ -19,7 +21,7 @@ use std::{
     path::Path,
 };
 
-pub const SCHEMA_VERSION: u32 = 27;
+pub const SCHEMA_VERSION: u32 = 28;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -268,6 +270,10 @@ pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
     }
     if envelope["version"].as_u64() == Some(26) {
         // Older scores have no review comments.
+        envelope["version"] = 27.into();
+    }
+    if envelope["version"].as_u64() == Some(27) {
+        // Older scores have no layout breaks.
         envelope["version"] = SCHEMA_VERSION.into();
     }
     if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {

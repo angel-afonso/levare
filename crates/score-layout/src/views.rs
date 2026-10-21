@@ -113,7 +113,16 @@ impl LayoutEngine {
             self.orchestra_page = Some((score.clone(), layout.width));
         }
         if mode == ViewMode::Page {
-            layout.paginate(16., MARGIN + if part { 16. } else { 0. });
+            let page_after: std::collections::BTreeSet<usize> = if part {
+                Default::default()
+            } else {
+                score
+                    .layout_breaks()
+                    .filter(|&(_, kind)| kind == score_core::LayoutBreak::Page)
+                    .map(|(bar, _)| bar)
+                    .collect()
+            };
+            layout.paginate(16., MARGIN + if part { 16. } else { 0. }, &page_after);
         } else {
             let mut next_top = HEADER;
             let shifts: Vec<_> = layout
@@ -193,7 +202,12 @@ impl Layout {
             .position(|page| (page.first_measure..=page.last_measure).contains(&measure))
     }
 
-    fn paginate(&mut self, system_gap: f32, continuation_top: f32) {
+    fn paginate(
+        &mut self,
+        system_gap: f32,
+        continuation_top: f32,
+        page_after: &std::collections::BTreeSet<usize>,
+    ) {
         // An indivisible system may be wider/taller than a normal sheet (dense
         // bar or large orchestra). Enlarge every sheet consistently; never crop
         // ink, split piano hands or stretch the musical glyphs.
@@ -210,7 +224,8 @@ impl Layout {
         let mut shifts = Vec::new();
         for index in 0..self.systems.len() {
             let system_height = self.systems[index].bottom - self.systems[index].top;
-            if next_top + system_height > page_top + height - MARGIN && index > 0 {
+            let forced = index > 0 && page_after.contains(&self.systems[index - 1].last_measure);
+            if (forced || next_top + system_height > page_top + height - MARGIN) && index > 0 {
                 self.pages.push(Page {
                     top: page_top,
                     width,

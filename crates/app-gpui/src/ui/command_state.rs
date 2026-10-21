@@ -11,6 +11,20 @@ impl CommandStates for AppView {
         if let Some(state) = form_state(editor, command) {
             return state;
         }
+        let layout_break = |kind| {
+            let bar = editor
+                .selected_ids()
+                .iter()
+                .map(|id| id.measure)
+                .max()
+                .unwrap_or(editor.cursor().measure);
+            CommandState::checked(editor.score().layout_break(bar) == Some(kind))
+        };
+        match command {
+            id::SYSTEM_BREAK => return layout_break(score_core::LayoutBreak::System),
+            id::PAGE_BREAK => return layout_break(score_core::LayoutBreak::Page),
+            _ => {}
+        }
         let rehearsal = match command {
             id::REHEARSAL_MARK => Some(
                 editor.score().has_rehearsal_mark(
@@ -261,6 +275,7 @@ impl CommandStates for AppView {
             id::TAB_PLAYBACK => {
                 CommandState::checked(self.ui.tab == score_toolbar::TabId::Playback)
             }
+            id::TAB_LAYOUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Layout),
             id::TAB_REVIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::Review),
             id::TAB_VIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::View),
             id::TOGGLE_RIBBON => CommandState::checked(self.ui.ribbon_collapsed),

@@ -47,6 +47,7 @@ impl Score {
         self.key_changes = shift_map(std::mem::take(&mut self.key_changes), remap);
         self.tempo_changes = shift_map(std::mem::take(&mut self.tempo_changes), remap);
         self.rehearsals = shift_map(std::mem::take(&mut self.rehearsals), remap);
+        self.breaks = shift_map(std::mem::take(&mut self.breaks), remap);
         self.form = shift_map(std::mem::take(&mut self.form), remap);
         self.endings = self
             .endings

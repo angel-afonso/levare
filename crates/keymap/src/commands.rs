@@ -337,6 +337,8 @@ pub mod id {
         DAL_SEGNO_AL_FINE = "compases.dal-segno-al-fine";
         DAL_SEGNO_AL_CODA = "compases.dal-segno-al-coda";
         CLEAR_FORM = "compases.quitar-forma";
+        SYSTEM_BREAK = "compases.salto-de-sistema";
+        PAGE_BREAK = "compases.salto-de-pagina";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -391,6 +393,7 @@ pub mod id {
         TAB_NOTATION = "vista.pestana.notacion";
         TAB_TEXT = "vista.pestana.texto";
         TAB_PLAYBACK = "vista.pestana.reproduccion";
+        TAB_LAYOUT = "vista.pestana.disposicion";
         TAB_REVIEW = "vista.pestana.revision";
         TAB_VIEW = "vista.pestana.vista";
         TOGGLE_RIBBON = "vista.plegar-cinta";
@@ -576,6 +579,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DAL_SEGNO_AL_FINE, C::Bars, "D.S. al Fine", G, false, R),
     spec(id::DAL_SEGNO_AL_CODA, C::Bars, "D.S. al Coda", G, false, R),
     spec(id::CLEAR_FORM, C::Bars, "Quitar repeticiones y saltos", G, false, R),
+    spec(id::SYSTEM_BREAK, C::Bars, "Salto de sistema tras el compás", G, false, R),
+    spec(id::PAGE_BREAK, C::Bars, "Salto de página tras el compás", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),
@@ -641,6 +646,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TAB_NOTATION, C::View, "Pestaña Notación", G, false, R),
     spec(id::TAB_TEXT, C::View, "Pestaña Texto", G, false, R),
     spec(id::TAB_PLAYBACK, C::View, "Pestaña Reproducción", G, false, R),
+    spec(id::TAB_LAYOUT, C::View, "Pestaña Disposición", G, false, R),
     spec(id::TAB_REVIEW, C::View, "Pestaña Revisión", G, false, R),
     spec(id::TAB_VIEW, C::View, "Pestaña Vista", G, false, R),
     spec(id::TOGGLE_RIBBON, C::View, "Plegar o desplegar la cinta", G, false, R),

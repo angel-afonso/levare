@@ -50,6 +50,7 @@ pub enum Command {
     EditForm(FormEdit),
     SetEnding(Vec<u8>),
     ToggleRehearsalMark,
+    ToggleLayoutBreak(score_core::LayoutBreak),
     SetRehearsalStyle(score_core::RehearsalStyle),
     RemoveEndings,
     Insert(Event),
@@ -842,6 +843,17 @@ impl Editor {
                     return Ok(false);
                 }
             }
+            Command::ToggleLayoutBreak(kind) => {
+                let bar = self
+                    .selected_ids()
+                    .iter()
+                    .map(|id| id.measure)
+                    .max()
+                    .unwrap_or(next.cursor.measure);
+                if !next.score.toggle_layout_break(bar, kind)? {
+                    return Ok(false);
+                }
+            }
             Command::SetRehearsalStyle(style) => {
                 if !next.score.set_rehearsal_style(style) {
                     return Ok(false);
@@ -1119,6 +1131,7 @@ impl Editor {
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
                 | Command::ToggleRehearsalMark
+                | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
                 | Command::SetEnding(_)
                 | Command::RemoveEndings
@@ -1293,6 +1306,8 @@ fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
         .unwrap_or(reference)
 }
 
+#[cfg(test)]
+mod breaks_tests;
 #[cfg(test)]
 mod mvp_tests;
 #[cfg(test)]

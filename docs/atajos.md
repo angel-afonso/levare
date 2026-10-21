@@ -193,6 +193,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | D.S. al Fine |  |
 | — | D.S. al Coda |  |
 | — | Quitar repeticiones y saltos |  |
+| — | Salto de sistema tras el compás |  |
+| — | Salto de página tras el compás |  |
 
 ## Instrumentos
 
@@ -281,6 +283,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥⌘3` | Pestaña Notación |  |
 | `⌥⌘4` | Pestaña Texto |  |
 | `⌥⌘5` | Pestaña Reproducción |  |
+| `⌥⌘8` | Pestaña Disposición |  |
 | `⌥⌘6` | Pestaña Revisión |  |
 | `⌥⌘7` | Pestaña Vista |  |
 | — | Plegar o desplegar la cinta |  |
