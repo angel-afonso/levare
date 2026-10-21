@@ -3722,6 +3722,8 @@ mod beaming_tests;
 #[cfg(test)]
 mod breaks_tests;
 #[cfg(test)]
+mod part_view_tests;
+#[cfg(test)]
 mod views_tests;
 
 #[cfg(test)]
