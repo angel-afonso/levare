@@ -1,6 +1,6 @@
 # Vistas de parte en el lienzo
 
-El lienzo mostrará una parte extraída (`extract_part` + `layout_part`) mientras toda edición sigue yendo al editor de la partitura general, porque los `ElementId` de la parte son los mismos de la general y no hay datos que copiar ni sincronizar. La primera fase es de solo lectura sobre el grabado (se selecciona, se escucha y se edita con los mismos comandos, pero la vista de parte no tiene disposición propia todavía); frente a un documento de parte independiente, esto evita divergencias, a cambio de volver a extraer y regrabar la parte tras cada edición.
+El lienzo mostrará una parte extraída (`extract_part` + `layout_part`) mientras toda edición sigue yendo al editor de la partitura general, porque los `ElementId` de la parte son los mismos de la general y no hay datos que copiar ni sincronizar. La primera fase muestra el grabado de la parte y las ediciones van a la partitura general con los mismos `ElementId`, pero la parte aún no tiene disposición propia (ni saltos de sistema o de página propios, ni compases de espera); frente a un documento de parte independiente, esto evita divergencias, a cambio de volver a extraer y regrabar la parte tras cada edición.
 
 ## Evidencia
 
@@ -46,7 +46,7 @@ Hay otros caminos de grabado en producción que no son `layout_view` y que tambi
 
 ## La pestaña Partes
 
-Propuesta inicial: una pestaña `TabId::Parts` («Partes») con dos grupos. «Ver parte» con un desplegable «Ver parte ▾» (entrada «Partitura general» y una por instrumento) y «Exportar» con «Exportar partes…» (`id::EXPORT`, hoy solo en el menú Archivo, por lo que habría que moverlo de `FILE_MENU` al grupo para cumplir la regla de que cada comando aparece una sola vez en la cinta, o dejarlo en ambos solo si esa regla se relaja).
+Propuesta inicial: una pestaña `TabId::Parts` («Partes») con dos grupos. «Ver parte» con un desplegable «Ver parte ▾» (entrada «Partitura general» y una por instrumento) y «Exportar» con «Exportar partes…» (`id::EXPORT`). La unicidad de comandos se exige solo dentro de la cinta (`TABS`), no frente a `FILE_MENU`, así que `id::EXPORT` se añade al grupo y se queda también en el menú Archivo, como `id::SCORE_INFO`.
 
 Reglas de `crates/toolbar/src/spec.rs` que debe cumplir: cada pestaña tiene grupos, cada grupo al menos un comando listo, cada comando aparece una vez en toda la cinta y cada pestaña tiene su propio comando `TabId::command`. Eso exige `id::TAB_PARTS` y un atajo libre (`alt-cmd-9`). Además, el modelo actual de controles (`Role`: Choice, Toggle, Action) no tiene un desplegable con entradas dinámicas, así que hace falta un control nuevo o un menú contextual que se abra desde una acción.
 
@@ -60,4 +60,4 @@ Reglas de `crates/toolbar/src/spec.rs` que debe cumplir: cada pestaña tiene gru
 
 ## Decisión
 
-Construir la vista de parte «en vivo» en el lienzo, empezando por el grabado y la interacción sobre la partitura general, sin saltos propios ni compases de espera. El plan de construcción queda como borrador 029.
+Construir la vista de parte «en vivo» en el lienzo: se muestra el grabado de la parte y las ediciones van a la partitura general con los mismos `ElementId`, sin disposición propia todavía (ni saltos propios ni compases de espera). El plan de construcción queda como borrador 029.
