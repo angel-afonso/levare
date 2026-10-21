@@ -152,31 +152,6 @@ fn todo_badge() -> Div {
         .border_color(rgb(BORDER))
         .child("TODO")
 }
-fn pending(
-    id: impl Into<SharedString>,
-    label: &'static str,
-    cx: &Context<AppView>,
-) -> Stateful<Div> {
-    action(
-        id,
-        div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .child(label)
-            .child(todo_badge()),
-        false,
-        cx,
-        move |view, _, cx| {
-            view.status = format!("TODO · {label}");
-            cx.notify();
-        },
-    )
-    .px_2()
-    .h(px(28.))
-    .text_color(rgb(MUTED))
-    .bg(rgb(PANEL))
-}
 fn caption(text: impl Into<SharedString>) -> Div {
     div()
         .text_size(px(10.))
@@ -382,7 +357,6 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                     tab.child(div().text_color(rgb(BLUE)).child("●"))
                 }),
         )
-        .child(pending("document-tabs-todo", "+", cx))
         .child(
             div()
                 .flex_1()

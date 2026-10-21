@@ -2,7 +2,7 @@
 //! registry, keys from the active keymap, state from the app, uniform sizes
 //! and how much room each group takes for the available width.
 
-use crate::spec::{Control, ControlSize, GroupSpec, TabId, TabSpec, Visual};
+use crate::spec::{Control, ControlSize, GroupSpec, Role, TabId, TabSpec, Visual};
 use score_keymap::{CommandId, Keymap, Registry, Status};
 
 /// What the app knows about a command right now.
@@ -64,8 +64,8 @@ impl Default for Metrics {
             small_base: 30.,
             char_width: 6.3,
             gap: 3.,
-            group_padding: 12.,
-            separator: 1.,
+            group_padding: 16.,
+            separator: 6.,
             folded: 64.,
             labeled_tile: 42.,
             caption_char_width: 5.6,
@@ -78,6 +78,7 @@ impl Default for Metrics {
 pub struct ControlView {
     pub command: CommandId,
     pub size: ControlSize,
+    pub role: Role,
     pub visual: Visual,
     pub symbol_only: bool,
     pub label: String,
@@ -98,6 +99,11 @@ pub enum Item {
     /// A tile with its name under the glyph, when there is room for it.
     LabeledTile(ControlView),
     Column(Vec<ControlView>),
+    /// Consecutive choice tiles, drawn as one sunken bar. Named when expanded.
+    Segment {
+        controls: Vec<ControlView>,
+        named: bool,
+    },
 }
 
 /// How much room a group takes, like the Office ribbon's scaling: folded
@@ -166,6 +172,7 @@ pub fn control_view(
     ControlView {
         command: control.command,
         size: control.size,
+        role: control.role,
         visual: control.visual,
         symbol_only: control.symbol_only,
         label: state
@@ -194,6 +201,17 @@ fn small_width(control: &ControlView, metrics: &Metrics) -> f32 {
 fn items(controls: &[ControlView], metrics: &Metrics, expanded: bool) -> Vec<Item> {
     let mut items = Vec::new();
     for control in controls {
+        if control.size == ControlSize::Tile && control.role == Role::Choice {
+            let named = expanded && !control.symbol_only;
+            match items.last_mut() {
+                Some(Item::Segment { controls, .. }) => controls.push(control.clone()),
+                _ => items.push(Item::Segment {
+                    controls: vec![control.clone()],
+                    named,
+                }),
+            }
+            continue;
+        }
         if expanded && !control.symbol_only {
             items.push(match control.size {
                 ControlSize::Tile => Item::LabeledTile(control.clone()),
@@ -226,6 +244,22 @@ impl Item {
             Item::LabeledTile(control) => metrics
                 .labeled_tile
                 .max(text_width(&control.label, metrics.caption_char_width) + 8.),
+            Item::Segment { controls, named } => {
+                controls
+                    .iter()
+                    .map(|control| {
+                        if *named {
+                            metrics
+                                .labeled_tile
+                                .max(text_width(&control.label, metrics.caption_char_width) + 8.)
+                        } else {
+                            metrics.tile
+                        }
+                    })
+                    .sum::<f32>()
+                    + controls.len().saturating_sub(1) as f32 * 2.
+                    + 4.
+            }
             Item::Column(column) => column
                 .iter()
                 .map(|control| small_width(control, metrics))
@@ -488,14 +522,64 @@ mod tests {
         assert!(matches!(&clipboard.items[1], Item::Column(column) if column.len() == 3));
         let input = normal(TabId::NoteInput);
         let duration = &input.groups[1];
+        let segments: Vec<_> = duration
+            .items
+            .iter()
+            .filter(|item| matches!(item, Item::Segment { controls, .. } if controls.len() == 6))
+            .collect();
+        assert_eq!(segments.len(), 1);
         assert_eq!(
             duration
                 .items
                 .iter()
                 .filter(|item| matches!(item, Item::Tile(_)))
                 .count(),
-            9
+            3
         );
+    }
+
+    #[test]
+    fn choice_tiles_form_one_segment() {
+        let width = full_width(&view(TabId::NoteInput, 5000., &Fake(vec![])));
+        let input = view(TabId::NoteInput, width, &Fake(vec![]));
+        let group = |title| input.groups.iter().find(|g| g.title == title).unwrap();
+        let duration = group("Duración");
+        let Item::Segment { controls, .. } = &duration.items[0] else {
+            panic!("durations open with a segment");
+        };
+        let commands: Vec<_> = controls.iter().map(|c| c.command).collect();
+        assert_eq!(
+            commands,
+            [
+                id::WHOLE,
+                id::HALF,
+                id::QUARTER,
+                id::EIGHTH,
+                id::SIXTEENTH,
+                id::THIRTY_SECOND
+            ]
+        );
+        assert_eq!(duration.items.len(), 4);
+        assert!(
+            duration.items[1..]
+                .iter()
+                .all(|item| matches!(item, Item::Tile(_)))
+        );
+        let voices = group("Voces");
+        assert!(
+            matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 2)
+        );
+    }
+
+    #[test]
+    fn expanded_segments_are_named() {
+        let input = view(TabId::NoteInput, 5000., &Fake(vec![]));
+        let duration = input.groups.iter().find(|g| g.title == "Duración").unwrap();
+        assert_eq!(duration.mode, GroupMode::Expanded);
+        assert!(matches!(
+            &duration.items[0],
+            Item::Segment { named: true, .. }
+        ));
     }
 
     #[test]
@@ -653,7 +737,7 @@ mod tests {
             duration
                 .items
                 .iter()
-                .all(|item| matches!(item, Item::LabeledTile(_)))
+                .all(|item| matches!(item, Item::LabeledTile(_) | Item::Segment { .. }))
                 || duration.mode == GroupMode::Full
         );
         assert!(
@@ -713,12 +797,12 @@ mod tests {
         };
         let groups = [sizes(1), sizes(1), sizes(5)];
         assert_eq!(
-            fit(&groups, 260., &metrics),
+            fit(&groups, 270., &metrics),
             vec![GroupMode::Full, GroupMode::Folded, GroupMode::Full]
         );
         assert_eq!(fit(&groups, 10., &metrics), vec![GroupMode::Folded; 3]);
         assert_eq!(
-            fit(&groups, 410., &metrics),
+            fit(&groups, 420., &metrics),
             vec![GroupMode::Expanded, GroupMode::Full, GroupMode::Expanded],
             "highest priority first, then the leftmost of equals"
         );

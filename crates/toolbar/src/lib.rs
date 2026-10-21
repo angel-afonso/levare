@@ -18,4 +18,4 @@ pub use project::{
     CommandState, CommandStates, ControlView, GroupMode, GroupView, Item, Metrics, ToolbarView,
     fit, project,
 };
-pub use spec::{Control, ControlSize, GroupSpec, TABS, TabId, TabSpec, Visual, tab};
+pub use spec::{Control, ControlSize, GroupSpec, Role, TABS, TabId, TabSpec, Visual, tab};

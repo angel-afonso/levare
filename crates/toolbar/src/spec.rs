@@ -47,9 +47,22 @@ pub enum Visual {
     /// Bravura staff, optionally combined with a barline.
     Staff,
     Bar,
-    /// Plain or italic text, such as `pizz.`.
+    /// Musical text as it appears in a score, such as `pizz.`: italic serif.
     Text(&'static str),
+    /// Interface text, such as a voice number or an interval. Never italic.
+    Label(&'static str),
     None,
+}
+
+/// What pressing a control does; the ribbon draws each kind differently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// One option among its neighbours: consecutive choice tiles form a segment.
+    Choice,
+    /// Switches something on or off.
+    Toggle,
+    /// Does something once.
+    Action,
 }
 
 /// Every control of a size measures the same, which keeps groups aligned.
@@ -67,6 +80,7 @@ pub enum ControlSize {
 pub struct Control {
     pub command: CommandId,
     pub size: ControlSize,
+    pub role: Role,
     pub visual: Visual,
     /// Keep only the font symbol in the ribbon, including expanded groups.
     pub symbol_only: bool,
@@ -95,6 +109,7 @@ const fn large(command: CommandId, visual: Visual, label: &'static str) -> Contr
     Control {
         command,
         size: ControlSize::Large,
+        role: Role::Action,
         visual,
         symbol_only: false,
         label: Some(label),
@@ -104,6 +119,7 @@ const fn small(command: CommandId, visual: Visual, label: &'static str) -> Contr
     Control {
         command,
         size: ControlSize::Small,
+        role: Role::Action,
         visual,
         symbol_only: false,
         label: Some(label),
@@ -114,6 +130,7 @@ const fn tile(command: CommandId, visual: Visual, label: &'static str) -> Contro
     Control {
         command,
         size: ControlSize::Tile,
+        role: Role::Action,
         visual,
         symbol_only: false,
         label: Some(label),
@@ -127,7 +144,20 @@ const fn symbol(control: Control) -> Control {
     }
 }
 
-use Visual::{Icon, Music, None as Plain, Text};
+const fn choice(control: Control) -> Control {
+    Control {
+        role: Role::Choice,
+        ..control
+    }
+}
+const fn toggle(control: Control) -> Control {
+    Control {
+        role: Role::Toggle,
+        ..control
+    }
+}
+
+use Visual::{Icon, Label, Music, None as Plain, Text};
 use score_core::{
     Arpeggio as R, Articulation as A, ConnectionKind as K, Dynamic as D, MarkKind,
     PlayingTechnique as T,
@@ -191,12 +221,18 @@ const TREMOLOS: GroupSpec = GroupSpec {
     visual: Music("\u{e221}"),
     priority: 2,
     controls: &[
-        symbol(mark_small(MarkKind::Tremolo(score_core::Tremolo::One), "1")),
-        symbol(mark_small(MarkKind::Tremolo(score_core::Tremolo::Two), "2")),
-        symbol(mark_small(
+        symbol(toggle(mark_small(
+            MarkKind::Tremolo(score_core::Tremolo::One),
+            "1",
+        ))),
+        symbol(toggle(mark_small(
+            MarkKind::Tremolo(score_core::Tremolo::Two),
+            "2",
+        ))),
+        symbol(toggle(mark_small(
             MarkKind::Tremolo(score_core::Tremolo::Three),
             "3",
-        )),
+        ))),
     ],
 };
 /// One place for divisi: `div.` opens two staves from the selection, `unis.` closes them.
@@ -206,8 +242,8 @@ const DIVISI: GroupSpec = GroupSpec {
     visual: Text("div."),
     priority: 3,
     controls: &[
-        small(id::DIVISI, Text("div."), "Dividir (div.)"),
-        small(id::UNISON, Text("unis."), "Unir (unis.)"),
+        toggle(small(id::DIVISI, Text("div."), "Dividir (div.)")),
+        toggle(small(id::UNISON, Text("unis."), "Unir (unis.)")),
     ],
 };
 const REPEATS: GroupSpec = GroupSpec {
@@ -216,12 +252,12 @@ const REPEATS: GroupSpec = GroupSpec {
     visual: Music("\u{e041}"),
     priority: 2,
     controls: &[
-        small(id::REPEAT_START, Music("\u{e040}"), "Inicio"),
-        small(id::REPEAT_END, Music("\u{e041}"), "Fin"),
-        small(id::ENDING_1, Text("1."), "1.ª"),
-        small(id::ENDING_2, Text("2."), "2.ª"),
-        small(id::DOUBLE_BARLINE, Music("\u{e031}"), "Doble"),
-        small(id::FINAL_BARLINE, Music("\u{e032}"), "Final"),
+        toggle(small(id::REPEAT_START, Music("\u{e040}"), "Inicio")),
+        toggle(small(id::REPEAT_END, Music("\u{e041}"), "Fin")),
+        toggle(small(id::ENDING_1, Label("1."), "1.ª")),
+        toggle(small(id::ENDING_2, Label("2."), "2.ª")),
+        toggle(small(id::DOUBLE_BARLINE, Music("\u{e031}"), "Doble")),
+        toggle(small(id::FINAL_BARLINE, Music("\u{e032}"), "Final")),
     ],
 };
 const JUMPS: GroupSpec = GroupSpec {
@@ -230,16 +266,16 @@ const JUMPS: GroupSpec = GroupSpec {
     visual: Music("\u{e047}"),
     priority: 2,
     controls: &[
-        small(id::SEGNO, Music("\u{e047}"), "Segno"),
-        small(id::CODA, Music("\u{e048}"), "Coda"),
-        small(id::FINE, Text("Fine"), "Fine"),
-        small(id::TO_CODA, Text("To Coda"), "To Coda"),
-        small(id::DA_CAPO, Text("D.C."), "D.C."),
-        small(id::DA_CAPO_AL_FINE, Text("D.C."), "D.C. al Fine"),
-        small(id::DA_CAPO_AL_CODA, Text("D.C."), "D.C. al Coda"),
-        small(id::DAL_SEGNO, Text("D.S."), "D.S."),
-        small(id::DAL_SEGNO_AL_FINE, Text("D.S."), "D.S. al Fine"),
-        small(id::DAL_SEGNO_AL_CODA, Text("D.S."), "D.S. al Coda"),
+        toggle(small(id::SEGNO, Music("\u{e047}"), "Segno")),
+        toggle(small(id::CODA, Music("\u{e048}"), "Coda")),
+        toggle(small(id::FINE, Text("Fine"), "Fine")),
+        toggle(small(id::TO_CODA, Text("To Coda"), "To Coda")),
+        toggle(small(id::DA_CAPO, Text("D.C."), "D.C.")),
+        toggle(small(id::DA_CAPO_AL_FINE, Text("D.C."), "D.C. al Fine")),
+        toggle(small(id::DA_CAPO_AL_CODA, Text("D.C."), "D.C. al Coda")),
+        toggle(small(id::DAL_SEGNO, Text("D.S."), "D.S.")),
+        toggle(small(id::DAL_SEGNO_AL_FINE, Text("D.S."), "D.S. al Fine")),
+        toggle(small(id::DAL_SEGNO_AL_CODA, Text("D.S."), "D.S. al Coda")),
     ],
 };
 /// Sibelius' Notations › Common: what starts or changes the staff itself.
@@ -260,9 +296,9 @@ const INPUT_MODE: GroupSpec = GroupSpec {
     visual: Music("\u{e1d7}"),
     priority: 4,
     controls: &[
-        large(id::TOGGLE_NOTE_INPUT, Music("\u{e1d7}"), "Notas"),
-        small(id::ENTRY_OCTAVE_UP, Text("↑"), "Subir octava"),
-        small(id::ENTRY_OCTAVE_DOWN, Text("↓"), "Bajar octava"),
+        toggle(large(id::TOGGLE_NOTE_INPUT, Music("\u{e1d7}"), "Notas")),
+        small(id::ENTRY_OCTAVE_UP, Label("↑"), "Subir octava"),
+        small(id::ENTRY_OCTAVE_DOWN, Label("↓"), "Bajar octava"),
     ],
 };
 const DURATION: GroupSpec = GroupSpec {
@@ -271,14 +307,14 @@ const DURATION: GroupSpec = GroupSpec {
     visual: Music("\u{e1d5}"),
     priority: 9,
     controls: &[
-        tile(id::WHOLE, Music("\u{e1d2}"), "Redonda"),
-        tile(id::HALF, Music("\u{e1d3}"), "Blanca"),
-        tile(id::QUARTER, Music("\u{e1d5}"), "Negra"),
-        tile(id::EIGHTH, Music("\u{e1d7}"), "Corchea"),
-        tile(id::SIXTEENTH, Music("\u{e1d9}"), "Semicorchea"),
-        tile(id::THIRTY_SECOND, Music("\u{e1db}"), "Fusa"),
-        tile(id::DOT, Music("\u{e1e7}"), "Puntillo"),
-        tile(id::TRIPLET, Music("\u{e883}"), "Tresillo"),
+        choice(tile(id::WHOLE, Music("\u{e1d2}"), "Redonda")),
+        choice(tile(id::HALF, Music("\u{e1d3}"), "Blanca")),
+        choice(tile(id::QUARTER, Music("\u{e1d5}"), "Negra")),
+        choice(tile(id::EIGHTH, Music("\u{e1d7}"), "Corchea")),
+        choice(tile(id::SIXTEENTH, Music("\u{e1d9}"), "Semicorchea")),
+        choice(tile(id::THIRTY_SECOND, Music("\u{e1db}"), "Fusa")),
+        toggle(tile(id::DOT, Music("\u{e1e7}"), "Puntillo")),
+        toggle(tile(id::TRIPLET, Music("\u{e883}"), "Tresillo")),
         tile(id::REST, Music("\u{e4e5}"), "Silencio"),
     ],
 };
@@ -288,10 +324,10 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
     visual: Music("\u{e262}"),
     priority: 8,
     controls: &[
-        tile(id::NATURAL, Music("\u{e261}"), "Becuadro"),
-        tile(id::SHARP, Music("\u{e262}"), "Sostenido"),
-        tile(id::FLAT, Music("\u{e260}"), "Bemol"),
-        tile(id::FOLLOW_KEY, Text("arm."), "Según armadura"),
+        choice(tile(id::NATURAL, Music("\u{e261}"), "Becuadro")),
+        choice(tile(id::SHARP, Music("\u{e262}"), "Sostenido")),
+        choice(tile(id::FLAT, Music("\u{e260}"), "Bemol")),
+        choice(tile(id::FOLLOW_KEY, Label("arm."), "Según armadura")),
     ],
 };
 /// Chord mode and the intervals that stack a note above the selected one.
@@ -301,24 +337,24 @@ const CHORDS: GroupSpec = GroupSpec {
     visual: Visual::Chord,
     priority: 2,
     controls: &[
-        large(id::CHORD_MODE, Visual::Chord, "Modo acorde"),
-        tile(id::INTERVAL_2, Text("2ª"), "Segunda"),
-        tile(id::INTERVAL_3, Text("3ª"), "Tercera"),
-        tile(id::INTERVAL_4, Text("4ª"), "Cuarta"),
-        tile(id::INTERVAL_5, Text("5ª"), "Quinta"),
-        tile(id::INTERVAL_6, Text("6ª"), "Sexta"),
-        tile(id::INTERVAL_7, Text("7ª"), "Séptima"),
-        tile(id::INTERVAL_8, Text("8ª"), "Octava"),
+        toggle(large(id::CHORD_MODE, Visual::Chord, "Modo acorde")),
+        tile(id::INTERVAL_2, Label("2ª"), "Segunda"),
+        tile(id::INTERVAL_3, Label("3ª"), "Tercera"),
+        tile(id::INTERVAL_4, Label("4ª"), "Cuarta"),
+        tile(id::INTERVAL_5, Label("5ª"), "Quinta"),
+        tile(id::INTERVAL_6, Label("6ª"), "Sexta"),
+        tile(id::INTERVAL_7, Label("7ª"), "Séptima"),
+        tile(id::INTERVAL_8, Label("8ª"), "Octava"),
     ],
 };
 const VOICES: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Voces",
-    visual: Text("1"),
+    visual: Label("1"),
     priority: 2,
     controls: &[
-        tile(id::VOICE_1, Text("1"), "Voz 1"),
-        tile(id::VOICE_2, Text("2"), "Voz 2"),
+        choice(tile(id::VOICE_1, Label("1"), "Voz 1")),
+        choice(tile(id::VOICE_2, Label("2"), "Voz 2")),
     ],
 };
 /// Like MuseScore's note-input bar and Sibelius' keypad: what is written
@@ -329,13 +365,13 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
     visual: Music("\u{e4a0}"),
     priority: 7,
     controls: &[
-        mark_tile(MarkKind::Articulation(A::Staccato)),
-        mark_tile(MarkKind::Articulation(A::Tenuto)),
-        mark_tile(MarkKind::Articulation(A::Accent)),
-        mark_tile(MarkKind::Articulation(A::Marcato)),
-        mark_tile(MarkKind::Fermata),
-        tile(id::TIE, Visual::Tie, "Unión"),
-        tile(id::SLUR, Visual::Slur, "Expresión"),
+        toggle(mark_tile(MarkKind::Articulation(A::Staccato))),
+        toggle(mark_tile(MarkKind::Articulation(A::Tenuto))),
+        toggle(mark_tile(MarkKind::Articulation(A::Accent))),
+        toggle(mark_tile(MarkKind::Articulation(A::Marcato))),
+        toggle(mark_tile(MarkKind::Fermata)),
+        toggle(tile(id::TIE, Visual::Tie, "Unión")),
+        toggle(tile(id::SLUR, Visual::Slur, "Expresión")),
     ],
 };
 const ARPEGGIOS: GroupSpec = GroupSpec {
@@ -344,10 +380,14 @@ const ARPEGGIOS: GroupSpec = GroupSpec {
     visual: Music("\u{e63c}"),
     priority: 6,
     controls: &[
-        mark_tile(MarkKind::Arpeggio(R::Normal)),
-        mark_tile(MarkKind::Arpeggio(R::Up)),
-        mark_tile(MarkKind::Arpeggio(R::Down)),
-        large(id::ARPEGGIO_BOTH_HANDS, Music("\u{e63c}"), "Ambas manos"),
+        toggle(mark_tile(MarkKind::Arpeggio(R::Normal))),
+        toggle(mark_tile(MarkKind::Arpeggio(R::Up))),
+        toggle(mark_tile(MarkKind::Arpeggio(R::Down))),
+        toggle(large(
+            id::ARPEGGIO_BOTH_HANDS,
+            Music("\u{e63c}"),
+            "Ambas manos",
+        )),
     ],
 };
 const DYNAMICS: GroupSpec = GroupSpec {
@@ -372,8 +412,11 @@ const HAIRPINS: GroupSpec = GroupSpec {
     visual: Music("\u{e53e}"),
     priority: 4,
     controls: &[
-        mark_small(MarkKind::Connection(K::Crescendo), "Crescendo"),
-        mark_small(MarkKind::Connection(K::Diminuendo), "Diminuendo"),
+        toggle(mark_small(MarkKind::Connection(K::Crescendo), "Crescendo")),
+        toggle(mark_small(
+            MarkKind::Connection(K::Diminuendo),
+            "Diminuendo",
+        )),
     ],
 };
 const TECHNIQUE: GroupSpec = GroupSpec {
@@ -382,24 +425,27 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     visual: Text("pizz."),
     priority: 3,
     controls: &[
-        symbol(mark_small(MarkKind::Technique(T::Pizzicato), "Pizzicato")),
-        symbol(mark_small(MarkKind::Technique(T::Arco), "Arco")),
-        symbol(mark_small(
+        symbol(toggle(mark_small(
+            MarkKind::Technique(T::Pizzicato),
+            "Pizzicato",
+        ))),
+        symbol(toggle(mark_small(MarkKind::Technique(T::Arco), "Arco"))),
+        symbol(toggle(mark_small(
             MarkKind::Harmonic(score_core::Harmonic::Natural),
             "Armónico natural",
-        )),
-        symbol(mark_small(
+        ))),
+        symbol(toggle(mark_small(
             MarkKind::Harmonic(score_core::Harmonic::Artificial),
             "Armónico artificial",
-        )),
+        ))),
     ],
 };
 const HEADER: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Título",
-    visual: Text("Aa"),
+    visual: Label("Aa"),
     priority: 4,
-    controls: &[large(id::SCORE_INFO, Text("Aa"), "Título y créditos")],
+    controls: &[large(id::SCORE_INFO, Label("Aa"), "Título y créditos")],
 };
 /// The written tempo: the mark itself and quick ±5 changes to it.
 const TEMPO: GroupSpec = GroupSpec {
@@ -417,13 +463,13 @@ const TEMPO: GroupSpec = GroupSpec {
 const REHEARSAL: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Marcas de ensayo",
-    visual: Text("A"),
+    visual: Label("A"),
     priority: 3,
     controls: &[
-        large(id::REHEARSAL_MARK, Text("A"), "Ensayo"),
-        small(id::REHEARSAL_LETTERS, Text("A, B"), "Letras"),
-        small(id::REHEARSAL_NUMBERS, Text("1, 2"), "Números"),
-        small(id::REHEARSAL_BAR_NUMBERS, Text("12"), "Nº de compás"),
+        toggle(large(id::REHEARSAL_MARK, Label("A"), "Ensayo")),
+        choice(tile(id::REHEARSAL_LETTERS, Label("A"), "Letras")),
+        choice(tile(id::REHEARSAL_NUMBERS, Label("1"), "Números")),
+        choice(tile(id::REHEARSAL_BAR_NUMBERS, Label("12"), "Nº de compás")),
     ],
 };
 const TRANSPORT: GroupSpec = GroupSpec {
@@ -444,9 +490,9 @@ const SOUND: GroupSpec = GroupSpec {
     visual: Icon("speaker"),
     priority: 4,
     controls: &[
-        small(id::AUDITION, Icon("speaker"), "Audición al escribir"),
-        small(id::SOUNDS, Icon("speaker"), "Sonidos"),
-        large(id::MIXER, Icon("mixer"), "Mezclador"),
+        toggle(small(id::AUDITION, Icon("speaker"), "Audición al escribir")),
+        toggle(small(id::SOUNDS, Icon("speaker"), "Sonidos")),
+        toggle(large(id::MIXER, Icon("mixer"), "Mezclador")),
     ],
 };
 const INTERPRETATION: GroupSpec = GroupSpec {
@@ -455,9 +501,9 @@ const INTERPRETATION: GroupSpec = GroupSpec {
     visual: Icon("loop"),
     priority: 2,
     controls: &[
-        small(id::LOOP, Icon("loop"), "Bucle"),
-        small(id::REPEATS, Icon("repeats"), "Repeticiones"),
-        small(id::HALF_SPEED, Icon("half-speed"), "Media velocidad"),
+        toggle(small(id::LOOP, Icon("loop"), "Bucle")),
+        toggle(small(id::REPEATS, Icon("repeats"), "Repeticiones")),
+        toggle(small(id::HALF_SPEED, Icon("half-speed"), "Media velocidad")),
     ],
 };
 const VIEW_MODES: GroupSpec = GroupSpec {
@@ -466,9 +512,13 @@ const VIEW_MODES: GroupSpec = GroupSpec {
     visual: Icon("page"),
     priority: 4,
     controls: &[
-        large(id::PAGE_VIEW, Icon("page"), "Página"),
-        large(id::CONTINUOUS_VIEW, Icon("continuous"), "Continua"),
-        large(id::SINGLE_SYSTEM_VIEW, Icon("single-system"), "Pentagrama"),
+        choice(large(id::PAGE_VIEW, Icon("page"), "Página")),
+        choice(large(id::CONTINUOUS_VIEW, Icon("continuous"), "Continua")),
+        choice(large(
+            id::SINGLE_SYSTEM_VIEW,
+            Icon("single-system"),
+            "Pentagrama",
+        )),
     ],
 };
 const REVIEW_CHECKS: GroupSpec = GroupSpec {
@@ -487,9 +537,13 @@ const REVIEW_NOTICES: GroupSpec = GroupSpec {
     visual: Icon("right-panel"),
     priority: 4,
     controls: &[
-        large(id::REVIEW_ISSUES, Icon("right-panel"), "Mostrar avisos"),
-        small(id::REVIEW_PREVIOUS, Text("‹"), "Anterior"),
-        small(id::REVIEW_NEXT, Text("›"), "Siguiente"),
+        toggle(large(
+            id::REVIEW_ISSUES,
+            Icon("right-panel"),
+            "Mostrar avisos",
+        )),
+        small(id::REVIEW_PREVIOUS, Label("‹"), "Anterior"),
+        small(id::REVIEW_NEXT, Label("›"), "Siguiente"),
     ],
 };
 const REVIEW_RANGES: GroupSpec = GroupSpec {
@@ -498,7 +552,11 @@ const REVIEW_RANGES: GroupSpec = GroupSpec {
     visual: Icon("single-system"),
     priority: 3,
     controls: &[
-        small(id::SHOW_RANGES, Icon("single-system"), "Notas en rojo"),
+        toggle(small(
+            id::SHOW_RANGES,
+            Icon("single-system"),
+            "Notas en rojo",
+        )),
         small(id::EDIT_RANGE, Icon("mixer"), "Editar rango…"),
         small(id::RESET_RANGE, Icon("undo"), "Restablecer"),
     ],
@@ -509,9 +567,9 @@ const REVIEW_COMMENTS: GroupSpec = GroupSpec {
     visual: Icon("right-panel"),
     priority: 4,
     controls: &[
-        large(id::NEW_COMMENT, Text("+"), "Nuevo comentario"),
-        small(id::SHOW_COMMENTS, Icon("right-panel"), "Mostrar"),
-        small(id::RESOLVE_COMMENT, Text("✓"), "Resolver / reabrir"),
+        large(id::NEW_COMMENT, Label("+"), "Nuevo comentario"),
+        toggle(small(id::SHOW_COMMENTS, Icon("right-panel"), "Mostrar")),
+        small(id::RESOLVE_COMMENT, Label("✓"), "Resolver / reabrir"),
     ],
 };
 const ZOOM: GroupSpec = GroupSpec {
@@ -532,13 +590,21 @@ const PANELS: GroupSpec = GroupSpec {
     visual: Icon("left-panel"),
     priority: 3,
     controls: &[
-        small(
+        toggle(small(
             id::TOGGLE_INSTRUMENTS_PANEL,
             Icon("left-panel"),
             "Instrumentos",
-        ),
-        small(id::TOGGLE_INSPECTOR, Icon("right-panel"), "Propiedades"),
-        small(id::FULL_SCREEN, Icon("full-screen"), "Pantalla completa"),
+        )),
+        toggle(small(
+            id::TOGGLE_INSPECTOR,
+            Icon("right-panel"),
+            "Propiedades",
+        )),
+        toggle(small(
+            id::FULL_SCREEN,
+            Icon("full-screen"),
+            "Pantalla completa",
+        )),
     ],
 };
 
@@ -636,6 +702,7 @@ mod tests {
                             | Visual::Staff
                             | Visual::Bar
                             | Visual::Text(_)
+                            | Visual::Label(_)
                     ),
                     "{}: {visual:?}",
                     group.title
@@ -643,6 +710,19 @@ mod tests {
             }
         }
         assert!(matches!(INPUT_MODE.controls[0].visual, Visual::Music(_)));
+    }
+
+    #[test]
+    fn choices_are_tiles_and_never_sit_alone() {
+        // A segment of one would look like a stuck button.
+        for group in TABS.iter().flat_map(|tab| tab.groups) {
+            let tiles: Vec<_> = group
+                .controls
+                .iter()
+                .filter(|c| c.role == Role::Choice && c.size == ControlSize::Tile)
+                .collect();
+            assert!(tiles.is_empty() || tiles.len() >= 2, "{}", group.title);
+        }
     }
 
     #[test]
