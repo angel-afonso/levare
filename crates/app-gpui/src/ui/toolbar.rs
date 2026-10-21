@@ -86,6 +86,42 @@ fn ink(control: &ControlView) -> u32 {
     }
 }
 
+/// Like `action`, but the caller picks the hover style: GPUI allows setting
+/// it only once, so it cannot be chained after `action(...)`.
+fn ribbon_action(
+    id: impl Into<SharedString>,
+    content: impl IntoElement,
+    selected: bool,
+    hover: impl Fn(StyleRefinement) -> StyleRefinement + 'static,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    div()
+        .id(id.into())
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap_1()
+        .flex_shrink_0()
+        .text_size(px(12.))
+        .rounded_md()
+        .border_1()
+        .border_color(if selected {
+            Hsla::from(rgb(0x3c5d94))
+        } else {
+            transparent_black()
+        })
+        .bg(rgb(if selected { SELECT } else { FIELD }))
+        .text_color(rgb(if selected { 0xb8ceff } else { TEXT }))
+        .cursor_pointer()
+        .hover(hover)
+        .child(content)
+        .on_click(cx.listener(move |view, _, window, cx| {
+            view.focus.focus(window);
+            click(view, window, cx);
+        }))
+}
+
 /// Every control shares this frame: same corners, hover, checked colour and
 /// click path (`AppView::run`). `close` also folds an open dropdown.
 fn frame(
@@ -96,10 +132,11 @@ fn frame(
     close: bool,
 ) -> Stateful<Div> {
     let command = control.command;
-    action(
+    ribbon_action(
         element,
         content,
         control.checked,
+        |s| s.bg(rgb(HOVER)),
         cx,
         move |v, window, cx| {
             if close {
@@ -110,9 +147,7 @@ fn frame(
         },
     )
     .rounded(px(6.))
-    .when(!control.checked, |frame| {
-        frame.bg(transparent_black()).hover(|s| s.bg(rgb(HOVER)))
-    })
+    .when(!control.checked, |frame| frame.bg(transparent_black()))
     .when(control.checked && control.role == Role::Choice, |frame| {
         frame.bg(rgb(CHOSEN))
     })
@@ -219,11 +254,12 @@ fn segment(view: &AppView, controls: &[ControlView], named: bool, cx: &Context<A
             } else {
                 Metrics::default().tile
             };
-            tile(view, control, cx, named).w(px(width)).h(px(if named {
-                CONTROL_HEIGHT - 4.
-            } else {
-                44.
-            }))
+            tile(view, control, cx, named)
+                .w(px(width))
+                .h(px(if named { CONTROL_HEIGHT - 4. } else { 44. }))
+                .when(!control.checked && !control.pending, |tile| {
+                    tile.border_color(transparent_black())
+                })
         }))
 }
 
@@ -756,10 +792,13 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                 .children(TABS.iter().map(|spec| {
                     let id: TabId = spec.id;
                     let selected = view.ui.tab == id;
-                    action(
+                    ribbon_action(
                         format!("tab-{}", id.label()),
                         div().child(id.label()),
                         false,
+                        move |s| {
+                            if selected { s } else { s.text_color(rgb(TEXT)) }
+                        },
                         cx,
                         move |v, _, cx| {
                             v.ui.tab = id;
@@ -778,9 +817,6 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                         transparent_black()
                     })
                     .text_color(rgb(if selected { TEXT } else { MUTED }))
-                    .when(!selected, |tab| {
-                        tab.hover(|s| s.bg(transparent_black()).text_color(rgb(TEXT)))
-                    })
                 })),
         )
         .child(entry_pill(view, cx))
