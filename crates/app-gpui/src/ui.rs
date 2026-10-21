@@ -60,6 +60,11 @@ pub struct UiState {
     pub open_group: Option<usize>,
     /// Window width, for the ribbon's fold decision.
     pub width: f32,
+    /// The ribbon is folded away; a tab click shows it floating (`ribbon_peek`).
+    pub ribbon_collapsed: bool,
+    pub ribbon_peek: bool,
+    /// The last option used from each dropdown group, by group title.
+    pub last_choice: std::collections::HashMap<&'static str, score_keymap::CommandId>,
 }
 impl Default for UiState {
     fn default() -> Self {
@@ -77,6 +82,9 @@ impl Default for UiState {
             context_menu: None,
             open_group: None,
             width: 1440.,
+            ribbon_collapsed: false,
+            ribbon_peek: false,
+            last_choice: Default::default(),
         }
     }
 }

@@ -118,6 +118,8 @@ pub enum GroupMode {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupView {
     pub title: &'static str,
+    /// Drawn as a split button: the main part repeats the last option used.
+    pub dropdown: bool,
     pub visual: Visual,
     pub mode: GroupMode,
     /// The slots for `mode` (empty when folded).
@@ -300,6 +302,7 @@ fn group_view(
     };
     GroupView {
         title: group.title,
+        dropdown: group.dropdown,
         visual,
         mode: if group.dropdown {
             GroupMode::Folded
@@ -465,6 +468,26 @@ mod tests {
             width,
             &Metrics::default(),
         )
+    }
+
+    #[test]
+    fn only_designed_dropdowns_are_split() {
+        let states = Fake(Vec::new());
+        let mut split = Vec::new();
+        for tab in TABS {
+            for group in view(tab.id, 5000., &states).groups {
+                if group.dropdown {
+                    split.push(group.title);
+                }
+            }
+            for group in view(tab.id, 500., &states).groups {
+                if group.mode == GroupMode::Folded && !split.contains(&group.title) {
+                    assert!(!group.dropdown, "{}", group.title);
+                }
+            }
+        }
+        split.sort_unstable();
+        assert_eq!(split, vec!["Dinámicas", "Repeticiones", "Saltos"]);
     }
 
     fn controls(view: &ToolbarView) -> Vec<&ControlView> {

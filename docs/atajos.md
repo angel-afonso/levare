@@ -276,3 +276,11 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Vista continua |  |
 | — | Vista de pentagrama |  |
 | `⌘F` | Buscar comandos… |  |
+| `⌥⌘1` | Pestaña Inicio |  |
+| `⌥⌘2` | Pestaña Entrada |  |
+| `⌥⌘3` | Pestaña Notación |  |
+| `⌥⌘4` | Pestaña Texto |  |
+| `⌥⌘5` | Pestaña Reproducción |  |
+| `⌥⌘6` | Pestaña Revisión |  |
+| `⌥⌘7` | Pestaña Vista |  |
+| — | Plegar o desplegar la cinta |  |

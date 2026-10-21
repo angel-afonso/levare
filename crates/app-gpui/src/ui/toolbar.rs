@@ -139,6 +139,7 @@ fn frame(
         |s| s.bg(rgb(HOVER)),
         cx,
         move |v, window, cx| {
+            v.ui.ribbon_peek = false;
             if close {
                 v.ui.open_group = None;
                 v.ui.file_menu = false;
@@ -373,47 +374,113 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
     let title = group.title;
     let active = open || group.controls.iter().any(|control| control.checked);
     let color = if active { BLUE } else { TEXT };
-    div()
-        .flex()
-        .flex_col()
-        .w_full()
-        .child(
-            action(
+    let glyph = |visual_of: Visual| {
+        div()
+            .h(px(30.))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .children(match visual_of {
+                Visual::Music(text) => {
+                    Some(fitted_music_symbol(view, text, (40., 30.), color).into_any_element())
+                }
+                _ => visual(view, visual_of, 26., color),
+            })
+    };
+    let toggle_list = move |v: &mut AppView, _: &mut Window, cx: &mut Context<AppView>| {
+        v.ui.open_group = if open { None } else { Some(index) };
+        v.ui.file_menu = false;
+        cx.notify();
+    };
+    // A split button repeats the last option used; the arrow opens the list.
+    let target = group
+        .dropdown
+        .then(|| {
+            view.ui
+                .last_choice
+                .get(title)
+                .and_then(|last| group.controls.iter().find(|c| c.command == *last))
+                .or_else(|| group.controls.first())
+        })
+        .flatten();
+    let button = if let Some(target) = target {
+        let command = target.command;
+        div()
+            .flex()
+            .w_full()
+            .h(px(GROUP_HEIGHT))
+            .child(
+                ribbon_action(
+                    format!("fold-main-{title}"),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_1()
+                        .child(glyph(target.visual))
+                        .child(div().text_size(px(11.5)).child(title)),
+                    active,
+                    |s| s.bg(rgb(HOVER)),
+                    cx,
+                    move |v, window, cx| {
+                        v.ui.last_choice.insert(title, command);
+                        v.ui.ribbon_peek = false;
+                        v.ui.open_group = None;
+                        v.ui.file_menu = false;
+                        v.run(command, window, cx);
+                    },
+                )
+                .when(!active, |zone| zone.bg(transparent_black()))
+                .rounded_r_none()
+                .flex_1()
+                .h_full()
+                .px_1()
+                .tooltip(hover_hint(target.description, target.keys.clone())),
+            )
+            .child(
+                ribbon_action(
+                    format!("fold-arrow-{title}"),
+                    "▾",
+                    active,
+                    |s| s.bg(rgb(HOVER)),
+                    cx,
+                    toggle_list,
+                )
+                .when(!active, |zone| zone.bg(transparent_black()))
+                .rounded_l_none()
+                .border_l_1()
+                .border_color(rgb(BORDER))
+                .w(px(16.))
+                .h_full(),
+            )
+    } else {
+        div().w_full().child(
+            ribbon_action(
                 format!("fold-{title}"),
                 div()
                     .flex()
                     .flex_col()
                     .items_center()
                     .gap_1()
-                    .child(
-                        div()
-                            .h(px(30.))
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .children(match group.visual {
-                                Visual::Music(text) => Some(
-                                    fitted_music_symbol(view, text, (40., 30.), color)
-                                        .into_any_element(),
-                                ),
-                                _ => visual(view, group.visual, 26., color),
-                            }),
-                    )
+                    .child(glyph(group.visual))
                     .child(div().text_size(px(11.5)).child(format!("{title} ▾"))),
                 active,
+                |s| s.bg(rgb(HOVER)),
                 cx,
-                move |v, _, cx| {
-                    v.ui.open_group = if open { None } else { Some(index) };
-                    v.ui.file_menu = false;
-                    cx.notify();
-                },
+                toggle_list,
             )
             .when(!active, |button| button.bg(transparent_black()))
             .w_full()
             .h(px(GROUP_HEIGHT))
             .px_1(),
         )
+    };
+    div()
+        .flex()
+        .flex_col()
+        .w_full()
+        .child(button)
         .when(open, |column| {
             column.child(deferred(
                 // Absolute children start at the column's corner: drop below the button.
@@ -421,13 +488,16 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                     .offset(point(px(0.), px(GROUP_HEIGHT + 4.)))
                     .snap_to_window()
                     .child(
-                        popover(
-                            div().w(px(240.)).flex().flex_col().gap(px(1.)).children(
-                                group.controls.iter().map(|control| {
-                                    row(view, control, cx, "folded", true).h(px(26.))
-                                }),
-                            ),
-                        )
+                        popover(div().w(px(240.)).flex().flex_col().gap(px(1.)).children(
+                            group.controls.iter().map(|control| {
+                                let command = control.command;
+                                row(view, control, cx, "folded", true).h(px(26.)).on_click(
+                                    cx.listener(move |v, _, _, _| {
+                                        v.ui.last_choice.insert(title, command);
+                                    }),
+                                )
+                            }),
+                        ))
                         .on_mouse_down_out(cx.listener(|v, _, _, cx| {
                             v.ui.open_group = None;
                             cx.notify();
@@ -477,6 +547,34 @@ pub fn toolbar_view(view: &AppView) -> ToolbarView {
 
 /// The ribbon row. It never scrolls: groups fold instead.
 pub fn ribbon(view: &AppView, cx: &Context<AppView>) -> Div {
+    if !view.ui.ribbon_collapsed {
+        return ribbon_row(view, cx);
+    }
+    // Folded: a thin strip; a tab click floats the ribbon over the score.
+    let strip = div().h(px(4.)).flex_shrink_0().bg(rgb(PANEL));
+    if !view.ui.ribbon_peek {
+        return strip;
+    }
+    strip.child(
+        deferred(
+            anchored()
+                .offset(point(px(0.), px(0.)))
+                .snap_to_window()
+                .child(
+                    ribbon_row(view, cx)
+                        .shadow_lg()
+                        .w(px(view.ui.width))
+                        .on_mouse_down_out(cx.listener(|v, _, _, cx| {
+                            v.ui.ribbon_peek = false;
+                            cx.notify();
+                        })),
+                ),
+        )
+        .with_priority(1),
+    )
+}
+
+fn ribbon_row(view: &AppView, cx: &Context<AppView>) -> Div {
     let toolbar = toolbar_view(view);
     div()
         .h(px(GROUP_HEIGHT + 16.))
@@ -792,31 +890,39 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                 .children(TABS.iter().map(|spec| {
                     let id: TabId = spec.id;
                     let selected = view.ui.tab == id;
-                    ribbon_action(
-                        format!("tab-{}", id.label()),
-                        div().child(id.label()),
-                        false,
-                        move |s| {
-                            if selected { s } else { s.text_color(rgb(TEXT)) }
-                        },
-                        cx,
-                        move |v, _, cx| {
+                    div()
+                        .id(SharedString::from(format!("tab-{}", id.label())))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap_1()
+                        .flex_shrink_0()
+                        .text_size(px(12.))
+                        .h(px(30.))
+                        .px_3()
+                        .rounded_t(px(8.))
+                        .bg(if selected {
+                            rgb(PANEL).into()
+                        } else {
+                            transparent_black()
+                        })
+                        .text_color(rgb(if selected { TEXT } else { MUTED }))
+                        .cursor_pointer()
+                        .hover(move |s| if selected { s } else { s.text_color(rgb(TEXT)) })
+                        .child(div().child(id.label()))
+                        .tooltip(command_hint(view, id.command()))
+                        .on_click(cx.listener(move |v, event: &ClickEvent, window, cx| {
+                            v.focus.focus(window);
+                            if event.click_count() == 2 {
+                                v.ui.ribbon_collapsed = !v.ui.ribbon_collapsed;
+                                v.ui.ribbon_peek = false;
+                            } else if v.ui.ribbon_collapsed {
+                                v.ui.ribbon_peek = !(v.ui.ribbon_peek && v.ui.tab == id);
+                            }
                             v.ui.tab = id;
                             v.ui.open_group = None;
                             cx.notify();
-                        },
-                    )
-                    .h(px(30.))
-                    .px_3()
-                    .rounded_none()
-                    .rounded_t(px(8.))
-                    .border_0()
-                    .bg(if selected {
-                        rgb(PANEL).into()
-                    } else {
-                        transparent_black()
-                    })
-                    .text_color(rgb(if selected { TEXT } else { MUTED }))
+                        }))
                 })),
         )
         .child(entry_pill(view, cx))

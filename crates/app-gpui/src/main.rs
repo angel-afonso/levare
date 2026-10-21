@@ -1274,6 +1274,17 @@ impl AppView {
                 self.reveal_selection = true;
             }
             id::FULL_SCREEN => window.toggle_fullscreen(),
+            id::TAB_HOME => self.show_tab(score_toolbar::TabId::Home),
+            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::NoteInput),
+            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Notation),
+            id::TAB_TEXT => self.show_tab(score_toolbar::TabId::Text),
+            id::TAB_PLAYBACK => self.show_tab(score_toolbar::TabId::Playback),
+            id::TAB_REVIEW => self.show_tab(score_toolbar::TabId::Review),
+            id::TAB_VIEW => self.show_tab(score_toolbar::TabId::View),
+            id::TOGGLE_RIBBON => {
+                self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
+                self.ui.ribbon_peek = false;
+            }
             id::TOGGLE_INSTRUMENTS_PANEL => {
                 self.ui.show_instruments = !self.ui.show_instruments;
                 self.reveal_selection = true;
@@ -1285,6 +1296,14 @@ impl AppView {
             _ => self.status = format!("Sin acción para «{}»", spec.label),
         }
         cx.notify();
+    }
+
+    fn show_tab(&mut self, tab: score_toolbar::TabId) {
+        self.ui.tab = tab;
+        self.ui.open_group = None;
+        if self.ui.ribbon_collapsed {
+            self.ui.ribbon_peek = true;
+        }
     }
 
     fn choose_voice(&mut self, voice: score_core::Voice, cx: &mut Context<Self>) {

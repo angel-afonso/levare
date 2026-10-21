@@ -26,6 +26,19 @@ impl TabId {
             Self::View => "Vista",
         }
     }
+
+    /// The command that shows this tab.
+    pub fn command(self) -> CommandId {
+        match self {
+            Self::Home => id::TAB_HOME,
+            Self::NoteInput => id::TAB_NOTE_INPUT,
+            Self::Notation => id::TAB_NOTATION,
+            Self::Text => id::TAB_TEXT,
+            Self::Playback => id::TAB_PLAYBACK,
+            Self::Review => id::TAB_REVIEW,
+            Self::View => id::TAB_VIEW,
+        }
+    }
 }
 
 /// How a control is drawn. The renderer maps each variant to a glyph.
@@ -605,6 +618,11 @@ const PANELS: GroupSpec = GroupSpec {
             Icon("full-screen"),
             "Pantalla completa",
         )),
+        toggle(small(
+            id::TOGGLE_RIBBON,
+            Icon("full-screen"),
+            "Plegar cinta",
+        )),
     ],
 };
 
@@ -669,6 +687,20 @@ pub fn tab(id: TabId) -> &'static TabSpec {
 mod tests {
     use super::*;
     use score_keymap::Registry;
+
+    #[test]
+    fn every_tab_has_its_own_command() {
+        let registry = Registry::builtin();
+        let mut seen = std::collections::HashSet::new();
+        for tab in TABS {
+            let command = tab.id.command();
+            assert!(seen.insert(command), "{command:?} repeated");
+            assert!(
+                registry.get(command.as_str()).is_some(),
+                "{command:?} unregistered"
+            );
+        }
+    }
 
     #[test]
     fn notation_groups_never_fall_back_to_utility_icons() {

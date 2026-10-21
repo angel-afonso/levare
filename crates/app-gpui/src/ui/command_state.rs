@@ -250,6 +250,20 @@ impl CommandStates for AppView {
                 CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
             }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
+            id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),
+            id::TAB_NOTE_INPUT => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::NoteInput)
+            }
+            id::TAB_NOTATION => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Notation)
+            }
+            id::TAB_TEXT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Text),
+            id::TAB_PLAYBACK => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Playback)
+            }
+            id::TAB_REVIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::Review),
+            id::TAB_VIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::View),
+            id::TOGGLE_RIBBON => CommandState::checked(self.ui.ribbon_collapsed),
             _ => CommandState::default(),
         }
     }

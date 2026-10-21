@@ -386,6 +386,14 @@ pub mod id {
         CONTINUOUS_VIEW = "vista.continua";
         SINGLE_SYSTEM_VIEW = "vista.pentagrama";
         COMMAND_SEARCH = "vista.buscar-comandos";
+        TAB_HOME = "vista.pestana.inicio";
+        TAB_NOTE_INPUT = "vista.pestana.entrada";
+        TAB_NOTATION = "vista.pestana.notacion";
+        TAB_TEXT = "vista.pestana.texto";
+        TAB_PLAYBACK = "vista.pestana.reproduccion";
+        TAB_REVIEW = "vista.pestana.revision";
+        TAB_VIEW = "vista.pestana.vista";
+        TOGGLE_RIBBON = "vista.plegar-cinta";
     }
 }
 
@@ -628,6 +636,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
     spec(id::COMMAND_SEARCH, C::View, "Buscar comandos…", G, false, R),
+    spec(id::TAB_HOME, C::View, "Pestaña Inicio", G, false, R),
+    spec(id::TAB_NOTE_INPUT, C::View, "Pestaña Entrada", G, false, R),
+    spec(id::TAB_NOTATION, C::View, "Pestaña Notación", G, false, R),
+    spec(id::TAB_TEXT, C::View, "Pestaña Texto", G, false, R),
+    spec(id::TAB_PLAYBACK, C::View, "Pestaña Reproducción", G, false, R),
+    spec(id::TAB_REVIEW, C::View, "Pestaña Revisión", G, false, R),
+    spec(id::TAB_VIEW, C::View, "Pestaña Vista", G, false, R),
+    spec(id::TOGGLE_RIBBON, C::View, "Plegar o desplegar la cinta", G, false, R),
 ];
 
 #[cfg(test)]
