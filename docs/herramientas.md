@@ -1,6 +1,6 @@
-# Partitura — Herramientas e integraciones
+# Levare — Herramientas e integraciones
 
-Inventario de las piezas necesarias para que Partitura sea una alternativa sólida a Sibelius:
+Inventario de las piezas necesarias para que Levare sea una alternativa sólida a Sibelius:
 capacidades completas, alta estabilidad y, sobre todo, velocidad.
 
 > **Estado:** inventario de reconocimiento (2026-10-17). La primera entrega ya está

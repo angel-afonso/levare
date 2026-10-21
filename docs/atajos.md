@@ -2,11 +2,11 @@
 
 Perfil por defecto: **Sibelius · portátil**. Atajos de Sibelius para teclados sin bloque numérico; también funcionan con él.
 
-Puedes cambiarlos en **Partitura › Preferencias de atajos…** (⌘,). Tus cambios se guardan aparte, en `atajos.json` dentro de la carpeta de datos de la aplicación.
+Puedes cambiarlos en **Levare › Preferencias de atajos…** (⌘,). Tus cambios se guardan aparte, en `atajos.json` dentro de la carpeta de datos de la aplicación.
 
 Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta que la función exista.
 
-> Archivo generado desde `crates/keymap`. Para actualizarlo: `PARTITURA_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
+> Archivo generado desde `crates/keymap`. Para actualizarlo: `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
 
 ## Archivo
 
@@ -17,10 +17,11 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘S` | Guardar |  |
 | `⇧⌘S` | Guardar como… |  |
 | `⌘W` | Cerrar ventana |  |
-| `⌘Q` | Salir de Partitura |  |
+| `⌘Q` | Salir de Levare |  |
 | `⌘P` | Imprimir… | Pendiente |
 | — | Exportar partitura y partes… |  |
 | — | Exportar MusicXML… |  |
+| — | Información de la partitura… |  |
 | `⌘,` | Preferencias de atajos… |  |
 | — | Borrar la lista de recientes |  |
 | `Esc` | Cerrar el panel abierto |  |
@@ -37,6 +38,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘A` | Seleccionar todo el pentagrama |  |
 | `⌫` · `⌦` | Convertir en silencios |  |
 | — | Eliminar notas y su tiempo |  |
+| `⇧⌘P` | Restablecer posición |  |
 | `Esc` | Detener, cancelar o quitar la selección |  |
 | `R` | Repetir la nota, acorde o silencio |  |
 
@@ -131,6 +133,9 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Arpegio ascendente |  |
 | — | Arpegio descendente |  |
 | — | Calderón |  |
+| — | Trémolo de una barra |  |
+| — | Trémolo de dos barras |  |
+| — | Trémolo de tres barras |  |
 | — | Dinámica ppp |  |
 | — | Dinámica pp |  |
 | — | Dinámica p |  |
@@ -145,7 +150,10 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥⌘T` | Indicación de tempo… |  |
 | `⌘L` | Letra | Pendiente |
 | `⌘K` | Cifrado de acordes | Pendiente |
-| `⌘R` | Letra de ensayo | Pendiente |
+| `⌘R` | Marca de ensayo |  |
+| — | Marcas de ensayo con letras |  |
+| — | Marcas de ensayo con números |  |
+| — | Marcas de ensayo con números de compás |  |
 
 ## Notación
 
@@ -155,7 +163,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Indicación unis. |  |
 | `K` | Tonalidad… |  |
 | `T` | Compás de tiempo… |  |
-| `Q` | Clave… | Pendiente |
+| `Q` | Clave… |  |
 | `L` | Líneas… | Pendiente |
 | `Z` | Símbolo… | Pendiente |
 
@@ -167,6 +175,24 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⇧⌘B` | Insertar un compás antes del actual |  |
 | `⌘⌫` | Eliminar compases seleccionados |  |
 | `⌥⌘G` | Ir al compás… | Pendiente |
+| — | Inicio de repetición |  |
+| — | Fin de repetición |  |
+| — | Primera casilla |  |
+| — | Segunda casilla |  |
+| — | Quitar casilla |  |
+| — | Doble barra |  |
+| — | Barra final |  |
+| — | Segno |  |
+| — | Coda |  |
+| — | To Coda |  |
+| — | Fine |  |
+| — | D.C. |  |
+| — | D.C. al Fine |  |
+| — | D.C. al Coda |  |
+| — | D.S. |  |
+| — | D.S. al Fine |  |
+| — | D.S. al Coda |  |
+| — | Quitar repeticiones y saltos |  |
 
 ## Instrumentos
 
@@ -216,7 +242,23 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Audición al escribir |  |
 | — | Subir el tempo |  |
 | — | Bajar el tempo |  |
-| — | Reproducir repeticiones | Pendiente |
+| — | Reproducir repeticiones |  |
+
+## Revisión
+
+| Atajo | Comando | Estado |
+|---|---|---|
+| — | Comprobar toda la partitura |  |
+| — | Nuevo comentario sobre la selección… |  |
+| — | Mostrar comentarios |  |
+| — | Resolver o reabrir el comentario activo |  |
+| — | Comprobar la selección |  |
+| — | Mostrar avisos de revisión |  |
+| — | Aviso anterior |  |
+| — | Aviso siguiente |  |
+| — | Mostrar notas fuera de rango en rojo |  |
+| — | Editar rango de la parte activa… |  |
+| — | Restablecer rango de la parte activa |  |
 
 ## Vista
 

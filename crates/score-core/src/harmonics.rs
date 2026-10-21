@@ -90,11 +90,14 @@ impl Score {
             self.validate_event_pitches(id.part, id.measure, event)?;
         }
         for &(id, value) in edits {
-            Arc::make_mut(
+            let notation = &mut Arc::make_mut(
                 &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
             )[id.event]
-                .notation
-                .harmonic = value;
+                .notation;
+            notation.harmonic = value;
+            if value.is_none() {
+                notation.offsets.harmonic = None;
+            }
         }
         self.prune_connections();
         Ok(())

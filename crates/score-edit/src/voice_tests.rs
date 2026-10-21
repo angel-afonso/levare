@@ -7,6 +7,234 @@ fn note(step: score_core::Step, value: Duration) -> Event {
         notation: Default::default(),
     }
 }
+
+#[test]
+fn alt_arrows_into_another_part_keep_the_sounding_position() {
+    let mut score = Score::new("".into(), &[Instrument::Violin, Instrument::Violin], 2).unwrap();
+    let mut ids = [Vec::new(), Vec::new()];
+    for (part_index, entries) in ids.iter_mut().enumerate() {
+        for (index, step) in [
+            score_core::Step::C,
+            score_core::Step::D,
+            score_core::Step::E,
+            score_core::Step::F,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            entries.push(
+                score
+                    .insert_in_voice(
+                        PartId(part_index as u32),
+                        StaffId::Upper,
+                        0,
+                        Voice::One,
+                        index,
+                        note(step, Duration::Quarter),
+                    )
+                    .unwrap(),
+            );
+        }
+    }
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(ids[0][2]);
+    editor.select_display_staff_in(PartId(1), StaffId::Upper);
+    assert_eq!(editor.selection(), Some(ids[1][2]));
+    assert_eq!(
+        editor.divisi_position(),
+        score_core::DivisiPoint::new(0, 96)
+    );
+}
+
+#[test]
+fn alt_arrows_into_an_empty_bar_place_the_cursor_at_its_start() {
+    let mut score = Score::new("".into(), &[Instrument::Violin, Instrument::Violin], 2).unwrap();
+    let mut selected = None;
+    for (index, step) in [
+        score_core::Step::C,
+        score_core::Step::D,
+        score_core::Step::E,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = score
+            .insert_in_voice(
+                PartId(0),
+                StaffId::Upper,
+                0,
+                Voice::One,
+                index,
+                note(step, Duration::Quarter),
+            )
+            .unwrap();
+        if index == 2 {
+            selected = Some(id);
+        }
+    }
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(selected.unwrap());
+    editor.select_display_staff_in(PartId(1), StaffId::Upper);
+    assert_eq!(editor.selection(), None);
+    assert_eq!(editor.cursor().part, PartId(1));
+    assert_eq!(editor.cursor().index, 0);
+}
+
+#[test]
+fn alt_arrows_into_a_held_note_select_it() {
+    let mut score = Score::new("".into(), &[Instrument::Violin, Instrument::Violin], 2).unwrap();
+    score
+        .insert_in_voice(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            0,
+            note(score_core::Step::C, Duration::Quarter),
+        )
+        .unwrap();
+    let source = score
+        .insert_in_voice(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            1,
+            note(score_core::Step::D, Duration::Quarter),
+        )
+        .unwrap();
+    let target = score
+        .insert_in_voice(
+            PartId(1),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            0,
+            note(score_core::Step::E, Duration::Half),
+        )
+        .unwrap();
+    score
+        .insert_in_voice(
+            PartId(1),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            1,
+            note(score_core::Step::F, Duration::Half),
+        )
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(source);
+    editor.select_display_staff_in(PartId(1), StaffId::Upper);
+    assert_eq!(editor.selection(), Some(target));
+    assert_eq!(
+        editor.divisi_position(),
+        score_core::DivisiPoint::new(0, 48)
+    );
+}
+
+#[test]
+fn alt_arrows_from_voice_two_keep_it_when_available_and_fall_back_otherwise() {
+    let mut score = Score::new(
+        "".into(),
+        &[Instrument::Violin, Instrument::Violin, Instrument::Violin],
+        2,
+    )
+    .unwrap();
+    score
+        .insert_in_voice(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::Two,
+            0,
+            note(score_core::Step::C, Duration::Half),
+        )
+        .unwrap();
+    let source = score
+        .insert_in_voice(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::Two,
+            1,
+            note(score_core::Step::D, Duration::Half),
+        )
+        .unwrap();
+    let target_two = score
+        .insert_in_voice(
+            PartId(1),
+            StaffId::Upper,
+            0,
+            Voice::Two,
+            0,
+            note(score_core::Step::E, Duration::Whole),
+        )
+        .unwrap();
+    let target_one = score
+        .insert_in_voice(
+            PartId(2),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            0,
+            note(score_core::Step::F, Duration::Whole),
+        )
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(source);
+    editor.select_display_staff_in(PartId(1), StaffId::Upper);
+    assert_eq!(editor.selection(), Some(target_two));
+    assert_eq!(editor.cursor().voice, Voice::Two);
+    assert_eq!(
+        editor.divisi_position(),
+        score_core::DivisiPoint::new(0, 96)
+    );
+    editor.select_display_staff_in(PartId(2), StaffId::Upper);
+    assert_eq!(editor.selection(), Some(target_one));
+    assert_eq!(editor.cursor().voice, Voice::One);
+    assert_eq!(
+        editor.divisi_position(),
+        score_core::DivisiPoint::new(0, 96)
+    );
+}
+
+#[test]
+fn alt_arrows_from_bar_end_use_the_start_of_the_next_bar() {
+    let mut score = Score::new("".into(), &[Instrument::Violin, Instrument::Violin], 2).unwrap();
+    score
+        .insert_in_voice(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            0,
+            note(score_core::Step::C, Duration::Whole),
+        )
+        .unwrap();
+    let target = score
+        .insert_in_voice(
+            PartId(1),
+            StaffId::Upper,
+            1,
+            Voice::One,
+            0,
+            note(score_core::Step::D, Duration::Whole),
+        )
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.set_cursor(Cursor {
+        part: PartId(0),
+        staff: StaffId::Upper,
+        voice: Voice::One,
+        measure: 0,
+        index: 1,
+    });
+    assert_eq!(editor.divisi_position(), score_core::DivisiPoint::new(1, 0));
+    editor.select_display_staff_in(PartId(1), StaffId::Upper);
+    assert_eq!(editor.selection(), Some(target));
+    assert_eq!(editor.divisi_position(), score_core::DivisiPoint::new(1, 0));
+}
 #[test]
 fn voices_have_independent_capacity_navigation_selection_clipboard_and_history() {
     use score_core::Step::*;

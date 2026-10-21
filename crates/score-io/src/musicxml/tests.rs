@@ -68,6 +68,12 @@ fn all_example_scores_produce_parseable_metered_musicxml_without_mutating_docume
         let data = xml(&score);
         let doc = Document::parse(&data).unwrap();
         assert_eq!(doc.root_element().attribute("version"), Some("4.0"));
+        assert_eq!(
+            doc.descendants()
+                .find(|node| node.has_tag_name("software"))
+                .and_then(|node| node.text()),
+            Some("Levare")
+        );
         check_timing(&doc, &score);
         assert_eq!(before, score);
         count += 1;
@@ -391,4 +397,363 @@ fn escaped_text_and_atomic_file_writes_are_valid_xml() {
     export(&path, &score).unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), data.as_bytes());
     assert!(export(&dir.path().join("missing/score.musicxml"), &score).is_err());
+}
+
+#[test]
+fn header_credits_round_trip_through_musicxml() {
+    let mut score = Score::default();
+    let credits = score_core::Credits {
+        subtitle: "Op. 9 & n.º 2".into(),
+        composer: "Frédéric Chopin".into(),
+        arranger: "Ana Ruiz".into(),
+        lyricist: "Luis Cernuda".into(),
+        year: "1832".into(),
+        copyright: "© 2026 Ediciones <Partitura>".into(),
+    };
+    score.set_header("Nocturno", &credits).unwrap();
+    let text = xml(&score);
+    Document::parse(&text).unwrap();
+    let back = decode(text.as_bytes()).unwrap().score;
+    assert_eq!(back.title(), "Nocturno");
+    assert_eq!(back.credits(), &credits);
+}
+
+#[test]
+fn credit_texts_fill_missing_creators_on_import() {
+    let mut score = Score::default();
+    score.set_header("Pieza", &Default::default()).unwrap();
+    let text = xml(&score).replace(
+        "<part-list>",
+        "<credit page=\"1\"><credit-type>composer</credit-type><credit-words>J. S.\n Bach</credit-words></credit><credit page=\"1\"><credit-type>subtitle</credit-type><credit-words>BWV 846</credit-words></credit><part-list>",
+    );
+    let back = decode(text.as_bytes()).unwrap().score;
+    assert_eq!(back.credits().composer, "J. S. Bach");
+    assert_eq!(back.credits().subtitle, "BWV 846");
+}
+
+#[test]
+fn form_round_trips_through_musicxml() {
+    let mut score = Score::new("Form".into(), &[Instrument::Violin, Instrument::Flute], 6).unwrap();
+    for (bar, form) in [
+        (
+            0,
+            BarForm {
+                barline: Barline::Double,
+                ..Default::default()
+            },
+        ),
+        (
+            1,
+            BarForm {
+                repeat_start: true,
+                ..Default::default()
+            },
+        ),
+        (
+            2,
+            BarForm {
+                repeat_end: Some(3),
+                ..Default::default()
+            },
+        ),
+        (
+            4,
+            BarForm {
+                segno: true,
+                to_coda: true,
+                ..Default::default()
+            },
+        ),
+        (
+            5,
+            BarForm {
+                coda: true,
+                jump: Some(Jump::DalSegnoAlCoda),
+                ..Default::default()
+            },
+        ),
+    ] {
+        score.set_bar_form(bar, form).unwrap();
+    }
+    for (bar, number) in [(2, 1), (3, 2)] {
+        score
+            .set_ending(Ending {
+                start: bar,
+                end: bar,
+                numbers: vec![number],
+            })
+            .unwrap();
+    }
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    let imported = decode(data.as_bytes()).unwrap();
+    assert!(imported.warnings.is_empty(), "{:?}", imported.warnings);
+    for bar in 0..6 {
+        assert_eq!(
+            score.bar_form(bar),
+            imported.score.bar_form(bar),
+            "bar {bar}"
+        );
+    }
+    assert_eq!(
+        score.endings().collect::<Vec<_>>(),
+        imported.score.endings().collect::<Vec<_>>()
+    );
+    for (index, part) in doc
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("part"))
+        .enumerate()
+    {
+        let bars: Vec<_> = part
+            .children()
+            .filter(|node| node.has_tag_name("measure"))
+            .collect();
+        assert!(
+            bars[1]
+                .children()
+                .find(Node::is_element)
+                .unwrap()
+                .has_tag_name("barline")
+        );
+        assert_eq!(
+            bars[2]
+                .descendants()
+                .find(|node| node.has_tag_name("repeat"))
+                .unwrap()
+                .attribute("times"),
+            Some("3")
+        );
+        assert_eq!(
+            part.descendants()
+                .filter(|node| node.has_tag_name("segno"))
+                .count(),
+            usize::from(index == 0)
+        );
+        assert_eq!(
+            part.descendants()
+                .filter(|node| node.has_tag_name("coda"))
+                .count(),
+            usize::from(index == 0)
+        );
+        let right = bars[2]
+            .children()
+            .find(|node| {
+                node.has_tag_name("barline") && node.attribute("location") == Some("right")
+            })
+            .unwrap();
+        assert_eq!(
+            right
+                .children()
+                .filter(Node::is_element)
+                .map(|node| node.tag_name().name())
+                .collect::<Vec<_>>(),
+            ["bar-style", "ending", "repeat"]
+        );
+    }
+    for direction in doc.descendants().filter(|node| {
+        node.has_tag_name("direction")
+            && node.descendants().any(|child| {
+                child.has_tag_name("sound")
+                    && (child.attribute("tocoda").is_some()
+                        || child.attribute("dalsegno").is_some())
+            })
+    }) {
+        assert_eq!(text(direction, "offset"), "192");
+    }
+}
+
+#[test]
+fn last_ending_is_written_as_discontinue() {
+    let mut score = Score::default();
+    for (bar, number) in [(1, 1), (2, 2)] {
+        score
+            .set_ending(Ending {
+                start: bar,
+                end: bar,
+                numbers: vec![number],
+            })
+            .unwrap();
+    }
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    let endings: Vec<_> = doc
+        .descendants()
+        .filter(|node| node.has_tag_name("ending") && node.attribute("type") != Some("start"))
+        .collect();
+    assert_eq!(
+        endings
+            .iter()
+            .filter(|node| node.attribute("number") == Some("1"))
+            .map(|node| node.attribute("type").unwrap())
+            .collect::<Vec<_>>(),
+        ["stop"]
+    );
+    assert_eq!(
+        endings
+            .iter()
+            .filter(|node| node.attribute("number") == Some("2"))
+            .map(|node| node.attribute("type").unwrap())
+            .collect::<Vec<_>>(),
+        ["discontinue"]
+    );
+}
+
+#[test]
+fn final_repeat_does_not_write_two_barlines() {
+    let mut score = Score::default();
+    score
+        .set_bar_form(
+            3,
+            BarForm {
+                repeat_end: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    for part in doc
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("part"))
+    {
+        let bar = part
+            .children()
+            .rfind(|node| node.has_tag_name("measure"))
+            .unwrap();
+        assert_eq!(
+            bar.children()
+                .filter(|node| node.has_tag_name("barline")
+                    && node.attribute("location") == Some("right"))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn every_jump_variant_and_explicit_interior_style_round_trips() {
+    let mut score = Score::new("Variants".into(), &[Instrument::Violin], 8).unwrap();
+    for (bar, jump) in Jump::ALL.into_iter().enumerate() {
+        // Independent Fine/To Coda flags must not upgrade a recognized D.C./D.S.
+        score
+            .set_bar_form(
+                bar,
+                BarForm {
+                    jump: Some(jump),
+                    fine: true,
+                    to_coda: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    score
+        .set_bar_form(
+            6,
+            BarForm {
+                barline: Barline::Final,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    score
+        .set_bar_form(
+            7,
+            BarForm {
+                barline: Barline::Double,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let imported = decode(&encode(&score).unwrap()).unwrap();
+    assert!(imported.warnings.is_empty(), "{:?}", imported.warnings);
+    for bar in 0..8 {
+        assert_eq!(
+            imported.score.bar_form(bar),
+            score.bar_form(bar),
+            "bar {bar}"
+        );
+    }
+}
+
+#[test]
+fn single_note_tremolo_variants_round_trip_through_musicxml() {
+    let mut score = Score::default();
+    for (index, mark) in Tremolo::ALL.into_iter().enumerate() {
+        let id = score
+            .insert(0, index, note(Step::C, 4, Duration::Quarter))
+            .unwrap();
+        score.set_tremolo(id, Some(mark)).unwrap();
+    }
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    assert_eq!(
+        doc.descendants()
+            .filter(|node| node.has_tag_name("tremolo"))
+            .map(|node| (node.attribute("type"), node.text()))
+            .collect::<Vec<_>>(),
+        [
+            (Some("single"), Some("1")),
+            (Some("single"), Some("2")),
+            (Some("single"), Some("3"))
+        ]
+    );
+    let result = decode(data.as_bytes()).unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    let notes: Vec<_> = result.score.measures()[0]
+        .iter()
+        .filter_map(|(_, event)| event.notation.tremolo)
+        .collect();
+    assert_eq!(notes, Tremolo::ALL);
+}
+
+#[test]
+fn rehearsal_styles_and_custom_labels_round_trip() {
+    for style in RehearsalStyle::ALL {
+        let mut score = Score::new(
+            "Ensayo".into(),
+            &[Instrument::Violin, Instrument::Cello],
+            10,
+        )
+        .unwrap();
+        for bar in [2, 4, 8] {
+            score.toggle_rehearsal_mark(bar).unwrap();
+        }
+        score.set_rehearsal_style(style);
+        let data = xml(&score);
+        let doc = Document::parse(&data).unwrap();
+        assert_eq!(
+            doc.descendants()
+                .filter(|n| n.has_tag_name("rehearsal"))
+                .count(),
+            3
+        );
+        let imported = decode(data.as_bytes()).unwrap();
+        assert!(imported.warnings.is_empty(), "{:?}", imported.warnings);
+        assert_eq!(imported.score.rehearsal_style(), style);
+        for bar in [2, 4, 8] {
+            assert_eq!(
+                imported.score.rehearsal_label(bar),
+                score.rehearsal_label(bar)
+            );
+            assert!(
+                imported
+                    .score
+                    .rehearsal_marks()
+                    .find(|(b, _)| *b == bar)
+                    .unwrap()
+                    .1
+                    .custom
+                    .is_none()
+            );
+        }
+    }
+    let mut score = Score::default();
+    score
+        .set_rehearsal_custom(0, Some("A & B <Trío>".into()))
+        .unwrap();
+    let imported = decode(&encode(&score).unwrap()).unwrap();
+    assert_eq!(imported.score.rehearsal_label(0), score.rehearsal_label(0));
 }

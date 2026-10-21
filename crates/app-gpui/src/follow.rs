@@ -100,6 +100,21 @@ impl PlaybackViewport {
         }
     }
 
+    pub fn reveal_review_bar(
+        &self,
+        layout: &Layout,
+        bar: usize,
+        mark: Option<score_core::BarMark>,
+    ) {
+        if let Some(target) = review_bar_bounds(layout, bar, mark) {
+            self.scroll.set_offset(self.offset_to_reveal(
+                target,
+                self.scroll.bounds(),
+                self.scroll.max_offset(),
+            ));
+        }
+    }
+
     fn offset_to_reveal(
         &self,
         target: Bounds<Pixels>,
@@ -114,6 +129,45 @@ impl PlaybackViewport {
         reveal_offset(target, viewport, offset, maximum)
     }
 }
+
+fn review_bar_bounds(
+    layout: &Layout,
+    bar: usize,
+    mark: Option<score_core::BarMark>,
+) -> Option<Bounds<Pixels>> {
+    let scale = layout.scale;
+    if let Some(label) = layout
+        .navigation
+        .iter()
+        .find(|label| label.measure == bar && Some(label.mark) == mark)
+    {
+        let width = 0.6 * label.size * label.text.chars().count() as f32;
+        let left = label.position.x - if label.right_aligned { width } else { 0. };
+        return Some(Bounds::new(
+            point(
+                px((left - 10.) * scale),
+                px((label.position.y - label.size - 10.) * scale),
+            ),
+            size(px((width + 20.) * scale), px((label.size + 24.) * scale)),
+        ));
+    }
+    // An unmatched opening repeat is drawn on the first staff, not in the header.
+    let measure = layout
+        .measures
+        .iter()
+        .filter(|measure| measure.index == bar)
+        .min_by(|a, b| a.origin.y.total_cmp(&b.origin.y))?;
+    Some(Bounds::new(
+        point(
+            px((measure.origin.x - 10.) * scale),
+            px((measure.origin.y - 20.) * scale),
+        ),
+        size(px(60. * scale), px(80. * scale)),
+    ))
+}
+
+#[cfg(test)]
+mod review_tests;
 
 fn visible_page_at(layout: &Layout, origin: Point<Pixels>, viewport: Bounds<Pixels>) -> usize {
     let y = f32::from(viewport.top() + viewport.size.height / 2. - origin.y) / layout.scale;

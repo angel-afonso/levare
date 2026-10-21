@@ -1,6 +1,23 @@
 //! A continuous passage on one staff, with stable anchor/focus identities.
 use super::*;
 impl Editor {
+    pub fn select_comment(&mut self, id: score_core::CommentId) -> bool {
+        let anchors = self.score().comment_anchors(id);
+        let Some(first) = anchors.first().copied() else {
+            return false;
+        };
+        let voice = self.score().voice_of(first);
+        let last = anchors
+            .iter()
+            .copied()
+            .rfind(|id| id.staff == first.staff && self.score().voice_of(*id) == voice)
+            .unwrap();
+        self.select(last);
+        if last != first {
+            self.extend_selection(first);
+        }
+        true
+    }
     pub fn selected_ids(&self) -> Vec<ElementId> {
         let Some(focus) = self.selection() else {
             return Vec::new();

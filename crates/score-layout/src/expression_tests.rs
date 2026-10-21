@@ -27,8 +27,8 @@ fn marks_reserve_space_and_connections_split_at_system_boundaries() {
     })
     .unwrap();
     s.add_connection(Connection {
-        start: ids[1],
-        end: ids[2],
+        start: ids[2],
+        end: ids[3],
         kind: ConnectionKind::Tie,
     })
     .unwrap();

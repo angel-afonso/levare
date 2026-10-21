@@ -68,7 +68,7 @@ impl Recovery {
         let worker_status = status.clone();
         let path = path.to_owned();
         let thread = thread::Builder::new()
-            .name("partitura-recovery".into())
+            .name("levare-recovery".into())
             .spawn(move || {
                 let _lock = lock;
                 let mut pending = None;
@@ -176,7 +176,7 @@ fn lock_file(file: &File) -> Result<(), FileError> {
     // Advisory lock is released by the OS even if the process crashes.
     if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err(error(
-            "Otra ventana de Partitura está usando la recuperación de esta sesión",
+            "Otra ventana de Levare está usando la recuperación de esta sesión",
         ));
     }
     Ok(())
@@ -268,7 +268,7 @@ mod tests {
     }
     #[test]
     fn a_killed_process_leaves_an_automatic_recovery_without_a_quit_handler() {
-        const ENV: &str = "PARTITURA_CRASH_TEST_PATH";
+        const ENV: &str = "LEVARE_CRASH_TEST_PATH";
         if let Some(path) = std::env::var_os(ENV) {
             let recovery = Recovery::open(Path::new(&path)).unwrap();
             let mut score = Score::default();

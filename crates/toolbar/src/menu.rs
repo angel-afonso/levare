@@ -25,10 +25,32 @@ pub const FILE_MENU: &[MenuEntry] = &[
     C(id::EXPORT_MUSICXML),
     C(id::PRINT),
     S,
+    C(id::SCORE_INFO),
     C(id::PREFERENCES),
     S,
     C(id::CLOSE),
 ];
+
+pub const NOTE_CONTEXT_MENU: &[MenuEntry] = &[
+    C(id::CUT),
+    C(id::COPY),
+    C(id::PASTE),
+    S,
+    C(id::DELETE),
+    C(id::REMOVE_TIME),
+    C(id::REPEAT),
+    S,
+    C(id::TIE),
+    C(id::SLUR),
+    C(id::CRESCENDO),
+    C(id::DIMINUENDO),
+    S,
+    C(id::STACCATO),
+    C(id::ACCENT),
+];
+
+pub const MARK_CONTEXT_MENU: &[MenuEntry] = &[C(id::DELETE), S, C(id::UNDO)];
+pub const BAR_MARK_CONTEXT_MENU: &[MenuEntry] = &[C(id::RESET_POSITION), S, C(id::UNDO)];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuItemView {
@@ -152,5 +174,20 @@ mod tests {
             rows.iter()
                 .any(|row| matches!(row, MenuRow::Item(item) if item.pending))
         );
+    }
+
+    #[test]
+    fn context_menus_only_contain_registered_commands() {
+        let registry = Registry::builtin();
+        for entries in [NOTE_CONTEXT_MENU, MARK_CONTEXT_MENU, BAR_MARK_CONTEXT_MENU] {
+            assert!(!entries.contains(&MenuEntry::Recent));
+            for entry in entries {
+                if let MenuEntry::Command(command) = entry {
+                    assert!(registry.get(command.as_str()).is_some(), "{command}");
+                }
+            }
+        }
+        assert!(BAR_MARK_CONTEXT_MENU.contains(&C(id::RESET_POSITION)));
+        assert!(!BAR_MARK_CONTEXT_MENU.contains(&C(id::DELETE)));
     }
 }

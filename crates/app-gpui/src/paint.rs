@@ -1,21 +1,92 @@
 use gpui::{prelude::*, *};
-use score_core::{ElementId, MarkRef};
+use score_core::{BarMark, BarMarkRef, ElementId, MarkRef};
 use score_edit::Cursor;
-use score_layout::Layout;
+use score_layout::{Hit, Layout, Point as ScorePoint};
 use std::rc::Rc;
+mod range_warning;
 
 pub struct CanvasState {
+    pub show_ranges: bool,
+    pub score: score_core::Score,
     pub selection: Option<ElementId>,
     pub selection_range: Vec<ElementId>,
     pub cursor: Cursor,
+    pub note_entry: bool,
+    pub playing: bool,
     pub notation_point: score_core::DivisiPoint,
     pub playheads: Vec<ElementId>,
     pub selected_pitch: Option<score_core::Pitch>,
     /// A mark picked in the score is highlighted on its own, not its note.
     pub selected_mark: Option<MarkRef>,
+    pub selected_bar_mark: Option<BarMarkRef>,
+    pub hover: Option<crate::selection::Hover>,
     pub position: crate::playhead::Position,
     pub(super) time_target: Option<crate::note_drag::TimeTarget>,
+    pub(super) ghost: Option<crate::ghost::Ghost>,
 }
+
+/// Returns the displayed box under the pointer, even when a divisi mark has
+/// more than one box with the same canonical identity.
+pub fn hover_bounds(layout: &Layout, hit: Hit, pointer: ScorePoint) -> Option<Bounds<Pixels>> {
+    let p = ScorePoint {
+        x: pointer.x / layout.scale,
+        y: pointer.y / layout.scale,
+    };
+    match hit {
+        Hit::Note(id, Some(pitch)) => layout
+            .measures
+            .iter()
+            .flat_map(|measure| {
+                measure
+                    .content
+                    .events
+                    .iter()
+                    .filter(move |event| event.id == id && event.pitch == Some(pitch))
+                    .map(move |event| {
+                        let x = measure.origin.x + event.center.x;
+                        let y = measure.origin.y + event.center.y;
+                        ((p.x - x).abs().max((p.y - y).abs()), x, y)
+                    })
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, x, y)| {
+                Bounds::new(
+                    point(px((x - 8.) * layout.scale), px((y - 6.) * layout.scale)),
+                    size(px(16. * layout.scale), px(12. * layout.scale)),
+                )
+            }),
+        Hit::Mark(mark) if !matches!(mark, MarkRef::Connection(_)) => layout
+            .measures
+            .iter()
+            .flat_map(|measure| {
+                measure
+                    .content
+                    .marks
+                    .iter()
+                    .filter(move |box_| box_.mark == mark)
+                    .map(move |box_| {
+                        let x = measure.origin.x + box_.center.x;
+                        let y = measure.origin.y + box_.center.y;
+                        ((p.x - x).abs().max((p.y - y).abs()), x, y, box_.half)
+                    })
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, x, y, half)| {
+                Bounds::new(
+                    point(
+                        px((x - half.0 - 2.) * layout.scale),
+                        px((y - half.1 - 2.) * layout.scale),
+                    ),
+                    size(
+                        px((half.0 + 2.) * 2. * layout.scale),
+                        px((half.1 + 2.) * 2. * layout.scale),
+                    ),
+                )
+            }),
+        _ => None,
+    }
+}
+
 pub fn score_canvas(
     layout: Rc<Layout>,
     state: CanvasState,
@@ -23,15 +94,22 @@ pub fn score_canvas(
     music_font: Rc<crate::music_font::MusicFont>,
 ) -> impl IntoElement {
     let CanvasState {
+        show_ranges,
+        score,
         selection,
         selection_range,
         cursor,
+        note_entry,
+        playing,
         notation_point,
         playheads,
         selected_pitch,
         selected_mark,
+        selected_bar_mark,
+        hover,
         position,
         time_target,
+        ghost,
     } = state;
     let active_staff = layout
         .voice_measure_at_tick(
@@ -64,7 +142,7 @@ pub fn score_canvas(
                 .map(|m| m.staff)
         })
         .unwrap_or(cursor.staff);
-    let (selection, selection_range) = if selected_mark.is_some() {
+    let (selection, selection_range) = if selected_mark.is_some() || selected_bar_mark.is_some() {
         (None, Vec::new())
     } else {
         (selection, selection_range)
@@ -85,6 +163,10 @@ pub fn score_canvas(
                 if let Some(page) = view.pending_page.take() {
                     view.reveal_selection = false;
                     view.viewport.reveal_page(&view.layout, page);
+                    cx.notify();
+                } else if let Some((bar, mark)) = view.review.reveal_bar.take() {
+                    view.reveal_selection = false;
+                    view.viewport.reveal_review_bar(&view.layout, bar, mark);
                     cx.notify();
                 } else if view.reveal_selection {
                     view.reveal_selection = false;
@@ -146,6 +228,15 @@ pub fn score_canvas(
                 }
             }
             for mark in &layout.tempos {
+                let color = if selected_bar_mark
+                    == Some(BarMarkRef {
+                        measure: mark.measure,
+                        mark: BarMark::Tempo,
+                    }) {
+                    crate::playhead::SELECTED
+                } else {
+                    0x202c27
+                };
                 let mut at =
                     origin + point(px(mark.position.x * scale), px(mark.position.y * scale));
                 if !mark.mark.text.is_empty() {
@@ -159,7 +250,7 @@ pub fn score_canvas(
                                     &[TextRun {
                                         len: text.len(),
                                         font: font("Times New Roman").bold(),
-                                        color: rgb(0x202c27).into(),
+                                        color: rgb(color).into(),
                                         background_color: None,
                                         underline: None,
                                         strikethrough: None,
@@ -177,7 +268,7 @@ pub fn score_canvas(
                             crate::music_font::TextRun::Music(text) => {
                                 let unit = music_font.bounds(&text, 1.);
                                 let font_size = 18. * scale / f32::from(unit.size.height);
-                                music_font.paint_sized(&text, at, 0x202c27, font_size, window);
+                                music_font.paint_sized(&text, at, color, font_size, window);
                                 at.x += music_font.bounds(&text, font_size).size.width + px(scale);
                             }
                         }
@@ -185,14 +276,14 @@ pub fn score_canvas(
                     at.x += px(12. * scale);
                 }
                 let glyph = mark.mark.beat.glyph();
-                music_font.paint_sized(glyph, at, 0x202c27, 28. * scale, window);
+                music_font.paint_sized(glyph, at, color, 28. * scale, window);
                 at.x += music_font.bounds(glyph, 28. * scale).size.width + px(8. * scale);
                 text_at(
                     &format!("= {}", mark.mark.bpm),
                     font("Times New Roman"),
                     18. * scale,
                     at,
-                    0x202c27,
+                    color,
                     window,
                     cx,
                 );
@@ -207,13 +298,36 @@ pub fn score_canvas(
                     Default::default(),
                 ));
             }
-            if let Some(marker) = crate::playhead::score_bounds(&layout, cursor, position) {
+            if let Some(hover) = hover.filter(|hover| match hover.hit {
+                Hit::Note(id, _) => !selected.contains(&id),
+                Hit::Mark(mark) => selected_mark != Some(mark),
+            }) && let Some(bounds) = hover.bounds
+            {
+                window.paint_quad(quad(
+                    Bounds::new(origin + bounds.origin, bounds.size),
+                    px(3.),
+                    rgba(0x3c70cf22),
+                    px(0.),
+                    transparent_black(),
+                    Default::default(),
+                ));
+            }
+            let (show_caret, show_marker) = crate::playhead::indicators(note_entry, playing);
+            if show_marker
+                && let Some(marker) = crate::playhead::score_bounds(&layout, cursor, position)
+            {
                 crate::playhead::paint_marker(
                     origin.x + marker.left(),
                     origin.y + marker.top(),
                     origin.y + marker.bottom(),
                     window,
                 );
+            }
+            if show_caret && let Some(caret) = crate::playhead::caret_bounds(&layout, cursor) {
+                window.paint_quad(fill(
+                    Bounds::new(origin + caret.origin, caret.size),
+                    rgb(crate::playhead::voice_color(cursor.voice)),
+                ));
             }
             for bracket in layout.brackets.iter().filter(|b| {
                 shown((
@@ -270,6 +384,124 @@ pub fn score_canvas(
                     window.paint_path(path, rgb(0x303735));
                 }
             }
+            for ending in &layout.rehearsals {
+                let color = if selected_bar_mark
+                    == Some(BarMarkRef {
+                        measure: ending.measure,
+                        mark: BarMark::Rehearsal,
+                    }) {
+                    crate::playhead::SELECTED
+                } else {
+                    0x303735
+                };
+                for line in ending.frame.iter().filter(|line| shown(line_ink(line))) {
+                    let mut path = PathBuilder::stroke(px(line.thickness * scale));
+                    path.move_to(origin + point(px(line.from.x * scale), px(line.from.y * scale)));
+                    path.line_to(origin + point(px(line.to.x * scale), px(line.to.y * scale)));
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, rgb(color));
+                    }
+                }
+                if !ending.text.is_empty()
+                    && shown((
+                        ending.position.x,
+                        ending.position.y - 18.,
+                        ending.frame[0].to.x,
+                        ending.position.y + 5.,
+                    ))
+                {
+                    mixed_text_at(
+                        &music_font,
+                        &ending.text,
+                        font("Times New Roman").bold(),
+                        18. * scale,
+                        origin
+                            + point(px(ending.position.x * scale), px(ending.position.y * scale)),
+                        color,
+                        window,
+                        cx,
+                    );
+                }
+            }
+            for ending in &layout.endings {
+                let color = if selected_bar_mark
+                    == Some(BarMarkRef {
+                        measure: ending.ending_start,
+                        mark: BarMark::Ending,
+                    }) {
+                    crate::playhead::SELECTED
+                } else {
+                    0x303735
+                };
+                for line in ending.lines.iter().filter(|line| shown(line_ink(line))) {
+                    let mut path = PathBuilder::stroke(px(line.thickness * scale));
+                    path.move_to(origin + point(px(line.from.x * scale), px(line.from.y * scale)));
+                    path.line_to(origin + point(px(line.to.x * scale), px(line.to.y * scale)));
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, rgb(color));
+                    }
+                }
+                if !ending.label.is_empty()
+                    && shown((
+                        ending.label_position.x,
+                        ending.label_position.y - 14.,
+                        ending.label_position.x + 200.,
+                        ending.label_position.y + 4.,
+                    ))
+                {
+                    mixed_text_at(
+                        &music_font,
+                        &ending.label,
+                        font("Times New Roman").bold(),
+                        14. * scale,
+                        origin
+                            + point(
+                                px(ending.label_position.x * scale),
+                                px(ending.label_position.y * scale),
+                            ),
+                        color,
+                        window,
+                        cx,
+                    );
+                }
+            }
+            for label in &layout.navigation {
+                let color = if selected_bar_mark
+                    == Some(BarMarkRef {
+                        measure: label.measure,
+                        mark: label.mark,
+                    }) {
+                    crate::playhead::SELECTED
+                } else {
+                    0x303735
+                };
+                let font = font("Times New Roman").bold().italic();
+                let text_width =
+                    mixed_text_width(&music_font, &label.text, &font, label.size * scale, window);
+                let x = label.position.x
+                    - if label.right_aligned {
+                        f32::from(text_width) / scale
+                    } else {
+                        0.
+                    };
+                if shown((
+                    x,
+                    label.position.y - label.size,
+                    x + f32::from(text_width) / scale,
+                    label.position.y + 4.,
+                )) {
+                    mixed_text_at(
+                        &music_font,
+                        &label.text,
+                        font,
+                        label.size * scale,
+                        origin + point(px(x * scale), px(label.position.y * scale)),
+                        color,
+                        window,
+                        cx,
+                    );
+                }
+            }
             for label in layout.labels.iter().filter(|l| {
                 shown((
                     l.position.x,
@@ -298,20 +530,7 @@ pub fn score_canvas(
             for measure in &layout.measures {
                 let offset =
                     origin + point(px(measure.origin.x * scale), px(measure.origin.y * scale));
-                let ink = Bounds::new(
-                    offset
-                        + point(
-                            px(-20. * scale),
-                            px(measure.content.ink_top.min(-26.) * scale),
-                        ),
-                    size(
-                        px((measure.width + 40.) * scale),
-                        px(
-                            (measure.content.ink_bottom - measure.content.ink_top.min(-26.) + 10.)
-                                * scale,
-                        ),
-                    ),
-                );
+                let ink = measure_ink_bounds(measure, offset, scale);
                 if !ink.intersects(&window.content_mask().bounds) {
                     continue;
                 }
@@ -395,6 +614,16 @@ pub fn score_canvas(
                         })
                     {
                         color = 0x194ba2;
+                    }
+                    if show_ranges
+                        && let Some(warning) = range_warning::color(
+                            &score,
+                            &measure.content,
+                            glyph,
+                            selection.zip(selected_pitch),
+                        )
+                    {
+                        color = warning;
                     }
                     music_font.paint_oriented(
                         &glyph.text,
@@ -536,10 +765,87 @@ pub fn score_canvas(
                     window,
                 );
             }
+            if let Some(ghost) = ghost {
+                paint_ghost(ghost, origin, scale, &music_font, window);
+            }
         },
     )
     .w(px(width))
     .h(px(height))
+}
+
+fn paint_ghost(
+    ghost: crate::ghost::Ghost,
+    origin: Point<Pixels>,
+    scale: f32,
+    music_font: &crate::music_font::MusicFont,
+    window: &mut Window,
+) {
+    let color = rgba((crate::playhead::voice_color(ghost.voice) << 8) | 0x88);
+    let glyph = match ghost.duration.value() {
+        score_core::NoteValue::Whole => "\u{e0a2}",
+        score_core::NoteValue::Half => "\u{e0a3}",
+        _ => "\u{e0a4}",
+    };
+    music_font.paint_oriented(
+        glyph,
+        origin + point(px(ghost.x * scale), px(ghost.y * scale)),
+        color.into(),
+        score_layout::MUSIC_SIZE * scale,
+        false,
+        window,
+    );
+    let y_local = ghost.y - ghost.staff_top;
+    let line_right = if ghost.duration.value() == score_core::NoteValue::Whole {
+        21.
+    } else {
+        16.
+    };
+    let mut paint_ledger = |line_y: f32| {
+        let mut path = PathBuilder::stroke(px(1.6 * scale));
+        path.move_to(
+            origin
+                + point(
+                    px((ghost.x - 4.) * scale),
+                    px((ghost.staff_top + line_y) * scale),
+                ),
+        );
+        path.line_to(
+            origin
+                + point(
+                    px((ghost.x + line_right) * scale),
+                    px((ghost.staff_top + line_y) * scale),
+                ),
+        );
+        if let Ok(path) = path.build() {
+            window.paint_path(path, color);
+        }
+    };
+    let mut line_y = -10.;
+    while line_y >= y_local {
+        paint_ledger(line_y);
+        line_y -= 10.;
+    }
+    line_y = 50.;
+    while line_y <= y_local {
+        paint_ledger(line_y);
+        line_y += 10.;
+    }
+    if ghost.duration.is_dotted() {
+        let dot_y = if (y_local / 10.).fract().abs() < 0.001 {
+            ghost.y - 5.
+        } else {
+            ghost.y
+        };
+        music_font.paint_oriented(
+            "\u{e1e7}",
+            origin + point(px((ghost.x + 16.) * scale), px(dot_y * scale)),
+            color.into(),
+            score_layout::MUSIC_SIZE * scale,
+            false,
+            window,
+        );
+    }
 }
 
 fn paint_time_target(
@@ -695,6 +1001,44 @@ pub(super) fn text_at(
     let _ = line.paint(baseline - point(px(0.), line.ascent), height, window, cx);
 }
 
+fn mixed_text_width(
+    music_font: &crate::music_font::MusicFont,
+    text: &str,
+    font: &Font,
+    font_size: f32,
+    window: &mut Window,
+) -> Pixels {
+    crate::music_font::text_runs(text)
+        .into_iter()
+        .map(|run| match run {
+            crate::music_font::TextRun::Text(text) => {
+                let text: SharedString = text.into();
+                window
+                    .text_system()
+                    .shape_line(
+                        text.clone(),
+                        px(font_size),
+                        &[TextRun {
+                            len: text.len(),
+                            font: font.clone(),
+                            color: rgb(0x303735).into(),
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        }],
+                        None,
+                    )
+                    .width
+            }
+            crate::music_font::TextRun::Music(text) => {
+                let unit = music_font.bounds(&text, 1.);
+                let size = font_size * 0.85 / f32::from(unit.size.height);
+                music_font.bounds(&text, size).size.width + px(font_size * 0.08)
+            }
+        })
+        .fold(px(0.), |width, run| width + run)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn mixed_text_at(
     music_font: &crate::music_font::MusicFont,
@@ -752,11 +1096,86 @@ fn mixed_text_at(
     }
 }
 
+/// Include written marks that extend past the automatically spaced measure.
+fn measure_ink_bounds(
+    measure: &score_layout::PlacedMeasure,
+    offset: Point<Pixels>,
+    scale: f32,
+) -> Bounds<Pixels> {
+    let left = measure.content.marks.iter().fold(-20.0_f32, |left, box_| {
+        left.min(box_.center.x - box_.half.0 - 20.)
+    });
+    let right = measure
+        .content
+        .marks
+        .iter()
+        .fold(measure.width + 20., |right, box_| {
+            right.max(box_.center.x + box_.half.0 + 20.)
+        });
+    let top = measure.content.ink_top.min(-26.);
+    Bounds::new(
+        offset + point(px(left * scale), px(top * scale)),
+        size(
+            px((right - left) * scale),
+            px((measure.content.ink_bottom - top + 10.) * scale),
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{INK_MARGIN, curve_ink, visible};
+    use super::{INK_MARGIN, curve_ink, measure_ink_bounds, visible};
     use gpui::{Bounds, point, px};
-    use score_core::{Connection, ConnectionKind, ElementId, EventId, PartId, StaffId};
+    use score_core::{
+        Connection, ConnectionKind, Duration, Dynamic, ElementId, Event, EventId, MarkRef,
+        Notation, Offset, PartId, Pitch, Pitches, Score, StaffId, Step,
+    };
+
+    #[test]
+    fn a_mark_outside_its_measure_is_visible_at_multiple_scales() {
+        let mut score = Score::default();
+        let id = score
+            .insert(
+                0,
+                0,
+                Event {
+                    pitches: Pitches::single(Pitch::new(Step::C, 4)),
+                    duration: Duration::Whole,
+                    notation: Notation::default(),
+                },
+            )
+            .unwrap();
+        score.set_dynamic(id, Some(Dynamic::F)).unwrap();
+        score
+            .set_mark_offset(MarkRef::Dynamic(id), Offset { dx: 400, dy: 0 })
+            .unwrap();
+        let layout = score_layout::LayoutEngine::default().layout_compact(&score, 600.);
+        let measure = layout
+            .measures
+            .iter()
+            .find(|placed| {
+                placed
+                    .content
+                    .marks
+                    .iter()
+                    .any(|box_| box_.mark == MarkRef::Dynamic(id))
+            })
+            .unwrap();
+        let mark = measure
+            .content
+            .marks
+            .iter()
+            .find(|box_| box_.mark == MarkRef::Dynamic(id))
+            .unwrap();
+        assert!(mark.center.x - mark.half.0 > measure.width + 20.);
+        for scale in [0.5, 1., 2.] {
+            let shift_x = 10. - (measure.origin.x + mark.center.x) * scale;
+            let offset = point(px(shift_x + measure.origin.x * scale), px(100.));
+            let clip = Bounds::from_corners(point(px(0.), px(0.)), point(px(20.), px(1000.)));
+            assert!((shift_x + (measure.origin.x + measure.width + 20.) * scale) < 0.);
+            assert!(measure_ink_bounds(measure, offset, scale).intersects(&clip));
+        }
+    }
 
     fn curve(y: f32, bend: f32) -> score_layout::Curve {
         let id = ElementId {

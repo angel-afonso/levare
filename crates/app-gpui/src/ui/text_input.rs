@@ -22,9 +22,30 @@ actions!(
     ]
 );
 
+/// Shared by ordinary insertion/paste and native marked-text composition.
+/// Validate the complete replacement before changing either content or cursor.
+fn replace_content(
+    content: &mut SharedString,
+    range: &Range<usize>,
+    text: &str,
+    max_chars: usize,
+) -> Option<String> {
+    let clean: String = text.chars().filter(|c| !c.is_control()).collect();
+    if content[..range.start].chars().count()
+        + clean.chars().count()
+        + content[range.end..].chars().count()
+        > max_chars
+    {
+        return None;
+    }
+    *content = (content[..range.start].to_owned() + &clean + &content[range.end..]).into();
+    Some(clean)
+}
+
 pub struct TextInput {
     focus_handle: FocusHandle,
     content: SharedString,
+    max_chars: usize,
     placeholder: SharedString,
     selected_range: Range<usize>,
     selection_reversed: bool,
@@ -40,6 +61,7 @@ impl TextInput {
         Self {
             focus_handle: cx.focus_handle(),
             content: content.to_owned().into(),
+            max_chars: 80,
             placeholder: "".into(),
             selected_range: 0..content.len(),
             selection_reversed: false,
@@ -49,6 +71,10 @@ impl TextInput {
             is_selecting: false,
             scroll_offset: px(0.),
         }
+    }
+    pub fn with_max_chars(mut self, max_chars: usize) -> Self {
+        self.max_chars = max_chars;
+        self
     }
     pub fn value(&self) -> &str {
         &self.content
@@ -320,18 +346,11 @@ impl EntityInputHandler for TextInput {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
-        let clean: String = new_text.chars().filter(|c| !c.is_control()).collect();
-        if self.content[..range.start].chars().count()
-            + clean.chars().count()
-            + self.content[range.end..].chars().count()
-            > 80
-        {
+        let Some(clean) = replace_content(&mut self.content, &range, new_text, self.max_chars)
+        else {
             return;
-        }
+        };
         let new_text = clean.as_str();
-        self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
-                .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         cx.notify();
@@ -351,18 +370,11 @@ impl EntityInputHandler for TextInput {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
-        let clean: String = new_text.chars().filter(|c| !c.is_control()).collect();
-        if self.content[..range.start].chars().count()
-            + clean.chars().count()
-            + self.content[range.end..].chars().count()
-            > 80
-        {
+        let Some(clean) = replace_content(&mut self.content, &range, new_text, self.max_chars)
+        else {
             return;
-        }
+        };
         let new_text = clean.as_str();
-        self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
-                .into();
         if !new_text.is_empty() {
             self.marked_range = Some(range.start..range.start + new_text.len());
         } else {
@@ -685,4 +697,42 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("end", End, Some("TextInput")),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some("TextInput")),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_content;
+    use gpui::SharedString;
+    use score_core::MAX_COMMENT_CHARS;
+
+    #[test]
+    fn comment_replacements_support_long_unicode_text_and_enforce_the_limit_atomically() {
+        let mut text: SharedString = "".into();
+        let long = "é🎵".repeat(1000);
+        assert!(replace_content(&mut text, &(0..0), &long, MAX_COMMENT_CHARS).is_some());
+        assert_eq!(text.as_ref(), long);
+        let end = text.len();
+        assert!(replace_content(&mut text, &(end..end), "x", MAX_COMMENT_CHARS).is_none());
+        assert_eq!(text.as_ref(), long);
+        // Replacing existing long native comments remains possible at the limit.
+        assert!(replace_content(&mut text, &(0..2), "a", MAX_COMMENT_CHARS).is_some());
+        assert_eq!(text.chars().count(), MAX_COMMENT_CHARS);
+        // Repeated marked-text replacement uses its previous byte range.
+        assert!(replace_content(&mut text, &(1..5), "譜", MAX_COMMENT_CHARS).is_some());
+        assert!(text.starts_with("a譜"));
+    }
+
+    #[test]
+    fn regular_fields_keep_their_limit_and_control_characters_are_removed() {
+        let mut text: SharedString = "".into();
+        assert!(replace_content(&mut text, &(0..0), &"x".repeat(81), 80).is_none());
+        assert!(text.is_empty());
+        assert_eq!(
+            replace_content(&mut text, &(0..0), "a\nb\tc", 80).unwrap(),
+            "abc"
+        );
+        assert_eq!(text.as_ref(), "abc");
+        assert!(replace_content(&mut text, &(0..3), &"é".repeat(80), 80).is_some());
+        assert_eq!(text.chars().count(), 80);
+    }
 }

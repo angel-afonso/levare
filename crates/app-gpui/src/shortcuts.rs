@@ -12,31 +12,31 @@ use std::path::PathBuf;
 /// Runs a command from a key binding. Repeats of a held key are filtered for
 /// commands that do not repeat.
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct Run(pub CommandId);
 
 /// Runs a command from a native menu item. Menu items only advertise ⌘/⌃
 /// shortcuts: a single-key equivalent would let macOS fire the menu before
 /// GPUI's key contexts and the Preferences recorder see the key.
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct MenuRun(pub CommandId);
 
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct AddInstrument(pub Instrument);
 
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct ChooseKeySignature(pub KeySignature);
 
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct ChooseDynamic(pub Option<score_core::Dynamic>);
 
 /// Opens one of the recent files listed in Archivo › Abrir reciente.
 #[derive(Clone, Debug, PartialEq, Action)]
-#[action(namespace = partitura, no_json)]
+#[action(namespace = levare, no_json)]
 pub struct OpenRecent(pub PathBuf);
 
 pub struct Shortcuts {
@@ -231,7 +231,12 @@ impl Shortcuts {
             .collect();
         let expression = self
             .items(&[
+                Some(id::CLEF),
                 Some(id::TEMPO_TEXT),
+                Some(id::REHEARSAL_MARK),
+                Some(id::REHEARSAL_LETTERS),
+                Some(id::REHEARSAL_NUMBERS),
+                Some(id::REHEARSAL_BAR_NUMBERS),
                 None,
                 Some(id::STACCATO),
                 Some(id::TENUTO),
@@ -239,6 +244,9 @@ impl Shortcuts {
                 Some(id::MARCATO),
                 Some(id::CLEAR_ARTICULATION),
                 Some(id::FERMATA),
+                Some(id::TREMOLO_1),
+                Some(id::TREMOLO_2),
+                Some(id::TREMOLO_3),
                 None,
                 Some(id::ARPEGGIO),
                 Some(id::ARPEGGIO_UP),
@@ -280,7 +288,7 @@ impl Shortcuts {
             .collect();
         vec![
             Menu {
-                name: "Partitura".into(),
+                name: "Levare".into(),
                 items: self.items(&[Some(id::PREFERENCES), None, Some(id::QUIT)]),
             },
             Menu {
@@ -301,6 +309,7 @@ impl Shortcuts {
                     Some(id::REPEAT),
                     Some(id::DELETE),
                     Some(id::REMOVE_TIME),
+                    Some(id::RESET_POSITION),
                     None,
                     Some(id::BAR_AT_END),
                     Some(id::SINGLE_BAR),
@@ -326,6 +335,34 @@ impl Shortcuts {
             Menu {
                 name: "Expresión".into(),
                 items: expression,
+            },
+            Menu {
+                name: "Repeticiones".into(),
+                items: self.items(&[
+                    Some(id::REPEAT_START),
+                    Some(id::REPEAT_END),
+                    None,
+                    Some(id::ENDING_1),
+                    Some(id::ENDING_2),
+                    Some(id::REMOVE_ENDING),
+                    None,
+                    Some(id::DOUBLE_BARLINE),
+                    Some(id::FINAL_BARLINE),
+                    None,
+                    Some(id::SEGNO),
+                    Some(id::CODA),
+                    Some(id::TO_CODA),
+                    Some(id::FINE),
+                    None,
+                    Some(id::DA_CAPO),
+                    Some(id::DA_CAPO_AL_FINE),
+                    Some(id::DA_CAPO_AL_CODA),
+                    Some(id::DAL_SEGNO),
+                    Some(id::DAL_SEGNO_AL_FINE),
+                    Some(id::DAL_SEGNO_AL_CODA),
+                    None,
+                    Some(id::CLEAR_FORM),
+                ]),
             },
             Menu {
                 name: "Instrumentos".into(),

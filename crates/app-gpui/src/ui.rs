@@ -1,18 +1,25 @@
 //! Native editor chrome. Pending controls are visibly marked TODO; score data
 //! and transport readouts always come from the current document/session.
+mod clef_picker;
+mod comments;
+pub use comments::CommentEditor;
 mod command_state;
 mod export_picker;
 pub use export_picker::ExportPicker;
+mod header_editor;
 mod icons;
 mod instrument_panel;
 mod mixer;
 mod music_text;
 mod tempo_editor;
 pub mod text_input;
+pub use header_editor::HeaderEditor;
 pub use mixer::MixerDrag;
 use music_text::inline_text;
 pub use tempo_editor::TempoEditor;
 mod preferences;
+mod review;
+pub use review::RangeEditor;
 mod toolbar;
 use super::*;
 use icons::{Icon, icon};
@@ -45,6 +52,8 @@ pub struct UiState {
     /// Archivo dropdown and its "Abrir reciente" submenu.
     pub file_menu: bool,
     pub recent_menu: bool,
+    /// Window position and whether the clicked target is a mark.
+    pub context_menu: Option<(Point<Pixels>, bool)>,
     /// The folded ribbon group whose dropdown is open, by position.
     pub open_group: Option<usize>,
     /// Window width, for the ribbon's fold decision.
@@ -63,6 +72,7 @@ impl Default for UiState {
             inspector: "Propiedades",
             file_menu: false,
             recent_menu: false,
+            context_menu: None,
             open_group: None,
             width: 1440.,
         }
@@ -298,6 +308,9 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         .when(view.export_picker.is_some(), |root| {
             root.child(export_picker::dialog(view, cx))
         })
+        .when_some(view.ui.context_menu, |root, (position, is_mark)| {
+            root.child(toolbar::context_menu(view, position, is_mark, cx))
+        })
 }
 
 fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
@@ -311,13 +324,18 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
         .pr_3()
         .border_b_1()
         .border_color(rgb(BORDER))
-        .child(music_symbol(view, "\u{e1d7}", 30., (20., 30.), BLUE))
+        .child(
+            img(crate::app_icon::image())
+                .size(px(30.))
+                .object_fit(ObjectFit::Contain)
+                .flex_shrink_0(),
+        )
         .child(
             div()
                 .font_weight(FontWeight::BOLD)
                 .text_size(px(14.))
                 .mr_2()
-                .child("Partitura"),
+                .child("Levare"),
         )
         .child(div().h(px(25.)).border_r_1().border_color(rgb(BORDER)))
         .child(
@@ -452,6 +470,48 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .text_color(rgb(0x222329)),
         )
 }
+const MUSIC_SYMBOL_PADDING: f32 = 4.;
+
+fn fitted_music_font_size(
+    font: &crate::music_font::MusicFont,
+    text: &str,
+    frame: (f32, f32),
+) -> f32 {
+    // SMuFL font size measures staff spaces, not a symbol's visible height.
+    // Include the canvas padding so fitting the ink also fits its layout box.
+    let reference = 30.;
+    let ink = font.bounds(text, reference);
+    let width = (frame.0 - MUSIC_SYMBOL_PADDING).max(0.);
+    let height = (frame.1 - MUSIC_SYMBOL_PADDING).max(0.);
+    reference
+        * (width / f32::from(ink.size.width).max(1.))
+            .min(height / f32::from(ink.size.height).max(1.))
+}
+
+fn clef_symbol(
+    view: &AppView,
+    clef: score_core::Clef,
+    frame: (f32, f32),
+    color: u32,
+) -> impl IntoElement {
+    fitted_music_symbol(view, clef.glyph(), frame, color)
+}
+
+fn fitted_music_symbol(
+    view: &AppView,
+    text: &'static str,
+    frame: (f32, f32),
+    color: u32,
+) -> impl IntoElement {
+    music_symbol(
+        view,
+        text,
+        fitted_music_font_size(&view.music_font, text, frame),
+        frame,
+        color,
+    )
+}
+
 fn music_symbol(
     view: &AppView,
     text: impl Into<SharedString>,
@@ -623,8 +683,8 @@ fn music_glyphs<const N: usize>(
         })
         .reduce(|bounds, next| bounds.union(&next))
         .unwrap_or_default();
-    let width = px(frame.0).max(ink.size.width + px(4.));
-    let height = px(frame.1).max(ink.size.height + px(4.));
+    let width = px(frame.0).max(ink.size.width + px(MUSIC_SYMBOL_PADDING));
+    let height = px(frame.1).max(ink.size.height + px(MUSIC_SYMBOL_PADDING));
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
@@ -729,7 +789,8 @@ pub(super) fn instrument_name(score: &score_core::Score, id: PartId) -> String {
 fn clef_name(clef: score_core::Clef) -> &'static str {
     match clef {
         score_core::Clef::Treble => "sol",
-        score_core::Clef::Alto => "do",
+        score_core::Clef::Alto => "do en tercera",
+        score_core::Clef::Tenor => "do en cuarta",
         score_core::Clef::Bass => "fa",
         score_core::Clef::Percussion => "percusión",
     }
@@ -841,6 +902,7 @@ fn signature_scope(view: &AppView, cx: &Context<AppView>) -> Div {
                 cx,
                 |v, _, cx| {
                     v.time_picker = false;
+                    v.clef_picker = false;
                     v.tempo_picker = None;
                     v.key_picker = false;
                     cx.notify();
@@ -997,50 +1059,73 @@ fn beat_label(beat: f32) -> String {
         .trim_end_matches('.')
         .replace('.', ",")
 }
-fn readout(label: &'static str, value: impl Into<SharedString>) -> Div {
-    readout_content(label, div().child(value.into()))
-}
-fn readout_content(label: &'static str, value: impl IntoElement) -> Div {
+fn readout_value(value: impl IntoElement) -> Div {
     div()
-        .px_3()
+        .text_size(px(13.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .child(value)
+}
+fn readout(label: &'static str, value: impl Into<SharedString>) -> Div {
+    div()
+        .px_2()
+        .py_1()
         .flex_shrink_0()
-        .border_r_1()
-        .border_color(rgb(BORDER))
         .flex()
         .flex_col()
-        .gap_1()
-        .child(caption(label))
-        .child(
-            div()
-                .text_size(px(13.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(value),
-        )
+        .gap(px(2.))
+        .child(caption(label).text_size(px(9.)))
+        .child(readout_value(div().child(value.into())))
 }
-fn passage_bar(view: &AppView, cx: &Context<AppView>) -> Div {
+/// A readout that opens its editor: same layout, hover and selected states.
+fn readout_button(
+    view: &AppView,
+    id: &'static str,
+    label: &'static str,
+    value: impl Into<SharedString>,
+    selected: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    let value: SharedString = value.into();
+    action(
+        id,
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .child(caption(label).text_size(px(9.)))
+            .child(readout_value(inline_text(
+                view.music_font.clone(),
+                value.as_ref(),
+            ))),
+        selected,
+        cx,
+        click,
+    )
+    .justify_start()
+    .px_2()
+    .py_1()
+    .when(!selected, |cell| cell.bg(transparent_black()))
+}
+fn readout_divider() -> Div {
+    div().w(px(1.)).h(px(24.)).flex_shrink_0().bg(rgb(BORDER))
+}
+fn selection_actions(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
     let count = view.document.editor.selected_ids().len();
-    div()
-        .h(px(33.))
-        .flex_shrink_0()
-        .flex()
-        .items_center()
-        .gap_2()
-        .px_3()
-        .text_size(px(11.))
-        .text_color(rgb(MUTED))
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(if count > 1 {
-            format!("{count} elementos seleccionados")
-        } else {
-            "Clic sitúa la reproducción · Arrastra arriba/abajo para cambiar altura; horizontal para mover; Shift para seleccionar".to_owned()
-        })
-        .when(count > 1, |bar| {
-            bar.child(
-                command_button("copy-passage", "Copiar", false, view, cx, id::COPY).h(px(25.)),
-            )
+    (count > 1).then(|| {
+        div()
+            .ml_auto()
+            .pl_3()
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap_2()
+            .text_size(px(11.))
+            .text_color(rgb(MUTED))
+            .child(format!("{count} seleccionados"))
+            .child(command_button("copy-passage", "Copiar", false, view, cx, id::COPY).h(px(25.)))
             .child(command_button("cut-passage", "Cortar", false, view, cx, id::CUT).h(px(25.)))
-        })
+    })
 }
 
 fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
@@ -1058,171 +1143,105 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(
             div()
                 .id("score-readouts")
-                .h(px(57.))
+                .h(px(46.))
                 .flex_shrink_0()
                 .flex()
                 .items_center()
-                .gap_3()
+                .gap_1()
                 .px_3()
                 .overflow_x_scroll()
+                .bg(rgb(PANEL))
                 .border_b_1()
                 .border_color(rgb(BORDER))
                 .child(
                     div()
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(rgb(0x383b43))
-                        .bg(rgb(FIELD))
-                        .text_size(px(11.))
+                        .pr_2()
+                        .flex_shrink_0()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::SEMIBOLD)
                         .child("Partitura completa"),
                 )
+                .child(readout_divider())
+                .child(readout(
+                    "COMPÁS",
+                    format!(
+                        "{} de {}",
+                        (position.measure + 1).min(score.measures().len()),
+                        score.measures().len()
+                    ),
+                ))
+                .child(readout(
+                    "TIEMPO",
+                    if position.at_end {
+                        "Fin".to_owned()
+                    } else {
+                        beat_label(position.beat as f32)
+                    },
+                ))
+                .child(readout_divider())
                 .child(
-                    div()
-                        .rounded_lg()
-                        .bg(rgb(0x0e0f12))
-                        .py_2()
-                        .flex()
-                        .items_center()
-                        .child(readout(
-                            "COMPÁS",
-                            format!(
-                                "{} de {}",
-                                (position.measure + 1).min(score.measures().len()),
-                                score.measures().len()
-                            ),
-                        ))
-                        .child(readout(
-                            "TIEMPO",
-                            if position.at_end {
-                                "Fin".to_owned()
-                            } else {
-                                beat_label(position.beat as f32)
-                            },
-                        ))
-                        .child(readout_content(
-                            "TEMPO",
-                            button(
-                                view,
-                                "tempo-readout",
-                                score.tempo_at(position.measure).label(),
-                                view.tempo_picker.is_some(),
-                                cx,
-                                move |v, _, cx| v.toggle_tempo_at(position.measure, cx),
-                            )
-                            .tooltip(command_hint(view, id::TEMPO_TEXT)),
-                        ))
-                        .child(
-                            button(
-                                view,
-                                "meter-readout",
-                                format!("{}/{}", time.numerator, time.denominator),
-                                view.time_picker,
-                                cx,
-                                |v, _, cx| v.toggle_time_picker(cx),
-                            )
-                            .tooltip(command_hint(view, id::TIME_SIGNATURE))
-                            .mx_2(),
-                        )
-                        .child(
-                            button(
-                                view,
-                                "key-readout",
-                                score.key_signature_at(position.measure).label(),
-                                view.key_picker,
-                                cx,
-                                |v, _, cx| {
-                                    v.ui.show_instruments = true;
-                                    v.toggle_key_picker(cx);
-                                },
-                            )
-                            .mx_2(),
-                        )
-                        .child(readout(
-                            "PENTAGRAMA",
-                            format!(
-                                "{} · Voz {}",
-                                instrument_name(score, cursor.part),
-                                cursor.voice.number()
-                            ),
-                        )),
-                ),
-        )
-        .child(passage_bar(view, cx))
-        .child(
-            div()
-                .relative()
-                .flex_1()
-                .min_h_0()
-                .child(
-                    div()
-                        .id("score-scroll")
-                        .size_full()
-                        .overflow_scroll()
-                        .track_scroll(&view.viewport.scroll)
-                        .py_6()
-                        .px(px(64.))
-                        .child(score_surface(view, cx)),
+                    readout_button(
+                        view,
+                        "tempo-readout",
+                        "TEMPO",
+                        score.tempo_at(position.measure).label(),
+                        view.tempo_picker.is_some(),
+                        cx,
+                        move |v, _, cx| v.toggle_tempo_at(position.measure, cx),
+                    )
+                    .tooltip(command_hint(view, id::TEMPO_TEXT)),
                 )
                 .child(
-                    div()
-                        .absolute()
-                        .bottom_3()
-                        .right_3()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .p_1()
-                        .rounded_lg()
-                        .shadow_lg()
-                        .bg(rgb(PANEL))
-                        .border_1()
-                        .border_color(rgb(0x3a3d46))
-                        .children(
-                            [
-                                score_layout::ViewMode::Page,
-                                score_layout::ViewMode::Continuous,
-                                score_layout::ViewMode::SingleSystem,
-                            ]
-                            .into_iter()
-                            .map(|mode| {
-                                button(
-                                    view,
-                                    format!("score-view-{mode:?}"),
-                                    mode.label(),
-                                    view.ui.view_mode == mode,
-                                    cx,
-                                    move |v, _, cx| v.set_view_mode(mode, cx),
-                                )
-                            }),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(MUTED))
-                                .px_2()
-                                .child(format!("{} %", (view.ui.zoom * 100.).round() as u16)),
-                        )
-                        .child(button(
-                            view,
-                            "zoom-out",
-                            "−",
-                            false,
-                            cx,
-                            |v, window, cx| v.run(id::ZOOM_OUT, window, cx),
-                        ))
-                        .child(button(view, "zoom-in", "+", false, cx, |v, window, cx| {
-                            v.run(id::ZOOM_IN, window, cx)
-                        }))
-                        .child(div()),
-                ),
+                    readout_button(
+                        view,
+                        "meter-readout",
+                        "MÉTRICA",
+                        format!("{}/{}", time.numerator, time.denominator),
+                        view.time_picker,
+                        cx,
+                        |v, _, cx| v.toggle_time_picker(cx),
+                    )
+                    .tooltip(command_hint(view, id::TIME_SIGNATURE)),
+                )
+                .child(readout_button(
+                    view,
+                    "key-readout",
+                    "TONALIDAD",
+                    score.key_signature_at(position.measure).label(),
+                    view.key_picker,
+                    cx,
+                    |v, _, cx| {
+                        v.ui.show_instruments = true;
+                        v.toggle_key_picker(cx);
+                    },
+                ))
+                .child(readout_divider())
+                .child(readout(
+                    "PENTAGRAMA",
+                    format!(
+                        "{} · Voz {}",
+                        instrument_name(score, cursor.part),
+                        cursor.voice.number()
+                    ),
+                ))
+                .children(selection_actions(view, cx)),
+        )
+        .child(
+            div().flex_1().min_h_0().child(
+                div()
+                    .id("score-scroll")
+                    .size_full()
+                    .overflow_scroll()
+                    .track_scroll(&view.viewport.scroll)
+                    .py_6()
+                    .px(px(64.))
+                    .child(score_surface(view, cx)),
+            ),
         )
 }
 
 fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
-    let score = editor.score();
     let scale = view.layout.scale;
     let header_width = if view.ui.view_mode == score_layout::ViewMode::SingleSystem {
         view.layout.width.min(1000.)
@@ -1234,6 +1253,15 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex_shrink_0()
         .w(px(view.layout.width * scale))
         .h(px(view.layout.height * scale))
+        .when(view.ui.note_entry, |surface| {
+            surface.cursor(CursorStyle::Crosshair)
+        })
+        .when(view.hover.is_some(), |surface| surface.cursor_pointer())
+        .on_scroll_wheel(cx.listener(AppView::score_wheel))
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(AppView::open_score_context_menu),
+        )
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(AppView::begin_passage_selection),
@@ -1241,77 +1269,145 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(paint::score_canvas(
             view.layout.clone(),
             paint::CanvasState {
+                show_ranges: view.review.show_ranges,
+                score: view
+                    .note_drag
+                    .as_ref()
+                    .and_then(|drag| drag.preview.as_ref())
+                    .unwrap_or_else(|| editor.score())
+                    .clone(),
                 notation_point: view.document.editor.divisi_position(),
                 selection: editor.selection(),
                 selection_range: editor.selected_ids(),
                 cursor: editor.cursor(),
+                note_entry: view.ui.note_entry,
+                playing: view.playback.is_playing() || view.playback.is_paused(),
                 selected_pitch: view
                     .note_drag
                     .as_ref()
                     .and_then(|d| d.target)
                     .or_else(|| editor.selected_pitch()),
                 selected_mark: view.selected_mark(),
+                selected_bar_mark: view.selected_bar_mark(),
+                hover: view.hover,
                 playheads: view.playback.playheads.clone(),
                 position: view.position,
                 time_target: view.note_drag.as_ref().and_then(|drag| drag.time_target),
+                ghost: view.ghost.filter(|_| {
+                    view.ui.note_entry && !view.playback.is_playing() && !view.playback.is_paused()
+                }),
             },
             cx.weak_entity(),
             view.music_font.clone(),
         ))
+        .child(score_header(view, header_width, cx))
+        .children(copyright(view))
+}
+
+/// Title block of the first page. Clicking it opens the header editor.
+fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<Div> {
+    let score = view.document.editor.score();
+    let credits = score.credits();
+    let scale = view.layout.scale;
+    let font = view.music_font.clone();
+    let line = |text: String, size: f32, color: u32| {
+        div()
+            .text_size(px(size * scale))
+            .line_height(px(size * 1.3 * scale))
+            .text_color(rgb(color))
+            .truncate()
+            .child(inline_text(font.clone(), &text))
+    };
+    let empty = credits == &score_core::Credits::default();
+    div()
+        .id("score-header")
+        .absolute()
+        .top(px(35. * scale))
+        .left_0()
+        .w(px(width * scale))
+        .px(px(48. * scale))
+        .py(px(4. * scale))
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|header| header.bg(gpui::rgba(0x79a4ff14)))
+        .text_center()
+        .text_color(rgb(0x242323))
+        .font_family("Times New Roman")
+        .tooltip(command_hint(view, id::SCORE_INFO))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|v, _, window, cx| {
+                cx.stop_propagation();
+                if v.header_editor.is_none() {
+                    v.toggle_header_editor(window, cx);
+                }
+            }),
+        )
         .child(
             div()
-                .absolute()
-                .top(px(35. * scale))
-                .left_0()
-                .w(px(header_width * scale))
-                .px(px(48. * scale))
-                .text_center()
-                .text_color(rgb(0x242323))
-                .font_family("Times New Roman")
+                .text_size(px(40. * scale))
+                .line_height(px(46. * scale))
+                .h(px(46. * scale))
+                .truncate()
+                .child(inline_text(font.clone(), score.title()).justify_center()),
+        )
+        .child(
+            div()
+                .mt(px(6. * scale))
+                .h(px(24. * scale))
+                .flex()
+                .justify_center()
+                .child(line(credits.subtitle.clone(), 18., 0x4f4b45)),
+        )
+        .child(
+            div()
+                .mt(px(8. * scale))
+                .flex()
+                .justify_between()
+                .items_start()
+                .gap(px(24. * scale))
+                .child(div().flex_1().min_w_0().text_left().child(line(
+                    credits.lyricist_line(),
+                    14.,
+                    0x4f4b45,
+                )))
                 .child(
                     div()
-                        .text_size(px(40. * scale))
-                        .line_height(px(46. * scale))
-                        .h(px(46. * scale))
-                        .truncate()
-                        .child(
-                            inline_text(view.music_font.clone(), score.title()).justify_center(),
-                        ),
-                )
-                .child(
-                    div()
-                        .mt(px(12. * scale))
-                        .text_size(px(18. * scale))
-                        .line_height(px(24. * scale))
-                        .h(px(24. * scale))
-                        .truncate()
-                        .text_color(rgb(0x67635c))
-                        .child(
-                            inline_text(
-                                view.music_font.clone(),
-                                format!(
-                                    "{} · {}",
-                                    score.key_signature().label(),
-                                    if score.parts().len() == 1 {
-                                        "para un instrumento".to_owned()
-                                    } else {
-                                        format!("para {} instrumentos", score.parts().len())
-                                    }
-                                ),
-                            )
-                            .justify_center(),
-                        ),
-                )
-                .child(
-                    div()
-                        .mt(px(18. * scale))
-                        .text_right()
-                        .text_size(px(14. * scale))
-                        .line_height(px(18. * scale))
-                        .text_color(rgb(0x878277))
-                        .child("Compositor · TODO"),
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .items_end()
+                        .when(empty, |column| {
+                            column.child(line("Compositor, arreglista, año…".into(), 14., 0xb3ada3))
+                        })
+                        .child(line(credits.composer_line(), 14., 0x4f4b45))
+                        .child(line(credits.arranger_line(), 14., 0x4f4b45)),
                 ),
         )
+}
+/// Copyright at the foot of the first page, as the PDF prints it.
+fn copyright(view: &AppView) -> Option<Div> {
+    let text = &view.document.editor.score().credits().copyright;
+    let page = view.layout.pages.first()?;
+    if text.is_empty() || view.ui.view_mode != score_layout::ViewMode::Page {
+        return None;
+    }
+    let scale = view.layout.scale;
+    Some(
+        div()
+            .absolute()
+            .top(px((page.top + page.height - 52.) * scale))
+            .left_0()
+            .w(px(page.width * scale))
+            .px(px(56. * scale))
+            .text_center()
+            .truncate()
+            .font_family("Times New Roman")
+            .text_size(px(10. * scale))
+            .text_color(rgb(0x67635c))
+            .child(text.clone()),
+    )
 }
 
 fn note_name(pitch: score_core::Pitch) -> String {
@@ -1341,16 +1437,17 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex_col()
         .child(
             div()
-                .h(px(45.))
+                .min_h(px(45.))
                 .flex_shrink_0()
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .gap_1()
                 .px_2()
                 .border_b_1()
                 .border_color(rgb(BORDER))
                 .children(
-                    ["Propiedades", "Mezclador", "Sonidos"]
+                    ["Propiedades", "Mezclador", "Sonidos", "Revisión"]
                         .into_iter()
                         .map(|tab| {
                             button(
@@ -1386,6 +1483,9 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 })
                 .when(view.ui.inspector == "Sonidos", |body| {
                     body.child(sounds(view, cx))
+                })
+                .when(view.ui.inspector == "Revisión", |body| {
+                    body.child(review::panel(view, cx))
                 }),
         )
 }
@@ -1407,6 +1507,9 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
     let key = score.written_key_at(cursor.part, cursor.measure);
     let event = editor.selection().and_then(|id| score.event(id));
     let pitch = editor.selected_pitch();
+    let range_warning = editor
+        .selection()
+        .and_then(|id| pitch.and_then(|pitch| score.pitch_range_warning(id, pitch)));
     let selected_count = editor.selected_ids().len();
     div()
         .flex()
@@ -1509,10 +1612,25 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                     }),
                 ))
             })
+            .when_some(range_warning, |body, range| {
+                body.child(
+                    div()
+                        .px_2()
+                        .py_2()
+                        .rounded_md()
+                        .bg(rgb(0x362126))
+                        .text_size(px(11.))
+                        .text_color(rgb(0xff9da5))
+                        .child(inline_text(
+                            view.music_font.clone(),
+                            format!("Fuera del registro habitual. Rango en altura real: {range}."),
+                        )),
+                )
+            })
             .child(div().flex().flex_wrap().gap_1()
                 .child(command_button("property-dotted", "Puntillo", active_duration(view).is_dotted(), view, cx, id::DOT))
                 .child(command_button("property-triplet", "Tresillo 3:2", active_duration(view).is_triplet(), view, cx, id::TRIPLET)))
-            .child(caption(if view.ui.note_entry { "N desactiva la entrada para corregir notas existentes." } else { "A–G cambia la nota seleccionada. Backspace la convierte en silencio. N activa la entrada." }))
+            .child(caption(if view.ui.note_entry { "Esc sale de la entrada para corregir notas existentes." } else { "A–G escribe detrás de la nota seleccionada o sustituye el silencio. ↑/↓ cambian la altura. Backspace convierte en silencio." }))
             .child(caption("Los tresillos se agrupan de tres en tres con la misma figura."))
             .child(caption("Alteración de la nota"))
             .child(
@@ -1786,12 +1904,13 @@ fn expression_properties(view: &AppView, cx: &Context<AppView>) -> Div {
             },
         )
         .child(caption("Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo."))
-        .child(caption("Articulación, calderón, arpegio y armónico"))
+        .child(caption("Articulación, calderón, trémolo, arpegio y armónico"))
         .child(
             div().flex().flex_wrap().gap_1().children(
                 MarkFamily::Articulation
                     .kinds()
                     .chain(MarkFamily::Fermata.kinds())
+                    .chain(MarkFamily::Tremolo.kinds())
                     .chain(MarkFamily::Arpeggio.kinds())
                     .chain(MarkFamily::Harmonic.kinds())
                     .map(|kind| {
@@ -1954,12 +2073,52 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
         .unwrap()
         .instrument();
     section("SONIDO DEL INSTRUMENTO")
+        .child(caption("INTERPRETACIÓN"))
+        .child(button(view, "interpret-natural", "Natural", view.playback.style == score_playback::Style::Natural, cx, |v, _, cx| {
+            if v.playback.style != score_playback::Style::Natural {
+                v.playback.stop();
+                v.playback.style = score_playback::Style::Natural;
+                v.status = "Interpretación: natural".into();
+                cx.notify();
+            }
+        }).w_full())
+        .child(button(view, "interpret-literal", "Literal (exacta)", view.playback.style == score_playback::Style::Literal, cx, |v, _, cx| {
+            if v.playback.style != score_playback::Style::Literal {
+                v.playback.stop();
+                v.playback.style = score_playback::Style::Literal;
+                v.status = "Interpretación: literal".into();
+                cx.notify();
+            }
+        }).w_full())
         .child(caption("FUENTE DE SONIDO"))
         .child(button(view, "sound-generaluser", "GeneralUser GS", view.playback.selected_bank.is_none(), cx, |v, _, cx| v.choose_sound(None, cx)).w_full())
         .children(view.playback.banks.iter().enumerate().map(|(index, bank)| {
-            button(view, format!("sound-{}", bank.id()), bank.name(), view.playback.selected_bank == Some(index), cx,
+            button(view, format!("sound-{}", bank.id()), bank.name().to_owned(), view.playback.selected_bank == Some(index), cx,
                 move |v, _, cx| v.choose_sound(Some(index), cx)).w_full()
         }))
+        .when(view.playback.selected_bank.and_then(|index| view.playback.banks.get(index))
+            .is_some_and(|bank| bank.id() == "sfz-combinadas"), |body| {
+            body.child(caption("PRIORIDAD"))
+                .children(view.playback.sound_priority.iter().enumerate().map(|(index, id)| {
+                    div().flex().items_center().gap_1()
+                        .child(div().flex_1().text_size(px(11.)).child(view.playback.sound_priority_name(id)))
+                        .when(index > 0, |row| row.child(button(view, format!("priority-up-{index}"), "↑", false, cx,
+                            move |v, _, cx| match v.playback.move_sound_priority(index, true) {
+                                Ok(bank) => v.choose_sound(Some(bank), cx),
+                                Err(error) => { v.playback.sound_error = Some(error.clone()); v.status = error; cx.notify(); }
+                            })))
+                        .when(index + 1 < view.playback.sound_priority.len(), |row| row.child(button(view, format!("priority-down-{index}"), "↓", false, cx,
+                            move |v, _, cx| match v.playback.move_sound_priority(index, false) {
+                                Ok(bank) => v.choose_sound(Some(bank), cx),
+                                Err(error) => { v.playback.sound_error = Some(error.clone()); v.status = error; cx.notify(); }
+                            })))
+                }))
+        })
+        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(format!(
+            "Instala bibliotecas SFZ en {}. Ver docs/sfz.md.",
+            crate::data_path("soundpacks").map_or_else(|| "la carpeta de datos".into(), |path| path.display().to_string())
+        )))
+        .children(view.playback.sound_discovery_errors.iter().map(|error| div().text_size(px(10.)).text_color(rgb(0xf2b282)).child(error.clone())))
         .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
         .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(0xf2b282)).child(error)))
         .child(caption("INSTRUMENTO ACTUAL"))
@@ -1993,6 +2152,7 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
                 v.open_instrument_picker(cx);
                 v.key_picker = false;
                 v.time_picker = false;
+                    v.clef_picker = false;
                     v.tempo_picker = None;
                 cx.notify();
             },
@@ -2372,6 +2532,11 @@ fn statusbar(view: &AppView) -> Div {
                         .child(inline_text(view.music_font.clone(), status)),
                 ),
         )
+        .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(format!(
+            "{} · {} %",
+            view.ui.view_mode.label(),
+            (view.ui.zoom * 100.).round() as u16
+        )))
         .child(
             div()
                 .flex_shrink_0()

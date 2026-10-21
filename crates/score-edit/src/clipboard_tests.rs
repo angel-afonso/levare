@@ -124,12 +124,14 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
     let mut event = note(Step::C, Duration::Whole);
     event.notation = Notation {
         harmonic: None,
+        tremolo: None,
         division: None,
         arpeggio: None,
         technique: None,
         dynamic: Some(Dynamic::Ff),
         articulation: Some(Articulation::Staccato),
         fermata: false,
+        offsets: Default::default(),
     };
     source.execute(Command::Insert(event)).unwrap();
     let clip = source.copy_selection().unwrap();

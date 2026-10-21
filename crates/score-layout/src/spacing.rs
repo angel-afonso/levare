@@ -190,7 +190,82 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                     top = top.min(label.position.y - STAFF_LABEL_SIZE);
                 }
             }
+            // The tempo lane stays above an ending bracket beneath it.
+            for ending in layout
+                .endings
+                .iter()
+                .filter(|ending| (system.top..=system.bottom).contains(&ending.lines[0].from.y))
+            {
+                for line in &ending.lines {
+                    if overlaps(
+                        line.from.x.min(line.to.x),
+                        line.from.x.max(line.to.x),
+                        left - GAP,
+                        right + GAP,
+                    ) {
+                        top = top.min(line.from.y.min(line.to.y) - line.thickness / 2.);
+                    }
+                }
+            }
+            // In the unbroken horizontal view, successive headings can
+            // share an x range. Separate their ink vertically, not by
+            // increasing the rhythmic width of either measure.
+            for previous in layout.tempos[..t].iter().filter(|previous| {
+                (system.first_measure..=system.last_measure).contains(&previous.measure)
+                    && overlaps(
+                        previous.position.x,
+                        previous.position.x + previous.width,
+                        left - GAP,
+                        right + GAP,
+                    )
+            }) {
+                top = top.min(previous.position.y - 30.);
+            }
             layout.tempos[t].position.y = top - GAP - 6.;
+        }
+        for i in 0..layout.rehearsals.len() {
+            let label = &layout.rehearsals[i];
+            if !(system.first_measure..=system.last_measure).contains(&label.measure) {
+                continue;
+            }
+            let left = label.frame[0].from.x;
+            let right = label.frame[0].to.x;
+            let mut top = local_top(layout, &rows, left - GAP, right + GAP, metrics);
+            for &m in &rows {
+                let bar = &layout.measures[m];
+                for text in &bar.content.techniques {
+                    let x = bar.origin.x + text.position.x;
+                    if overlaps(
+                        x,
+                        x + text.text.chars().count() as f32 * 7.,
+                        left - GAP,
+                        right + GAP,
+                    ) {
+                        top = top.min(bar.origin.y + text.position.y - 16.);
+                    }
+                }
+            }
+            for ending in &layout.endings {
+                if (system.top..=system.bottom).contains(&ending.lines[0].from.y) {
+                    for line in &ending.lines {
+                        if overlaps(
+                            line.from.x.min(line.to.x),
+                            line.from.x.max(line.to.x),
+                            left - GAP,
+                            right + GAP,
+                        ) {
+                            top = top.min(line.from.y.min(line.to.y) - line.thickness / 2.);
+                        }
+                    }
+                }
+            }
+            let label = &mut layout.rehearsals[i];
+            let shift = (top - GAP - 5. - 0.8 - label.position.y).min(0.);
+            label.position.y += shift;
+            for line in &mut label.frame {
+                line.from.y += shift;
+                line.to.y += shift;
+            }
         }
         // Trim each system to its painted ink, rather than accumulated reserves.
         let (mut top, mut bottom) = (f32::INFINITY, f32::NEG_INFINITY);
@@ -276,6 +351,40 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
             .filter(|t| (system.first_measure..=system.last_measure).contains(&t.measure))
         {
             include(tempo.position.y - 30., tempo.position.y + 6.);
+        }
+        for ending in layout
+            .endings
+            .iter()
+            .filter(|ending| (system.top..=system.bottom).contains(&ending.lines[0].from.y))
+        {
+            for line in &ending.lines {
+                include(
+                    line.from.y.min(line.to.y) - line.thickness / 2.,
+                    line.from.y.max(line.to.y) + line.thickness / 2.,
+                );
+            }
+            if !ending.label.is_empty() {
+                include(ending.label_position.y - 14., ending.label_position.y + 4.);
+            }
+        }
+        for label in layout
+            .rehearsals
+            .iter()
+            .filter(|label| (system.first_measure..=system.last_measure).contains(&label.measure))
+        {
+            for line in &label.frame {
+                include(
+                    line.from.y.min(line.to.y) - 0.8,
+                    line.from.y.max(line.to.y) + 0.8,
+                );
+            }
+        }
+        for label in layout
+            .navigation
+            .iter()
+            .filter(|label| (system.first_measure..=system.last_measure).contains(&label.measure))
+        {
+            include(label.position.y - label.size, label.position.y + 4.);
         }
         layout.systems[index].top = top;
         layout.systems[index].bottom = bottom;

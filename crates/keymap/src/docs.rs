@@ -8,12 +8,12 @@ pub fn markdown(registry: &Registry, keymap: &Keymap) -> String {
     let mut text = format!(
         "# Atajos de teclado\n\n\
          Perfil por defecto: **{}**. {}\n\n\
-         Puedes cambiarlos en **Partitura › Preferencias de atajos…** (⌘,). Tus cambios se \
+         Puedes cambiarlos en **Levare › Preferencias de atajos…** (⌘,). Tus cambios se \
          guardan aparte, en `atajos.json` dentro de la carpeta de datos de la aplicación.\n\n\
          Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta \
          que la función exista.\n\n\
          > Archivo generado desde `crates/keymap`. Para actualizarlo: \
-         `PARTITURA_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.\n",
+         `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.\n",
         profile.name, profile.description
     );
     for category in Category::ALL {
@@ -63,14 +63,16 @@ mod tests {
         );
         let expected = markdown(&registry, &keymap);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/atajos.md");
-        if std::env::var_os("PARTITURA_ACTUALIZAR_ATAJOS").is_some() {
+        if std::env::var_os("LEVARE_ACTUALIZAR_ATAJOS").is_some()
+            || std::env::var_os("PARTITURA_ACTUALIZAR_ATAJOS").is_some()
+        {
             std::fs::write(&path, &expected).unwrap();
         }
         let current = std::fs::read_to_string(&path).unwrap_or_default();
         assert!(
             current == expected,
             "docs/atajos.md está desactualizado; ejecuta \
-             PARTITURA_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap"
+             LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap"
         );
     }
 }

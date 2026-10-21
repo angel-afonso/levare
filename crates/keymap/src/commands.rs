@@ -32,11 +32,12 @@ pub enum Category {
     Instruments,
     Navigation,
     Playback,
+    Review,
     View,
 }
 
 impl Category {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::File,
         Self::Edit,
         Self::NoteInput,
@@ -48,6 +49,7 @@ impl Category {
         Self::Instruments,
         Self::Navigation,
         Self::Playback,
+        Self::Review,
         Self::View,
     ];
     pub fn label(self) -> &'static str {
@@ -63,6 +65,7 @@ impl Category {
             Self::Instruments => "Instrumentos",
             Self::Navigation => "Navegación",
             Self::Playback => "Reproducción",
+            Self::Review => "Revisión",
             Self::View => "Vista",
         }
     }
@@ -80,13 +83,13 @@ pub enum Scope {
 }
 
 impl Scope {
-    /// GPUI key-context predicate. The window root declares `Partitura`, adds
+    /// GPUI key-context predicate. The window root declares `Levare`, adds
     /// `Modal` while a panel is open, and text fields add `TextInput`.
     pub fn predicate(self) -> &'static str {
         match self {
-            Self::Global => "Partitura",
-            Self::Score => "Partitura && !Modal && !TextInput",
-            Self::Modal => "Partitura && Modal",
+            Self::Global => "Levare",
+            Self::Score => "Levare && !Modal && !TextInput",
+            Self::Modal => "Levare && Modal",
         }
     }
     pub fn overlaps(self, other: Self) -> bool {
@@ -177,6 +180,7 @@ pub mod id {
         PRINT = "archivo.imprimir";
         EXPORT = "archivo.exportar";
         EXPORT_MUSICXML = "archivo.exportar_musicxml";
+        SCORE_INFO = "archivo.informacion";
         PREFERENCES = "archivo.preferencias";
         CLEAR_RECENT = "archivo.borrar-recientes";
         CLOSE_PANEL = "panel.cerrar";
@@ -189,6 +193,7 @@ pub mod id {
         SELECT_ALL = "edicion.seleccionar-todo";
         DELETE = "edicion.eliminar";
         REMOVE_TIME = "edicion.eliminar-tiempo";
+        RESET_POSITION = "edicion.restablecer-posicion";
         ESCAPE = "edicion.escape";
         REPEAT = "edicion.repetir";
 
@@ -271,6 +276,9 @@ pub mod id {
         ARPEGGIO_UP = "expresion.arpegio-ascendente";
         ARPEGGIO_DOWN = "expresion.arpegio-descendente";
         FERMATA = "expresion.calderon";
+        TREMOLO_1 = "expresion.tremolo-1";
+        TREMOLO_2 = "expresion.tremolo-2";
+        TREMOLO_3 = "expresion.tremolo-3";
         DYNAMIC_PPP = "expresion.dinamica.ppp";
         DYNAMIC_PP = "expresion.dinamica.pp";
         DYNAMIC_P = "expresion.dinamica.p";
@@ -286,6 +294,20 @@ pub mod id {
         LYRICS = "expresion.letra";
         CHORD_SYMBOL = "expresion.cifrado";
         REHEARSAL_MARK = "expresion.ensayo";
+        REHEARSAL_LETTERS = "expresion.ensayo-letras";
+        REHEARSAL_NUMBERS = "expresion.ensayo-numeros";
+        REHEARSAL_BAR_NUMBERS = "expresion.ensayo-numeros-de-compas";
+        CHECK_SCORE = "revision.comprobar-obra";
+        CHECK_SELECTION = "revision.comprobar-seleccion";
+        REVIEW_ISSUES = "revision.mostrar-avisos";
+        REVIEW_PREVIOUS = "revision.aviso-anterior";
+        REVIEW_NEXT = "revision.aviso-siguiente";
+        SHOW_RANGES = "revision.mostrar-rangos";
+        EDIT_RANGE = "revision.editar-rango";
+        RESET_RANGE = "revision.restablecer-rango";
+        NEW_COMMENT = "revision.nuevo-comentario";
+        SHOW_COMMENTS = "revision.mostrar-comentarios";
+        RESOLVE_COMMENT = "revision.resolver-comentario";
 
         KEY_SIGNATURE = "notacion.tonalidad";
         TIME_SIGNATURE = "notacion.compas-de-tiempo";
@@ -297,6 +319,24 @@ pub mod id {
         SINGLE_BAR = "compases.uno";
         DELETE_BAR = "compases.eliminar";
         GO_TO_BAR = "compases.ir-a";
+        REPEAT_START = "compases.inicio-repeticion";
+        REPEAT_END = "compases.fin-repeticion";
+        ENDING_1 = "compases.primera-casilla";
+        ENDING_2 = "compases.segunda-casilla";
+        REMOVE_ENDING = "compases.quitar-casilla";
+        DOUBLE_BARLINE = "compases.doble-barra";
+        FINAL_BARLINE = "compases.barra-final";
+        SEGNO = "compases.segno";
+        CODA = "compases.coda";
+        TO_CODA = "compases.al-coda";
+        FINE = "compases.fine";
+        DA_CAPO = "compases.da-capo";
+        DA_CAPO_AL_FINE = "compases.da-capo-al-fine";
+        DA_CAPO_AL_CODA = "compases.da-capo-al-coda";
+        DAL_SEGNO = "compases.dal-segno";
+        DAL_SEGNO_AL_FINE = "compases.dal-segno-al-fine";
+        DAL_SEGNO_AL_CODA = "compases.dal-segno-al-coda";
+        CLEAR_FORM = "compases.quitar-forma";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -376,10 +416,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::SAVE, C::File, "Guardar", G, false, R),
     spec(id::SAVE_AS, C::File, "Guardar como…", G, false, R),
     spec(id::CLOSE, C::File, "Cerrar ventana", G, false, R),
-    spec(id::QUIT, C::File, "Salir de Partitura", G, false, R),
+    spec(id::QUIT, C::File, "Salir de Levare", G, false, R),
     spec(id::PRINT, C::File, "Imprimir…", G, false, P),
     spec(id::EXPORT, C::File, "Exportar partitura y partes…", G, false, R),
     spec(id::EXPORT_MUSICXML, C::File, "Exportar MusicXML…", G, false, R),
+    spec(id::SCORE_INFO, C::File, "Información de la partitura…", G, false, R),
     spec(id::PREFERENCES, C::File, "Preferencias de atajos…", G, false, R),
     spec(id::CLEAR_RECENT, C::File, "Borrar la lista de recientes", G, false, R),
     spec(id::CLOSE_PANEL, C::File, "Cerrar el panel abierto", M, false, R),
@@ -392,6 +433,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::SELECT_ALL, C::Edit, "Seleccionar todo el pentagrama", G, false, R),
     spec(id::DELETE, C::Edit, "Convertir en silencios", S, true, R),
     spec(id::REMOVE_TIME, C::Edit, "Eliminar notas y su tiempo", G, false, R),
+    spec(id::RESET_POSITION, C::Edit, "Restablecer posición", S, false, R),
     spec(id::ESCAPE, C::Edit, "Detener, cancelar o quitar la selección", S, false, R),
     spec(id::REPEAT, C::Edit, "Repetir la nota, acorde o silencio", S, true, R),
 
@@ -474,6 +516,9 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::ARPEGGIO_UP, C::Expression, "Arpegio ascendente", S, false, R),
     spec(id::ARPEGGIO_DOWN, C::Expression, "Arpegio descendente", S, false, R),
     spec(id::FERMATA, C::Expression, "Calderón", S, false, R),
+    spec(id::TREMOLO_1, C::Expression, "Trémolo de una barra", S, false, R),
+    spec(id::TREMOLO_2, C::Expression, "Trémolo de dos barras", S, false, R),
+    spec(id::TREMOLO_3, C::Expression, "Trémolo de tres barras", S, false, R),
     spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
     spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
     spec(id::DYNAMIC_P, C::Expression, "Dinámica p", S, false, R),
@@ -488,11 +533,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TEMPO_TEXT, C::Expression, "Indicación de tempo…", G, false, R),
     spec(id::LYRICS, C::Expression, "Letra", G, false, P),
     spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes", G, false, P),
-    spec(id::REHEARSAL_MARK, C::Expression, "Letra de ensayo", G, false, P),
+    spec(id::REHEARSAL_MARK, C::Expression, "Marca de ensayo", G, false, R),
+    spec(id::REHEARSAL_LETTERS, C::Expression, "Marcas de ensayo con letras", G, false, R),
+    spec(id::REHEARSAL_NUMBERS, C::Expression, "Marcas de ensayo con números", G, false, R),
+    spec(id::REHEARSAL_BAR_NUMBERS, C::Expression, "Marcas de ensayo con números de compás", G, false, R),
 
     spec(id::KEY_SIGNATURE, C::Notation, "Tonalidad…", S, false, R),
     spec(id::TIME_SIGNATURE, C::Notation, "Compás de tiempo…", S, false, R),
-    spec(id::CLEF, C::Notation, "Clave…", S, false, P),
+    spec(id::CLEF, C::Notation, "Clave…", G, false, R),
     spec(id::LINES, C::Notation, "Líneas…", S, false, P),
     spec(id::SYMBOL, C::Notation, "Símbolo…", S, false, P),
 
@@ -500,6 +548,24 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::SINGLE_BAR, C::Bars, "Insertar un compás antes del actual", G, false, R),
     spec(id::DELETE_BAR, C::Bars, "Eliminar compases seleccionados", G, false, R),
     spec(id::GO_TO_BAR, C::Bars, "Ir al compás…", G, false, P),
+    spec(id::REPEAT_START, C::Bars, "Inicio de repetición", G, false, R),
+    spec(id::REPEAT_END, C::Bars, "Fin de repetición", G, false, R),
+    spec(id::ENDING_1, C::Bars, "Primera casilla", G, false, R),
+    spec(id::ENDING_2, C::Bars, "Segunda casilla", G, false, R),
+    spec(id::REMOVE_ENDING, C::Bars, "Quitar casilla", G, false, R),
+    spec(id::DOUBLE_BARLINE, C::Bars, "Doble barra", G, false, R),
+    spec(id::FINAL_BARLINE, C::Bars, "Barra final", G, false, R),
+    spec(id::SEGNO, C::Bars, "Segno", G, false, R),
+    spec(id::CODA, C::Bars, "Coda", G, false, R),
+    spec(id::TO_CODA, C::Bars, "To Coda", G, false, R),
+    spec(id::FINE, C::Bars, "Fine", G, false, R),
+    spec(id::DA_CAPO, C::Bars, "D.C.", G, false, R),
+    spec(id::DA_CAPO_AL_FINE, C::Bars, "D.C. al Fine", G, false, R),
+    spec(id::DA_CAPO_AL_CODA, C::Bars, "D.C. al Coda", G, false, R),
+    spec(id::DAL_SEGNO, C::Bars, "D.S.", G, false, R),
+    spec(id::DAL_SEGNO_AL_FINE, C::Bars, "D.S. al Fine", G, false, R),
+    spec(id::DAL_SEGNO_AL_CODA, C::Bars, "D.S. al Coda", G, false, R),
+    spec(id::CLEAR_FORM, C::Bars, "Quitar repeticiones y saltos", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),
@@ -535,9 +601,20 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
     spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),
     spec(id::TEMPO_DOWN, C::Playback, "Bajar el tempo", G, true, R),
-    spec(id::REPEATS, C::Playback, "Reproducir repeticiones", G, false, P),
+    spec(id::REPEATS, C::Playback, "Reproducir repeticiones", G, false, R),
 
     spec(id::ZOOM_IN, C::View, "Acercar", G, true, R),
+    spec(id::CHECK_SCORE, C::Review, "Comprobar toda la partitura", G, false, R),
+    spec(id::NEW_COMMENT, C::Review, "Nuevo comentario sobre la selección…", G, false, R),
+    spec(id::SHOW_COMMENTS, C::Review, "Mostrar comentarios", G, false, R),
+    spec(id::RESOLVE_COMMENT, C::Review, "Resolver o reabrir el comentario activo", G, false, R),
+    spec(id::CHECK_SELECTION, C::Review, "Comprobar la selección", G, false, R),
+    spec(id::REVIEW_ISSUES, C::Review, "Mostrar avisos de revisión", G, false, R),
+    spec(id::REVIEW_PREVIOUS, C::Review, "Aviso anterior", G, true, R),
+    spec(id::REVIEW_NEXT, C::Review, "Aviso siguiente", G, true, R),
+    spec(id::SHOW_RANGES, C::Review, "Mostrar notas fuera de rango en rojo", G, false, R),
+    spec(id::EDIT_RANGE, C::Review, "Editar rango de la parte activa…", G, false, R),
+    spec(id::RESET_RANGE, C::Review, "Restablecer rango de la parte activa", G, false, R),
     spec(id::ZOOM_OUT, C::View, "Alejar", G, true, R),
     spec(id::ZOOM_ACTUAL, C::View, "Tamaño real (100 %)", G, false, R),
     spec(id::ZOOM_FIT, C::View, "Ajustar a la página", G, false, R),

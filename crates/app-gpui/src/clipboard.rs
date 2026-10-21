@@ -5,7 +5,7 @@ use score_edit::clipboard::{MAX_CLIPBOARD_BYTES, MusicalClipboard};
 pub(super) fn decode_item(item: &ClipboardItem) -> Result<MusicalClipboard, String> {
     let metadata = item
         .metadata()
-        .ok_or("El portapapeles no contiene música de Partitura")?;
+        .ok_or("El portapapeles no contiene música de Levare")?;
     if metadata.len() > MAX_CLIPBOARD_BYTES {
         return Err("El pasaje del portapapeles es demasiado grande".into());
     }
@@ -125,12 +125,14 @@ mod playback_tests {
             duration: Duration::Whole,
             notation: Notation {
                 harmonic: None,
+                tremolo: None,
                 division: None,
                 arpeggio: None,
                 technique: None,
                 dynamic: Some(Dynamic::F),
                 articulation: Some(Articulation::Staccato),
                 fermata: false,
+                offsets: Default::default(),
             },
         };
         let mut source = Editor::default();

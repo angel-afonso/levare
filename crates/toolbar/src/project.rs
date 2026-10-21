@@ -59,15 +59,15 @@ pub struct Metrics {
 impl Default for Metrics {
     fn default() -> Self {
         Self {
-            large: 58.,
-            tile: 32.,
-            small_base: 34.,
-            char_width: 6.6,
-            gap: 4.,
-            group_padding: 16.,
+            large: 52.,
+            tile: 28.,
+            small_base: 30.,
+            char_width: 6.3,
+            gap: 3.,
+            group_padding: 12.,
             separator: 1.,
             folded: 64.,
-            labeled_tile: 46.,
+            labeled_tile: 42.,
             caption_char_width: 5.6,
             rows: 3,
         }
@@ -79,6 +79,7 @@ pub struct ControlView {
     pub command: CommandId,
     pub size: ControlSize,
     pub visual: Visual,
+    pub symbol_only: bool,
     pub label: String,
     /// Full registry label, for tooltips and accessibility.
     pub description: &'static str,
@@ -166,6 +167,7 @@ pub fn control_view(
         command: control.command,
         size: control.size,
         visual: control.visual,
+        symbol_only: control.symbol_only,
         label: state
             .label
             .unwrap_or_else(|| control.label.unwrap_or(description).to_owned()),
@@ -182,12 +184,23 @@ fn text_width(text: &str, per_char: f32) -> f32 {
 }
 
 fn small_width(control: &ControlView, metrics: &Metrics) -> f32 {
-    metrics.small_base + text_width(&control.label, metrics.char_width)
+    if control.symbol_only {
+        metrics.small_base + 8.
+    } else {
+        metrics.small_base + text_width(&control.label, metrics.char_width)
+    }
 }
 
-fn items(controls: &[ControlView], metrics: &Metrics) -> Vec<Item> {
+fn items(controls: &[ControlView], metrics: &Metrics, expanded: bool) -> Vec<Item> {
     let mut items = Vec::new();
     for control in controls {
+        if expanded && !control.symbol_only {
+            items.push(match control.size {
+                ControlSize::Tile => Item::LabeledTile(control.clone()),
+                ControlSize::Large | ControlSize::Small => Item::Large(control.clone()),
+            });
+            continue;
+        }
         match control.size {
             ControlSize::Large => items.push(Item::Large(control.clone())),
             ControlSize::Tile => items.push(Item::Tile(control.clone())),
@@ -200,18 +213,6 @@ fn items(controls: &[ControlView], metrics: &Metrics) -> Vec<Item> {
         }
     }
     items
-}
-
-/// Expanded: every small control becomes a large button, every tile shows
-/// its name.
-fn expanded_items(controls: &[ControlView]) -> Vec<Item> {
-    controls
-        .iter()
-        .map(|control| match control.size {
-            ControlSize::Tile => Item::LabeledTile(control.clone()),
-            ControlSize::Large | ControlSize::Small => Item::Large(control.clone()),
-        })
-        .collect()
 }
 
 impl Item {
@@ -250,20 +251,40 @@ fn group_view(
         .iter()
         .map(|control| control_view(control, registry, keymap, states))
         .collect();
-    let items = items(&controls, metrics);
+    let full_items = items(&controls, metrics, false);
     let title = text_width(group.title, metrics.char_width * 0.9);
-    let width = row_width(&items, metrics).max(title) + metrics.group_padding;
+    let width = row_width(&full_items, metrics).max(title) + metrics.group_padding;
     let expanded =
-        row_width(&expanded_items(&controls), metrics).max(title) + metrics.group_padding;
+        row_width(&items(&controls, metrics, true), metrics).max(title) + metrics.group_padding;
+    let folded_width = metrics
+        .folded
+        .max(text_width(group.title, metrics.char_width) + metrics.group_padding + 14.);
+    let mut checked = controls.iter().filter(|control| control.checked);
+    let visual = match (checked.next(), checked.next()) {
+        (Some(control), None) => control.visual,
+        _ => group.visual,
+    };
     GroupView {
         title: group.title,
-        visual: group.visual,
-        mode: GroupMode::Full,
-        width,
+        visual,
+        mode: if group.dropdown {
+            GroupMode::Folded
+        } else {
+            GroupMode::Full
+        },
+        width: if group.dropdown { folded_width } else { width },
         // Expanding never makes a group narrower than its normal size.
-        expanded_width: expanded.max(width),
-        folded_width: metrics.folded.max(title + metrics.group_padding),
-        items,
+        expanded_width: if group.dropdown {
+            folded_width
+        } else {
+            expanded.max(width)
+        },
+        folded_width,
+        items: if group.dropdown {
+            Vec::new()
+        } else {
+            full_items
+        },
         controls,
     }
 }
@@ -279,7 +300,8 @@ pub struct Sizes {
 
 /// Chooses each group's mode for a row `available` wide. Too narrow: fold
 /// the lowest priority first (the rightmost among equals) until it fits; it
-/// never scrolls, so if even the folded row is wider every group stays folded.
+/// never scrolls, so if the row still cannot fit every group uses its narrower
+/// mode (full groups can be narrower than their folded captions).
 /// Room to spare: expand the highest priority first (the leftmost among
 /// equals), skipping a group that would not fit, so no space a group could
 /// use is left empty.
@@ -350,12 +372,21 @@ pub fn project(
             priority: spec.priority,
         })
         .collect();
-    for (group, mode) in groups.iter_mut().zip(fit(&sizes, width, metrics)) {
+    for ((group, spec), mode) in groups
+        .iter_mut()
+        .zip(tab.groups)
+        .zip(fit(&sizes, width, metrics))
+    {
+        let mode = if spec.dropdown {
+            GroupMode::Folded
+        } else {
+            mode
+        };
         group.mode = mode;
         match mode {
             GroupMode::Folded => group.items.clear(),
             GroupMode::Full => {}
-            GroupMode::Expanded => group.items = expanded_items(&group.controls),
+            GroupMode::Expanded => group.items = items(&group.controls, metrics, true),
         }
     }
     ToolbarView {
@@ -455,16 +486,90 @@ mod tests {
         let clipboard = &home.groups[0];
         assert!(matches!(clipboard.items[0], Item::Large(_)));
         assert!(matches!(&clipboard.items[1], Item::Column(column) if column.len() == 3));
-        let notation = normal(TabId::Notation);
-        let dynamics = &notation.groups[1];
+        let input = normal(TabId::NoteInput);
+        let duration = &input.groups[1];
         assert_eq!(
-            dynamics
+            duration
                 .items
                 .iter()
                 .filter(|item| matches!(item, Item::Tile(_)))
                 .count(),
-            6
+            8
         );
+    }
+
+    #[test]
+    fn dynamics_and_jumps_stay_selectors_at_every_window_width() {
+        let states = Fake(vec![
+            (id::DYNAMIC_PP, CommandState::checked(true)),
+            (id::SEGNO, CommandState::checked(true)),
+        ]);
+        for width in [500., 900., 1420., 5000.] {
+            let notation = view(TabId::Notation, width, &states);
+            for (title, commands, selected) in [
+                (
+                    "Dinámicas",
+                    &[
+                        id::DYNAMIC_PP,
+                        id::DYNAMIC_P,
+                        id::DYNAMIC_MP,
+                        id::DYNAMIC_MF,
+                        id::DYNAMIC_F,
+                        id::DYNAMIC_FF,
+                        id::DYNAMIC_PPP,
+                        id::DYNAMIC_FFF,
+                    ][..],
+                    id::DYNAMIC_PP,
+                ),
+                (
+                    "Saltos",
+                    &[
+                        id::SEGNO,
+                        id::CODA,
+                        id::FINE,
+                        id::TO_CODA,
+                        id::DA_CAPO_AL_FINE,
+                        id::DAL_SEGNO_AL_CODA,
+                    ][..],
+                    id::SEGNO,
+                ),
+            ] {
+                let group = notation
+                    .groups
+                    .iter()
+                    .find(|group| group.title == title)
+                    .unwrap();
+                assert_eq!(group.mode, GroupMode::Folded, "{title} at {width}");
+                assert!(group.items.is_empty());
+                assert_eq!(
+                    group
+                        .controls
+                        .iter()
+                        .map(|control| control.command)
+                        .collect::<Vec<_>>(),
+                    commands
+                );
+                assert_eq!(
+                    group
+                        .controls
+                        .iter()
+                        .find(|control| control.checked)
+                        .unwrap()
+                        .command,
+                    selected
+                );
+                assert_eq!(
+                    group.visual,
+                    group
+                        .controls
+                        .iter()
+                        .find(|control| control.command == selected)
+                        .unwrap()
+                        .visual
+                );
+                assert!(group.width_in(group.mode) < 90.);
+            }
+        }
     }
 
     fn full_width(view: &ToolbarView) -> f32 {
@@ -475,17 +580,39 @@ mod tests {
     }
 
     #[test]
-    fn every_tab_fits_without_folding_at_the_reference_width() {
+    fn reference_width_keeps_priority_controls_and_all_folded_commands_available() {
         for spec in TABS {
             let row = view(spec.id, 1420., &Fake(vec![]));
-            assert!(
-                row.groups
-                    .iter()
-                    .all(|group| group.mode != GroupMode::Folded),
-                "{:?} needs {}",
-                spec.id,
-                full_width(&row)
-            );
+            if spec.id == TabId::Notation {
+                // Form and tremolo add low-priority groups; compact windows
+                // keep the common writing controls and expose folded menus.
+                for (group, source) in row.groups.iter().zip(spec.groups) {
+                    if source.priority >= 3 && !source.dropdown {
+                        assert_ne!(group.mode, GroupMode::Folded, "{}", source.title);
+                    }
+                    assert_eq!(
+                        group
+                            .controls
+                            .iter()
+                            .map(|control| control.command)
+                            .collect::<Vec<_>>(),
+                        source
+                            .controls
+                            .iter()
+                            .map(|control| control.command)
+                            .collect::<Vec<_>>()
+                    );
+                }
+            } else {
+                assert!(
+                    row.groups
+                        .iter()
+                        .all(|group| group.mode != GroupMode::Folded),
+                    "{:?} needs {}",
+                    spec.id,
+                    full_width(&row)
+                );
+            }
             assert!(row.width(&Metrics::default()) <= 1420.);
         }
     }
@@ -532,17 +659,24 @@ mod tests {
     }
 
     #[test]
-    fn narrow_windows_fold_lowest_priority_first_and_never_exceed() {
+    fn narrow_windows_fold_lowest_priority_first_and_fit_when_possible() {
         let metrics = Metrics::default();
         for width in [1100., 900., 700., 500.] {
             for spec in TABS.iter().filter(|spec| !spec.groups.is_empty()) {
                 let folded = view(spec.id, width, &Fake(vec![]));
-                let all_folded = folded
-                    .groups
-                    .iter()
-                    .all(|group| group.mode == GroupMode::Folded);
+                // A compact group can be narrower than its folded caption.
+                // Once every width-reducing fold is used, this is the smallest
+                // possible row even when the window cannot contain it.
+                let minimum = total(
+                    folded
+                        .groups
+                        .iter()
+                        .map(|group| group.width.min(group.folded_width)),
+                    &metrics,
+                );
                 assert!(
-                    folded.width(&metrics) <= width || all_folded,
+                    folded.width(&metrics) <= width
+                        || (minimum > width && (folded.width(&metrics) - minimum).abs() < 0.01),
                     "{:?} at {width}",
                     spec.id
                 );

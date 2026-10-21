@@ -82,6 +82,7 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("cmd-a", id::SELECT_ALL),
     ("backspace", id::DELETE),
     ("delete", id::DELETE),
+    ("shift-cmd-p", id::RESET_POSITION),
     ("escape", id::ESCAPE),
     ("r", id::REPEAT),
 

@@ -1,5 +1,11 @@
 //! Versioned native documents. Export formats will use independent adapters.
+#[cfg(test)]
+mod clef_tests;
+#[cfg(test)]
+mod comment_tests;
 pub mod musicxml;
+#[cfg(test)]
+mod range_tests;
 mod recent;
 mod recovery;
 pub use recent::RecentFiles;
@@ -13,7 +19,7 @@ use std::{
     path::Path,
 };
 
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 27;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -230,6 +236,38 @@ pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
     }
     if matches!(envelope["version"].as_u64(), Some(17 | 18)) {
         // Harmonics default to absent in earlier documents.
+        envelope["version"] = 19.into();
+    }
+    if envelope["version"].as_u64() == Some(19) {
+        // Form defaults to absent in earlier documents.
+        envelope["version"] = 20.into();
+    }
+    if envelope["version"].as_u64() == Some(20) {
+        // Tremolos default to absent in earlier documents.
+        envelope["version"] = 21.into();
+    }
+    if envelope["version"].as_u64() == Some(21) {
+        // Rehearsal marks default to absent; letters remain the default style.
+        envelope["version"] = 22.into();
+    }
+    if envelope["version"].as_u64() == Some(22) {
+        // Older parts inherit the instrument's clef, with no explicit overrides.
+        envelope["version"] = 23.into();
+    }
+    if envelope["version"].as_u64() == Some(23) {
+        // Marks default to their engraved position.
+        envelope["version"] = 24.into();
+    }
+    if envelope["version"].as_u64() == Some(24) {
+        // Bar marks default to their engraved position.
+        envelope["version"] = 25.into();
+    }
+    if envelope["version"].as_u64() == Some(25) {
+        // Parts without a custom advisory range use the instrument defaults.
+        envelope["version"] = 26.into();
+    }
+    if envelope["version"].as_u64() == Some(26) {
+        // Older scores have no review comments.
         envelope["version"] = SCHEMA_VERSION.into();
     }
     if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {
@@ -302,6 +340,58 @@ pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
 mod tests {
     use super::*;
     use score_core::{Duration, Event, Pitch, Step};
+
+    #[test]
+    fn malformed_form_document_returns_an_error_without_panicking() {
+        let mut data: serde_json::Value =
+            serde_json::from_slice(&encode(&Score::default()).unwrap()).unwrap();
+        data["score"]["parts"] = serde_json::json!([]);
+        data["score"]["form"] = serde_json::json!({"0": {}});
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
+    }
+
+    #[test]
+    fn form_round_trips_and_version_19_files_open() {
+        let mut s = Score::default();
+        s.set_bar_form(
+            1,
+            score_core::BarForm {
+                repeat_end: Some(2),
+                jump: Some(score_core::Jump::DalSegnoAlCoda),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        s.set_ending(score_core::Ending {
+            start: 1,
+            end: 2,
+            numbers: vec![1],
+        })
+        .unwrap();
+        assert_eq!(decode(&encode(&s).unwrap()).unwrap(), s);
+        let old = decode(include_bytes!("../../../examples/trio.partitura")).unwrap();
+        assert_eq!(old.play_order(true), old.play_order(false));
+    }
+
+    #[test]
+    fn header_credits_round_trip_and_old_files_open_without_them() {
+        let mut score = Score::default();
+        let credits = score_core::Credits {
+            subtitle: "Para cuerdas".into(),
+            composer: "Fanny Mendelssohn".into(),
+            year: "1846".into(),
+            copyright: "© Dominio público".into(),
+            ..Default::default()
+        };
+        score.set_header("Notturno", &credits).unwrap();
+        let back = decode(&encode(&score).unwrap()).unwrap();
+        assert_eq!(back.credits(), &credits);
+        let old = include_bytes!("../../../examples/trio.partitura");
+        assert_eq!(
+            decode(old).unwrap().credits(),
+            &score_core::Credits::default()
+        );
+    }
 
     #[test]
     fn old_scores_keep_their_sound_and_key_signatures_round_trip_with_validation() {
@@ -627,3 +717,12 @@ mod harmonic_tests;
 
 #[cfg(test)]
 mod orchestra_tests;
+
+#[cfg(test)]
+mod tremolo_tests;
+
+#[cfg(test)]
+mod rehearsal_tests;
+
+#[cfg(test)]
+mod offset_tests;

@@ -13,30 +13,68 @@ struct Segment {
     seconds_per_tick: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Instance {
+    pub bar: usize,
+    /// Written tick of this bar's start.
+    pub written: u64,
+    /// Tick of this visit on the performed axis.
+    pub performed: u64,
+    pub length: u64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Timeline {
     /// Rehearsal speed relative to quarter = 120 (120 means written tempo).
     tempo: Tempo,
     segments: Vec<Segment>,
+    instances: Vec<Instance>,
+    linear: bool,
 }
 
 impl Timeline {
     pub fn new(score: &Score, tempo: Tempo) -> Self {
-        let mut spans = Vec::new();
+        Self::with_repeats(score, tempo, false)
+    }
+    pub fn with_repeats(score: &Score, tempo: Tempo, follow: bool) -> Self {
+        let mut performed = 0;
+        let instances: Vec<_> = score
+            .play_order(follow)
+            .into_iter()
+            .map(|played| {
+                let length = u64::from(score.time_at(played.bar).capacity());
+                let instance = Instance {
+                    bar: played.bar,
+                    written: score.measure_start_tick(played.bar),
+                    performed,
+                    length,
+                };
+                performed += length;
+                instance
+            })
+            .collect();
+        let mut bar_holds = vec![Vec::new(); score.measures().len()];
         for part in score.parts() {
             for staff in part.staves() {
                 for (index, measure) in staff.measures().iter().enumerate() {
-                    let begin = score.measure_start_tick(index);
                     for (_, onset, _, event) in measure.timed_iter() {
-                        let tick = begin + u64::from(onset);
+                        let tick = u64::from(onset);
                         let end = tick + u64::from(event.duration.ticks());
                         if event.notation.fermata {
-                            spans.push((tick, end));
+                            bar_holds[index].push((tick, end));
                         }
                     }
                 }
             }
         }
+        let mut spans: Vec<_> = instances
+            .iter()
+            .flat_map(|instance| {
+                bar_holds[instance.bar]
+                    .iter()
+                    .map(|&(start, end)| (instance.performed + start, instance.performed + end))
+            })
+            .collect();
         spans.sort_unstable();
         // Fermatas over the same moment in several parts hold it once.
         let mut holds: Vec<(u64, u64)> = Vec::new();
@@ -46,9 +84,15 @@ impl Timeline {
                 _ => holds.push((start, end)),
             }
         }
-        let marks: Vec<_> = score
-            .tempo_marks()
-            .map(|(bar, mark)| (score.measure_start_tick(bar), mark))
+        let marks: Vec<_> = instances
+            .iter()
+            .enumerate()
+            .filter_map(|(index, instance)| {
+                (index == 0
+                    || instances[index - 1].bar + 1 != instance.bar
+                    || score.tempo_change_at(instance.bar).is_some())
+                .then_some((instance.performed, score.tempo_at(instance.bar)))
+            })
             .collect();
         let mut boundaries: Vec<_> = marks
             .iter()
@@ -87,11 +131,23 @@ impl Timeline {
                 seconds_per_tick,
             });
         }
-        Self { tempo, segments }
+        // Incomplete form may legally skip every bar (e.g. a lone second
+        // ending). Keep the map total even when there is no performed visit.
+        if segments.is_empty() {
+            segments = Self::plain(tempo).segments;
+        }
+        Self {
+            tempo,
+            segments,
+            instances,
+            linear: !follow,
+        }
     }
     pub fn plain(tempo: Tempo) -> Self {
         Self {
             tempo,
+            instances: Vec::new(),
+            linear: true,
             segments: vec![Segment {
                 tick: 0,
                 seconds: 0.,
@@ -102,15 +158,65 @@ impl Timeline {
     pub fn tempo(&self) -> Tempo {
         self.tempo
     }
-    pub(crate) fn boundaries(&self) -> impl Iterator<Item = u64> + '_ {
-        self.segments.iter().map(|s| s.tick)
+    pub(crate) fn boundaries_between(
+        &self,
+        start: u64,
+        end: u64,
+    ) -> impl Iterator<Item = u64> + '_ {
+        let first = self
+            .segments
+            .partition_point(|segment| segment.tick <= start);
+        self.segments[first..]
+            .iter()
+            .take_while(move |segment| segment.tick < end)
+            .map(|segment| segment.tick)
     }
+    /// First performed visit containing this written tick, or the performed
+    /// end when the written position is skipped by the form.
     pub fn frame_at(&self, tick: u64, sample_rate: u32) -> u64 {
         // A tiny tolerance prevents a mathematically integral frame rounding
         // down because of floating point accumulation between tempo segments.
-        (self.seconds_at(tick as f64) * f64::from(sample_rate) + 1e-6).floor() as u64
+        self.performed_frame_at(self.written_to_performed(tick as f64), sample_rate)
     }
     pub fn seconds_at(&self, tick: f64) -> f64 {
+        self.performed_seconds(self.written_to_performed(tick))
+    }
+    fn written_to_performed(&self, tick: f64) -> f64 {
+        let tick = tick.max(0.);
+        // Legacy linear callers extrapolate beyond the score (e.g. a ruler).
+        if self.linear {
+            return tick;
+        }
+        self.instances
+            .iter()
+            .find(|instance| {
+                instance.written as f64 <= tick
+                    && tick < (instance.written + instance.length) as f64
+            })
+            .map_or_else(
+                || self.performed_end() as f64,
+                |instance| instance.performed as f64 + tick - instance.written as f64,
+            )
+    }
+    fn performed_end(&self) -> u64 {
+        self.instances
+            .last()
+            .map_or(0, |instance| instance.performed + instance.length)
+    }
+    pub fn instances(&self) -> &[Instance] {
+        &self.instances
+    }
+    /// Frame of an offset within one specific performed visit.
+    pub fn performed_frame(&self, instance: usize, offset: u64, rate: u32) -> u64 {
+        self.performed_frame_at((self.instances[instance].performed + offset) as f64, rate)
+    }
+    pub fn total_frames(&self, rate: u32) -> u64 {
+        self.performed_frame_at(self.performed_end() as f64, rate)
+    }
+    pub(crate) fn performed_frame_at(&self, tick: f64, rate: u32) -> u64 {
+        (self.performed_seconds(tick) * f64::from(rate) + 1e-6).floor() as u64
+    }
+    fn performed_seconds(&self, tick: f64) -> f64 {
         let tick = tick.max(0.);
         let index = self
             .segments
@@ -121,7 +227,7 @@ impl Timeline {
     }
     /// Inverse of the complete tempo/fermata map, including fractional ticks.
     pub fn tick_at(&self, frame: u64, sample_rate: u32) -> f64 {
-        if sample_rate == 0 {
+        if sample_rate == 0 || (!self.linear && self.instances.is_empty()) {
             return 0.;
         }
         let seconds = frame as f64 / f64::from(sample_rate);
@@ -130,7 +236,22 @@ impl Timeline {
             .partition_point(|s| s.seconds <= seconds)
             .saturating_sub(1);
         let segment = &self.segments[index];
-        segment.tick as f64 + (seconds - segment.seconds) / segment.seconds_per_tick
+        let performed =
+            segment.tick as f64 + (seconds - segment.seconds) / segment.seconds_per_tick;
+        if self.linear {
+            return performed;
+        }
+        let index = self
+            .instances
+            // Ownership follows the rounded scheduled frame: at a jump a
+            // sub-sample rounding error must not return the previous bar.
+            .partition_point(|instance| {
+                self.performed_frame_at(instance.performed as f64, sample_rate) <= frame
+            })
+            .saturating_sub(1);
+        let instance = &self.instances[index];
+        instance.written as f64
+            + (performed - instance.performed as f64).clamp(0., instance.length as f64)
     }
 }
 

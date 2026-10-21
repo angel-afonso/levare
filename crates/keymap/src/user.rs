@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn saves_atomically_and_reads_back() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("Partitura").join("atajos.json");
+        let path = directory.path().join("Levare").join("atajos.json");
         assert_eq!(UserKeymap::load(&path).unwrap(), UserKeymap::new());
         let mut keymap = UserKeymap::new();
         keymap.set(id::STACCATO, &[KeySequence::parse("alt-s").unwrap()]);

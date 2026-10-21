@@ -112,6 +112,9 @@ impl Score {
         event: Event,
     ) -> Result<(), ScoreError> {
         event.pitches.validate()?;
+        if event.pitches.is_empty() && event.notation.tremolo.is_some() {
+            return Err(ScoreError("Un silencio no admite trémolo"));
+        }
         let source = self
             .part(part)
             .ok_or(ScoreError("El instrumento no existe"))?;

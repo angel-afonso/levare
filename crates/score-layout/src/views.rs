@@ -50,7 +50,7 @@ impl LayoutEngine {
     }
 
     /// An extracted instrumental part: compact print scale, heading instead
-    /// of repeated instrument names, with divisi and hand labels preserved.
+    /// of repeated instrument names, with divisi labels and grand-staff names preserved.
     pub fn layout_part(&mut self, score: &Score, width: f32, mode: ViewMode) -> Layout {
         self.layout_presentation(score, width, mode, score.parts().len() == 1)
     }
@@ -148,6 +148,8 @@ impl LayoutEngine {
         let curves = expression::curves(score, &index, &self.metrics);
         let hairpins = expression::hairpins(score, &index, self.metrics.hairpin);
         (layout.curves, layout.hairpins) = (curves, hairpins);
+        offsets::apply(score, &mut layout);
+        offsets::apply_bar_marks(score, &mut layout);
         layout
     }
 
@@ -174,8 +176,12 @@ impl LayoutEngine {
         layout.systems.clone_from(&base.systems);
         layout.labels.clone_from(&base.labels);
         layout.tempos.clone_from(&base.tempos);
+        layout.rehearsals.clone_from(&base.rehearsals);
+        layout.endings.clone_from(&base.endings);
+        layout.navigation.clone_from(&base.navigation);
         layout.width = base.width;
         layout.height = base.height;
+        offsets::apply(score, &mut layout);
         layout
     }
 }
@@ -255,6 +261,25 @@ impl Layout {
         }
         for mark in &mut self.tempos {
             mark.position.y += shift_at(mark.position.y);
+        }
+        for label in &mut self.rehearsals {
+            let shift = measure_shifts[label.measure];
+            label.position.y += shift;
+            for line in &mut label.frame {
+                line.from.y += shift;
+                line.to.y += shift;
+            }
+        }
+        for label in &mut self.navigation {
+            label.position.y += measure_shifts[label.measure];
+        }
+        for ending in &mut self.endings {
+            let shift = shift_at(ending.lines[0].from.y);
+            ending.label_position.y += shift;
+            for line in &mut ending.lines {
+                line.from.y += shift;
+                line.to.y += shift;
+            }
         }
         for label in &mut self.labels {
             label.position.y += shift_at(label.position.y);

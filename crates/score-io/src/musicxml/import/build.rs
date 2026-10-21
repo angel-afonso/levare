@@ -415,6 +415,8 @@ pub(super) fn score(
             score.set_tempo_at(bar, (*tempo).clone()).map_err(error)?;
         }
     }
+    apply_form(&mut score, &parts, warnings);
+    apply_rehearsals(&mut score, &parts, warnings)?;
     for (pi, data) in parts.iter().enumerate() {
         let part = score.parts()[pi].id();
         if let Some(interval) = data.transposition {
@@ -458,6 +460,23 @@ pub(super) fn score(
         let mut placed = HashMap::new();
         let mut links: Vec<Connection> = Vec::new();
         for (bar, b) in data.bars.iter().enumerate() {
+            for (&number, &clef) in &b.clefs {
+                let staff = if number == 1 {
+                    StaffId::Upper
+                } else {
+                    StaffId::Lower
+                };
+                let current = score.part(part).unwrap();
+                if !current.can_use_clef(clef) {
+                    warnings.add("La clave incompatible con el instrumento se omitió");
+                } else if number == 2 && !current.instrument().is_grand_staff() {
+                    if current.clef_at(StaffId::Upper, bar) != clef {
+                        warnings.add("Las ramas de divisi comparten la clave de la primera rama");
+                    }
+                } else {
+                    score.set_clef_at(part, staff, bar, clef).map_err(error)?;
+                }
+            }
             let mut streams: BTreeMap<u8, Vec<(usize, &RawEvent)>> = BTreeMap::new();
             for (index, e) in b.events.iter().enumerate() {
                 streams
@@ -777,4 +796,134 @@ pub(super) fn score(
     }
     score.validate().map_err(error)?;
     Ok(score)
+}
+
+fn apply_form(score: &mut Score, parts: &[PartData], warnings: &mut Warnings) {
+    for bar in 0..score.measures().len() {
+        let sources = || parts.iter().map(|part| &part.bars[bar]);
+        let mut form = BarForm {
+            repeat_start: sources().any(|data| data.repeat_start),
+            repeat_end: sources().find_map(|data| data.repeat_end),
+            barline: sources().find_map(|data| data.barline).unwrap_or_default(),
+            segno: sources().any(|data| data.segno),
+            coda: sources().any(|data| data.coda),
+            to_coda: sources().any(|data| data.to_coda),
+            fine: sources().any(|data| data.fine),
+            jump: None,
+        };
+        if let Some(source) = sources()
+            .find(|data| data.jump.is_some() && !data.jump_from_sound)
+            .or_else(|| sources().find(|data| data.jump.is_some()))
+        {
+            form.jump = source.jump.map(|jump| {
+                if source.jump_from_sound && form.fine {
+                    if jump.from_segno() {
+                        Jump::DalSegnoAlFine
+                    } else {
+                        Jump::DaCapoAlFine
+                    }
+                } else if source.jump_from_sound && form.to_coda {
+                    if jump.from_segno() {
+                        Jump::DalSegnoAlCoda
+                    } else {
+                        Jump::DaCapoAlCoda
+                    }
+                } else {
+                    jump
+                }
+            });
+        }
+        if score.set_bar_form(bar, form).is_err() {
+            warnings.add("Se omitió una repetición o casilla no válida");
+        }
+    }
+    if let Some(part) = parts
+        .iter()
+        .find(|part| part.bars.iter().any(|bar| bar.ending_start.is_some()))
+    {
+        let mut pending = None;
+        for (bar, data) in part.bars.iter().enumerate() {
+            if let Some(numbers) = &data.ending_start {
+                if let Some((start, numbers)) = pending.take() {
+                    set_ending(score, start, start, numbers, warnings);
+                }
+                pending = Some((bar, numbers.clone()));
+            }
+            if data.ending_stop
+                && let Some((start, numbers)) = pending.take()
+            {
+                set_ending(score, start, bar, numbers, warnings);
+            }
+        }
+        if let Some((start, numbers)) = pending {
+            set_ending(score, start, start, numbers, warnings);
+        }
+    }
+}
+
+fn set_ending(
+    score: &mut Score,
+    start: usize,
+    end: usize,
+    numbers: Vec<u8>,
+    warnings: &mut Warnings,
+) {
+    if score
+        .set_ending(Ending {
+            start,
+            end,
+            numbers,
+        })
+        .is_err()
+    {
+        warnings.add("Se omitió una repetición o casilla no válida");
+    }
+}
+
+/// Infer the best automatic sequence, retaining exceptions as custom labels.
+fn apply_rehearsals(
+    score: &mut Score,
+    parts: &[PartData],
+    warnings: &mut Warnings,
+) -> Result<(), FileError> {
+    let Some(part) = parts
+        .iter()
+        .find(|part| part.bars.iter().any(|bar| bar.rehearsal.is_some()))
+    else {
+        return Ok(());
+    };
+    let mut marks = Vec::new();
+    for (bar, data) in part.bars.iter().enumerate() {
+        if let Some(text) = &data.rehearsal {
+            let clean: String = text.chars().filter(|c| !c.is_control()).take(16).collect();
+            if &clean != text {
+                warnings.add("Algunas marcas de ensayo se recortan a 16 caracteres sin controles");
+            }
+            if clean.trim().is_empty() {
+                continue;
+            }
+            score.toggle_rehearsal_mark(bar).map_err(error)?;
+            marks.push((bar, clean));
+        }
+    }
+    let mut best = RehearsalStyle::Letters;
+    let mut matches = 0;
+    for style in RehearsalStyle::ALL {
+        score.set_rehearsal_style(style);
+        let count = marks
+            .iter()
+            .filter(|(bar, text)| score.rehearsal_label(*bar).as_ref() == Some(text))
+            .count();
+        if count > matches {
+            best = style;
+            matches = count;
+        }
+    }
+    score.set_rehearsal_style(best);
+    for (bar, text) in marks {
+        if score.rehearsal_label(bar).as_ref() != Some(&text) {
+            score.set_rehearsal_custom(bar, Some(text)).map_err(error)?;
+        }
+    }
+    Ok(())
 }

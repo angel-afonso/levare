@@ -4,14 +4,15 @@
 
 use super::*;
 use score_toolbar::{
-    ControlView, FILE_MENU, GroupMode, GroupView, Item, MenuItemView, MenuRow, Metrics, RecentItem,
-    TABS, TabId, ToolbarView, Visual, project, project_menu,
+    BAR_MARK_CONTEXT_MENU, ControlView, FILE_MENU, GroupMode, GroupView, Item, MARK_CONTEXT_MENU,
+    MenuItemView, MenuRow, Metrics, NOTE_CONTEXT_MENU, RecentItem, TABS, TabId, ToolbarView,
+    Visual, project, project_menu,
 };
 
-const CONTROL_HEIGHT: f32 = 68.;
-const ROW_HEIGHT: f32 = 20.;
-const ROW_GAP: f32 = 4.;
-const GROUP_HEIGHT: f32 = 92.;
+const CONTROL_HEIGHT: f32 = 58.;
+const ROW_HEIGHT: f32 = 18.;
+const ROW_GAP: f32 = 2.;
+const GROUP_HEIGHT: f32 = 76.;
 
 fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyElement> {
     match visual {
@@ -20,6 +21,18 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
         }
         Visual::Music(text) => {
             Some(music_symbol(view, text, size, (size * 0.7, size * 0.8), color).into_any_element())
+        }
+        Visual::Clef(clef) => {
+            Some(clef_symbol(view, clef, (size * 0.7, size), color).into_any_element())
+        }
+        Visual::Harmonic(harmonic) => {
+            let text = harmonic.glyph();
+            let height = f32::from(view.music_font.bounds(text, size).size.height).max(1.);
+            let font_size = size * (size * 0.6 / height);
+            Some(
+                music_symbol(view, text, font_size, (size * 0.7, size * 0.8), color)
+                    .into_any_element(),
+            )
         }
         Visual::Chord => Some(music_chord(view, size, color).into_any_element()),
         Visual::Tie | Visual::Slur => {
@@ -87,22 +100,23 @@ fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Statef
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(6.))
+            .gap(px(4.))
             .child(
                 div()
-                    .h(px(36.))
+                    .h(px(30.))
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
                     .justify_center()
-                    .children(visual(view, control.visual, 30., ink(control))),
+                    .children(visual(view, control.visual, 26., ink(control))),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_1()
-                    .text_size(px(11.5))
-                    .line_height(px(14.))
+                    .text_size(px(11.))
+                    .line_height(px(13.))
                     .child(control.label.clone()),
             ),
         control,
@@ -132,7 +146,7 @@ fn tile(
             .children(visual(
                 view,
                 control.visual,
-                if named { 26. } else { 30. },
+                if named { 22. } else { 26. },
                 ink(control),
             ))
             .when(named, |tile| {
@@ -149,7 +163,7 @@ fn tile(
     )
     .when(named, |tile| tile.min_w(px(metrics.labeled_tile)).px_1())
     .when(!named, |tile| tile.w(px(metrics.tile)))
-    .h(px(if named { CONTROL_HEIGHT } else { 56. }))
+    .h(px(if named { CONTROL_HEIGHT } else { 48. }))
 }
 
 fn row(
@@ -159,6 +173,7 @@ fn row(
     prefix: &str,
     close: bool,
 ) -> Stateful<Div> {
+    let named = close || !control.symbol_only;
     frame(
         format!("{prefix}-{}", control.command),
         div()
@@ -166,13 +181,35 @@ fn row(
             .items_center()
             .gap_2()
             .w_full()
-            .child(div().w(px(16.)).flex().justify_center().children(visual(
-                view,
-                control.visual,
-                18.,
-                ink(control),
-            )))
-            .child(div().flex_1().truncate().child(control.label.clone()))
+            .child(
+                div()
+                    .when(named, |slot| slot.w(px(if close { 40. } else { 16. })))
+                    .when(!named, |slot| slot.w_full())
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .children(if close && let Visual::Music(text) = control.visual {
+                        Some(
+                            fitted_music_symbol(view, text, (36., 22.), ink(control))
+                                .into_any_element(),
+                        )
+                    } else {
+                        visual(
+                            view,
+                            control.visual,
+                            if !named && matches!(control.visual, Visual::Text(_)) {
+                                22.
+                            } else {
+                                16.
+                            },
+                            ink(control),
+                        )
+                    }),
+            )
+            .when(named, |row| {
+                row.child(div().flex_1().truncate().child(control.label.clone()))
+            })
             .when(close, |row| {
                 row.children(control.keys.clone().map(shortcut))
             }),
@@ -184,7 +221,7 @@ fn row(
     .w_full()
     .h(px(ROW_HEIGHT))
     .px_1()
-    .text_size(px(11.5))
+    .text_size(px(11.))
 }
 
 fn items(view: &AppView, group: &GroupView, cx: &Context<AppView>) -> Div {
@@ -234,6 +271,8 @@ fn popover(content: impl IntoElement) -> Div {
 fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>) -> Div {
     let open = view.ui.open_group == Some(index);
     let title = group.title;
+    let active = open || group.controls.iter().any(|control| control.checked);
+    let color = if active { BLUE } else { TEXT };
     div()
         .flex()
         .flex_col()
@@ -246,14 +285,23 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                     .flex_col()
                     .items_center()
                     .gap_1()
-                    .children(visual(
-                        view,
-                        group.visual,
-                        30.,
-                        if open { BLUE } else { TEXT },
-                    ))
+                    .child(
+                        div()
+                            .h(px(30.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .children(match group.visual {
+                                Visual::Music(text) => Some(
+                                    fitted_music_symbol(view, text, (40., 30.), color)
+                                        .into_any_element(),
+                                ),
+                                _ => visual(view, group.visual, 26., color),
+                            }),
+                    )
                     .child(div().text_size(px(11.5)).child(format!("{title} ▾"))),
-                open,
+                active,
                 cx,
                 move |v, _, cx| {
                     v.ui.open_group = if open { None } else { Some(index) };
@@ -261,16 +309,16 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                     cx.notify();
                 },
             )
-            .when(!open, |button| button.bg(rgb(PANEL)))
+            .when(!active, |button| button.bg(rgb(PANEL)))
             .w_full()
-            .h(px(CONTROL_HEIGHT))
+            .h(px(GROUP_HEIGHT))
             .px_1(),
         )
         .when(open, |column| {
             column.child(deferred(
                 // Absolute children start at the column's corner: drop below the button.
                 anchored()
-                    .offset(point(px(0.), px(CONTROL_HEIGHT + 4.)))
+                    .offset(point(px(0.), px(GROUP_HEIGHT + 4.)))
                     .snap_to_window()
                     .child(
                         popover(
@@ -293,7 +341,7 @@ fn group(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>)
     div()
         .w(px(group.width_in(group.mode)))
         .h(px(GROUP_HEIGHT))
-        .px_2()
+        .px(px(Metrics::default().group_padding / 2.))
         .flex()
         .flex_col()
         .justify_between()
@@ -304,13 +352,15 @@ fn group(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>)
             GroupMode::Full | GroupMode::Expanded => items(view, group, cx),
             GroupMode::Folded => folded(view, group, index, cx),
         })
-        .child(
-            div()
-                .text_center()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child(group.title),
-        )
+        .when(group.mode != GroupMode::Folded, |group_row| {
+            group_row.child(
+                div()
+                    .text_center()
+                    .text_size(px(10.))
+                    .text_color(rgb(MUTED))
+                    .child(group.title),
+            )
+        })
 }
 
 pub fn toolbar_view(view: &AppView) -> ToolbarView {
@@ -328,7 +378,7 @@ pub fn toolbar_view(view: &AppView) -> ToolbarView {
 pub fn ribbon(view: &AppView, cx: &Context<AppView>) -> Div {
     let toolbar = toolbar_view(view);
     div()
-        .h(px(GROUP_HEIGHT + 12.))
+        .h(px(GROUP_HEIGHT + 8.))
         .flex_shrink_0()
         .flex()
         .items_center()
@@ -357,6 +407,7 @@ pub fn ribbon(view: &AppView, cx: &Context<AppView>) -> Div {
 
 fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> Stateful<Div> {
     let command = item.command;
+    let enabled = item.enabled && !view.busy;
     action(
         format!("file-{command}"),
         div()
@@ -374,7 +425,12 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
         cx,
         move |v, window, cx| {
             v.ui.file_menu = false;
-            v.run(command, window, cx)
+            v.ui.context_menu = None;
+            if enabled {
+                v.run(command, window, cx);
+            } else {
+                cx.notify();
+            }
         },
     )
     .justify_start()
@@ -386,6 +442,52 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
     .text_color(rgb(if item.pending { MUTED } else { TEXT }))
     .when(!item.enabled, |row| row.opacity(0.4))
     .when(view.busy, |row| row.opacity(0.4))
+}
+
+pub(super) fn context_menu(
+    view: &AppView,
+    position: Point<Pixels>,
+    is_mark: bool,
+    cx: &Context<AppView>,
+) -> impl IntoElement {
+    let rows = project_menu(
+        if is_mark && view.selected_bar_mark().is_some() {
+            BAR_MARK_CONTEXT_MENU
+        } else if is_mark {
+            MARK_CONTEXT_MENU
+        } else {
+            NOTE_CONTEXT_MENU
+        },
+        &view.shortcuts.registry,
+        &view.shortcuts.keymap,
+        view,
+        &[],
+    );
+    deferred(
+        anchored()
+            .position(position)
+            .position_mode(AnchoredPositionMode::Window)
+            .snap_to_window()
+            .child(
+                popover(
+                    div()
+                        .w(px(260.))
+                        .flex()
+                        .flex_col()
+                        .children(rows.iter().map(|row| match row {
+                            MenuRow::Item(item) => menu_row(view, item, cx).into_any_element(),
+                            MenuRow::Separator => separator().into_any_element(),
+                            MenuRow::Recent { .. } => unreachable!("context lists have no recents"),
+                        })),
+                )
+                .occlude()
+                .on_mouse_down_out(cx.listener(|v, _, _, cx| {
+                    v.ui.context_menu = None;
+                    cx.notify();
+                })),
+            ),
+    )
+    .with_priority(2)
 }
 
 fn recent_rows(view: &AppView) -> Vec<RecentItem> {
@@ -637,7 +739,24 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the GPUI glob would shadow `#[test]` with `gpui::test`.
-    use score_toolbar::{TABS, Visual};
+    use score_toolbar::{TABS, TabId, Visual};
+
+    #[test]
+    fn every_view_tab_icon_has_a_drawing() {
+        for group in score_toolbar::tab(TabId::View).groups {
+            let visuals = std::iter::once(group.visual)
+                .chain(group.controls.iter().map(|control| control.visual));
+            for visual in visuals {
+                if let Visual::Icon(name) = visual {
+                    assert!(
+                        super::Icon::named(name).is_some(),
+                        "{}: {name}",
+                        group.title
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_music_glyph_of_the_toolbar_is_preloaded() {
@@ -650,6 +769,10 @@ mod tests {
                     match visual {
                         Visual::Music(text) => {
                             assert!(font.covers(text), "{}: {text:?}", group.title)
+                        }
+                        Visual::Clef(clef) => assert!(font.covers(clef.glyph())),
+                        Visual::Harmonic(harmonic) => {
+                            assert!(font.covers(harmonic.glyph()), "{}", group.title)
                         }
                         Visual::Chord => assert!(font.covers(super::super::CHORD_NOTE)),
                         Visual::Tie | Visual::Slur => {
@@ -664,6 +787,32 @@ mod tests {
                         _ => {}
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn clefs_fit_picker_and_every_ribbon_icon_frame() {
+        let font = crate::music_font::MusicFont::new();
+        let frames = [
+            (28., 36.),
+            (26. * 0.7, 26.),
+            (22. * 0.7, 22.),
+            (16. * 0.7, 16.),
+        ];
+        for clef in score_core::Clef::PITCHED
+            .into_iter()
+            .chain([score_core::Clef::Percussion])
+        {
+            for frame in frames {
+                let size = super::super::fitted_music_font_size(&font, clef.glyph(), frame);
+                let ink = font.bounds(clef.glyph(), size);
+                let width = f32::from(ink.size.width) + super::super::MUSIC_SYMBOL_PADDING;
+                let height = f32::from(ink.size.height) + super::super::MUSIC_SYMBOL_PADDING;
+                assert!(
+                    width <= frame.0 + 0.001 && height <= frame.1 + 0.001,
+                    "{clef:?}: canvas needs {width:.2}×{height:.2}, frame is {frame:?}"
+                );
             }
         }
     }

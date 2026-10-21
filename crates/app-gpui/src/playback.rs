@@ -2,7 +2,7 @@ use score_core::{ElementId, Instrument, PartId, Score, StaffId};
 use score_platform::AudioOutput;
 use score_platform::mixer::{ChannelMix, ReverbSettings};
 use score_platform::sound_engine::{RoutingSignature, SoundBank};
-use score_playback::{Audition, PlaybackPlan, Tempo};
+use score_playback::{Audition, PlaybackPlan, Style, Tempo};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -11,6 +11,8 @@ pub struct Playback {
     output: Option<AudioOutput>,
     pub error: Option<String>,
     pub tempo: Tempo,
+    pub follow_repeats: bool,
+    pub style: Style,
     pub audition: bool,
     pub volume: u32,
     pub playhead: Option<ElementId>,
@@ -22,6 +24,10 @@ pub struct Playback {
     clock: Option<(u64, u32)>,
     seek_tick: Option<u64>,
     pub banks: Vec<Arc<dyn SoundBank>>,
+    pub sound_discovery_errors: Vec<String>,
+    pub sound_priority: Vec<String>,
+    #[cfg(feature = "vsco")]
+    sfz_packs: Vec<score_sound_vsco::SfzPack>,
     pub selected_bank: Option<usize>,
     pub sound_error: Option<String>,
     sound_signature: Option<RoutingSignature>,
@@ -32,10 +38,13 @@ pub struct Playback {
 
 impl Playback {
     pub fn new() -> Self {
+        let catalog = crate::sound_banks::discover();
         let mut playback = Self {
             output: None,
             error: None,
             tempo: Tempo::default(),
+            follow_repeats: true,
+            style: Style::Natural,
             audition: true,
             volume: 70,
             playhead: None,
@@ -46,7 +55,11 @@ impl Playback {
             just_finished: false,
             clock: None,
             seek_tick: None,
-            banks: crate::sound_banks::discover(),
+            banks: catalog.banks,
+            sound_discovery_errors: catalog.errors,
+            sound_priority: catalog.priority,
+            #[cfg(feature = "vsco")]
+            sfz_packs: catalog.packs,
             selected_bank: None,
             sound_error: None,
             sound_signature: None,
@@ -67,15 +80,54 @@ impl Playback {
             Err(error) => self.error = Some(error.to_string()),
         }
     }
-    pub fn sound_name(&self) -> &'static str {
+    pub fn sound_name(&self) -> String {
         self.selected_bank
             .and_then(|index| self.banks.get(index))
             .map_or("GeneralUser GS", |bank| bank.name())
+            .to_owned()
     }
-    pub fn sound_description(&self) -> Option<&'static str> {
+    pub fn sound_description(&self) -> Option<String> {
         self.selected_bank
             .and_then(|index| self.banks.get(index))
-            .map(|bank| bank.description())
+            .map(|bank| bank.description().to_owned())
+    }
+    pub fn sound_priority_name(&self, id: &str) -> String {
+        self.banks
+            .iter()
+            .find(|bank| bank.id() == id)
+            .map_or_else(|| id.to_owned(), |bank| bank.name().to_owned())
+    }
+    pub fn move_sound_priority(&mut self, index: usize, up: bool) -> Result<usize, String> {
+        #[cfg(feature = "vsco")]
+        {
+            let next = if up {
+                index.checked_sub(1)
+            } else {
+                index.checked_add(1)
+            };
+            let Some(next) = next.filter(|next| *next < self.sound_priority.len()) else {
+                return Err("La biblioteca ya está en ese extremo".into());
+            };
+            let mut priority = self.sound_priority.clone();
+            priority.swap(index, next);
+            crate::sound_banks::save_priority(&priority)?;
+            let selected_id = self
+                .selected_bank
+                .and_then(|index| self.banks.get(index))
+                .map(|bank| bank.id().to_owned());
+            self.stop();
+            self.banks = crate::sound_banks::banks_from_packs(&self.sfz_packs, &priority);
+            self.sound_priority = priority;
+            self.selected_bank =
+                selected_id.and_then(|id| crate::sound_banks::index_by_id(&self.banks, &id));
+            crate::sound_banks::index_by_id(&self.banks, "sfz-combinadas")
+                .ok_or_else(|| "Bibliotecas combinadas no disponibles".into())
+        }
+        #[cfg(not(feature = "vsco"))]
+        {
+            let _ = (index, up);
+            Err("Bibliotecas SFZ no disponibles".into())
+        }
     }
     pub fn choose_sound(
         &mut self,
@@ -173,7 +225,11 @@ impl Playback {
     }
     /// Musical to audio time at the current tempo, fermatas included.
     pub fn timeline(&self, score: &Score) -> score_playback::Timeline {
-        score_playback::Timeline::new(score, self.tempo)
+        score_playback::Timeline::with_repeats(score, self.tempo, self.follow_repeats)
+    }
+    pub fn toggle_repeats(&mut self) {
+        self.stop();
+        self.follow_repeats = !self.follow_repeats;
     }
     pub fn has_ruler_position(&self) -> bool {
         self.seek_tick.is_some()
@@ -225,7 +281,13 @@ impl Playback {
                 .clone()
                 .unwrap_or_else(|| "No hay audio disponible".into())
         })?;
-        let plan = Arc::new(transport_plan(score, self.tempo, output.sample_rate())?);
+        let plan = Arc::new(transport_plan(
+            score,
+            self.tempo,
+            output.sample_rate(),
+            self.follow_repeats,
+            self.style,
+        )?);
         if let Some(tick) = self.seek_tick {
             let frame = plan.timeline.frame_at(tick, output.sample_rate());
             output.control.play_from_frame(plan, frame)
@@ -246,7 +308,13 @@ impl Playback {
         let was_paused = self.is_paused();
         if was_playing || was_paused {
             let output = self.output.as_mut().expect("active audio output");
-            let plan = Arc::new(transport_plan(score, self.tempo, output.sample_rate())?);
+            let plan = Arc::new(transport_plan(
+                score,
+                self.tempo,
+                output.sample_rate(),
+                self.follow_repeats,
+                self.style,
+            )?);
             output
                 .control
                 .play_from_frame(
@@ -350,9 +418,16 @@ impl Playback {
 }
 
 /// The visible ruler includes implicit rests through the final bar.
-fn transport_plan(score: &Score, tempo: Tempo, rate: u32) -> Result<PlaybackPlan, String> {
-    let mut plan = PlaybackPlan::new(score, tempo, rate).map_err(|error| error.to_string())?;
-    plan.duration_frames = plan.timeline.frame_at(score.total_ticks(), rate);
+fn transport_plan(
+    score: &Score,
+    tempo: Tempo,
+    rate: u32,
+    follow: bool,
+    style: Style,
+) -> Result<PlaybackPlan, String> {
+    let mut plan = PlaybackPlan::with_style(score, tempo, rate, follow, style)
+        .map_err(|error| error.to_string())?;
+    plan.duration_frames = plan.timeline.total_frames(rate);
     Ok(plan)
 }
 
@@ -365,6 +440,8 @@ mod tests {
             output: None,
             error: None,
             tempo: Tempo::default(),
+            follow_repeats: true,
+            style: Style::Natural,
             audition: false,
             volume: 70,
             playhead: None,
@@ -376,6 +453,10 @@ mod tests {
             clock: None,
             seek_tick: None,
             banks: Vec::new(),
+            sound_discovery_errors: Vec::new(),
+            sound_priority: Vec::new(),
+            #[cfg(feature = "vsco")]
+            sfz_packs: Vec::new(),
             selected_bank: None,
             sound_error: None,
             sound_signature: None,
@@ -419,10 +500,36 @@ mod tests {
     #[test]
     fn transport_plan_includes_the_rulers_empty_final_bars() {
         let score = Score::default();
-        let plan = transport_plan(&score, Tempo::default(), 48_000).unwrap();
+        let plan = transport_plan(&score, Tempo::default(), 48_000, true, Style::Natural).unwrap();
         assert_eq!(plan.duration_frames, 384_000);
         assert!(plan.messages.is_empty());
         assert!(plan.elements_at(360_000).iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn transport_starts_natural_and_can_request_exact_literal_attacks() {
+        assert_eq!(offline().style, Style::Natural);
+        let mut score = Score::default();
+        score
+            .insert(
+                0,
+                0,
+                score_core::Event {
+                    pitches: score_core::Pitches::single(score_core::Pitch::new(
+                        score_core::Step::C,
+                        4,
+                    )),
+                    duration: score_core::Duration::Quarter,
+                    notation: Default::default(),
+                },
+            )
+            .unwrap();
+        let natural =
+            transport_plan(&score, Tempo::default(), 48_000, false, Style::Natural).unwrap();
+        let literal =
+            transport_plan(&score, Tempo::default(), 48_000, false, Style::Literal).unwrap();
+        assert_ne!(natural.messages, literal.messages);
+        assert_eq!(natural.duration_frames, literal.duration_frames);
     }
 
     #[test]
@@ -460,5 +567,39 @@ mod tests {
             playback.part_mix(&Score::default(), piano),
             ChannelMix::default()
         );
+    }
+    #[test]
+    fn repeat_mode_defaults_on_and_toggle_clears_the_previous_clock() {
+        let mut playback = offline();
+        assert!(playback.follow_repeats);
+        playback.clock = Some((192_000, 48_000));
+        playback.seek_tick = Some(192);
+        playback.toggle_repeats();
+        assert!(!playback.follow_repeats);
+        assert!(playback.clock.is_none());
+        assert!(!playback.has_ruler_position());
+        playback.toggle_repeats();
+        assert!(playback.follow_repeats);
+    }
+
+    #[test]
+    fn transport_plan_follows_repeats_and_can_use_written_order() {
+        let mut score = Score::new("Repeat".into(), &[Instrument::Piano], 2).unwrap();
+        score
+            .set_bar_form(
+                1,
+                score_core::BarForm {
+                    repeat_end: Some(2),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let repeated =
+            transport_plan(&score, Tempo::default(), 48_000, true, Style::Natural).unwrap();
+        let linear =
+            transport_plan(&score, Tempo::default(), 48_000, false, Style::Natural).unwrap();
+        assert_eq!(repeated.duration_frames, linear.duration_frames * 2);
+        assert_eq!(repeated.timeline.instances().len(), 4);
+        assert_eq!(linear.timeline.instances().len(), 2);
     }
 }

@@ -2,9 +2,11 @@
 #[cfg(test)]
 use score_core::Instrument;
 use score_core::{
-    Clef, ElementId, InstrumentFamily, KeySignature, MarkRef, Measure, PartId, Score, StaffId,
-    TimeSignature, Voice,
+    BarMark, BarMarkRef, Clef, ElementId, InstrumentFamily, KeySignature, MarkRef, Measure, PartId,
+    Score, StaffId, TimeSignature, Voice,
 };
+#[cfg(test)]
+mod clef_tests;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -23,6 +25,7 @@ mod rhythm;
 pub use rhythm::TupletGroup;
 mod expression;
 pub use expression::{Curve, Hairpin, Hit, MarkBox, PianoArpeggioLayout};
+mod offsets;
 
 pub const STAFF_SPACE: f32 = 10.;
 pub const MUSIC_SIZE: f32 = STAFF_SPACE * 4.;
@@ -183,11 +186,39 @@ impl PlacedMeasure {
     }
 }
 #[derive(Clone, Debug)]
+pub struct RehearsalLabel {
+    pub measure: usize,
+    pub text: String,
+    pub position: Point,
+    pub frame: Vec<Line>,
+}
+
+#[derive(Clone, Debug)]
 pub struct TempoLabel {
     pub measure: usize,
     pub mark: score_core::TempoMark,
     pub position: Point,
     pub width: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct EndingBracket {
+    pub ending_start: usize,
+    /// Continuations after a system break have no repeated label.
+    pub label: String,
+    pub label_position: Point,
+    pub lines: Vec<Line>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NavigationLabel {
+    pub measure: usize,
+    pub mark: BarMark,
+    /// Ordinary text and Bravura navigation symbols share one baseline.
+    pub text: String,
+    pub position: Point,
+    pub size: f32,
+    pub right_aligned: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -223,6 +254,9 @@ pub struct Layout {
     pub measures: Vec<PlacedMeasure>,
     pub labels: Vec<StaffLabel>,
     pub tempos: Vec<TempoLabel>,
+    pub rehearsals: Vec<RehearsalLabel>,
+    pub endings: Vec<EndingBracket>,
+    pub navigation: Vec<NavigationLabel>,
     pub connectors: Vec<Line>,
     pub braces: Vec<Brace>,
     pub brackets: Vec<Bracket>,
@@ -232,6 +266,88 @@ pub struct Layout {
 }
 
 impl Layout {
+    pub fn hit_bar_mark(&self, point: Point) -> Option<BarMarkRef> {
+        if let Some(measure) = self.hit_tempo(point) {
+            return Some(BarMarkRef {
+                measure,
+                mark: BarMark::Tempo,
+            });
+        }
+        let point = Point {
+            x: point.x / self.scale,
+            y: point.y / self.scale,
+        };
+        for label in &self.rehearsals {
+            let left = label
+                .frame
+                .iter()
+                .flat_map(|line| [line.from.x, line.to.x])
+                .fold(f32::INFINITY, f32::min);
+            let right = label
+                .frame
+                .iter()
+                .flat_map(|line| [line.from.x, line.to.x])
+                .fold(f32::NEG_INFINITY, f32::max);
+            let top = label
+                .frame
+                .iter()
+                .flat_map(|line| [line.from.y, line.to.y])
+                .fold(f32::INFINITY, f32::min);
+            let bottom = label
+                .frame
+                .iter()
+                .flat_map(|line| [line.from.y, line.to.y])
+                .fold(f32::NEG_INFINITY, f32::max);
+            if (left..=right).contains(&point.x) && (top..=bottom).contains(&point.y) {
+                return Some(BarMarkRef {
+                    measure: label.measure,
+                    mark: BarMark::Rehearsal,
+                });
+            }
+        }
+        for label in &self.navigation {
+            let width = 0.6 * label.size * label.text.chars().count() as f32;
+            let left = if label.right_aligned {
+                label.position.x - width
+            } else {
+                label.position.x
+            };
+            if (left..=left + width).contains(&point.x)
+                && (label.position.y - label.size..=label.position.y + 4.).contains(&point.y)
+            {
+                return Some(BarMarkRef {
+                    measure: label.measure,
+                    mark: label.mark,
+                });
+            }
+        }
+        for ending in &self.endings {
+            let label_hit = !ending.label.is_empty()
+                && (ending.label_position.x..=ending.label_position.x + 200.).contains(&point.x)
+                && ((ending.label_position.y - 14.)..=(ending.label_position.y + 4.))
+                    .contains(&point.y);
+            let line_hit = ending.lines.iter().any(|line| {
+                let dx = line.to.x - line.from.x;
+                let dy = line.to.y - line.from.y;
+                let length_squared = dx * dx + dy * dy;
+                let t = if length_squared == 0. {
+                    0.
+                } else {
+                    ((point.x - line.from.x) * dx + (point.y - line.from.y) * dy) / length_squared
+                };
+                let t = t.clamp(0., 1.);
+                (point.x - line.from.x - t * dx).hypot(point.y - line.from.y - t * dy) <= 5.
+            });
+            if label_hit || line_hit {
+                return Some(BarMarkRef {
+                    measure: ending.ending_start,
+                    mark: BarMark::Ending,
+                });
+            }
+        }
+        None
+    }
+
     pub fn hit_tempo(&self, point: Point) -> Option<usize> {
         let p = Point {
             x: point.x / self.scale,
@@ -504,7 +620,7 @@ impl Rhythm {
             .collect();
         (ticks, gaps, left.get(&0).copied().unwrap_or(0.))
     }
-    fn new(grid: (Vec<u16>, Vec<f32>, f32), prefix: f32, width: f32) -> Self {
+    fn new(grid: (Vec<u16>, Vec<f32>, f32), prefix: f32, width: f32, trailing: f32) -> Self {
         let (ticks, gaps, leading) = grid;
         let prefix = prefix + leading;
         let weights: Vec<f32> = ticks
@@ -512,7 +628,8 @@ impl Rhythm {
             .map(|pair| f32::from(pair[1] - pair[0]).sqrt())
             .collect();
         let minimum = gaps.iter().sum::<f32>();
-        let scale = (width - prefix - 22. - minimum).max(0.) / weights.iter().sum::<f32>();
+        let scale =
+            (width - prefix - 22. - trailing - minimum).max(0.) / weights.iter().sum::<f32>();
         let mut x = prefix;
         let mut positions = vec![x];
         for (weight, gap) in weights.into_iter().zip(gaps) {
@@ -528,6 +645,75 @@ impl Rhythm {
             .expect("shared musical onset")]
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BarEnd {
+    #[default]
+    Single,
+    Double,
+    Final,
+    RepeatEnd,
+}
+
+/// Repeats take precedence; the final bar closes automatically.
+fn bar_end(score: &Score, index: usize) -> BarEnd {
+    let form = score.bar_form(index);
+    if form.repeat_end.is_some() {
+        BarEnd::RepeatEnd
+    } else {
+        match form.barline {
+            score_core::Barline::Double => BarEnd::Double,
+            score_core::Barline::Final => BarEnd::Final,
+            score_core::Barline::Single if index + 1 == score.measures().len() => BarEnd::Final,
+            score_core::Barline::Single => BarEnd::Single,
+        }
+    }
+}
+
+fn repeat_trailing(score: &Score, index: usize) -> f32 {
+    if bar_end(score, index) == BarEnd::RepeatEnd {
+        8.
+    } else {
+        0.
+    }
+}
+
+fn barline_strokes(end: BarEnd, x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
+    match end {
+        BarEnd::Single => vec![(x, metrics.bar)],
+        BarEnd::Double => vec![
+            (x, metrics.bar),
+            (x - metrics.bar_gap - metrics.bar, metrics.bar),
+        ],
+        BarEnd::Final | BarEnd::RepeatEnd => vec![
+            (x - metrics.thick / 2., metrics.thick),
+            (
+                x - metrics.thick - metrics.bar_gap - metrics.bar / 2.,
+                metrics.bar,
+            ),
+        ],
+    }
+}
+
+fn repeat_start_strokes(x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
+    vec![
+        (x + metrics.thick / 2., metrics.thick),
+        (
+            x + metrics.thick + metrics.bar_gap + metrics.bar / 2.,
+            metrics.bar,
+        ),
+    ]
+}
+
+fn connector_repeat_start_strokes(
+    score: &Score,
+    measure: &PlacedMeasure,
+    first: bool,
+    metrics: &Metrics,
+) -> Vec<(f32, f32)> {
+    let x = measure.origin.x + repeat_start_x(score, measure.index, first);
+    repeat_start_strokes(x, metrics)
+}
+
 struct CacheEntry {
     regions: Vec<VoiceRegion>,
     boundaries: Vec<(u16, score_core::Division)>,
@@ -536,7 +722,11 @@ struct CacheEntry {
     time: TimeSignature,
     width: f32,
     first: bool,
+    end: BarEnd,
+    repeat_start: bool,
+    repeat_x: f32,
     clef: Clef,
+    clef_changed: bool,
     key_signature: KeySignature,
     previous_key: Option<KeySignature>,
     time_changed: bool,
@@ -551,8 +741,12 @@ struct Engraving<'a> {
     index: usize,
     width: f32,
     first: bool,
+    end: BarEnd,
+    repeat_start: bool,
+    repeat_x: f32,
     time: TimeSignature,
     clef: Clef,
+    clef_changed: bool,
     key_signature: KeySignature,
     previous_key: Option<KeySignature>,
     time_changed: bool,
@@ -564,6 +758,10 @@ struct Engraving<'a> {
 struct Metrics {
     staff: f32,
     bar: f32,
+    thick: f32,
+    bar_gap: f32,
+    dot_gap: f32,
+    ending: f32,
     ledger: f32,
     extension: f32,
     head: f32,
@@ -616,6 +814,10 @@ impl Metrics {
         Self {
             staff: value("staffLineThickness"),
             bar: value("thinBarlineThickness"),
+            thick: value("thickBarlineThickness"),
+            bar_gap: value("barlineSeparation"),
+            dot_gap: value("repeatBarlineDotSeparation"),
+            ending: value("repeatEndingLineThickness"),
             ledger: value("legerLineThickness"),
             extension: value("legerLineExtension"),
             head: width("noteheadBlack"),
@@ -677,10 +879,16 @@ impl Default for LayoutEngine {
 
 impl LayoutEngine {
     pub fn layout(&mut self, score: &Score, width: f32) -> Layout {
-        self.layout_with_spacing(score, width, false, false, None, false)
+        let mut layout = self.layout_with_spacing(score, width, false, false, None, false);
+        offsets::apply(score, &mut layout);
+        offsets::apply_bar_marks(score, &mut layout);
+        layout
     }
     pub fn layout_compact(&mut self, score: &Score, width: f32) -> Layout {
-        self.layout_with_spacing(score, width, true, false, None, false)
+        let mut layout = self.layout_with_spacing(score, width, true, false, None, false);
+        offsets::apply(score, &mut layout);
+        offsets::apply_bar_marks(score, &mut layout);
+        layout
     }
     fn layout_with_spacing(
         &mut self,
@@ -756,7 +964,7 @@ impl LayoutEngine {
             let system_top = y;
             let mut columns = Vec::new();
             let mut occupied = 0.;
-            let mut tempo_right = f32::NEG_INFINITY;
+            let mut heading_right = f32::NEG_INFINITY;
             let pinned_system = pinned
                 .and_then(|layout| layout.systems.iter().find(|s| s.first_measure == row_start));
             let row_end = if let Some(system) = pinned_system {
@@ -773,16 +981,32 @@ impl LayoutEngine {
                     .and_then(|layout| layout.measures.iter().find(|m| m.index == index))
                     .map(|m| m.width)
                     .unwrap_or_else(|| {
-                        (prefix + ticks.2 + ticks.1.iter().sum::<f32>() + 22.)
-                            .max(155.)
-                            .max(score.tempo_change_at(index).map_or(0., |mark| {
-                                let label = prefix + tempo_width(mark) + 20.;
-                                if !part_layout || label > available {
-                                    label
-                                } else {
-                                    0.
-                                }
-                            }))
+                        (prefix
+                            + ticks.2
+                            + ticks.1.iter().sum::<f32>()
+                            + 22.
+                            + repeat_trailing(score, index))
+                        .max(155.)
+                        .max(if score.has_rehearsal_mark(index) {
+                            let form = score.bar_form(index);
+                            prefix
+                                + rehearsal_offset(score, index)
+                                + (usize::from(form.segno) + usize::from(form.coda)) as f32 * 40.
+                                + 20.
+                        } else {
+                            0.
+                        })
+                        .max({
+                            let form = score.bar_form(index);
+                            let signs = usize::from(form.segno) + usize::from(form.coda);
+                            if signs > 0 {
+                                // Reserve room for the symbols themselves. A
+                                // preceding tempo may extend across barlines.
+                                prefix + signs as f32 * 40. + 20.
+                            } else {
+                                0.
+                            }
+                        })
                     });
                 if pinned.is_none()
                     && !unwrapped
@@ -791,19 +1015,18 @@ impl LayoutEngine {
                 {
                     break;
                 }
-                // A tempo heading may span several bars in a part. Break
+                // A heading may span several bars. Break
                 // before a heading that would overlap another or leave the row.
-                if part_layout
-                    && !unwrapped
+                if !unwrapped
                     && pinned.is_none()
-                    && let Some(mark) = score.tempo_change_at(index)
+                    && let Some(heading_width) = system_heading_width(score, index)
                 {
                     let start = occupied + prefix + ticks.2;
-                    let right = start + tempo_width(mark) + 20.;
-                    if !columns.is_empty() && (start < tempo_right || right > available) {
+                    let right = start + heading_width + 20.;
+                    if !columns.is_empty() && (start < heading_right || right > available) {
                         break;
                     }
-                    tempo_right = right;
+                    heading_right = right;
                 }
                 occupied += minimum;
                 columns.push((ticks, minimum));
@@ -811,30 +1034,34 @@ impl LayoutEngine {
             let extra = if unwrapped || pinned.is_some() {
                 0.
             } else {
-                (available - occupied).max(0.) / columns.len() as f32
-            };
-            let mut column_extra = vec![extra; columns.len()];
-            if part_layout {
-                let mut preceding_width = 0.;
-                for (offset, (ticks, minimum)) in columns.iter().enumerate() {
-                    if let Some(mark) = score.tempo_change_at(row_start + offset) {
-                        let label_start = preceding_width
-                            + signature_prefix(score, row_start + offset, offset == 0)
-                            + ticks.2;
-                        let allowance = (available - label_start - tempo_width(mark) - 20.).max(0.);
-                        let before: f32 = column_extra[..offset].iter().sum();
-                        if before > allowance {
-                            // Keep the heading inside the page while preserving
-                            // the justified right edge: stretch its own bar instead.
-                            for stretch in &mut column_extra[..offset] {
-                                *stretch *= allowance / before;
-                            }
-                            column_extra[offset] += before - allowance;
-                        }
+                loop {
+                    let extra = (available - occupied).max(0.) / columns.len() as f32;
+                    let mut x = 0.;
+                    let overflow =
+                        columns
+                            .iter()
+                            .enumerate()
+                            .find_map(|(offset, (ticks, minimum))| {
+                                let bar = row_start + offset;
+                                let start = x + signature_prefix(score, bar, offset == 0) + ticks.2;
+                                x += minimum + extra;
+                                system_heading_width(score, bar)
+                                    .filter(|heading| {
+                                        offset > 0 && start + heading + 20. > available
+                                    })
+                                    .map(|_| offset)
+                            });
+                    if let Some(offset) = overflow {
+                        // Move the heading to the next system instead of
+                        // stretching its bar to contain the entire text.
+                        columns.truncate(offset);
+                        occupied = columns.iter().map(|(_, minimum)| minimum).sum();
+                    } else {
+                        break extra;
                     }
-                    preceding_width += minimum;
                 }
-            }
+            };
+            let column_extra = vec![extra; columns.len()];
             let rhythms: Vec<_> = columns
                 .iter()
                 .enumerate()
@@ -864,21 +1091,24 @@ impl LayoutEngine {
                         ticks.clone(),
                         signature_prefix(score, row_start + offset, offset == 0),
                         minimum + column_extra[offset],
+                        repeat_trailing(score, row_start + offset),
                     ))
                 })
                 .collect();
-            if (row_start..row_start + columns.len())
-                .any(|bar| score.tempo_change_at(bar).is_some())
-            {
-                y += 40.;
-            }
+            let bars = row_start..row_start + columns.len();
+            let heading = has_heading(score, bars.clone());
+            let bracketed = score
+                .endings()
+                .any(|e| e.start < bars.end && e.end >= bars.start);
+            y += if heading { 40. } else { 0. } + if bracketed { 30. } else { 0. };
             let mut groups: Vec<(InstrumentFamily, f32, f32, usize)> = Vec::new();
+            let mut previous_part = None;
             let row_first = placed.len();
             let mut first_staff_y = None;
             let mut last_staff_y = 0.;
             for part in score.parts() {
                 let family = part.instrument().family();
-                if groups.last().is_some_and(|group| group.0 != family) {
+                if previous_part.is_some_and(|(previous_family, _)| previous_family != family) {
                     y += 16.;
                 }
                 let part_start = placed.len();
@@ -916,7 +1146,8 @@ impl LayoutEngine {
                         let regions =
                             divisi::regions(part, staff, index, score.time_at(index).capacity());
                         let (source_staff, source_voice) = part.display_source(staff, index);
-                        let clef = part.clef(staff);
+                        let clef = part.clef_at(staff, index);
+                        let clef_changed = part.clef_change_at(staff, index).is_some();
                         let rhythm = &rhythms[offset];
                         let key = (part.id(), staff, index);
                         if !self.cache.get(&key).is_some_and(|cached| {
@@ -927,7 +1158,11 @@ impl LayoutEngine {
                                 && cached.time == score.time_at(index)
                                 && cached.width == width
                                 && cached.first == first
+                                && cached.end == bar_end(score, index)
+                                && cached.repeat_start == score.bar_form(index).repeat_start
+                                && cached.repeat_x == repeat_start_x(score, index, offset == 0)
                                 && cached.clef == clef
+                                && cached.clef_changed == clef_changed
                                 && cached.key_signature == score.written_key_at(part.id(), index)
                                 && cached.previous_key == previous_key
                                 && cached.time_changed == time_changed
@@ -941,8 +1176,12 @@ impl LayoutEngine {
                                     index,
                                     width,
                                     first,
+                                    end: bar_end(score, index),
+                                    repeat_start: score.bar_form(index).repeat_start,
+                                    repeat_x: repeat_start_x(score, index, offset == 0),
                                     time: score.time_at(index),
                                     clef,
+                                    clef_changed,
                                     key_signature: score.written_key_at(part.id(), index),
                                     previous_key,
                                     time_changed,
@@ -997,7 +1236,11 @@ impl LayoutEngine {
                                     time: score.time_at(index),
                                     width,
                                     first,
+                                    end: bar_end(score, index),
+                                    repeat_start: score.bar_form(index).repeat_start,
+                                    repeat_x: repeat_start_x(score, index, offset == 0),
                                     clef,
+                                    clef_changed,
                                     key_signature: score.written_key_at(part.id(), index),
                                     previous_key,
                                     time_changed,
@@ -1132,19 +1375,13 @@ impl LayoutEngine {
                     for measure in &mut placed[first_placed..] {
                         measure.origin.y = origin_y;
                     }
-                    if !part_layout || row_divisi || part.instrument().is_grand_staff() {
+                    if !part.instrument().is_grand_staff() && (!part_layout || row_divisi) {
                         labels.push(StaffLabel {
                             staff: Some(staff),
                             text: if row_divisi {
                                 match staff {
                                     StaffId::Upper => "div. I",
                                     StaffId::Lower => "div. II",
-                                }
-                                .into()
-                            } else if part.instrument().is_grand_staff() {
-                                match staff {
-                                    StaffId::Upper => "M. derecha",
-                                    StaffId::Lower => "M. izquierda",
                                 }
                                 .into()
                             } else {
@@ -1164,12 +1401,21 @@ impl LayoutEngine {
                     y += bottom - top + if compact { 16. } else { 28. };
                 }
                 let top = part_top.expect("part upper staff");
-                if let Some(group) = groups.last_mut().filter(|group| group.0 == family) {
-                    group.2 = part_bottom;
-                    group.3 += 1;
-                } else {
-                    groups.push((family, top, part_bottom, 1));
+                let braced = part.instrument().is_grand_staff();
+                // Braced instruments stand on their own and interrupt family
+                // brackets/barline joins, including within the same family.
+                if !braced {
+                    if let Some(group) = groups
+                        .last_mut()
+                        .filter(|_| previous_part == Some((family, false)))
+                    {
+                        group.2 = part_bottom;
+                        group.3 += 1;
+                    } else {
+                        groups.push((family, top, part_bottom, 1));
+                    }
                 }
+                previous_part = Some((family, braced));
                 if part.instrument().is_grand_staff() || row_divisi {
                     let top = part_top.expect("two-staff part");
                     if part.instrument().is_grand_staff() {
@@ -1186,7 +1432,7 @@ impl LayoutEngine {
                             family,
                         });
                     }
-                    if !part_layout {
+                    if !part_layout || part.instrument().is_grand_staff() {
                         labels.push(StaffLabel {
                             staff: None,
                             text: score.part_name(part.id()),
@@ -1197,10 +1443,10 @@ impl LayoutEngine {
                             },
                         });
                     }
-                    for x in std::iter::once(left).chain(
+                    for (x, measure) in std::iter::once((left, None)).chain(
                         placed[part_start..part_start + columns.len()]
                             .iter()
-                            .map(|measure| measure.origin.x + measure.width),
+                            .map(|measure| (measure.origin.x + measure.width, Some(measure))),
                     ) {
                         let connected = part.instrument().is_grand_staff()
                             || placed[part_start..part_start + columns.len()]
@@ -1216,45 +1462,74 @@ impl LayoutEngine {
                         if !connected {
                             continue;
                         }
-                        connectors.push(Line {
-                            from: Point { x, y: top },
-                            to: Point { x, y: part_bottom },
-                            thickness: self.metrics.bar,
-                            element: None,
-                        });
+                        let strokes = measure.map_or_else(
+                            || vec![(x, self.metrics.bar)],
+                            |m| barline_strokes(bar_end(score, m.index), x, &self.metrics),
+                        );
+                        for (x, thickness) in strokes {
+                            connectors.push(Line {
+                                from: Point { x, y: top },
+                                to: Point { x, y: part_bottom },
+                                thickness,
+                                element: None,
+                            });
+                        }
+                    }
+                    for measure in &placed[part_start..part_start + columns.len()] {
+                        if score.bar_form(measure.index).repeat_start
+                            && (part.instrument().is_grand_staff() || part.divisi_at(measure.index))
+                        {
+                            for (x, thickness) in connector_repeat_start_strokes(
+                                score,
+                                measure,
+                                measure.index == row_start,
+                                &self.metrics,
+                            ) {
+                                connectors.push(Line {
+                                    from: Point { x, y: top },
+                                    to: Point { x, y: part_bottom },
+                                    thickness,
+                                    element: None,
+                                });
+                            }
+                        }
                     }
                 }
             }
             if score.parts().len() > 1 {
                 for (family, top, bottom, parts) in groups {
-                    // A single piano already has its own two-staff brace.
-                    if family != InstrumentFamily::Keyboards || parts > 1 {
-                        brackets.push(Bracket {
-                            x: left
-                                - if family == InstrumentFamily::Keyboards {
-                                    30.
-                                } else {
-                                    12.
-                                },
-                            top,
-                            bottom,
-                            family,
-                        });
-                    }
+                    brackets.push(Bracket {
+                        x: left - 12.,
+                        top,
+                        bottom,
+                        family,
+                    });
                     if parts > 1 {
-                        for measure in &placed[row_first..row_first + columns.len()] {
-                            connectors.push(Line {
-                                from: Point {
-                                    x: measure.origin.x + measure.width,
-                                    y: top,
-                                },
-                                to: Point {
-                                    x: measure.origin.x + measure.width,
-                                    y: bottom,
-                                },
-                                thickness: self.metrics.bar,
-                                element: None,
-                            });
+                        for measure in placed[row_first..]
+                            .iter()
+                            .filter(|measure| measure.origin.y == top)
+                        {
+                            let mut strokes = barline_strokes(
+                                bar_end(score, measure.index),
+                                measure.origin.x + measure.width,
+                                &self.metrics,
+                            );
+                            if score.bar_form(measure.index).repeat_start {
+                                strokes.extend(connector_repeat_start_strokes(
+                                    score,
+                                    measure,
+                                    measure.index == row_start,
+                                    &self.metrics,
+                                ));
+                            }
+                            for (x, thickness) in strokes {
+                                connectors.push(Line {
+                                    from: Point { x, y: top },
+                                    to: Point { x, y: bottom },
+                                    thickness,
+                                    element: None,
+                                });
+                            }
                         }
                     }
                 }
@@ -1292,12 +1567,53 @@ impl LayoutEngine {
                     mark: mark.clone(),
                     width: tempo_width(mark),
                     position: Point {
-                        x: bar.origin.x + bar.content.x_at_tick(0.),
+                        x: bar.origin.x
+                            + bar.content.x_at_tick(0.)
+                            + rehearsal_offset(score, measure),
                         y: system.top + 28.,
                     },
                 })
             })
             .collect();
+        let rehearsals = score
+            .rehearsal_marks()
+            .filter_map(|(measure, _)| {
+                let bar = placed.iter().find(|bar| bar.index == measure)?;
+                let system = systems.iter().find(|system| {
+                    (system.first_measure..=system.last_measure).contains(&measure)
+                })?;
+                let text = score.rehearsal_label(measure)?;
+                let position = Point {
+                    x: bar.origin.x + 2.,
+                    y: system.top + 28.,
+                };
+                let (x, y, w) = (position.x - 5., position.y - 19., rehearsal_width(&text));
+                let corners = [
+                    Point { x, y },
+                    Point { x: x + w, y },
+                    Point {
+                        x: x + w,
+                        y: y + 24.,
+                    },
+                    Point { x, y: y + 24. },
+                ];
+                let frame = (0..4)
+                    .map(|i| Line {
+                        from: corners[i],
+                        to: corners[(i + 1) % 4],
+                        thickness: 1.6,
+                        element: None,
+                    })
+                    .collect();
+                Some(RehearsalLabel {
+                    measure,
+                    text,
+                    position,
+                    frame,
+                })
+            })
+            .collect();
+        let (endings, navigation) = form_marks(score, &placed, &systems, &self.metrics);
         let index = expression::PlacedIndex::new(&placed);
         let curves = expression::curves(score, &index, &self.metrics);
         let hairpins = expression::hairpins(score, &index, self.metrics.hairpin);
@@ -1312,17 +1628,215 @@ impl LayoutEngine {
             systems,
             width: placed
                 .iter()
-                .map(|m| m.origin.x + m.width + 32.)
+                .map(|m| {
+                    let heading = if unwrapped {
+                        m.content.x_at_tick(0.) + system_heading_width(score, m.index).unwrap_or(0.)
+                    } else {
+                        0.
+                    };
+                    m.origin.x + m.width.max(heading) + 32.
+                })
                 .fold(width, f32::max),
             height: y + 24.,
             measures: placed,
             labels,
             tempos,
+            rehearsals,
+            endings,
+            navigation,
             connectors,
             braces,
             brackets,
         }
     }
+}
+
+/// Conservative bold 18px text bounds, including wide Latin and CJK glyphs.
+fn rehearsal_width(text: &str) -> f32 {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii() {
+                if matches!(c, 'W' | 'M') { 19. } else { 14. }
+            } else {
+                22.
+            }
+        })
+        .sum::<f32>()
+        + 10.
+}
+fn rehearsal_offset(score: &Score, bar: usize) -> f32 {
+    let Some((index, (_, mark))) = score
+        .rehearsal_marks()
+        .enumerate()
+        .find(|(_, (b, _))| *b == bar)
+    else {
+        return 0.;
+    };
+    let width = if let Some(text) = &mark.custom {
+        rehearsal_width(text)
+    } else {
+        [
+            score_core::letter_label(index),
+            (index + 1).to_string(),
+            (bar + 1).to_string(),
+        ]
+        .iter()
+        .map(|text| rehearsal_width(text))
+        .fold(0., f32::max)
+    };
+    width + 12.
+}
+
+fn has_heading(score: &Score, bars: std::ops::Range<usize>) -> bool {
+    bars.into_iter().any(|bar| {
+        let form = score.bar_form(bar);
+        score.has_rehearsal_mark(bar)
+            || score.tempo_change_at(bar).is_some()
+            || form.segno
+            || form.coda
+            || form.to_coda
+            || form.fine
+            || form.jump.is_some()
+    })
+}
+
+fn form_marks(
+    score: &Score,
+    placed: &[PlacedMeasure],
+    systems: &[System],
+    metrics: &Metrics,
+) -> (Vec<EndingBracket>, Vec<NavigationLabel>) {
+    let mut endings = Vec::new();
+    let mut navigation = Vec::new();
+    for system in systems {
+        let bars = system.first_measure..system.last_measure + 1;
+        let y_line = system.top
+            + if has_heading(score, bars.clone()) {
+                40.
+            } else {
+                0.
+            }
+            + 8.;
+        for ending in score
+            .endings()
+            .filter(|e| e.start < bars.end && e.end >= bars.start)
+        {
+            let first = ending.start.max(bars.start);
+            let last = ending.end.min(bars.end - 1);
+            let left = placed
+                .iter()
+                .find(|bar| bar.index == first)
+                .expect("ending first bar");
+            let right = placed
+                .iter()
+                .find(|bar| bar.index == last)
+                .expect("ending last bar");
+            let (x1, x2) = (left.origin.x + 2., right.origin.x + right.width - 2.);
+            let mut lines = vec![Line {
+                from: Point { x: x1, y: y_line },
+                to: Point { x: x2, y: y_line },
+                thickness: metrics.ending,
+                element: None,
+            }];
+            for x in [
+                (first == ending.start).then_some(x1),
+                (last == ending.end && !score.is_last_ending(ending)).then_some(x2),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                lines.push(Line {
+                    from: Point { x, y: y_line },
+                    to: Point { x, y: y_line + 16. },
+                    thickness: metrics.ending,
+                    element: None,
+                });
+            }
+            endings.push(EndingBracket {
+                ending_start: ending.start,
+                label: if first == ending.start {
+                    ending.label()
+                } else {
+                    String::new()
+                },
+                label_position: Point {
+                    x: x1 + 5.,
+                    y: y_line + 13.,
+                },
+                lines,
+            });
+        }
+        for measure in bars {
+            let bar = placed
+                .iter()
+                .find(|bar| bar.index == measure)
+                .expect("navigation bar");
+            let form = score.bar_form(measure);
+            let y = system.top + 28.;
+            let mut x = bar.origin.x
+                + rehearsal_offset(score, measure)
+                + bar.content.x_at_tick(0.)
+                + score
+                    .tempo_change_at(measure)
+                    .map_or(0., |mark| tempo_width(mark) + 16.);
+            for (shown, text, mark) in [
+                (form.segno, "\u{e047}", BarMark::Segno),
+                (form.coda, "\u{e048}", BarMark::Coda),
+            ] {
+                if shown {
+                    navigation.push(NavigationLabel {
+                        measure,
+                        mark,
+                        text: text.into(),
+                        position: Point { x, y },
+                        size: 24.,
+                        right_aligned: false,
+                    });
+                    x += 40.;
+                }
+            }
+            let mut right_y = y;
+            for (text, mark) in [
+                (form.to_coda.then_some("To Coda \u{e048}"), BarMark::ToCoda),
+                (form.fine.then_some("Fine"), BarMark::Fine),
+                (form.jump.map(|jump| jump.label()), BarMark::Jump),
+            ]
+            .into_iter()
+            {
+                let Some(text) = text else { continue };
+                navigation.push(NavigationLabel {
+                    measure,
+                    mark,
+                    text: text.into(),
+                    position: Point {
+                        x: bar.origin.x + bar.width,
+                        y: right_y,
+                    },
+                    size: 16.,
+                    right_aligned: true,
+                });
+                right_y -= 18.;
+            }
+        }
+    }
+    (endings, navigation)
+}
+
+/// The shared horizontal lane above the staves, independent of rhythmic widths.
+fn system_heading_width(score: &Score, bar: usize) -> Option<f32> {
+    let tempo = score.tempo_change_at(bar);
+    let form = score.bar_form(bar);
+    let signs = usize::from(form.segno) + usize::from(form.coda);
+    (tempo.is_some() || score.has_rehearsal_mark(bar) || signs > 0).then(|| {
+        rehearsal_offset(score, bar)
+            + tempo.map_or(0., tempo_width)
+            + if tempo.is_some() && signs > 0 {
+                16.
+            } else {
+                0.
+            }
+            + signs as f32 * 40.
+    })
 }
 
 fn tempo_width(mark: &score_core::TempoMark) -> f32 {
@@ -1368,6 +1882,7 @@ fn prefix_for(
     key: KeySignature,
     previous: Option<KeySignature>,
     time_changed: bool,
+    clef_changed: bool,
 ) -> f32 {
     let cancellations = previous.map_or(0, |old| cancel_steps(old, key).len());
     let cancel_width = if cancellations == 0 {
@@ -1378,19 +1893,42 @@ fn prefix_for(
     if first {
         88. + key_width(key) + cancel_width
     } else {
-        24. + if previous.is_some() {
-            key_width(key) + cancel_width + 8.
-        } else {
-            0.
-        } + if time_changed { 40. } else { 0. }
+        24. + if clef_changed { 40. } else { 0. }
+            + if previous.is_some() {
+                key_width(key) + cancel_width + 8.
+            } else {
+                0.
+            }
+            + if time_changed { 40. } else { 0. }
     }
 }
-fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
-    let entering_staff = index > 0
+fn column_enters_staff(score: &Score, index: usize) -> bool {
+    index > 0
         && score
             .parts()
             .iter()
-            .any(|part| part.bar_has_divisi(index) && !part.bar_has_divisi(index - 1));
+            .any(|part| part.bar_has_divisi(index) && !part.bar_has_divisi(index - 1))
+}
+
+/// Align the repeat across all staves, including a newly entering divisi row.
+fn repeat_start_x(score: &Score, index: usize, first: bool) -> f32 {
+    if score.bar_form(index).repeat_start
+        && (first
+            || column_enters_staff(score, index)
+            || score.parts().iter().any(|part| {
+                part.clef_change_at(StaffId::Upper, index).is_some()
+                    || (part.instrument().is_grand_staff()
+                        && part.clef_change_at(StaffId::Lower, index).is_some())
+            }))
+    {
+        signature_prefix(score, index, first) - 18. - 2.
+    } else {
+        0.
+    }
+}
+
+fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
+    let entering_staff = column_enters_staff(score, index);
     score
         .parts()
         .iter()
@@ -1400,9 +1938,17 @@ fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
                 score.written_key_at(part.id(), index),
                 previous_signature(score, part.id(), index),
                 score.time_change_at(index).is_some(),
+                part.clef_change_at(StaffId::Upper, index).is_some()
+                    || (part.instrument().is_grand_staff()
+                        && part.clef_change_at(StaffId::Lower, index).is_some()),
             )
         })
         .fold(0., f32::max)
+        + if score.bar_form(index).repeat_start {
+            18.
+        } else {
+            0.
+        }
 }
 fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
     match (clef, flats) {
@@ -1410,6 +1956,8 @@ fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
         (Clef::Treble, true) => [20., 5., 25., 10., 30., 15., 35.],
         (Clef::Alto, false) => [5., 20., 0., 15., 30., 10., 25.],
         (Clef::Alto, true) => [25., 10., 30., 15., 35., 20., 40.],
+        (Clef::Tenor, false) => [30., 10., 25., 5., 20., 0., 15.],
+        (Clef::Tenor, true) => [15., 0., 20., 5., 25., 10., 30.],
         (Clef::Bass, false) => [10., 25., 5., 20., 35., 15., 30.],
         (Clef::Bass, true) => [30., 15., 35., 20., 40., 25., 10.],
         (Clef::Percussion, _) => [20.; 7],
@@ -1628,8 +2176,12 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         index,
         width,
         first,
+        end,
+        repeat_start,
+        repeat_x,
         time,
         clef,
+        clef_changed,
         key_signature,
         previous_key,
         time_changed,
@@ -1677,25 +2229,48 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             metrics.staff,
         );
     }
-    line(width, 0., width, 40., metrics.bar);
+    for (x, thickness) in barline_strokes(end, width, metrics) {
+        line(x, 0., x, 40., thickness);
+    }
     if first {
         line(0., 0., 0., 40., metrics.bar);
     }
-    if first {
+    if repeat_start {
+        for (x, thickness) in repeat_start_strokes(repeat_x, metrics) {
+            line(x, 0., x, 40., thickness);
+        }
+    }
+    let (dot_left, _, dot_right, _) = metrics.bounds("\u{e044}", false);
+    for dot_x in [
+        (end == BarEnd::RepeatEnd).then_some(
+            width - metrics.thick - metrics.bar_gap - metrics.bar - metrics.dot_gap - dot_right,
+        ),
+        repeat_start.then_some(
+            repeat_x + metrics.thick + metrics.bar_gap + metrics.bar + metrics.dot_gap - dot_left,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        for y in [15., 25.] {
+            result.glyphs.push(Glyph {
+                rotated: false,
+                text: "\u{e044}".into(),
+                position: Point { x: dot_x, y },
+                element: None,
+            });
+        }
+    }
+    if first || clef_changed {
         result.glyphs.push(Glyph {
             rotated: false,
-            text: match clef {
-                Clef::Treble => "\u{e050}",
-                Clef::Alto => "\u{e05c}",
-                Clef::Bass => "\u{e062}",
-                Clef::Percussion => "\u{e069}",
-            }
-            .into(),
+            text: clef.glyph().into(),
             position: Point {
                 x: 10.,
                 y: match clef {
                     Clef::Treble => 30.,
                     Clef::Alto => 20.,
+                    Clef::Tenor => 10.,
                     Clef::Bass => 10.,
                     Clef::Percussion => 20.,
                 },
@@ -1703,7 +2278,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             element: None,
         });
     }
-    let key_x = if first { 42. } else { 10. };
+    let key_x = if first || clef_changed { 42. } else { 10. };
     let cancellations = previous_key.map_or_else(Vec::new, |old| cancel_steps(old, key_signature));
     let cancel_width = if cancellations.is_empty() {
         0.
@@ -1760,14 +2335,20 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 rotated: false,
                 text,
                 position: Point {
-                    x: if first { 48. } else { 10. } + key_space,
+                    x: if first || clef_changed { 48. } else { 10. } + key_space,
                     y,
                 },
                 element: None,
             });
         }
     }
-    let start = prefix_for(first, key_signature, previous_key, time_changed);
+    let start = prefix_for(
+        first,
+        key_signature,
+        previous_key,
+        time_changed,
+        clef_changed,
+    );
     let signs = measure_accidentals_with_resets(measure, key_signature, accidental_resets);
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
     for (voice, tick, id, event) in measure.timed_iter() {
@@ -1788,6 +2369,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             event: id,
         };
         if event.pitches.len() > 1
+            || event.notation.tremolo.is_some()
             || event.notation.harmonic == Some(score_core::Harmonic::Artificial)
         {
             engrave_chord(
@@ -1943,6 +2525,59 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         });
     }
     beams.engrave(&mut result, metrics);
+    for (_, _, event_id, event) in measure.timed_iter() {
+        let Some(tremolo) = event
+            .notation
+            .tremolo
+            .filter(|_| !hidden.contains(&event_id))
+        else {
+            continue;
+        };
+        let id = ElementId {
+            part,
+            staff,
+            measure: index,
+            event: event_id,
+        };
+        let (left, top, right, bottom) = metrics.bounds(tremolo.glyph(), false);
+        let position = if let Some(stem) = result.lines.iter().find(|line| {
+            line.element == Some(id) && line.thickness == metrics.stem && line.from.x == line.to.x
+        }) {
+            Point {
+                x: stem.from.x - (left + right) / 2.,
+                y: stem.from.y + (stem.to.y - stem.from.y) * 0.55 - (top + bottom) / 2.,
+            }
+        } else {
+            let Some(head) = result
+                .events
+                .iter()
+                .filter(|head| head.id == id)
+                .min_by(|a, b| a.center.y.total_cmp(&b.center.y))
+            else {
+                continue;
+            };
+            Point {
+                x: head.center.x - (left + right) / 2.,
+                y: head.center.y - 14. - bottom,
+            }
+        };
+        result.marks.push(MarkBox {
+            mark: MarkRef::Tremolo(id),
+            glyph: Some(result.glyphs.len()),
+            center: Point {
+                x: position.x + (left + right) / 2.,
+                y: position.y + (top + bottom) / 2.,
+            },
+            half: ((right - left) / 2. + 3., (bottom - top) / 2. + 3.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: tremolo.glyph().into(),
+            position,
+            element: Some(id),
+        });
+    }
+
     let timing: HashMap<_, _> = measure
         .timed_iter()
         .map(|(_, tick, id, event)| (id, (tick, tick + event.duration.ticks())))
@@ -2322,7 +2957,7 @@ mod tests {
                             .unwrap();
                         assert!(time.position.x > last);
                     }
-                    let clef = score.part(bar.part).unwrap().clef(bar.staff);
+                    let clef = score.part(bar.part).unwrap().clef_at(bar.staff, bar.index);
                     let positions = key_positions(clef, fifths < 0);
                     assert_eq!(
                         signs.iter().map(|g| g.position.y).collect::<Vec<_>>(),
@@ -3067,6 +3702,9 @@ mod tests {
 mod expression_tests;
 
 #[cfg(test)]
+mod offset_tests;
+
+#[cfg(test)]
 mod grouping_tests;
 
 #[cfg(test)]
@@ -3094,3 +3732,12 @@ mod spacing_tests;
 
 #[cfg(test)]
 mod orchestra_tests;
+
+#[cfg(test)]
+mod form_tests;
+
+#[cfg(test)]
+mod tremolo_tests;
+
+#[cfg(test)]
+mod rehearsal_tests;

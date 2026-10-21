@@ -210,7 +210,9 @@ mod native {
             unsafe {
                 let pool = NSAutoreleasePool::new(nil);
                 let text_font: id = msg_send![class!(NSFont), menuFontOfSize: 0.0f64];
-                let preview_path = std::env::var("PARTITURA_MENU_PREVIEW").ok();
+                let preview_path = std::env::var("LEVARE_MENU_PREVIEW")
+                    .ok()
+                    .or_else(|| std::env::var("PARTITURA_MENU_PREVIEW").ok());
                 let image = NSImage::alloc(nil)
                     .initWithSize_(NSSize::new(720., 330.))
                     .autorelease();

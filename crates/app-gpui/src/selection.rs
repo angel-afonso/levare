@@ -2,6 +2,12 @@
 use super::*;
 use score_layout::{Layout, Point as ScorePoint};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Hover {
+    pub hit: score_layout::Hit,
+    pub bounds: Option<Bounds<Pixels>>,
+}
+
 pub(super) struct PassageDrag {
     anchor: ElementId,
     start: Point<Pixels>,
@@ -52,6 +58,57 @@ fn canvas_point(position: Point<Pixels>, origin: Point<Pixels>) -> ScorePoint {
         x: p.x.into(),
         y: p.y.into(),
     }
+}
+
+pub(super) fn anchored_offset(
+    offset: Point<Pixels>,
+    pointer_in_canvas: Point<Pixels>,
+    ratio: f32,
+) -> Point<Pixels> {
+    offset
+        + point(
+            px(f32::from(pointer_in_canvas.x) * (1. - ratio)),
+            px(f32::from(pointer_in_canvas.y) * (1. - ratio)),
+        )
+}
+
+fn wheel_steps(acc: &mut f32, delta: f32) -> i32 {
+    *acc += delta;
+    let steps = (*acc / 40.).trunc() as i32;
+    *acc -= steps as f32 * 40.;
+    steps
+}
+
+fn select_whole_bar(
+    editor: &mut score_edit::Editor,
+    part: score_core::PartId,
+    staff: score_core::StaffId,
+    measure: usize,
+    voice: score_core::Voice,
+) -> bool {
+    let Some(bar) = editor
+        .score()
+        .part(part)
+        .and_then(|part| part.staff(staff))
+        .and_then(|staff| staff.measures().get(measure))
+    else {
+        return false;
+    };
+    let Some(first) = bar.voice_id_at(voice, 0) else {
+        return false;
+    };
+    let Some(last) = bar.voice_id_at(voice, bar.voice_len(voice) - 1) else {
+        return false;
+    };
+    let id = |event| ElementId {
+        part,
+        staff,
+        measure,
+        event,
+    };
+    editor.select(id(first));
+    editor.extend_selection(id(last));
+    true
 }
 
 /// Prefer the nearest row of the originating staff, then the nearest time on
@@ -136,6 +193,123 @@ fn nearest_event(
 }
 
 impl AppView {
+    pub(super) fn open_score_context_menu(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || self.confirming {
+            return;
+        }
+        self.focus.focus(window);
+        self.selection_drag = None;
+        self.note_drag = None;
+        self.mark_drag = None;
+        self.ghost = None;
+        self.hover = None;
+        self.ui.context_menu = None;
+        self.ui.file_menu = false;
+        self.ui.recent_menu = false;
+        self.ui.open_group = None;
+        self.reveal_selection = false;
+        let point = canvas_point(event.position, self.canvas_origin);
+        let is_mark = if let Some(mark) = self.layout.hit_bar_mark(point) {
+            self.clicked_mark = None;
+            self.document.editor.set_cursor(Cursor {
+                measure: mark.measure,
+                index: 0,
+                ..self.document.editor.cursor()
+            });
+            self.clicked_bar_mark = Some(mark);
+            true
+        } else {
+            match self.layout.hit(point) {
+                Some(score_layout::Hit::Mark(mark)) => {
+                    self.clicked_bar_mark = None;
+                    self.document.editor.select(mark.anchor());
+                    self.clicked_mark = Some(mark);
+                    true
+                }
+                Some(score_layout::Hit::Note(id, pitch)) => {
+                    self.clicked_mark = None;
+                    self.clicked_bar_mark = None;
+                    if !self.document.editor.selected_ids().contains(&id) {
+                        self.document.editor.select_pitch(id, pitch);
+                    }
+                    self.ui.note_entry = false;
+                    false
+                }
+                None => {
+                    cx.notify();
+                    return;
+                }
+            }
+        };
+        self.ui.context_menu = Some((event.position, is_mark));
+        cx.notify();
+    }
+
+    pub(super) fn score_wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ghost_cleared = self.ghost.take().is_some();
+        let hover_cleared = self.hover.take().is_some();
+        let cleared = ghost_cleared || hover_cleared;
+        if !event.modifiers.platform && !event.modifiers.control {
+            if cleared {
+                cx.notify();
+            }
+            return;
+        }
+        let steps = wheel_steps(
+            &mut self.zoom_wheel,
+            f32::from(event.delta.pixel_delta(px(20.)).y),
+        );
+        if steps != 0 {
+            self.zoom_at(self.ui.zoom + steps as f32 * 0.1, event.position);
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+    fn ghost_at_pointer(&self, position: Point<Pixels>) -> Option<crate::ghost::Ghost> {
+        let visible = self.viewport.scroll.bounds();
+        if !self.ui.note_entry
+            || self.busy
+            || self.confirming
+            || self.ui.context_menu.is_some()
+            || self.note_drag.is_some()
+            || self.mark_drag.is_some()
+            || self.selection_drag.is_some()
+            || self.playback.is_playing()
+            || self.playback.is_paused()
+            || position.x < visible.origin.x
+            || position.x > visible.origin.x + visible.size.width
+            || position.y < visible.origin.y
+            || position.y > visible.origin.y + visible.size.height
+        {
+            return None;
+        }
+        crate::ghost::ghost_at(
+            self.document.editor.score(),
+            &self.layout,
+            canvas_point(position, self.canvas_origin),
+            self.document.editor.cursor().voice,
+            self.document.editor.duration,
+        )
+    }
+
+    pub(super) fn update_ghost(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let next = self.ghost_at_pointer(position);
+        if next != self.ghost {
+            self.ghost = next;
+            cx.notify();
+        }
+    }
+
     pub(super) fn begin_passage_selection(
         &mut self,
         event: &MouseDownEvent,
@@ -143,21 +317,100 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         self.focus.focus(window);
+        self.ui.context_menu = None;
+        let interrupted_drag =
+            self.selection_drag.is_some() || self.note_drag.is_some() || self.mark_drag.is_some();
         self.selection_drag = None;
         self.note_drag = None;
+        self.mark_drag = None;
+        self.ghost = None;
+        self.hover = None;
         if self.busy || self.confirming {
             return;
         }
         self.reveal_selection = false;
         let point = canvas_point(event.position, self.canvas_origin);
         self.clicked_mark = None;
-        if let Some(measure) = self.layout.hit_tempo(point) {
+        self.clicked_bar_mark = None;
+        if event.click_count == 2
+            && !event.modifiers.shift
+            && self.layout.hit_bar_mark(point).is_none()
+            && !matches!(self.layout.hit(point), Some(score_layout::Hit::Mark(_)))
+            && let Some((part, staff, measure)) = self.layout.measure_at(point)
+        {
+            let placed = self.layout.measure_on(part, staff, measure).unwrap();
+            let (voice, _) = placed.insertion_near(
+                self.document.editor.cursor().voice,
+                point.x / self.layout.scale - placed.origin.x,
+            );
+            let staff = placed.source_staff;
+            if select_whole_bar(&mut self.document.editor, part, staff, measure, voice) {
+                self.ui.note_entry = false;
+                self.playback.follow_staff(part, staff);
+                self.selection_status();
+                cx.notify();
+            }
+            return;
+        }
+        if !interrupted_drag
+            && !event.modifiers.shift
+            && let Some(ghost) = self.ghost_at_pointer(event.position)
+            && self.layout.hit_bar_mark(point).is_none()
+            && !matches!(self.layout.hit(point), Some(score_layout::Hit::Mark(_)))
+            && !matches!(
+                self.layout.hit_pitch_with_position(point, ghost.voice),
+                Some((_, Some(_), _))
+            )
+        {
+            self.document.editor.set_cursor(Cursor {
+                part: ghost.part,
+                staff: ghost.staff,
+                voice: ghost.voice,
+                measure: ghost.measure,
+                index: 0,
+            });
+            let event = score_core::Event {
+                pitches: score_core::Pitches::single(Some(
+                    ghost.pitch.with_accidental(self.entry_accidental),
+                )),
+                duration: ghost.duration,
+                notation: Default::default(),
+            };
+            self.edit(
+                score_edit::Command::WriteAt {
+                    measure: ghost.measure,
+                    tick: ghost.tick,
+                    event,
+                },
+                cx,
+            );
+            self.playback.follow_staff(ghost.part, ghost.staff);
+            return;
+        }
+        if let Some(mark) = self
+            .layout
+            .hit_bar_mark(point)
+            .filter(|_| !event.modifiers.shift)
+        {
             self.document.editor.set_cursor(score_edit::Cursor {
-                measure,
+                measure: mark.measure,
                 index: 0,
                 ..self.document.editor.cursor()
             });
-            self.toggle_tempo_picker(cx);
+            self.clicked_bar_mark = Some(mark);
+            self.mark_drag = crate::mark_drag::MarkDrag::new_bar(
+                self.document.editor.score(),
+                mark,
+                event.position,
+                self.canvas_origin,
+                self.layout.scale,
+                Rc::clone(&self.layout),
+            );
+            self.status = format!(
+                "{} seleccionada · Arrastra para mover; ⇧⌘P restablece",
+                crate::mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+            );
+            cx.notify();
             return;
         }
         let hit = self.layout.hit(point);
@@ -165,6 +418,14 @@ impl AppView {
             let anchor = mark.anchor();
             self.document.editor.select(anchor);
             self.clicked_mark = Some(mark);
+            self.mark_drag = crate::mark_drag::MarkDrag::new(
+                self.document.editor.score(),
+                mark,
+                event.position,
+                self.canvas_origin,
+                self.layout.scale,
+                Rc::clone(&self.layout),
+            );
             self.playback.follow_staff(anchor.part, anchor.staff);
             let label = self
                 .document
@@ -193,6 +454,7 @@ impl AppView {
             .flatten();
         if let Some((id, pitch, tick)) = note {
             self.ui.note_entry = false;
+            self.ghost = None;
             if event.modifiers.shift {
                 self.document.editor.extend_selection(id);
             } else {
@@ -200,6 +462,7 @@ impl AppView {
                 self.document
                     .editor
                     .select_divisi_position(score_core::DivisiPoint::new(id.measure, tick));
+                self.audition_selection();
             }
             self.playback.follow_staff(id.part, id.staff);
             if let Some(tick) = seek_tick {
@@ -281,8 +544,7 @@ impl AppView {
                 "{count} elementos seleccionados · Copiar o cortar para llevar el pasaje a otro lugar"
             )
         } else {
-            "Clic sitúa la reproducción · Arrastra arriba/abajo para cambiar altura; horizontal para mover; Shift para seleccionar"
-                .into()
+            String::new()
         };
     }
 
@@ -313,10 +575,41 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         if event.dragging() {
-            self.move_score_pointer(event.position, cx);
+            if self.ghost.take().is_some() {
+                cx.notify();
+            }
+            if self.hover.take().is_some() {
+                cx.notify();
+            }
+            self.move_score_pointer(event.position, event.modifiers.shift, cx);
         } else {
             self.selection_drag = None;
             self.cancel_note_drag(cx);
+            self.update_ghost(event.position, cx);
+            let visible = self.viewport.scroll.bounds();
+            let inside = event.position.x >= visible.origin.x
+                && event.position.x <= visible.origin.x + visible.size.width
+                && event.position.y >= visible.origin.y
+                && event.position.y <= visible.origin.y + visible.size.height;
+            let next = if self.ghost.is_none()
+                && inside
+                && self.ui.context_menu.is_none()
+                && self.mark_drag.is_none()
+                && !self.busy
+                && !self.confirming
+            {
+                let point = canvas_point(event.position, self.canvas_origin);
+                self.layout.hit(point).map(|hit| Hover {
+                    hit,
+                    bounds: crate::paint::hover_bounds(&self.layout, hit, point),
+                })
+            } else {
+                None
+            };
+            if self.hover != next {
+                self.hover = next;
+                cx.notify();
+            }
         }
     }
 
@@ -326,7 +619,39 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.move_score_pointer(event.position, cx);
+        self.move_score_pointer(event.position, event.modifiers.shift, cx);
+        if let Some(drag) = self.mark_drag.take() {
+            let mark = drag.mark;
+            if let Some(offset) = drag.target() {
+                let label = mark.label(self.document.editor.score());
+                match mark {
+                    crate::mark_drag::DragTarget::Mark(mark) => {
+                        self.edit(Command::SetMarkOffset(mark, offset), cx);
+                        self.clicked_mark = Some(mark);
+                    }
+                    crate::mark_drag::DragTarget::Bar(mark) => {
+                        self.edit(Command::SetBarMarkOffset(mark, offset), cx);
+                        self.clicked_bar_mark = Some(mark);
+                        self.reveal_selection = false;
+                    }
+                }
+                self.status =
+                    format!("{label} colocada · ⇧⌘P la devuelve a su sitio · ⌘Z para deshacer");
+                cx.notify();
+            } else if !drag.active
+                && let crate::mark_drag::DragTarget::Bar(mark) = mark
+                && mark.mark == score_core::BarMark::Tempo
+            {
+                self.document.editor.set_cursor(score_edit::Cursor {
+                    measure: mark.measure,
+                    index: 0,
+                    ..self.document.editor.cursor()
+                });
+                self.toggle_tempo_picker(cx);
+            }
+            self.selection_drag = None;
+            return;
+        }
         if let Some(drag) = self.note_drag.take() {
             if drag.active {
                 if drag.is_time() {
@@ -397,10 +722,34 @@ impl AppView {
         self.selection_drag = None;
     }
 
-    fn move_score_pointer(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn move_score_pointer(
+        &mut self,
+        position: Point<Pixels>,
+        axis_lock: bool,
+        cx: &mut Context<Self>,
+    ) {
         if self.busy || self.confirming {
             self.cancel_note_drag(cx);
             self.selection_drag = None;
+            return;
+        }
+        if let Some(drag) = self.mark_drag.as_mut() {
+            if drag.pending(position) {
+                return;
+            }
+            let starting = !drag.active;
+            let changed = drag.update(position, self.canvas_origin, axis_lock);
+            let mark = drag.mark;
+            if starting {
+                self.playback.stop();
+            }
+            if changed {
+                let label = mark.label(self.document.editor.score());
+                self.status = format!(
+                    "{label} · Suelta para colocarla; Mayús fija la dirección; Esc cancela"
+                );
+                cx.notify();
+            }
             return;
         }
         let motion = self.note_drag.as_ref().map(|drag| drag.motion(position));
@@ -446,6 +795,13 @@ impl AppView {
     }
 
     pub(super) fn cancel_note_drag(&mut self, cx: &mut Context<Self>) {
+        if let Some(drag) = self.mark_drag.take() {
+            if drag.active {
+                self.status = "Movimiento de la marca cancelado".into();
+            }
+            self.selection_drag = None;
+            cx.notify();
+        }
         if let Some(drag) = self.note_drag.take() {
             if drag.active {
                 self.status = "Cambio de nota cancelado".into();
@@ -596,6 +952,144 @@ mod tests {
             .insert_on(ids[0].part, StaffId::Lower, 0, 0, chord)
             .unwrap();
         (score, ids)
+    }
+
+    #[::core::prelude::v1::test]
+    fn anchored_offset_keeps_the_pointer_still_and_reverses_cleanly() {
+        let offset = point(px(-30.), px(75.));
+        let pointer = point(px(120.), px(45.));
+        assert_eq!(anchored_offset(offset, pointer, 1.), offset);
+        let doubled = anchored_offset(offset, pointer, 2.);
+        let old_point = offset + pointer;
+        let new_point = doubled + point(px(240.), px(90.));
+        assert!((f32::from(old_point.x - new_point.x)).abs() < 0.01);
+        assert!((f32::from(old_point.y - new_point.y)).abs() < 0.01);
+        let restored = anchored_offset(doubled, point(px(240.), px(90.)), 0.5);
+        assert!((f32::from(restored.x - offset.x)).abs() < 0.01);
+        assert!((f32::from(restored.y - offset.y)).abs() < 0.01);
+    }
+
+    #[::core::prelude::v1::test]
+    fn wheel_steps_preserve_partial_scroll_motion() {
+        let mut acc = 0.;
+        assert_eq!(wheel_steps(&mut acc, 39.), 0);
+        assert_eq!(acc, 39.);
+        assert_eq!(wheel_steps(&mut acc, 1.), 1);
+        assert_eq!(acc, 0.);
+        assert_eq!(wheel_steps(&mut acc, -85.), -2);
+        assert_eq!(acc, -5.);
+    }
+
+    #[::core::prelude::v1::test]
+    fn hover_bounds_wrap_what_hit_returns_at_every_zoom() {
+        let (score, _) = fixture();
+        for scale in [0.5, 0.7, 1., 1.5] {
+            let mut layout = score_layout::LayoutEngine::default().layout(&score, 760.);
+            layout.scale = scale;
+            for measure in &layout.measures {
+                for event in &measure.content.events {
+                    if event.pitch.is_none() {
+                        continue;
+                    }
+                    let point = ScorePoint {
+                        x: (measure.origin.x + event.center.x) * scale,
+                        y: (measure.origin.y + event.center.y) * scale,
+                    };
+                    let hit = layout.hit(point).expect("head has a hit");
+                    let bounds = crate::paint::hover_bounds(&layout, hit, point)
+                        .expect("head has a hover box");
+                    assert!(bounds.contains(&gpui::point(px(point.x), px(point.y))));
+                }
+            }
+        }
+    }
+
+    #[::core::prelude::v1::test]
+    fn hover_chooses_the_projected_mark_box_under_the_pointer() {
+        let (mut score, ids) = fixture();
+        score
+            .set_dynamic(ids[0], Some(score_core::Dynamic::P))
+            .unwrap();
+        let mut layout = score_layout::LayoutEngine::default().layout(&score, 760.);
+        let original = layout
+            .measures
+            .iter()
+            .find(|measure| {
+                measure
+                    .content
+                    .marks
+                    .iter()
+                    .any(|mark| mark.mark == MarkRef::Dynamic(ids[0]))
+            })
+            .unwrap()
+            .clone();
+        let mut projection = original.clone();
+        projection.origin.y += 200.;
+        layout.measures.push(projection.clone());
+        let mark = projection
+            .content
+            .marks
+            .iter()
+            .find(|mark| mark.mark == MarkRef::Dynamic(ids[0]))
+            .unwrap();
+        let point = ScorePoint {
+            x: projection.origin.x + mark.center.x,
+            y: projection.origin.y + mark.center.y,
+        };
+        let hit = layout.hit(point).unwrap();
+        assert_eq!(hit, score_layout::Hit::Mark(MarkRef::Dynamic(ids[0])));
+        let bounds = crate::paint::hover_bounds(&layout, hit, point).unwrap();
+        assert!(bounds.contains(&gpui::point(px(point.x), px(point.y))));
+        assert!(f32::from(bounds.top()) > original.origin.y + 100.);
+    }
+
+    #[::core::prelude::v1::test]
+    fn double_click_selects_all_events_of_the_resolved_bar_and_voice() {
+        let (mut score, ids) = fixture();
+        let mut second = Vec::new();
+        for (index, step) in [Step::D, Step::F].into_iter().enumerate() {
+            second.push(
+                score
+                    .insert_in_voice(
+                        ids[0].part,
+                        ids[0].staff,
+                        0,
+                        score_core::Voice::Two,
+                        index,
+                        Event {
+                            pitches: Pitches::single(Pitch::new(step, 3)),
+                            duration: Duration::Quarter,
+                            notation: Notation::default(),
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        let mut editor = score_edit::Editor::new(score).unwrap();
+        assert!(select_whole_bar(
+            &mut editor,
+            ids[0].part,
+            ids[0].staff,
+            0,
+            score_core::Voice::One,
+        ));
+        assert_eq!(editor.selected_ids(), ids[..3]);
+        assert!(select_whole_bar(
+            &mut editor,
+            ids[0].part,
+            ids[0].staff,
+            0,
+            score_core::Voice::Two,
+        ));
+        assert_eq!(editor.selected_ids(), second);
+        assert!(!select_whole_bar(
+            &mut editor,
+            ids[0].part,
+            ids[0].staff,
+            2,
+            score_core::Voice::One,
+        ));
+        assert_eq!(editor.selected_ids(), second);
     }
 
     fn position(layout: &Layout, id: ElementId) -> Point<Pixels> {

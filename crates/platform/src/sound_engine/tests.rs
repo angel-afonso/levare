@@ -38,13 +38,13 @@ fn attack(channel: u8, key: u8, level: u8, articulation: Option<Articulation>) -
         | (articulation.map_or(0, |a| a as u64 + 1) << 24)
 }
 impl SoundBank for Bank {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> &str {
         "test-bank"
     }
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "Test bank"
     }
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Contract test"
     }
     fn prepare(

@@ -1,6 +1,6 @@
 # Escritura musical
 
-Vocabulario de Partitura para la notación de instrumentos de una orquesta.
+Vocabulario de Levare para la notación de instrumentos de una orquesta.
 
 ## Lenguaje
 

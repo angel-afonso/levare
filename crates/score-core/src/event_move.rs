@@ -185,15 +185,14 @@ impl Score {
             }
             *target.voice_order_mut(voice) = order;
         }
-        next.connections = next
-            .connections
-            .iter()
-            .map(|c| Connection {
+        next.remap_comments(|old| Some(remap.get(&old).copied().unwrap_or(old)));
+        next.rewrite_connections(|c| {
+            Some(Connection {
                 start: remap.get(&c.start).copied().unwrap_or(c.start),
                 end: remap.get(&c.end).copied().unwrap_or(c.end),
-                ..*c
+                ..c
             })
-            .collect();
+        });
         next.piano_arpeggios = next
             .piano_arpeggios
             .iter()
@@ -230,7 +229,7 @@ impl Score {
     }
 }
 
-fn moved_pitches(
+pub(crate) fn moved_pitches(
     pitches: Pitches,
     source: KeySignature,
     destination: KeySignature,
@@ -261,8 +260,26 @@ fn moved_pitches(
 }
 
 fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), ScoreError> {
+    let mut at = start;
+    for duration in notatable(ticks)? {
+        items.push(Item {
+            tick: at,
+            id: None,
+            event: Event {
+                pitches: Pitches::default(),
+                duration,
+                notation: Notation::default(),
+            },
+        });
+        at += duration.ticks();
+    }
+    Ok(())
+}
+
+/// Minimal rhythmic spelling in the same order used for generated rests.
+pub(crate) fn notatable(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
     if ticks == 0 {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let mut values: Vec<_> = Duration::ALL
         .into_iter()
@@ -285,24 +302,15 @@ fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), Score
         }
     }
     let mut remaining = ticks;
-    let mut at = start;
+    let mut durations = Vec::new();
     while remaining > 0 {
         let (_, duration) = best[usize::from(remaining)].ok_or(ScoreError(
             "Ese desplazamiento crea un silencio que todavía no se puede representar",
         ))?;
-        items.push(Item {
-            tick: at,
-            id: None,
-            event: Event {
-                pitches: Pitches::default(),
-                duration,
-                notation: Notation::default(),
-            },
-        });
-        at += duration.ticks();
+        durations.push(duration);
         remaining -= duration.ticks();
     }
-    Ok(())
+    Ok(durations)
 }
 
 #[cfg(test)]

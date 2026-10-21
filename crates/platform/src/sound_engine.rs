@@ -42,9 +42,9 @@ pub trait SoundEngine: Send {
 /// Optional provider preparation is fallible and happens before audio starts.
 /// No provider type, file format or native library is exposed to the editor.
 pub trait SoundBank: Send + Sync {
-    fn id(&self) -> &'static str;
-    fn name(&self) -> &'static str;
-    fn description(&self) -> &'static str;
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
     fn prepare(
         &self,
         score: &Score,

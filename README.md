@@ -1,4 +1,4 @@
-# Partitura
+# Levare
 
 Editor de notación musical nativo en Rust y GPUI. Partituras de varios instrumentos
 con pentagramas alineados, entrada por teclado, historial, archivos locales y
@@ -20,6 +20,22 @@ desactiva las opciones por defecto y conserva el paquete VSCO:
 ```sh
 cargo build --release --no-default-features --features vsco
 ```
+
+El icono de Levare se incluye también al ejecutar `cargo run`. Para generar o
+actualizar `target/Levare.app` con ese icono en Finder y el Dock:
+
+```sh
+python3 scripts/bundle_macos.py
+```
+
+Añade `--release` para empaquetar la versión optimizada. La app y su cabecera usan
+`assets/branding/levare/icon-macos-v2.png`, con margen transparente y esquinas
+adaptadas al Dock. El script prepara los tamaños de macOS y Retina antes de
+compilar; `icon-v1.png` conserva el diseño original.
+
+Levare abre los documentos `.partitura` existentes y conserva el portapapeles
+musical compatible. Las instalaciones anteriores siguen usando sus atajos,
+archivos recientes y recuperación; las nuevas guardan esos datos en `Levare`.
 
 Windows y Linux todavía no están validados. La primera plataforma es macOS;
 el modelo, la edición y el layout no dependen de GPUI.
@@ -71,7 +87,7 @@ una copia de la sesión para reabrirla después de un cierre inesperado.
 Los atajos imitan el perfil **Notebook (portátil)** de Sibelius y funcionan igual
 con o sin bloque numérico: la fila de números hace de teclado numérico. La lista
 completa, generada desde el código, está en [docs/atajos.md](docs/atajos.md).
-Puedes cambiarlos en **Partitura › Preferencias de atajos…** (`⌘,`) o con el botón
+Puedes cambiarlos en **Levare › Preferencias de atajos…** (`⌘,`) o con el botón
 **Atajos** de la cabecera.
 
 La barra y el inspector muestran el nombre y el atajo actual de cada control al
@@ -101,13 +117,14 @@ visibles como referencia, sin repetirlas permanentemente junto a los botones.
 | `⌘B` | Añadir un compás al final |
 | `I` / `K` / `M` | Instrumentos / tonalidad / mezclador |
 | `T` | Cambiar la métrica desde el inicio o el compás seleccionado |
-| `⌥A` / `⌥⌫` | Modo acorde / quitar la nota más aguda (propios de Partitura) |
+| `Q` | Cambiar la clave del instrumento o pentagrama activo |
+| `⌥A` / `⌥⌫` | Modo acorde / quitar la nota más aguda (propios de Levare) |
 | `⌘Z` / `⌘Y` (o `⇧⌘Z`) | Deshacer / rehacer |
 | `⌘+` / `⌘−` / `⌘1` | Acercar / alejar / 100 % |
 | Clic en una nota | Seleccionarla; la entrada continúa después de ella |
 | Clic en un compás vacío | Mover el punto de entrada allí |
 
-Las teclas de Sibelius sin función todavía (`Q` clave, `L`
+Las teclas de Sibelius sin función todavía (`L`
 líneas, `⌥3`/`⌥4` voces adicionales, `1` fusa…)
 están reservadas y muestran «Pendiente». Las articulaciones no tienen atajo por
 defecto, como en Sibelius portátil; asígnalas en Preferencias si las usas a menudo.
@@ -116,6 +133,84 @@ Un compás lleno avanza al siguiente al introducir otra figura. Si no existe,
 se crea. Una figura que exceda la duración restante se rechaza sin alterar el
 documento. Cambiar la duración afecta a la próxima entrada. Puedes abrir
 [`examples/primera-melodia.partitura`](examples/primera-melodia.partitura) como ejemplo.
+
+## Notas fuera del rango instrumental
+
+Las notas fuera del registro habitual del instrumento aparecen **en rojo** en
+la partitura. En un acorde se marca cada nota por separado. Al seleccionarla,
+**Propiedades** muestra el aviso y los límites del registro en altura real
+(C4 = do central). Se consideran la armadura, las alteraciones, la transposición
+de la parte y los armónicos de cuerda. El color se actualiza también al arrastrar
+una nota, editarla, deshacer o rehacer.
+
+El aviso es orientativo: permite seguir escribiendo y reproduciendo la nota.
+La percusión sin altura no lleva este aviso. Los colores de aviso son propios
+del editor y no aparecen en PDF ni MusicXML. Los registros son valores
+profesionales de referencia para modelos habituales; todavía no se personalizan
+por nivel de dificultad. Puedes ajustar los límites por parte desde Revisión.
+Las convenciones y fuentes están en
+[Rangos instrumentales](docs/instrument-ranges.md).
+
+## Revisión de la partitura
+
+**Revisión › Comprobar › Partitura** comprueba toda la obra; **Selección** revisa
+los eventos del pasaje seleccionado y las marcas de forma de sus compases.
+Busca notas fuera de rango, inicios de repetición sin cierre y saltos que carecen
+de Segno, Fine o To Coda; también comprueba que To Coda tenga un destino posterior
+y un salto que lo active. Los compases vacíos y los silencios implícitos son válidos.
+
+**Avisos › Mostrar avisos** abre el panel de Revisión. Cada fila explica el aviso
+y su instrumento y compás; al pulsarla se selecciona la nota exacta del acorde o
+se muestra el compás de la marca. **Anterior / Siguiente** recorren los resultados
+del filtro, volviendo al principio o al final. Puedes filtrar por instrumento;
+los avisos de repeticiones y saltos son globales. Las listas largas tienen páginas.
+La revisión completa se actualiza al editar o deshacer. Una revisión de selección
+pide comprobar de nuevo después de editar, para no atribuir avisos a un pasaje
+que haya cambiado.
+
+**Rangos › Notas en rojo** muestra u oculta el color de aviso sin desactivar la
+comprobación. **Editar rango…** ajusta los límites de la parte activa en altura
+real; admite nombres como `C4`, `Do4`, `F♯3` o `Si♭5`. Los límites son inclusivos,
+se aplican también al sonido de sus armónicos y se guardan con el documento.
+**Restablecer** recupera el registro habitual. Aplicar y restablecer admiten
+Deshacer/Rehacer. La percusión sin altura no requiere límites. El color y los
+resultados de revisión son ajustes de sesión y no se exportan.
+
+## Comentarios de revisión
+
+Selecciona una nota, acorde, silencio o pasaje y pulsa **Revisión › Comentarios ›
+Nuevo comentario**. Escribe la observación y pulsa **Guardar** o Enter; Esc
+cancela el borrador. El vínculo queda fijado al abrirlo, aunque después cambies
+la selección. El campo admite una observación de hasta 2000 caracteres. Hay un
+límite de espacio acumulado para comentarios y sus vínculos; si se alcanza, el
+borrador conserva el texto para reducir el pasaje o liberar espacio en la lista.
+
+**Comentarios › Mostrar** abre la lista con filtros **Todos**, **Pendientes** y
+**Resueltos**. Al pulsar una observación se selecciona su música y se muestra el
+inicio del pasaje, también en otra voz o mano del piano. **Resolver** la marca
+como terminada; **Reabrir** vuelve a dejarla pendiente. También puedes editar el
+texto o eliminar el comentario. Las listas largas tienen páginas.
+
+Los comentarios se guardan en el archivo nativo y en la recuperación automática;
+crear, editar, resolver, reabrir y eliminar admiten Deshacer/Rehacer. Acompañan a
+sus eventos al mover notas, cambiar el divisi o insertar y eliminar compases.
+Si se borra toda su música, la observación se conserva **sin vínculo musical**:
+puedes editarla y usar **Usar selección actual** para asociarla a otra música.
+Si cambia la partitura mientras escribes un borrador, actualiza su vínculo antes
+de guardarlo; el texto se conserva. Las observaciones son del documento y no se
+duplican al copiar música ni se incluyen en PDF o MusicXML. Cambiar su texto o
+estado conserva los avisos de comprobación y no modifica la reproducción.
+
+## Cambios de clave
+
+En **Notación › Clave** (`Q`) puedes elegir sol en segunda, fa en cuarta,
+do en tercera o do en cuarta para el instrumento activo. Elige el inicio de la
+pieza o el compás actual: la clave se mantiene hasta el siguiente cambio.
+En piano y otros instrumentos de dos pentagramas, cada pentagrama conserva
+su propia clave; las ramas de una sección en divisi comparten la clave del instrumento.
+Las notas conservan sus alturas y su sonido. Puedes restablecer la clave anterior,
+deshacer y rehacer; los cambios se guardan y se conservan en PDF y MusicXML.
+Los cambios se colocan al comienzo de un compás.
 
 ## Copiar, cortar y pegar música
 
@@ -162,7 +257,7 @@ Pegar no reemplaza música existente: si el pasaje no cabe en los compases de de
 se muestra el motivo y el documento queda intacto. Elige un compás vacío o un punto
 con espacio suficiente. Cada pegado o corte se deshace en un solo paso.
 
-El portapapeles musical es del sistema y funciona entre ventanas de Partitura.
+El portapapeles musical es del sistema y funciona entre ventanas de Levare.
 El texto corriente o las imágenes de otras aplicaciones no se interpretan como notas.
 La selección de pasajes abarca un pentagrama cada vez; puedes copiar cada mano del
 piano por separado. Las ligaduras con extremos fuera del pasaje no se copian.
@@ -670,6 +765,53 @@ selección, o el actual si no hay un pasaje. Afectan a todos los instrumentos y
 manos; desplazan las indicaciones con la música y conservan la métrica, tonalidad
 y tempo efectivos del primer compás retenido. Siempre queda al menos un compás.
 
+## Repeticiones, casillas y saltos
+
+En **Notación › Repeticiones** escribe el inicio y fin de repetición, las casillas
+de primera y segunda vez, la doble barra y la barra final. En **Saltos** están
+Segno, Coda, To Coda, Fine y los saltos; el menú **Repeticiones** reúne también
+las seis variantes de D.C./D.S. y las opciones para quitar la forma.
+
+Selecciona un pasaje para colocar las marcas iniciales en su primer compás y las
+finales en el último; una casilla abarca todo el rango. Sin pasaje se usa el
+compás del cursor. La selección se conserva al añadir varias marcas y cada cambio
+se puede deshacer. Volver a pulsar una barra o marca activa la quita. Las casillas
+se quitan desde el menú. El último compás lleva una barra final automática. Las marcas acompañan a sus compases al insertar o borrar
+música y se conservan en el archivo nativo, PDF y MusicXML.
+
+**Reproducción › Repeticiones** está activado al iniciar la sesión. El cursor
+vuelve al compás que suena y el reloj sigue contando el tiempo transcurrido.
+Después de un D.C./D.S. se omiten las repeticiones y se toca la última casilla de
+cada grupo. Cambiar esta opción detiene el transporte; desactivarla permite
+escuchar la música en el orden escrito.
+
+## Trémolos de una nota o acorde
+
+Selecciona una nota, acorde o pasaje sin silencios y elige **Notación › Trémolo**:
+una, dos o tres barras. La marca cruza la plica; en las redondas se coloca encima
+de la cabeza. Otra variante sustituye a la anterior y volver a pulsar la activa
+la quita. También puedes seleccionar la marca y borrarla conservando la nota.
+Cada cambio del pasaje se deshace en un paso.
+
+La reproducción reparte ataques de corchea, semicorchea o fusa dentro de la
+duración escrita, también con ligaduras de unión, calderones y repeticiones.
+Solo el primer ataque conserva el acento. Las marcas se conservan al copiar y
+pegar y en los formatos nativo, PDF y MusicXML.
+
+## Marcas de ensayo
+
+**Texto › Ensayo** o **⌘R** añade o quita una marca al principio del compás
+seleccionado, o del primer compás del pasaje. Los controles **Letras**, **Números**
+y **Compás** eligen el estilo para toda la obra: A, B… Z, AA, BB…; 1, 2, 3…; o el
+número del propio compás. Las etiquetas se renumeran al añadir, quitar, insertar
+o borrar compases. Cambiar de estilo conserva la posición de las barras.
+
+Las marcas aparecen en un recuadro sobre el primer pentagrama y acompañan a las
+partes extraídas. Se guardan con la obra y se conservan en PDF y MusicXML. Al
+importar MusicXML, un texto propio como «Trío» se mantiene sin impedir que las
+demás marcas sigan numerándose automáticamente. Añadir o quitar una marca y
+cambiar de estilo admite deshacer y conserva el pasaje seleccionado.
+
 ## Exportar partitura general y partes
 
 **Exportar…** en la cabecera o **Archivo › Exportar partitura y partes…** abre un
@@ -729,7 +871,7 @@ unen con ligaduras. La presentación exacta depende del editor receptor.
 Las alturas se exportan en la escritura de cada instrumento, con su armadura y transposición. Los armónicos
 artificiales incluyen la nota pisada y la nota de contacto en rombo; su sonido,
 como el resto de la reproducción, depende del programa receptor. El timbre
-sintetizado propio de Partitura no se incorpora al archivo.
+sintetizado propio de Levare no se incorpora al archivo.
 
 La exportación escribe una copia y no sustituye el documento nativo ni cambia
 su estado de guardado. La exportación comprimida **.mxl** todavía no está disponible.
@@ -756,10 +898,10 @@ articulaciones básicas, ligaduras completas, reguladores, fermatas, arco/pizzic
 armónicos y arpegios. Las partes transpositoras conservan su intervalo de transposición y se reconstruyen en altura escrita. Las
 anacrusas se representan con un compás inicial de duración reducida. El divisi
 puede reconstruirse desde las indicaciones div./unis. o la visibilidad del segundo
-pentagrama. La distribución de página se recalcula con el grabado de Partitura.
+pentagrama. La distribución de página se recalcula con el grabado de Levare.
 
 Si se omite o adapta algún elemento, aparece un aviso al abrir: por ejemplo,
-letras, textos libres, adornos, cifrados, repeticiones, instrumentos sin equivalente
+letras, textos libres, adornos, cifrados, instrumentos sin equivalente
 y ligaduras que afectan solo a algunas notas de un acorde. Los casos que no
 pueden representar la música correctamente se rechazan con una explicación,
 incluidos más de dos voces por pentagrama, ritmos fuera de la resolución admitida,
@@ -795,7 +937,7 @@ Dos voces por pentagrama y divisi en uno o dos pentagramas, acordes de hasta och
 y claves de sol, do y fa. El grabado incluye barrado, líneas adicionales,
 articulaciones, dinámicas, ligaduras y reguladores, con caché por compás.
 La reproducción mezcla las partes en un reloj común, con inicio desde selección,
-pausa y continuación. Aún no hay reproducción de repeticiones ni MIDI externo.
+pausa y continuación. Aún no hay MIDI externo.
 
 Se incluye [Bravura 1.392](https://github.com/steinbergmedia/bravura/tree/bravura-1.392),
 copyright Steinberg Media Technologies GmbH, bajo la

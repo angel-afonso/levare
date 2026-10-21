@@ -23,34 +23,41 @@ pub(super) fn prepare(
     timeline: &Timeline,
     rate: u32,
 ) -> Vec<ExpressionPoint> {
-    let levels: Vec<_> = envelope
-        .segments
-        .into_iter()
-        .flat_map(|s| {
-            let ticks: Vec<_> = std::iter::once(s.start)
-                .chain(
-                    timeline
-                        .boundaries()
-                        .filter(|tick| *tick > s.start && *tick < s.end),
-                )
-                .chain(std::iter::once(s.end))
+    let mut levels = Vec::new();
+    for instance in timeline.instances() {
+        let end = instance.written + instance.length;
+        let first = envelope
+            .segments
+            .partition_point(|segment| segment.end <= instance.written);
+        for segment in envelope.segments[first..]
+            .iter()
+            .take_while(|segment| segment.start < end)
+        {
+            let written_start = segment.start.max(instance.written);
+            let written_end = segment.end.min(end);
+            let performed_start = instance.performed + written_start - instance.written;
+            let performed_end = instance.performed + written_end - instance.written;
+            let ticks: Vec<_> = std::iter::once(performed_start)
+                .chain(timeline.boundaries_between(performed_start, performed_end))
+                .chain(std::iter::once(performed_end))
                 .collect();
-            let level = |tick: u64| {
-                f64::from(s.from)
-                    + (f64::from(s.to) - f64::from(s.from)) * (tick - s.start) as f64
-                        / (s.end - s.start) as f64
+            let level = |performed: u64| {
+                let written = instance.written + performed - instance.performed;
+                f64::from(segment.from)
+                    + (f64::from(segment.to) - f64::from(segment.from))
+                        * (written - segment.start) as f64
+                        / (segment.end - segment.start) as f64
             };
-            ticks
-                .windows(2)
-                .map(|pair| LevelSegment {
-                    start: timeline.frame_at(pair[0], rate),
-                    end: timeline.frame_at(pair[1], rate),
+            for pair in ticks.windows(2) {
+                levels.push(LevelSegment {
+                    start: timeline.performed_frame_at(pair[0] as f64, rate),
+                    end: timeline.performed_frame_at(pair[1] as f64, rate),
                     from: level(pair[0]),
                     to: level(pair[1]),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+                });
+            }
+        }
+    }
     for sound in sounds.iter_mut() {
         let first = levels.partition_point(|s| s.end <= sound.start);
         let peak = levels[first..]

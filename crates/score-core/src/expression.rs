@@ -163,9 +163,13 @@ pub struct Notation {
     pub articulation: Option<Articulation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<Dynamic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tremolo: Option<Tremolo>,
     /// Hold the note or rest; written over it, independent of articulation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fermata: bool,
+    #[serde(default, skip_serializing_if = "MarkOffsets::is_empty")]
+    pub offsets: MarkOffsets,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConnectionKind {
@@ -279,11 +283,14 @@ impl Score {
                 "Pizzicato y arco son técnicas de violín, viola, violonchelo y contrabajo",
             ));
         }
-        Arc::make_mut(
+        let notation = &mut Arc::make_mut(
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
-            .notation
-            .technique = value;
+            .notation;
+        notation.technique = value;
+        if value.is_none() {
+            notation.offsets.technique = None;
+        }
         Ok(())
     }
 
@@ -409,26 +416,51 @@ impl Score {
             })
     }
     pub fn remove_connection(&mut self, connection: Connection) {
-        self.connections.retain(|c| *c != connection);
+        self.rewrite_connections(|c| (c != connection).then_some(c));
     }
     pub fn remove_connections(&mut self, id: ElementId, kind: ConnectionKind) {
-        let remaining = self
+        let remaining: std::collections::HashSet<_> = self
             .connections
             .iter()
             .copied()
             .filter(|c| c.kind != kind || !self.connection_contains(*c, id))
             .collect();
-        self.connections = remaining;
+        self.rewrite_connections(|c| remaining.contains(&c).then_some(c));
     }
     pub(super) fn prune_connections(&mut self) {
-        let valid: Vector<_> = self
+        let valid: std::collections::HashSet<_> = self
             .connections
             .iter()
             .copied()
             .filter(|c| self.valid_connection(*c))
             .collect();
-        self.connections = valid;
+        self.rewrite_connections(|c| valid.contains(&c).then_some(c));
         self.prune_piano_arpeggios();
+        self.prune_comments();
+    }
+
+    /// Rewrite every connection and keep its offset with it; `None` drops both.
+    pub(crate) fn rewrite_connections(&mut self, map: impl Fn(Connection) -> Option<Connection>) {
+        let old_offsets: std::collections::HashMap<_, _> = self
+            .connection_offsets
+            .iter()
+            .map(|entry| (entry.connection, entry.offset))
+            .collect();
+        let mut connections = imbl::Vector::new();
+        let mut offsets = imbl::Vector::new();
+        for &old in &self.connections {
+            if let Some(next) = map(old) {
+                connections.push_back(next);
+                if let Some(&offset) = old_offsets.get(&old) {
+                    offsets.push_back(ConnectionOffset {
+                        connection: next,
+                        offset,
+                    });
+                }
+            }
+        }
+        self.connections = connections;
+        self.connection_offsets = offsets;
     }
     pub(super) fn validate_connections(&self) -> Result<(), ScoreError> {
         if self.connections.len() > 4096 {
@@ -523,31 +555,40 @@ impl Score {
         if event.pitches.is_empty() {
             return Err(ScoreError("Un silencio no admite articulaciones"));
         }
-        Arc::make_mut(
+        let notation = &mut Arc::make_mut(
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
-            .notation
-            .articulation = value;
+            .notation;
+        notation.articulation = value;
+        if value.is_none() {
+            notation.offsets.articulation = None;
+        }
         Ok(())
     }
     pub fn set_dynamic(&mut self, id: ElementId, value: Option<Dynamic>) -> Result<(), ScoreError> {
         self.event(id)
             .ok_or(ScoreError("Selecciona una nota o silencio"))?;
-        Arc::make_mut(
+        let notation = &mut Arc::make_mut(
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
-            .notation
-            .dynamic = value;
+            .notation;
+        notation.dynamic = value;
+        if value.is_none() {
+            notation.offsets.dynamic = None;
+        }
         Ok(())
     }
     pub fn set_fermata(&mut self, id: ElementId, value: bool) -> Result<(), ScoreError> {
         self.event(id)
             .ok_or(ScoreError("Selecciona una nota o silencio"))?;
-        Arc::make_mut(
+        let notation = &mut Arc::make_mut(
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
-            .notation
-            .fermata = value;
+            .notation;
+        notation.fermata = value;
+        if !value {
+            notation.offsets.fermata = None;
+        }
         Ok(())
     }
 }

@@ -1,0 +1,8 @@
+Generator: built-in ImageGen
+
+Use case: logo-brand.
+Asset type: one finished app icon, square 1024 x 1024.
+Create an original, distinctive icon for LEVARE, a contemporary collaborative music composition platform with version history. The icon must feel inviting, inventive and effortless, with the visual clarity of a great modern creative tool.
+Design a single bold, elegant abstract musical glyph: a flowing lowercase-l-like upward stroke that unfurls into an ascending musical flag or slur, with a compact rounded notehead anchoring it. The overall silhouette should communicate music and lifting into motion, inspired by the upward preparatory gesture of a conductor. Integrate two cooperating curves into ONE coherent mark, without tiny details or decorative complexity. Make the shape memorable and readable at 24 pixels. Aim for an expressive custom music symbol rather than a literal stock eighth-note.
+Composition: one centered ivory/off-white mark on a near-black charcoal rounded-square app tile, filling about 62% of the tile, perfectly balanced with ample even padding. Exterior outside the rounded tile genuinely transparent. Flat crisp vector-like silhouettes, controlled organic curves, sophisticated optical proportions, entirely two-dimensional.
+No text, no wordmark, no letters spelled out, no mockup, no presentation board, no alternate options. No treble clef, no staff lines, no piano keys, no headphones, no waveform, no play triangle, no generic arrow or rocket. No gradients, no glow, no metallic effects, no bevel, no shadow, no 3D. Deliver the single clean icon itself.

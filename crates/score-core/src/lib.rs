@@ -4,10 +4,20 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod rehearsal;
+use rehearsal::rehearsal_style_is_default;
+pub use rehearsal::{RehearsalMark, RehearsalStyle, letter_label};
 mod tempo;
 pub use tempo::{TempoBeat, TempoMark};
+mod form;
+pub use form::{BarForm, Barline, Ending, Jump, MAX_ENDING_NUMBER, MAX_REPEAT_TIMES, PlayedBar};
+mod clefs;
+mod credits;
+pub use credits::Credits;
 mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
+mod tremolo;
+pub use tremolo::Tremolo;
 mod harmonics;
 pub use harmonics::Harmonic;
 mod expression;
@@ -18,14 +28,25 @@ mod piano_arpeggio;
 pub use piano_arpeggio::{ArpeggioMark, PianoArpeggio};
 mod marks;
 pub use marks::{MarkFamily, MarkKind, MarkRef, Placement};
+mod offsets;
+pub use offsets::{BarMark, BarMarkRef, BarOffsets, ConnectionOffset, MarkOffsets, Offset};
+#[cfg(test)]
+mod offsets_tests;
 mod transposition;
 pub use transposition::Transposition;
 mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
+mod instrument_range;
+pub use instrument_range::InstrumentRange;
+mod review;
+pub use review::{ReviewIssue, ReviewKind, ReviewTarget};
+mod comments;
+pub use comments::{CommentId, MAX_COMMENT_CHARS, MAX_COMMENTS, ScoreComment};
 mod key_signature;
 pub use key_signature::{KeyMode, KeySignature};
 mod event_move;
 mod measure_edit;
+mod overwrite;
 mod voice;
 pub use voice::Voice;
 mod divisi;
@@ -40,7 +61,9 @@ pub const MAX_STAVES: usize = MAX_PARTS * 2;
 pub const MAX_SOUNDING_NOTES: usize = MAX_STAVES * MAX_CHORD_NOTES * 2;
 
 /// Identity within a part. Piano hands keep separate event stores and cursors.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub enum StaffId {
     #[default]
     Upper,
@@ -318,9 +341,13 @@ pub struct Part {
     instrument: Instrument,
     #[serde(default)]
     transposition: Transposition,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    instrument_range: Option<InstrumentRange>,
     /// Keeps the section's identity when extracted from an orchestral score.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    clefs: std::collections::BTreeMap<StaffId, clefs::ClefMap>,
     #[serde(default, skip_serializing_if = "is_false")]
     divided: bool,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -340,7 +367,9 @@ impl Part {
             id,
             instrument,
             transposition: instrument.standard_transposition(),
+            instrument_range: None,
             name: None,
+            clefs: Default::default(),
             divided: false,
             divisi_changes: Default::default(),
             staves,
@@ -378,6 +407,9 @@ impl Part {
             .ok_or(ScoreError("El pentagrama no existe"))
     }
     pub fn clef(&self, staff: StaffId) -> Clef {
+        self.clef_at(staff, 0)
+    }
+    fn default_clef(&self, staff: StaffId) -> Clef {
         if staff == StaffId::Lower && self.instrument.is_grand_staff() {
             Clef::Bass
         } else {
@@ -385,22 +417,37 @@ impl Part {
         }
     }
     pub fn entry_octave(&self, staff: StaffId) -> u8 {
-        if staff == StaffId::Lower && self.instrument.is_grand_staff() {
+        self.entry_octave_at(staff, 0)
+    }
+    pub fn entry_octave_at(&self, staff: StaffId, bar: usize) -> u8 {
+        if matches!(self.clef_at(staff, bar), Clef::Bass | Clef::Tenor) {
             3
         } else {
-            self.instrument.entry_octave()
+            4
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Score {
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    comments: Vector<ScoreComment>,
+    #[serde(default)]
+    next_comment_id: u64,
     title: String,
+    #[serde(default, skip_serializing_if = "credits_are_empty")]
+    credits: Credits,
     time: TimeSignature,
     #[serde(default)]
     tempo: TempoMark,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     tempo_changes: std::collections::BTreeMap<usize, TempoMark>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    rehearsals: std::collections::BTreeMap<usize, RehearsalMark>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    bar_offsets: std::collections::BTreeMap<usize, BarOffsets>,
+    #[serde(default, skip_serializing_if = "rehearsal_style_is_default")]
+    rehearsal_style: RehearsalStyle,
     #[serde(default)]
     key_signature: KeySignature,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -412,25 +459,44 @@ pub struct Score {
     #[serde(default)]
     connections: Vector<Connection>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    connection_offsets: Vector<ConnectionOffset>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
     piano_arpeggios: Vector<PianoArpeggio>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    form: std::collections::BTreeMap<usize, BarForm>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    endings: Vector<Ending>,
 }
 
 impl Default for Score {
     fn default() -> Self {
         Self {
+            comments: Vector::new(),
+            next_comment_id: 0,
             title: "Sin título".into(),
+            credits: Credits::default(),
             time: TimeSignature::default(),
             tempo: Default::default(),
             tempo_changes: Default::default(),
+            rehearsals: Default::default(),
+            bar_offsets: Default::default(),
+            rehearsal_style: Default::default(),
             key_signature: KeySignature::default(),
             time_changes: Default::default(),
             key_changes: Default::default(),
             parts: std::iter::once(Part::new(PartId(0), Instrument::Piano, 4)).collect(),
             next_part_id: 1,
             connections: Vector::new(),
+            connection_offsets: Vector::new(),
             piano_arpeggios: Vector::new(),
+            form: Default::default(),
+            endings: Vector::new(),
         }
     }
+}
+
+fn credits_are_empty(credits: &Credits) -> bool {
+    credits == &Credits::default()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -504,6 +570,12 @@ impl Score {
         part.name = Some(self.part_name(id));
         let mut extracted = self.clone();
         extracted.parts = std::iter::once(part).collect();
+        extracted.comments = extracted
+            .comments
+            .iter()
+            .filter(|comment| comment.part == id)
+            .cloned()
+            .collect();
         extracted.prune_connections();
         extracted.validate()?;
         Ok(extracted)
@@ -736,6 +808,7 @@ impl Score {
 
     /// Check deserialized data before it reaches editing or layout.
     pub fn validate(&self) -> Result<(), ScoreError> {
+        self.credits.validate()?;
         if !self.time.is_valid() {
             return Err(ScoreError("Indicación de compás inválida"));
         }
@@ -767,6 +840,7 @@ impl Score {
             return Err(ScoreError("Cantidad de compases inválida"));
         }
         for part in &self.parts {
+            part.validate_clefs(self.measures().len())?;
             if part
                 .divisi_changes
                 .keys()
@@ -801,12 +875,24 @@ impl Score {
             }
             mark.validate()?;
         }
+        self.validate_form()?;
+        self.validate_rehearsals()?;
+        self.validate_offsets()?;
+        self.validate_bar_offsets()?;
         if self.title.len() > 1024 {
             return Err(ScoreError("Título demasiado largo"));
         }
         let mut parts_seen = std::collections::HashSet::new();
         for part in &self.parts {
             part.transposition.validate()?;
+            if let Some(range) = part.instrument_range {
+                range.validate()?;
+                if part.instrument.sounding_range().is_none() {
+                    return Err(ScoreError(
+                        "La percusión sin altura no tiene rango instrumental",
+                    ));
+                }
+            }
             if !parts_seen.insert(part.id) || part.id.0 >= self.next_part_id {
                 return Err(ScoreError("Estructura de instrumentos inválida"));
             }
@@ -862,6 +948,7 @@ impl Score {
             part.validate_divisi_cuts()?;
         }
         self.validate_connections()?;
+        self.validate_comments()?;
         self.validate_piano_arpeggios()?;
         Ok(())
     }

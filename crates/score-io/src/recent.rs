@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn persists_and_forgets_missing_files() {
         let directory = tempfile::tempdir().unwrap();
-        let list = directory.path().join("Partitura").join("recientes.json");
+        let list = directory.path().join("Levare").join("recientes.json");
         assert_eq!(RecentFiles::load(&list).unwrap(), RecentFiles::new());
         let kept = directory.path().join("kept.partitura");
         let gone = directory.path().join("gone.partitura");

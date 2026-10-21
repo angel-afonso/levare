@@ -1,0 +1,106 @@
+use super::*;
+use score_core::Credits;
+use text_input::TextInput;
+
+/// Title and credits being edited; nothing reaches the score until Aplicar.
+pub struct HeaderEditor {
+    fields: [(&'static str, Entity<TextInput>); 7],
+}
+impl HeaderEditor {
+    pub fn new(score: &score_core::Score, cx: &mut Context<AppView>) -> Self {
+        let credits = score.credits();
+        let mut field = |label, value: &str| (label, cx.new(|cx| TextInput::new(value, cx)));
+        Self {
+            fields: [
+                field("TÍTULO", score.title()),
+                field("SUBTÍTULO", &credits.subtitle),
+                field("COMPOSITOR", &credits.composer),
+                field("ARREGLISTA", &credits.arranger),
+                field("LETRISTA", &credits.lyricist),
+                field("AÑO", &credits.year),
+                field("COPYRIGHT", &credits.copyright),
+            ],
+        }
+    }
+    fn value(&self, index: usize, cx: &App) -> String {
+        self.fields[index].1.read(cx).value().to_owned()
+    }
+    pub fn header(&self, cx: &App) -> (String, Credits) {
+        (
+            self.value(0, cx),
+            Credits {
+                subtitle: self.value(1, cx),
+                composer: self.value(2, cx),
+                arranger: self.value(3, cx),
+                lyricist: self.value(4, cx),
+                year: self.value(5, cx),
+                copyright: self.value(6, cx),
+            },
+        )
+    }
+    fn focused_index(&self, window: &Window, cx: &App) -> Option<usize> {
+        self.fields
+            .iter()
+            .position(|(_, field)| field.focus_handle(cx).is_focused(window))
+    }
+    pub fn focused(&self, window: &Window, cx: &App) -> bool {
+        self.focused_index(window, cx).is_some()
+    }
+    pub fn focus_first(&self, window: &mut Window, cx: &App) {
+        self.fields[0].1.focus_handle(cx).focus(window);
+    }
+    /// Tab and Shift-Tab walk the fields in order, wrapping around.
+    pub fn focus_next(&self, back: bool, window: &mut Window, cx: &App) {
+        let count = self.fields.len();
+        let next = match self.focused_index(window, cx) {
+            Some(index) if back => (index + count - 1) % count,
+            Some(index) => (index + 1) % count,
+            None => 0,
+        };
+        self.fields[next].1.focus_handle(cx).focus(window);
+    }
+}
+
+pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
+    let editor = view.header_editor.as_ref().unwrap();
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .pb_3()
+        .border_b_1()
+        .border_color(rgb(BORDER))
+        .children(editor.fields.iter().map(|(label, field)| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(caption(*label))
+                .child(field.clone())
+        }))
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .mt_2()
+                .child(
+                    button(view, "apply-header", "Aplicar", true, cx, |v, _, cx| {
+                        v.apply_header(cx)
+                    })
+                    .flex_1(),
+                )
+                .child(
+                    button(view, "cancel-header", "Cancelar", false, cx, |v, _, cx| {
+                        v.header_editor = None;
+                        cx.notify();
+                    })
+                    .flex_1(),
+                ),
+        )
+        .child(
+            div()
+                .text_size(px(10.))
+                .text_color(rgb(MUTED))
+                .child("Se imprime en la cabecera de la primera página; los campos vacíos no aparecen. Tab pasa al siguiente campo, Enter aplica y Esc cancela."),
+        )
+}

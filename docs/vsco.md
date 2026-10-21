@@ -1,5 +1,8 @@
 # VSCO CE: paquete de sonido opcional
 
+VSCO sigue siendo un paquete SFZ de formato 1 compatible. Levare también admite
+paquetes de formato 2 y una combinación por prioridad; consulta [Bibliotecas SFZ](sfz.md).
+
 La integración experimental lee los SFZ y WAV originales de **VSCO 2 Community
 Edition 1.1.0** con **sfizz 1.2.3**. No convierte las grabaciones a SoundFont ni
 reemplaza GeneralUser. No es un host de plugins VST/AU: es un paquete local con
@@ -8,7 +11,7 @@ un motor de reproducción intercambiable desde la aplicación.
 ## Probarlo
 
 El adaptador está en el paquete independiente `score-sound-vsco`. La característica
-`vsco` de `partitura` está activa por defecto, así que `cargo run` y `cargo build`
+`vsco` de `levare` está activa por defecto, así que `cargo run` y `cargo build`
 lo incluyen. Instalar las muestras sigue siendo opcional: sin ellas, **Sonidos** solo
 ofrece GeneralUser. Para compilar sin el adaptador:
 `cargo run --no-default-features --features runtime-shaders`.
@@ -35,7 +38,7 @@ La pausa congela también el ambiente; Detener y los saltos limpian la cola ante
 El paquete instalado en esta máquina está en `soundpacks/vsco-ce/`; las muestras
 están en `soundpacks/VSCO-2-CE-1.1.0/`. Ambos están excluidos de Git y no aumentan el
 ejecutable. La app busca el manifiesto en los directorios antecesores de su ejecutable,
-incluido el proyecto cuando se abre `target/Partitura.app`.
+incluido el proyecto cuando se abre `target/Levare.app`.
 
 ## Cobertura de esta primera integración
 
@@ -114,7 +117,7 @@ versión antigua selecciona para el nombre `arm64`.
 ```sh
 cargo test --workspace
 cargo test -p score-sound-vsco -- --ignored --nocapture
-cargo test -p partitura
+cargo test -p levare
 cargo run -p score-sound-vsco --example vsco_compare
 ```
 

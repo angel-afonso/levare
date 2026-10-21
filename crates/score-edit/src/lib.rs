@@ -5,10 +5,16 @@ use score_core::{
 
 pub mod clipboard;
 #[cfg(test)]
+mod comment_tests;
+#[cfg(test)]
 mod instrument_tests;
 #[cfg(test)]
 mod move_tests;
+#[cfg(test)]
+mod range_tests;
 mod selection;
+#[cfg(test)]
+mod write_tests;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cursor {
@@ -19,9 +25,42 @@ pub struct Cursor {
     pub index: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormEdit {
+    ToggleRepeatStart,
+    ToggleRepeatEnd,
+    Barline(score_core::Barline),
+    ToggleSegno,
+    ToggleCoda,
+    ToggleToCoda,
+    ToggleFine,
+    Jump(Option<score_core::Jump>),
+    Clear,
+}
+
 #[derive(Clone, Debug)]
 pub enum Command {
+    SaveComment {
+        id: Option<score_core::CommentId>,
+        text: String,
+        anchors: Vec<ElementId>,
+    },
+    SetCommentResolved(score_core::CommentId, bool),
+    RemoveComment(score_core::CommentId),
+    EditForm(FormEdit),
+    SetEnding(Vec<u8>),
+    ToggleRehearsalMark,
+    SetRehearsalStyle(score_core::RehearsalStyle),
+    RemoveEndings,
     Insert(Event),
+    /// Sibelius-style entry: overwrite from the insertion point.
+    Write(Event),
+    /// Overwrite at a tick of the cursor's part, staff and voice.
+    WriteAt {
+        measure: usize,
+        tick: u16,
+        event: Event,
+    },
     SetPartDivisi(bool),
     SetPassageDivisi(bool),
     SetArticulation(Option<score_core::Articulation>),
@@ -38,6 +77,12 @@ pub enum Command {
     ReplaceConnection(score_core::Connection, score_core::Connection),
     /// Delete one mark selected in the score, keeping its note.
     RemoveMark(score_core::MarkRef),
+    /// Move one written mark in tenths of a staff space; zero restores engraving.
+    SetMarkOffset(score_core::MarkRef, score_core::Offset),
+    SetBarMarkOffset(score_core::BarMarkRef, score_core::Offset),
+    ResetBarMarkOffset(score_core::BarMarkRef),
+    /// Restore one mark, or all marks on selected notes and spans starting there.
+    ResetMarkOffsets(Option<score_core::MarkRef>),
     /// The ribbon's point marks: write `kind` on the selection, replacing its
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
@@ -65,10 +110,15 @@ pub enum Command {
     SetKeySignature(score_core::KeySignature),
     SetKeySignatureAt(usize, score_core::KeySignature),
     SetTimeSignatureAt(usize, score_core::TimeSignature),
+    SetClefAt(PartId, StaffId, usize, score_core::Clef),
+    RemoveClefChange(PartId, StaffId, usize),
     RemoveKeyChange(usize),
     RemoveTimeChange(usize),
     SetTempoAt(usize, score_core::TempoMark),
+    /// Title and the credits printed around it.
+    SetHeader(String, score_core::Credits),
     RemoveTempoChange(usize),
+    SetInstrumentRange(PartId, Option<score_core::InstrumentRange>),
 }
 
 #[derive(Clone)]
@@ -198,7 +248,7 @@ impl Editor {
                     .score()
                     .part(id.part)
                     .expect("selected part")
-                    .entry_octave(id.staff);
+                    .entry_octave_at(id.staff, id.measure);
             }
         }
     }
@@ -227,7 +277,7 @@ impl Editor {
                     .score()
                     .part(cursor.part)
                     .expect("cursor part")
-                    .entry_octave(cursor.staff);
+                    .entry_octave_at(cursor.staff, cursor.measure);
             }
             self.state.divisi_anchor = None;
             self.state.cursor = cursor;
@@ -307,6 +357,28 @@ impl Editor {
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {
         let mut next = self.state.clone();
         match command {
+            Command::SaveComment {
+                id,
+                ref text,
+                ref anchors,
+            } => {
+                if !next.score.save_comment(id, text, anchors)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetCommentResolved(id, resolved) => {
+                if !next.score.set_comment_resolved(id, resolved)? {
+                    return Ok(false);
+                }
+            }
+            Command::RemoveComment(id) => {
+                next.score.remove_comment(id)?;
+            }
+            Command::SetInstrumentRange(part, range) => {
+                if !next.score.set_instrument_range(part, range)? {
+                    return Ok(false);
+                }
+            }
             Command::SetPassageDivisi(divided) => {
                 next.set_passage_divisi(divided, false)?;
             }
@@ -438,6 +510,86 @@ impl Editor {
                 next.score.add_connection(new)?;
             }
             Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
+            Command::SetMarkOffset(mark, offset) => {
+                if !next.score.set_mark_offset(mark, offset)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetBarMarkOffset(mark, offset) => {
+                if !next.score.set_bar_mark_offset(mark, offset)? {
+                    return Ok(false);
+                }
+            }
+            Command::ResetBarMarkOffset(mark) => {
+                if !next
+                    .score
+                    .set_bar_mark_offset(mark, score_core::Offset::ZERO)?
+                {
+                    return Ok(false);
+                }
+            }
+            Command::ResetMarkOffsets(Some(mark)) => {
+                if !next.score.set_mark_offset(mark, score_core::Offset::ZERO)? {
+                    return Ok(false);
+                }
+            }
+            Command::ResetMarkOffsets(None) => {
+                let ids: std::collections::HashSet<_> = self.selected_ids().into_iter().collect();
+                let mut changed = false;
+                for &id in &ids {
+                    for family in [
+                        score_core::MarkFamily::Dynamic,
+                        score_core::MarkFamily::Articulation,
+                        score_core::MarkFamily::Fermata,
+                        score_core::MarkFamily::Technique,
+                        score_core::MarkFamily::Harmonic,
+                    ] {
+                        if let Some(mark) = score_core::MarkRef::point(family, id)
+                            && next.score.has_mark(mark)
+                        {
+                            changed |=
+                                next.score.set_mark_offset(mark, score_core::Offset::ZERO)?;
+                        }
+                    }
+                }
+                let connections: Vec<_> = next
+                    .score
+                    .connection_offsets()
+                    .iter()
+                    .filter(|entry| ids.contains(&entry.connection.start))
+                    .map(|entry| entry.connection)
+                    .collect();
+                for connection in connections {
+                    changed |= next.score.set_mark_offset(
+                        score_core::MarkRef::Connection(connection),
+                        score_core::Offset::ZERO,
+                    )?;
+                }
+                let bars: std::collections::HashSet<_> = ids.iter().map(|id| id.measure).collect();
+                let bar_marks: Vec<_> = next
+                    .score
+                    .bar_offsets()
+                    .iter()
+                    .filter(|(bar, _)| bars.contains(bar))
+                    .flat_map(|(&measure, offsets)| {
+                        score_core::BarMark::ALL
+                            .into_iter()
+                            .filter_map(move |mark| {
+                                offsets
+                                    .get(mark)
+                                    .map(|_| score_core::BarMarkRef { measure, mark })
+                            })
+                    })
+                    .collect();
+                for mark in bar_marks {
+                    changed |= next
+                        .score
+                        .set_bar_mark_offset(mark, score_core::Offset::ZERO)?;
+                }
+                if !changed {
+                    return Ok(false);
+                }
+            }
             Command::SetArpeggioBothHands(enabled) => {
                 let id = next
                     .selection
@@ -457,6 +609,18 @@ impl Editor {
                     .map(|id| (id, (!clear).then_some(mark)))
                     .collect();
                 next.score.set_harmonics(&edits)?;
+            }
+            Command::ToggleMark(score_core::MarkKind::Tremolo(mark)) => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    return Err(ScoreError("Selecciona notas para aplicar el trémolo"));
+                }
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.tremolo == Some(mark));
+                for id in ids {
+                    next.score.set_tremolo(id, (!clear).then_some(mark))?;
+                }
             }
             Command::ToggleMark(kind) => {
                 let id = next
@@ -505,6 +669,78 @@ impl Editor {
                 )?;
                 next.cursor.index += 1;
                 next.selection = Some(id);
+                next.tone = 0;
+            }
+            Command::Write(event) => {
+                let c = next.cursor;
+                let bar = &next
+                    .score
+                    .part(c.part)
+                    .unwrap()
+                    .staff(c.staff)
+                    .unwrap()
+                    .measures()[c.measure];
+                let mut tick: u16 = bar
+                    .voice_iter(c.voice)
+                    .take(c.index)
+                    .map(|(_, e)| e.duration.ticks())
+                    .sum();
+                let mut measure = c.measure;
+                if c.index == bar.voice_len(c.voice)
+                    && tick == next.score.time_at(measure).capacity()
+                {
+                    measure += 1;
+                    tick = 0;
+                    if measure == next.score.measures().len() {
+                        next.score.append_measure()?;
+                    }
+                }
+                let written = next
+                    .score
+                    .overwrite(c.part, c.staff, measure, c.voice, tick, event)?;
+                let last = *written.last().unwrap();
+                let index = next
+                    .score
+                    .part(last.part)
+                    .unwrap()
+                    .staff(last.staff)
+                    .unwrap()
+                    .measures()[last.measure]
+                    .voice_index_of(c.voice, last.event)
+                    .unwrap();
+                next.selection = Some(last);
+                next.cursor = Cursor {
+                    measure: last.measure,
+                    index: index + 1,
+                    ..c
+                };
+                next.tone = 0;
+            }
+            Command::WriteAt {
+                measure,
+                tick,
+                event,
+            } => {
+                let c = next.cursor;
+                let written = next
+                    .score
+                    .overwrite(c.part, c.staff, measure, c.voice, tick, event)?;
+                let last = *written.last().unwrap();
+                let index = next
+                    .score
+                    .part(last.part)
+                    .unwrap()
+                    .staff(last.staff)
+                    .unwrap()
+                    .measures()[last.measure]
+                    .voice_index_of(c.voice, last.event)
+                    .unwrap();
+                next.selection = Some(last);
+                next.cursor = Cursor {
+                    measure: last.measure,
+                    index: index + 1,
+                    ..c
+                };
                 next.tone = 0;
             }
             Command::Erase => {
@@ -594,6 +830,85 @@ impl Editor {
                     ..next.cursor
                 };
                 next.selection = None;
+            }
+            Command::ToggleRehearsalMark => {
+                let bar = self
+                    .selected_ids()
+                    .iter()
+                    .map(|id| id.measure)
+                    .min()
+                    .unwrap_or(next.cursor.measure);
+                if !next.score.toggle_rehearsal_mark(bar)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetRehearsalStyle(style) => {
+                if !next.score.set_rehearsal_style(style) {
+                    return Ok(false);
+                }
+            }
+            Command::EditForm(_) | Command::SetEnding(_) | Command::RemoveEndings => {
+                let ids = self.selected_ids();
+                let start = ids
+                    .iter()
+                    .map(|id| id.measure)
+                    .min()
+                    .unwrap_or(next.cursor.measure);
+                let end = ids.iter().map(|id| id.measure).max().unwrap_or(start);
+                let changed = match command {
+                    Command::SetEnding(ref numbers) => {
+                        next.score.set_ending(score_core::Ending {
+                            start,
+                            end,
+                            numbers: numbers.clone(),
+                        })?
+                    }
+                    Command::RemoveEndings => next.score.remove_endings(start, end),
+                    Command::EditForm(FormEdit::Clear) => {
+                        let mut changed = next.score.remove_endings(start, end);
+                        for bar in start..=end {
+                            changed |= next.score.set_bar_form(bar, Default::default())?;
+                        }
+                        changed
+                    }
+                    Command::EditForm(edit) => {
+                        let bar = if matches!(
+                            edit,
+                            FormEdit::ToggleRepeatStart
+                                | FormEdit::ToggleSegno
+                                | FormEdit::ToggleCoda
+                        ) {
+                            start
+                        } else {
+                            end
+                        };
+                        let mut form = next.score.bar_form(bar);
+                        match edit {
+                            FormEdit::ToggleRepeatStart => form.repeat_start = !form.repeat_start,
+                            FormEdit::ToggleRepeatEnd => {
+                                form.repeat_end = if form.repeat_end.is_some() {
+                                    None
+                                } else {
+                                    Some(2)
+                                }
+                            }
+                            FormEdit::Barline(style) => form.barline = style,
+                            FormEdit::ToggleSegno => form.segno = !form.segno,
+                            FormEdit::ToggleCoda => form.coda = !form.coda,
+                            FormEdit::ToggleToCoda => form.to_coda = !form.to_coda,
+                            FormEdit::ToggleFine => form.fine = !form.fine,
+                            FormEdit::Jump(jump) => {
+                                form.jump = if form.jump == jump { None } else { jump }
+                            }
+                            FormEdit::Clear => unreachable!(),
+                        }
+                        next.score.set_bar_form(bar, form)?
+                    }
+                    _ => unreachable!(),
+                };
+                if !changed {
+                    return Ok(false);
+                }
             }
             Command::DeleteMeasures => {
                 let ids = self.selected_ids();
@@ -695,6 +1010,16 @@ impl Editor {
                     return Ok(false);
                 }
             }
+            Command::SetClefAt(part, staff, bar, clef) => {
+                if !next.score.set_clef_at(part, staff, bar, clef)? {
+                    return Ok(false);
+                }
+            }
+            Command::RemoveClefChange(part, staff, bar) => {
+                if !next.score.remove_clef_change(part, staff, bar)? {
+                    return Ok(false);
+                }
+            }
             Command::RemoveKeyChange(bar) => {
                 if !next.score.remove_key_change(bar) {
                     return Ok(false);
@@ -707,6 +1032,11 @@ impl Editor {
             }
             Command::SetTempoAt(bar, ref mark) => {
                 if !next.score.set_tempo_at(bar, mark.clone())? {
+                    return Ok(false);
+                }
+            }
+            Command::SetHeader(ref title, ref credits) => {
+                if !next.score.set_header(title, credits)? {
                     return Ok(false);
                 }
             }
@@ -783,10 +1113,25 @@ impl Editor {
             matches!(command, Command::RemovePartById(id) if id != self.cursor().part);
         let preserve_range = matches!(
             command,
-            Command::SetDotted(_)
+            Command::EditForm(_)
+                | Command::SaveComment { .. }
+                | Command::SetCommentResolved(..)
+                | Command::RemoveComment(_)
+                | Command::SetInstrumentRange(_, _)
+                | Command::ToggleRehearsalMark
+                | Command::SetRehearsalStyle(_)
+                | Command::SetEnding(_)
+                | Command::RemoveEndings
+                | Command::SetDotted(_)
                 | Command::SetTriplet(_)
-                | Command::ToggleMark(score_core::MarkKind::Harmonic(_))
+                | Command::ToggleMark(
+                    score_core::MarkKind::Harmonic(_) | score_core::MarkKind::Tremolo(_)
+                )
                 | Command::SetDuration(_)
+                | Command::SetMarkOffset(_, _)
+                | Command::SetBarMarkOffset(_, _)
+                | Command::ResetBarMarkOffset(_)
+                | Command::ResetMarkOffsets(_)
                 | Command::Erase
                 | Command::SetPartDivisi(_)
                 | Command::SetPassageDivisi(_)
@@ -797,10 +1142,16 @@ impl Editor {
         }
         if !matches!(
             command,
-            Command::SetPassageDivisi(_) | Command::ToggleMark(score_core::MarkKind::Division(_))
+            Command::SetPassageDivisi(_)
+                | Command::SaveComment { .. }
+                | Command::SetCommentResolved(..)
+                | Command::RemoveComment(_)
+                | Command::SetInstrumentRange(_, _)
+                | Command::ToggleMark(score_core::MarkKind::Division(_))
         ) {
             next.divisi_anchor = None;
         }
+        next.score.prune_bar_offsets();
         next.score.validate()?;
         let entry_octave = self.octave;
         self.commit(next);
@@ -847,7 +1198,11 @@ impl Editor {
                 measure: self.cursor().measure,
                 index: 0,
             });
-            self.octave = self.score().part(part).expect("part").entry_octave(staff);
+            self.octave = self
+                .score()
+                .part(part)
+                .expect("part")
+                .entry_octave_at(staff, self.cursor().measure);
         }
     }
 
@@ -855,7 +1210,7 @@ impl Editor {
         if part == self.cursor().part {
             return;
         }
-        if let Some(instrument) = self.score().part(part).map(|part| part.instrument()) {
+        if self.score().part(part).is_some() {
             self.set_cursor(Cursor {
                 voice: Default::default(),
                 staff: score_core::StaffId::Upper,
@@ -863,7 +1218,11 @@ impl Editor {
                 measure: self.cursor().measure,
                 index: 0,
             });
-            self.octave = instrument.entry_octave();
+            self.octave = self
+                .score()
+                .part(part)
+                .unwrap()
+                .entry_octave_at(StaffId::Upper, self.cursor().measure);
         }
     }
 
@@ -892,14 +1251,20 @@ impl Editor {
                 .score()
                 .part(self.cursor().part)
                 .expect("cursor part")
-                .entry_octave(self.cursor().staff);
+                .entry_octave_at(self.cursor().staff, self.cursor().measure);
         }
     }
 
+    /// Letter entry lands on the octave nearest the selected pitch.
     pub fn note(&self, step: score_core::Step) -> Event {
+        let pitch = self
+            .selected_pitch()
+            .and_then(|selected| Pitch::new(selected.step, self.octave))
+            .map(|reference| nearest_pitch(step, reference))
+            .or_else(|| Pitch::new(step, self.octave));
         Event {
             notation: Default::default(),
-            pitches: score_core::Pitches::single(Pitch::new(step, self.octave)),
+            pitches: score_core::Pitches::single(pitch),
             duration: self.duration,
         }
     }
@@ -910,6 +1275,22 @@ impl Editor {
             duration: self.duration,
         }
     }
+}
+
+fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
+    let r = reference.diatonic();
+    let below = r - (r - step.index()).rem_euclid(7);
+    let above = below + 7;
+    let candidates = if below == r || r - below < above - r {
+        [below, above]
+    } else {
+        [above, below]
+    };
+    candidates
+        .into_iter()
+        .find(|d| (0..=62).contains(d))
+        .and_then(|d| Pitch::new(step, (d / 7) as u8))
+        .unwrap_or(reference)
 }
 
 #[cfg(test)]
@@ -1334,9 +1715,11 @@ mod tests {
         editor.execute(Command::Transpose(-1)).unwrap();
         assert_eq!(editor.octave, 3);
         editor.undo();
+        assert_eq!(editor.octave, 4);
         assert_eq!(editor.note(Step::D).pitches.first(), Pitch::new(Step::D, 4));
         editor.redo();
-        assert_eq!(editor.note(Step::D).pitches.first(), Pitch::new(Step::D, 3));
+        assert_eq!(editor.octave, 3);
+        assert_eq!(editor.note(Step::D).pitches.first(), Pitch::new(Step::D, 4));
     }
 }
 
@@ -1355,12 +1738,48 @@ mod signature_tests;
 impl Editor {
     pub fn select_display_staff(&mut self, staff: StaffId) {
         let cursor = self.cursor();
-        let part = self.score().part(cursor.part).unwrap();
         let tick = self.divisi_position().tick;
-        let (source, voice) = part.input_source(staff, cursor.measure);
-        let voice = voice.unwrap_or(cursor.voice);
-        let bar = &part.staff(source).unwrap().measures()[cursor.measure];
-        let wanted = tick;
+        self.select_display_staff_at(
+            staff,
+            score_core::DivisiPoint::new(cursor.measure, tick),
+            cursor.voice,
+        );
+    }
+    /// Move to a displayed staff in another part at the same exact rhythmic point.
+    pub fn select_display_staff_in(&mut self, part: PartId, staff: StaffId) {
+        let at = self.divisi_position();
+        let origin_voice = self.cursor().voice;
+        if part == self.cursor().part {
+            self.select_display_staff(staff);
+            return;
+        }
+        let Some(destination) = self.score().part(part) else {
+            return;
+        };
+        let (source, forced) = destination.input_source(staff, at.measure);
+        let voice = forced.unwrap_or_else(|| {
+            if destination.staff(source).unwrap().measures()[at.measure].voice_len(origin_voice) > 0
+            {
+                origin_voice
+            } else {
+                score_core::Voice::One
+            }
+        });
+        self.select_part(part);
+        self.select_display_staff_at(staff, at, voice);
+    }
+    fn select_display_staff_at(
+        &mut self,
+        staff: StaffId,
+        point: score_core::DivisiPoint,
+        preferred_voice: score_core::Voice,
+    ) {
+        let cursor = self.cursor();
+        let part = self.score().part(cursor.part).unwrap();
+        let (source, voice) = part.input_source(staff, point.measure);
+        let voice = voice.unwrap_or(preferred_voice);
+        let bar = &part.staff(source).unwrap().measures()[point.measure];
+        let wanted = point.tick;
         let target = bar
             .timed_iter()
             .filter(|(v, _, _, _)| *v == voice)
@@ -1370,7 +1789,7 @@ impl Editor {
                 } else {
                     start
                 };
-                (part.displayed_staff(source, voice, cursor.measure, at) == staff)
+                (part.displayed_staff(source, voice, point.measure, at) == staff)
                     .then_some((event, at))
             })
             .min_by_key(|(_, at)| at.abs_diff(wanted))
@@ -1379,7 +1798,7 @@ impl Editor {
                     ElementId {
                         part: cursor.part,
                         staff: source,
-                        measure: cursor.measure,
+                        measure: point.measure,
                         event,
                     },
                     at,
@@ -1387,11 +1806,12 @@ impl Editor {
             });
         if let Some((id, at)) = target {
             self.select(id);
-            self.select_divisi_position(score_core::DivisiPoint::new(cursor.measure, at));
+            self.select_divisi_position(score_core::DivisiPoint::new(point.measure, at));
         } else {
             self.set_cursor(Cursor {
                 staff: source,
                 voice,
+                measure: point.measure,
                 index: bar.voice_len(voice),
                 ..cursor
             });
@@ -1525,3 +1945,15 @@ impl Snapshot {
 
 #[cfg(test)]
 mod harmonic_tests;
+
+#[cfg(test)]
+mod form_tests;
+
+#[cfg(test)]
+mod tremolo_tests;
+
+#[cfg(test)]
+mod rehearsal_tests;
+
+#[cfg(test)]
+mod offset_tests;

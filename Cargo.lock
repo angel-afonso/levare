@@ -3117,6 +3117,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
+name = "levare"
+version = "0.1.0"
+dependencies = [
+ "block",
+ "cocoa 0.26.0",
+ "core-graphics 0.24.0",
+ "core-text",
+ "dirs 6.0.0",
+ "gpui",
+ "lyon",
+ "objc",
+ "score-core",
+ "score-document",
+ "score-edit",
+ "score-export",
+ "score-io",
+ "score-keymap",
+ "score-layout",
+ "score-platform",
+ "score-playback",
+ "score-sound-vsco",
+ "score-toolbar",
+ "serde_json",
+ "tempfile",
+ "ttf-parser 0.25.1",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3979,34 +4008,6 @@ dependencies = [
  "redox_syscall 0.5.18",
  "smallvec",
  "windows-link 0.2.1",
-]
-
-[[package]]
-name = "partitura"
-version = "0.1.0"
-dependencies = [
- "block",
- "cocoa 0.26.0",
- "core-graphics 0.24.0",
- "core-text",
- "dirs 6.0.0",
- "gpui",
- "lyon",
- "objc",
- "score-core",
- "score-document",
- "score-edit",
- "score-export",
- "score-io",
- "score-keymap",
- "score-layout",
- "score-platform",
- "score-playback",
- "score-sound-vsco",
- "score-toolbar",
- "serde_json",
- "ttf-parser 0.25.1",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -5127,6 +5128,7 @@ dependencies = [
  "score-playback",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -11,6 +11,8 @@ pub enum Icon {
     ZoomActual,
     FullScreen,
     Page,
+    ContinuousView,
+    SingleSystemView,
     FitPage,
     TempoUp,
     TempoDown,
@@ -45,6 +47,8 @@ impl Icon {
             "zoom-actual" => Self::ZoomActual,
             "full-screen" => Self::FullScreen,
             "page" => Self::Page,
+            "continuous" => Self::ContinuousView,
+            "single-system" => Self::SingleSystemView,
             "fit-page" => Self::FitPage,
             "tempo-up" => Self::TempoUp,
             "tempo-down" => Self::TempoDown,
@@ -154,6 +158,20 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     line(&[(10., 1.), (10., 5.), (14., 5.)]);
                     line(&[(6.5, 9.), (11.5, 9.)]);
                     line(&[(6.5, 12.), (11.5, 12.)]);
+                }
+                Icon::ContinuousView => {
+                    // Systems one under another, no sheet edges: scrolls down.
+                    for y in [2., 4.5, 8., 10.5] {
+                        line(&[(2., y), (16., y)]);
+                    }
+                    line(&[(6., 14.), (9., 17.), (12., 14.)]);
+                }
+                Icon::SingleSystemView => {
+                    // One endless system: scrolls sideways.
+                    for y in [5., 8., 11.] {
+                        line(&[(1., y), (12., y)]);
+                    }
+                    line(&[(14., 5.), (17., 8.), (14., 11.)]);
                 }
                 Icon::FitPage => {
                     line(&[(1., 6.), (1., 1.), (6., 1.)]);

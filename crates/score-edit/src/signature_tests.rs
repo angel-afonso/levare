@@ -1,5 +1,43 @@
 use super::*;
 use score_core::{KeyMode, KeySignature, Notation, Pitches, Step, TimeSignature};
+#[test]
+fn clef_edits_are_undoable_and_preserve_selection_cursor_and_pitches() {
+    use score_core::Clef;
+    let mut editor =
+        Editor::new(Score::new("Viola".into(), &[Instrument::Viola], 4).unwrap()).unwrap();
+    editor
+        .execute(Command::Insert(note(Duration::Quarter)))
+        .unwrap();
+    let before = editor.score().clone();
+    let cursor = editor.cursor();
+    let selection = editor.selection();
+    let p = cursor.part;
+    let s = cursor.staff;
+    assert!(
+        editor
+            .execute(Command::SetClefAt(p, s, 0, Clef::Treble))
+            .unwrap()
+    );
+    assert!(
+        !editor
+            .execute(Command::SetClefAt(p, s, 0, Clef::Treble))
+            .unwrap()
+    );
+    assert_eq!(editor.cursor(), cursor);
+    assert_eq!(editor.selection(), selection);
+    assert_eq!(
+        editor.score().event(selection.unwrap()),
+        before.event(selection.unwrap())
+    );
+    assert!(editor.undo());
+    assert_eq!(editor.score(), &before);
+    assert!(editor.redo());
+    assert_eq!(editor.score().parts()[0].clef(s), Clef::Treble);
+    editor.execute(Command::RemoveClefChange(p, s, 0)).unwrap();
+    assert_eq!(editor.score().parts()[0].clef(s), Clef::Alto);
+    assert!(editor.undo());
+    assert_eq!(editor.score().parts()[0].clef(s), Clef::Treble);
+}
 fn note(duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(Step::F, 4)),
@@ -167,4 +205,27 @@ fn copy_and_paste_across_meter_and_key_changes_preserves_time_and_sound() {
     editor.score().validate().unwrap();
     assert!(editor.undo());
     assert_eq!(editor.score(), &original);
+}
+
+#[test]
+fn header_edit_is_one_undo_step() {
+    let mut editor = Editor::new(Score::default()).unwrap();
+    let credits = score_core::Credits {
+        composer: "Clara Schumann".into(),
+        copyright: "© 2026".into(),
+        ..Default::default()
+    };
+    editor
+        .execute(Command::SetHeader("Romanza".into(), credits.clone()))
+        .unwrap();
+    assert_eq!(editor.score().title(), "Romanza");
+    assert_eq!(editor.score().credits(), &credits);
+    assert!(
+        editor
+            .execute(Command::SetHeader(" ".into(), credits))
+            .is_err()
+    );
+    editor.undo();
+    assert_eq!(editor.score().title(), "Sin título");
+    assert!(editor.score().credits().composer.is_empty());
 }

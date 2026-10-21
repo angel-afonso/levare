@@ -2,6 +2,9 @@
 //! VSCO uses original SFZ files through sfizz; the bundled SF2 remains a fallback.
 #[cfg(test)]
 mod installed_tests;
+mod manifest;
+#[cfg(test)]
+mod manifest_tests;
 #[cfg(test)]
 mod mixer_tests;
 mod sfizz;
@@ -18,50 +21,29 @@ fn error(value: impl std::fmt::Display) -> AudioError {
 #[global_allocator]
 static TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 use score_core::{Instrument, Score};
-use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Debug)]
-pub struct VscoPack {
+pub struct SfzPack {
     pub root: PathBuf,
     pub library: PathBuf,
+    spec: manifest::PackSpec,
 }
 
-#[derive(Deserialize)]
-struct Manifest {
-    format: u32,
-    kind: String,
-    samples: PathBuf,
-    engine: PathBuf,
-}
+/// Existing VSCO callers keep their source-compatible name.
+pub type VscoPack = SfzPack;
 
-impl VscoPack {
+impl SfzPack {
     pub fn load(path: &Path) -> Result<Self, AudioError> {
-        let data = std::fs::read(path).map_err(error)?;
-        let manifest: Manifest = serde_json::from_slice(&data).map_err(error)?;
-        if manifest.format != 1 || manifest.kind != "vsco-ce" {
-            return Err(error("Formato de paquete de sonido no compatible"));
-        }
-        let parent = path.parent().unwrap_or(Path::new("."));
-        let pack = Self {
-            root: parent.join(manifest.samples),
-            library: parent.join(manifest.engine),
-        };
-        if !pack.library.is_file() || !pack.root.join("LICENSE").is_file() {
-            return Err(error(
-                "El paquete VSCO no está completo: falta el motor o las muestras",
-            ));
-        }
-        for instrument in Instrument::ALL {
-            if let Some(patch) = patches(instrument) {
-                for file in std::iter::once(patch.normal).chain(patch.pizz) {
-                    if !pack.root.join(file).is_file() {
-                        return Err(error(format!("Falta el instrumento VSCO: {file}")));
-                    }
-                }
-            }
-        }
-        Ok(pack)
+        let spec = manifest::load_manifest(path)?;
+        Ok(Self {
+            root: spec.root.clone(),
+            library: spec.engine.clone(),
+            spec,
+        })
     }
 
     /// Portable app bundles and development binaries both search their ancestors.
@@ -71,17 +53,124 @@ impl VscoPack {
             Self::load(&directory.join("soundpacks/vsco-ce/manifest.json")).ok()
         })
     }
+
+    pub fn license_path(&self) -> Option<&Path> {
+        self.spec.license.as_deref()
+    }
+
+    /// Examine immediate package folders in each soundpacks directory. One bad
+    /// manifest is reported but never hides another library.
+    pub fn discover_all(extra_dirs: &[PathBuf]) -> (Vec<Self>, Vec<String>) {
+        let mut roots = BTreeSet::new();
+        if let Ok(executable) = std::env::current_exe() {
+            for parent in executable.ancestors() {
+                roots.insert(parent.join("soundpacks"));
+            }
+        }
+        roots.extend(extra_dirs.iter().cloned());
+        discover_in_roots(roots)
+    }
 }
 
-impl SoundBank for VscoPack {
-    fn id(&self) -> &'static str {
-        "vsco-ce"
+fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
+    let mut manifests = BTreeSet::new();
+    let mut errors = Vec::new();
+    for root in roots {
+        if !root.exists() {
+            continue;
+        }
+        match std::fs::read_dir(&root) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let path = entry.path().join("manifest.json");
+                            if path.is_file() {
+                                manifests.insert(path.canonicalize().unwrap_or(path));
+                            }
+                        }
+                        Err(cause) => errors.push(format!("{}: {cause}", root.display())),
+                    }
+                }
+            }
+            Err(cause) => errors.push(format!("{}: {cause}", root.display())),
+        }
     }
-    fn name(&self) -> &'static str {
-        "VSCO CE · experimental"
+    let (mut packs, mut ids) = (Vec::new(), BTreeSet::new());
+    for path in manifests {
+        match SfzPack::load(&path) {
+            Ok(pack) if ids.insert(pack.id().to_owned()) => packs.push(pack),
+            Ok(pack) => errors.push(format!(
+                "Id SFZ duplicado {}: {}",
+                pack.id(),
+                path.display()
+            )),
+            Err(cause) => errors.push(format!("{}: {cause}", path.display())),
+        }
     }
-    fn description(&self) -> &'static str {
-        "VSCO: sostenidos, pizzicato y muestras cortas (staccato en vientos/metales, spiccato en cuerdas) cuando están disponibles. GeneralUser cubre los sonidos y registros restantes."
+    packs.sort_by(|left, right| left.id().cmp(right.id()));
+    errors.sort();
+    (packs, errors)
+}
+
+/// Priority order is the vector order; the first package with a patch wins.
+#[derive(Clone)]
+pub struct CombinedPack {
+    pub packs: Vec<SfzPack>,
+}
+impl CombinedPack {
+    pub fn new(packs: Vec<SfzPack>) -> Self {
+        Self { packs }
+    }
+}
+
+pub(crate) fn first_pack_with(
+    packs: &[SfzPack],
+    instrument: Instrument,
+) -> Option<(&SfzPack, &manifest::PatchSpec)> {
+    packs
+        .iter()
+        .find_map(|pack| manifest::patch_for(&pack.spec, instrument).map(|patch| (pack, patch)))
+}
+
+impl SoundBank for CombinedPack {
+    fn id(&self) -> &str {
+        "sfz-combinadas"
+    }
+    fn name(&self) -> &str {
+        "Bibliotecas combinadas"
+    }
+    fn description(&self) -> &str {
+        "Primer paquete SFZ con cada instrumento según la prioridad elegida; GeneralUser cubre lo restante."
+    }
+    fn prepare(
+        &self,
+        score: &Score,
+        audition: Instrument,
+        rate: u32,
+    ) -> Result<Box<dyn SoundEngine>, AudioError> {
+        Ok(Box::new(NativeBank::new_many(
+            &self.packs,
+            score,
+            audition,
+            rate,
+        )?))
+    }
+}
+
+impl SoundBank for SfzPack {
+    fn id(&self) -> &str {
+        &self.spec.id
+    }
+    fn name(&self) -> &str {
+        &self.spec.name
+    }
+    fn description(&self) -> &str {
+        if self.spec.id == "vsco-ce" {
+            "VSCO: sostenidos, pizzicato y muestras cortas (staccato en vientos/metales, spiccato en cuerdas) cuando están disponibles. GeneralUser cubre los sonidos y registros restantes."
+        } else {
+            "Paquete SFZ: instrumentos y articulaciones declarados en su manifiesto. GeneralUser cubre los sonidos y registros restantes."
+        }
     }
     fn prepare(
         &self,
@@ -91,53 +180,4 @@ impl SoundBank for VscoPack {
     ) -> Result<Box<dyn SoundEngine>, AudioError> {
         Ok(Box::new(NativeBank::new(self, score, audition, rate)?))
     }
-}
-
-struct Patches {
-    normal: &'static str,
-    pizz: Option<&'static str>,
-    short: Option<&'static str>,
-}
-fn patches(instrument: Instrument) -> Option<Patches> {
-    use Instrument::*;
-    let (normal, pizz, short) = match instrument {
-        Piano => ("UprightPiano.sfz", None, None),
-        Violin => (
-            "SViolinVib.sfz",
-            Some("SViolinPizz.sfz"),
-            Some("SViolinSpic.sfz"),
-        ),
-        Viola => (
-            "ViolaEnsSusVib.sfz",
-            Some("ViolaEnsPizz.sfz"),
-            Some("ViolaEnsSpic.sfz"),
-        ),
-        Cello => (
-            "CelloEnsSusVib.sfz",
-            Some("CelloEnsPizz.sfz"),
-            Some("CelloEnsSpic.sfz"),
-        ),
-        DoubleBass => (
-            "ContrabassSusVB.sfz",
-            Some("ContrabassPizz.sfz"),
-            Some("ContrabassSpic.sfz"),
-        ),
-        Flute => ("FluteSusVib.sfz", None, Some("FluteStac.sfz")),
-        Oboe => ("OboeSusVib.sfz", None, Some("OboeStac.sfz")),
-        Clarinet => ("ClarinetSus.sfz", None, Some("ClarinetStac.sfz")),
-        Bassoon => ("BassoonSus.sfz", None, Some("BassoonStac.sfz")),
-        Trumpet => ("TrumpetSus.sfz", None, Some("TrumpetStac.sfz")),
-        Horn => ("FHornSus.sfz", None, Some("FHornStac.sfz")),
-        Trombone => ("TromboneSus.sfz", None, Some("TromboneStac.sfz")),
-        Guitar => return None,
-        ClarinetBb | ClarinetA | ClarinetEb => return patches(Clarinet),
-        HornF => return patches(Horn),
-        TrumpetBb | TrumpetD | PiccoloTrumpet | Cornet => return patches(Trumpet),
-        _ => return None,
-    };
-    Some(Patches {
-        normal,
-        pizz,
-        short,
-    })
 }

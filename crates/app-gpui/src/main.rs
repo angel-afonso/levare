@@ -1,24 +1,31 @@
+mod app_icon;
+mod app_paths;
 mod clipboard;
+mod comments;
 mod follow;
+mod ghost;
 mod keyboard;
+mod mark_drag;
 mod menu_typography;
 mod music_font;
 mod note_drag;
 mod paint;
 mod playback;
 mod playhead;
+mod review;
 mod selection;
 mod shortcuts;
 mod sound_banks;
 mod ui;
 
+use app_paths::data_path;
 use gpui::{prelude::*, *};
 use score_core::{
-    Accidental, Articulation, Connection, ConnectionKind, Dynamic, ElementId, Instrument, KeyMode,
-    KeySignature, MarkFamily, MarkKind, MarkRef, PartId, StaffId,
+    Accidental, Articulation, BarMarkRef, Barline, Connection, ConnectionKind, Dynamic, ElementId,
+    Instrument, Jump, KeyMode, KeySignature, MarkFamily, MarkKind, MarkRef, PartId, StaffId,
 };
 use score_document::Document;
-use score_edit::{Command, Cursor};
+use score_edit::{Command, Cursor, FormEdit};
 use score_keymap::{CommandId, KeySequence, Keystroke as Key, Status, id};
 use shortcuts::{
     AddInstrument, ChooseDynamic, ChooseKeySignature, MenuRun, OpenRecent, Run, Shortcuts,
@@ -36,6 +43,13 @@ type QuitSnapshot = Option<score_io::Recovery>;
 /// A key held longer than this without its key-up is a new press, not a repeat
 /// (covers a key-up lost while the window was in the background).
 const REPEAT_WINDOW: Elapsed = Elapsed::from_millis(700);
+/// Minimum spacing between navigation auditions while a key is held.
+const AUDITION_GAP: Elapsed = Elapsed::from_millis(90);
+
+/// Held arrows sound at most every `AUDITION_GAP`, never as a burst.
+fn audition_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|last| now.duration_since(last) >= AUDITION_GAP)
+}
 
 #[derive(Clone)]
 enum Next {
@@ -57,7 +71,13 @@ struct AppView {
     export_picker: Option<ui::ExportPicker>,
     key_picker: bool,
     time_picker: bool,
+    clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
+    header_editor: Option<ui::HeaderEditor>,
+    range_editor: Option<ui::RangeEditor>,
+    comment_editor: Option<ui::CommentEditor>,
+    comments: comments::CommentState,
+    review: review::ReviewState,
     signature_from_start: bool,
     pending_time: score_core::TimeSignature,
     key_mode: KeyMode,
@@ -68,11 +88,16 @@ struct AppView {
     /// A mark clicked in the score. Its note is the editor's selection, so
     /// the ribbon's toggles change or remove it; see `selected_mark`.
     clicked_mark: Option<MarkRef>,
+    clicked_bar_mark: Option<BarMarkRef>,
+    hover: Option<selection::Hover>,
+    zoom_wheel: f32,
     reveal_selection: bool,
     pending_page: Option<usize>,
     canvas_origin: Point<Pixels>,
     selection_drag: Option<selection::PassageDrag>,
     note_drag: Option<note_drag::NoteDrag>,
+    mark_drag: Option<mark_drag::MarkDrag>,
+    ghost: Option<ghost::Ghost>,
     mixer_drag: Option<ui::MixerDrag>,
     viewport: follow::PlaybackViewport,
     /// Shared with the score canvas, which keeps it for painting.
@@ -87,6 +112,7 @@ struct AppView {
     /// Set by the keystroke interceptor when the key being dispatched is an
     /// auto-repeat; consumed by the next `Run`.
     repeat_at: Option<Instant>,
+    last_audition: Option<Instant>,
     held: HashMap<String, Instant>,
     recent: score_io::RecentFiles,
     recent_path: Option<PathBuf>,
@@ -221,7 +247,13 @@ impl AppView {
             export_picker: None,
             key_picker: false,
             time_picker: false,
+            clef_picker: false,
             tempo_picker: None,
+            header_editor: None,
+            range_editor: None,
+            comment_editor: None,
+            comments: comments::CommentState::default(),
+            review: review::ReviewState::default(),
             signature_from_start: false,
             pending_time: Default::default(),
             key_mode: KeyMode::Major,
@@ -230,11 +262,16 @@ impl AppView {
             pending_slur: None,
             pending_hairpin: None,
             clicked_mark: None,
+            clicked_bar_mark: None,
+            hover: None,
+            zoom_wheel: 0.,
             reveal_selection: false,
             pending_page: None,
             canvas_origin: Point::default(),
             selection_drag: None,
             note_drag: None,
+            mark_drag: None,
+            ghost: None,
             mixer_drag: None,
             viewport: follow::PlaybackViewport::default(),
             layout,
@@ -245,6 +282,7 @@ impl AppView {
             shortcuts,
             preferences: None,
             repeat_at: None,
+            last_audition: None,
             held: HashMap::new(),
             recent,
             recent_path,
@@ -332,6 +370,54 @@ impl AppView {
                 && editor.selection() == Some(mark.anchor())
                 && editor.selected_ids().len() == 1
         })
+    }
+    pub(crate) fn selected_bar_mark(&self) -> Option<BarMarkRef> {
+        let editor = &self.document.editor;
+        self.clicked_bar_mark.filter(|mark| {
+            editor.score().has_bar_mark(*mark)
+                && editor.selection().is_none()
+                && editor.cursor().measure == mark.measure
+        })
+    }
+
+    fn nudge_bar_mark(&mut self, mark: BarMarkRef, dx: i16, dy: i16, cx: &mut Context<Self>) {
+        let base = self.document.editor.score().bar_mark_offset(mark);
+        let max = i32::from(score_core::Offset::MAX);
+        let offset = score_core::Offset {
+            dx: (i32::from(base.dx) + i32::from(dx)).clamp(-max, max) as i16,
+            dy: (i32::from(base.dy) + i32::from(dy)).clamp(-max, max) as i16,
+        };
+        if offset == base {
+            return;
+        }
+        if self.try_edit(Command::SetBarMarkOffset(mark, offset), cx) {
+            self.clicked_bar_mark = Some(mark);
+            self.reveal_selection = false;
+            self.status = format!(
+                "{} · ⇧⌘P la devuelve a su sitio",
+                mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+            );
+            cx.notify();
+        }
+    }
+    fn nudge_mark(&mut self, mark: MarkRef, dx: i16, dy: i16, cx: &mut Context<Self>) {
+        let base = self.document.editor.score().mark_offset(mark);
+        let max = i32::from(score_core::Offset::MAX);
+        let offset = score_core::Offset {
+            dx: (i32::from(base.dx) + i32::from(dx)).clamp(-max, max) as i16,
+            dy: (i32::from(base.dy) + i32::from(dy)).clamp(-max, max) as i16,
+        };
+        if self.try_edit(Command::SetMarkOffset(mark, offset), cx) {
+            self.clicked_mark = Some(mark);
+            let label = self
+                .document
+                .editor
+                .score()
+                .mark_label(mark)
+                .unwrap_or_default();
+            self.status = format!("{label} · ⇧⌘P la devuelve a su sitio");
+            cx.notify();
+        }
     }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
@@ -443,11 +529,18 @@ impl AppView {
     }
 
     fn edit(&mut self, command: Command, cx: &mut Context<Self>) {
+        self.try_edit(command, cx);
+    }
+
+    fn try_edit(&mut self, command: Command, cx: &mut Context<Self>) -> bool {
         self.selection_drag = None;
         self.note_drag = None;
+        self.mark_drag = None;
+        self.ghost = None;
         if self.busy || self.confirming || self.instrument_picker.is_some() {
-            return;
+            return false;
         }
+        self.clicked_bar_mark = None;
         let tempo_tick = (matches!(
             command,
             Command::SetTempoAt(_, _) | Command::RemoveTempoChange(_)
@@ -460,11 +553,22 @@ impl AppView {
                 .tick
                 .floor() as u64
         });
+        let mut changed = false;
         self.status = match self.document.execute(command.clone()) {
             Ok(true) => {
+                changed = true;
                 self.pending_slur = None;
                 self.pending_hairpin = None;
-                self.playback.stop();
+                if !matches!(
+                    command,
+                    Command::SetHeader(..)
+                        | Command::SetInstrumentRange(..)
+                        | Command::SaveComment { .. }
+                        | Command::SetCommentResolved(..)
+                        | Command::RemoveComment(_)
+                ) {
+                    self.playback.stop();
+                }
                 if let Some(tick) = tempo_tick {
                     let _ = self.playback.seek(self.document.editor.score(), tick);
                 }
@@ -473,6 +577,8 @@ impl AppView {
                 if matches!(
                     command,
                     Command::Insert(_)
+                        | Command::Write(_)
+                        | Command::WriteAt { .. }
                         | Command::ReplacePitch(_)
                         | Command::Transpose(_)
                         | Command::AddPitch(_)
@@ -498,7 +604,7 @@ impl AppView {
                     self.status = format!("Nota escrita. Audición: {error}");
                     self.sync_quit_snapshot();
                     cx.notify();
-                    return;
+                    return true;
                 }
                 match command {
                     Command::SetPassageDivisi(true) => "Divisi desde la posición seleccionada; si elegiste un pasaje, solo en ese tramo. Puedes deshacer.".into(),
@@ -513,6 +619,7 @@ impl AppView {
                         "{} instrumentos añadidos. Puedes deshacerlos juntos.",
                         parts.len()
                     ),
+                    Command::SetHeader(..) => "Cabecera actualizada. Puedes deshacer.".into(),
                     _ => "Partitura actualizada".into(),
                 }
             }
@@ -521,11 +628,17 @@ impl AppView {
         };
         self.sync_quit_snapshot();
         cx.notify();
+        changed
     }
 
     /// Runs before any binding: marks auto-repeats and feeds the recorder in
     /// Preferences, which must see keys that are already bound.
     fn intercept(&mut self, event: &KeystrokeEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let ghost_cleared = self.ghost.take().is_some();
+        let hover_cleared = self.hover.take().is_some();
+        if ghost_cleared || hover_cleared {
+            cx.notify();
+        }
         let stroke = &event.keystroke;
         if let Some(drag) = self.note_drag.take() {
             self.selection_drag = None;
@@ -533,6 +646,16 @@ impl AppView {
             if stroke.key == "escape" {
                 if drag.active {
                     self.status = "Cambio de nota cancelado".into();
+                }
+                cx.stop_propagation();
+                return;
+            }
+        }
+        if let Some(drag) = self.mark_drag.take() {
+            cx.notify();
+            if stroke.key == "escape" {
+                if drag.active {
+                    self.status = "Movimiento de la marca cancelado".into();
                 }
                 cx.stop_propagation();
                 return;
@@ -587,9 +710,94 @@ impl AppView {
             } else if stroke.key == "escape" {
                 cx.stop_propagation();
                 self.tempo_picker = None;
+                self.header_editor = None;
                 window.focus(&self.focus);
                 cx.notify();
             }
+            return;
+        }
+        if let Some(editor) = self
+            .header_editor
+            .as_ref()
+            .filter(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "tab" {
+                cx.stop_propagation();
+                editor.focus_next(stroke.modifiers.shift, window, cx);
+            } else if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_header(cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.header_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if let Some(editor) = self
+            .range_editor
+            .as_ref()
+            .filter(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "tab" {
+                cx.stop_propagation();
+                editor.focus_next(window, cx);
+            } else if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_range(cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.range_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
+            .comment_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_comment(cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.comment_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            } else if stroke.key == "tab" {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+            }
+            return;
+        }
+        // A selected mark is nudged by physical arrows, leaving Tab for navigation.
+        if let Some(mark) = self.selected_mark()
+            && mark.can_move()
+            && self
+                .preferences
+                .as_ref()
+                .is_none_or(|p| p.recording.is_none())
+            && let Some((dx, dy)) = mark_drag::nudge(&stroke.key, stroke.modifiers)
+        {
+            cx.stop_propagation();
+            self.nudge_mark(mark, dx, dy, cx);
+            return;
+        }
+        if let Some(mark) = self.selected_bar_mark()
+            && self
+                .preferences
+                .as_ref()
+                .is_none_or(|p| p.recording.is_none())
+            && let Some((dx, dy)) = mark_drag::nudge(&stroke.key, stroke.modifiers)
+        {
+            cx.stop_propagation();
+            self.nudge_bar_mark(mark, dx, dy, cx);
             return;
         }
         let Some(preferences) = &self.preferences else {
@@ -642,10 +850,23 @@ impl AppView {
     /// The single entry point for keys, menus and toolbar buttons.
     fn run(&mut self, command: CommandId, window: &mut Window, cx: &mut Context<Self>) {
         self.note_drag = None;
+        self.mark_drag = None;
         if self
             .tempo_picker
             .as_ref()
             .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .header_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .range_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .comment_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
         {
             // TextInput owns writing/navigation/clipboard keys while it has focus.
             return;
@@ -685,13 +906,6 @@ impl AppView {
             return;
         }
         let note_input = [
-            id::NOTE_C,
-            id::NOTE_D,
-            id::NOTE_E,
-            id::NOTE_F,
-            id::NOTE_G,
-            id::NOTE_A,
-            id::NOTE_B,
             id::ADD_C,
             id::ADD_D,
             id::ADD_E,
@@ -727,8 +941,50 @@ impl AppView {
             cx.notify();
             return;
         }
+        if let Some(edit) = form_command(&self.document.editor, command) {
+            self.edit(edit, cx);
+            return;
+        }
         use score_core::Step;
         match command {
+            id::NEW_COMMENT => self.open_comment_editor(None, window, cx),
+            id::SHOW_COMMENTS => {
+                self.show_review();
+                self.comments.open = true;
+            }
+            id::RESOLVE_COMMENT => {
+                if let Some(comment) = self
+                    .comments
+                    .active
+                    .and_then(|id| self.document.editor.score().comment(id))
+                {
+                    self.set_comment_status(comment.id, !comment.resolved, cx);
+                }
+            }
+            id::CHECK_SCORE => self.check_review(false, cx),
+            id::CHECK_SELECTION => self.check_review(true, cx),
+            id::REVIEW_ISSUES => self.show_review(),
+            id::REVIEW_PREVIOUS => self.navigate_review(false, cx),
+            id::REVIEW_NEXT => self.navigate_review(true, cx),
+            id::SHOW_RANGES => self.review.show_ranges = !self.review.show_ranges,
+            id::EDIT_RANGE => self.open_range_editor(cx),
+            id::RESET_RANGE => self.edit(
+                Command::SetInstrumentRange(self.document.editor.cursor().part, None),
+                cx,
+            ),
+            id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            id::REHEARSAL_LETTERS => self.edit(
+                Command::SetRehearsalStyle(score_core::RehearsalStyle::Letters),
+                cx,
+            ),
+            id::REHEARSAL_NUMBERS => self.edit(
+                Command::SetRehearsalStyle(score_core::RehearsalStyle::Numbers),
+                cx,
+            ),
+            id::REHEARSAL_BAR_NUMBERS => self.edit(
+                Command::SetRehearsalStyle(score_core::RehearsalStyle::BarNumbers),
+                cx,
+            ),
             id::NEW => self.request_next(Next::New, window, cx),
             id::OPEN => self.request_next(Next::Open, window, cx),
             id::SAVE => self.save(false, cx),
@@ -748,6 +1004,7 @@ impl AppView {
             id::CUT => self.copy_music(true, cx),
             id::PASTE => self.paste_music(cx),
             id::SELECT_ALL => {
+                self.clicked_bar_mark = None;
                 if self.document.editor.select_all() {
                     self.status =
                         "Pentagrama seleccionado. Puedes copiar o cortar el pasaje".into();
@@ -757,6 +1014,7 @@ impl AppView {
                 }
             }
             id::EXTEND_PREVIOUS | id::EXTEND_NEXT => {
+                self.clicked_bar_mark = None;
                 self.document
                     .editor
                     .extend_navigation(command == id::EXTEND_NEXT);
@@ -768,11 +1026,27 @@ impl AppView {
             }
             id::UNDO => self.history(false, cx),
             id::REDO => self.history(true, cx),
+            id::DELETE if self.selected_bar_mark().is_some() => {
+                self.status = "Usa el comando de la marca de compás para quitarla".into();
+            }
             id::DELETE => match self.selected_mark() {
                 Some(mark) => self.edit(Command::RemoveMark(mark), cx),
                 None => self.edit(Command::Erase, cx),
             },
             id::REMOVE_TIME => self.edit(Command::Delete, cx),
+            id::RESET_POSITION => {
+                if let Some(mark) = self.selected_bar_mark() {
+                    self.edit(Command::ResetBarMarkOffset(mark), cx);
+                    self.clicked_bar_mark = Some(mark);
+                    self.reveal_selection = false;
+                } else {
+                    let mark = self.selected_mark();
+                    self.edit(Command::ResetMarkOffsets(mark), cx);
+                    if let Some(mark) = mark {
+                        self.clicked_mark = Some(mark);
+                    }
+                }
+            }
             id::ESCAPE => self.escape(cx),
             id::REPEAT => self.repeat_selection(cx),
 
@@ -807,7 +1081,7 @@ impl AppView {
             id::INTERVAL_9 => self.add_interval(9, cx),
             id::REST => self.edit(
                 if self.ui.note_entry {
-                    Command::Insert(self.document.editor.rest())
+                    Command::Write(self.document.editor.rest())
                 } else {
                     Command::Erase
                 },
@@ -844,6 +1118,7 @@ impl AppView {
             id::CLEAR_DYNAMIC => self.edit(Command::SetDynamic(None), cx),
 
             id::TIME_SIGNATURE => self.toggle_time_picker(cx),
+            id::CLEF => self.toggle_clef_picker(cx),
             id::ARPEGGIO_BOTH_HANDS => {
                 let enabled = self
                     .document
@@ -854,6 +1129,16 @@ impl AppView {
                 self.edit(Command::SetArpeggioBothHands(!enabled), cx);
             }
             id::TEMPO_TEXT => self.toggle_tempo_picker(cx),
+            id::REPEATS => {
+                self.playback.toggle_repeats();
+                self.status = if self.playback.follow_repeats {
+                    "La reproducción sigue repeticiones y saltos".into()
+                } else {
+                    "La reproducción ignora repeticiones y saltos".into()
+                };
+                cx.notify();
+            }
+            id::SCORE_INFO => self.toggle_header_editor(window, cx),
             id::KEY_SIGNATURE => {
                 self.ui.show_instruments = true;
                 self.toggle_key_picker(cx);
@@ -877,15 +1162,17 @@ impl AppView {
             }
 
             id::PREVIOUS | id::NEXT => {
+                self.clicked_bar_mark = None;
                 self.document.editor.navigate(command == id::NEXT);
                 self.reveal_selection = true;
+                self.audition_selection();
             }
             // A mark picked in the score must not move its note by surprise.
             id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
-                if self.selected_mark().is_some() =>
+                if self.selected_mark().is_some() || self.selected_bar_mark().is_some() =>
             {
                 self.status =
-                    "Hay una marca seleccionada: Esc vuelve a su nota para transportarla".into();
+                    "Esta marca no se puede mover · Esc vuelve a su nota para transportarla".into();
             }
             id::STEP_UP => self.edit(Command::Transpose(1), cx),
             id::STEP_DOWN => self.edit(Command::Transpose(-1), cx),
@@ -972,9 +1259,6 @@ impl AppView {
                 measure: cursor.measure,
                 event,
             });
-            self.ui.note_entry = false;
-        } else {
-            self.ui.note_entry = true;
         }
         self.pending_slur = None;
         self.pending_hairpin = None;
@@ -982,9 +1266,9 @@ impl AppView {
             "Voz {} · {}",
             voice.number(),
             if self.ui.note_entry {
-                "entrada desde el inicio del compás"
+                "entrada activa"
             } else {
-                "selecciona una nota para editar; N para continuar escribiendo"
+                "escribe una letra para añadir notas"
             }
         );
         self.reveal_selection = true;
@@ -993,23 +1277,20 @@ impl AppView {
 
     fn write_note(&mut self, step: score_core::Step, cx: &mut Context<Self>) {
         let note = self.entry_note(step);
-        let adding = self.chord_entry
-            && self
-                .document
-                .editor
-                .selection()
-                .and_then(|id| self.document.editor.score().event(id))
-                .is_some_and(|event| !event.pitches.is_empty());
-        self.edit(
-            if !self.ui.note_entry {
-                Command::ReplacePitch(note.pitches.first().expect("entry note"))
-            } else if adding {
-                Command::AddPitch(note.pitches.first().expect("entry note"))
-            } else {
-                Command::Insert(note)
-            },
-            cx,
-        );
+        let command =
+            match letter_action(&self.document.editor, self.ui.note_entry, self.chord_entry) {
+                LetterAction::Insert => Command::Write(note),
+                LetterAction::AddToChord => {
+                    Command::AddPitch(note.pitches.first().expect("entry note"))
+                }
+                LetterAction::FillRest => {
+                    Command::ReplacePitch(note.pitches.first().expect("entry note"))
+                }
+            };
+        if self.try_edit(command, cx) {
+            self.ui.note_entry = true;
+            cx.notify();
+        }
     }
 
     fn add_pitch(&mut self, step: score_core::Step, cx: &mut Context<Self>) {
@@ -1045,19 +1326,44 @@ impl AppView {
             .and_then(|id| self.document.editor.score().event(id))
             .copied();
         match event {
-            Some(event) => self.edit(Command::Insert(event), cx),
+            Some(event) => self.edit(Command::Write(event), cx),
             None => self.status = "Selecciona una nota, acorde o silencio para repetirlo".into(),
         }
     }
 
     fn escape(&mut self, cx: &mut Context<Self>) {
         self.selection_drag = None;
+        if self.comment_editor.take().is_some() {
+            cx.notify();
+            return;
+        }
+        if self.range_editor.take().is_some() {
+            cx.notify();
+            return;
+        }
+        if self.ui.context_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
+        if self.clef_picker {
+            self.clef_picker = false;
+            cx.notify();
+            return;
+        }
         if self.tempo_picker.take().is_some() {
             self.status = "Edición de tempo cancelada".into();
             cx.notify();
             return;
         }
-        if self.clicked_mark.take().is_some() {
+        if self.header_editor.take().is_some() {
+            self.status = "Edición de la cabecera cancelada".into();
+            cx.notify();
+            return;
+        }
+        if self.clicked_bar_mark.take().is_some() {
+            self.status = "Marca de compás deseleccionada".into();
+            cx.notify();
+        } else if self.clicked_mark.take().is_some() {
             self.status = "Nota seleccionada".into();
             cx.notify();
         } else if self.pending_hairpin.take().is_some() {
@@ -1067,9 +1373,18 @@ impl AppView {
         } else if self.playback.is_playing() || self.playback.is_paused() {
             self.stop_playback(cx);
         } else {
-            self.document
-                .editor
-                .set_cursor(self.document.editor.cursor());
+            match escape_step(self.ui.note_entry) {
+                EscapeStep::LeaveEntry => {
+                    self.ui.note_entry = false;
+                    self.status =
+                        "Entrada de notas desactivada · Esc otra vez quita la selección".into();
+                    cx.notify();
+                }
+                EscapeStep::Deselect => self
+                    .document
+                    .editor
+                    .set_cursor(self.document.editor.cursor()),
+            }
         }
     }
 
@@ -1148,22 +1463,53 @@ impl AppView {
         self.apply_accidental((current != Some(sign)).then_some(sign), cx);
     }
 
-    /// ⌥↑/⌥↓: the next note of the chord, then the adjacent staff.
-    fn move_vertically(&mut self, up: bool, cx: &mut Context<Self>) {
-        let editor = &mut self.document.editor;
-        if let Some(event) = editor.selection().and_then(|id| editor.score().event(id)) {
-            let pitches = event.pitches;
-            if let Some(index) = pitches
-                .iter()
-                .position(|pitch| Some(pitch) == editor.selected_pitch())
-            {
-                let next = if up { index + 1 } else { index.wrapping_sub(1) };
-                if next < pitches.len() {
-                    editor.select_tone(next);
-                    return;
-                }
+    fn audition_selection(&mut self) {
+        if self.playback.is_playing() {
+            return;
+        }
+        let now = Instant::now();
+        if !audition_due(self.last_audition, now) {
+            return;
+        }
+        if let Some(id) = self.document.editor.selection()
+            && self
+                .document
+                .editor
+                .score()
+                .event(id)
+                .is_some_and(|event| !event.pitches.is_empty())
+        {
+            let result = self.playback.preview(self.document.editor.score(), id);
+            self.last_audition = Some(now);
+            if let Err(error) = result {
+                self.status = format!("Audio: {error}");
             }
         }
+    }
+
+    /// ⌥↑/⌥↓: the next note of the chord, then the adjacent staff.
+    fn move_vertically(&mut self, up: bool, cx: &mut Context<Self>) {
+        self.clicked_bar_mark = None;
+        let next_tone = {
+            let editor = &self.document.editor;
+            editor
+                .selection()
+                .and_then(|id| editor.score().event(id))
+                .and_then(|event| {
+                    let pitches = event.pitches;
+                    let index = pitches
+                        .iter()
+                        .position(|pitch| Some(pitch) == editor.selected_pitch())?;
+                    let next = if up { index + 1 } else { index.wrapping_sub(1) };
+                    (next < pitches.len()).then_some(next)
+                })
+        };
+        if let Some(next) = next_tone {
+            self.document.editor.select_tone(next);
+            self.audition_selection();
+            return;
+        }
+        let editor = &mut self.document.editor;
         let cursor = editor.cursor();
         let staves: Vec<(PartId, StaffId)> = editor
             .score()
@@ -1193,10 +1539,7 @@ impl AppView {
             Some(index + 1).filter(|next| *next < staves.len())
         };
         if let Some((part, staff)) = target.map(|index| staves[index]) {
-            if part != cursor.part {
-                editor.select_part(part);
-            }
-            editor.select_display_staff(staff);
+            editor.select_display_staff_in(part, staff);
             self.playback.follow_staff(part, editor.cursor().staff);
             self.reveal_selection = true;
             cx.notify();
@@ -1205,12 +1548,31 @@ impl AppView {
 
     fn set_zoom(&mut self, zoom: f32) {
         self.ui.zoom = (zoom * 10.).round().clamp(1., 20.) / 10.;
+        self.ghost = None;
+        self.hover = None;
         self.reveal_selection = true;
+    }
+
+    fn zoom_at(&mut self, zoom: f32, pointer: Point<Pixels>) {
+        let old = self.ui.zoom;
+        let new = (zoom * 10.).round().clamp(1., 20.) / 10.;
+        if new == old {
+            return;
+        }
+        self.ui.zoom = new;
+        self.reveal_selection = false;
+        let within_canvas = pointer - self.canvas_origin;
+        self.viewport.scroll.set_offset(selection::anchored_offset(
+            self.viewport.scroll.offset(),
+            within_canvas,
+            new / old,
+        ));
     }
 
     fn set_view_mode(&mut self, mode: score_layout::ViewMode, cx: &mut Context<Self>) {
         if self.ui.view_mode != mode {
             self.ui.view_mode = mode;
+            self.ghost = None;
             self.pending_page = None;
             self.selection_drag = None;
             self.reveal_selection = true;
@@ -1240,7 +1602,9 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.clef_picker = false;
         self.tempo_picker = None;
+        self.header_editor = None;
         self.ui.file_menu = false;
         self.ui.open_group = None;
         self.playback.stop();
@@ -1363,6 +1727,7 @@ impl AppView {
 
     fn request_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         self.note_drag = None;
+        self.mark_drag = None;
         if self.busy || self.confirming || self.instrument_picker.is_some() {
             return;
         }
@@ -1397,9 +1762,15 @@ impl AppView {
         match next {
             Next::New => {
                 self.clear_recovery();
+                self.clicked_mark = None;
+                self.clicked_bar_mark = None;
                 self.pending_slur = None;
                 self.pending_hairpin = None;
                 self.document = Document::default();
+                self.review.reset_document();
+                self.comments = comments::CommentState::default();
+                self.comment_editor = None;
+                self.range_editor = None;
                 self.playback.reset_part_mix(
                     self.document.editor.score(),
                     self.document.editor.cursor().part,
@@ -1409,7 +1780,9 @@ impl AppView {
                 self.instrument_picker = None;
                 self.key_picker = false;
                 self.time_picker = false;
+                self.clef_picker = false;
                 self.tempo_picker = None;
+                self.header_editor = None;
                 self.chord_entry = false;
                 self.entry_accidental = None;
                 self.path = None;
@@ -1471,9 +1844,15 @@ impl AppView {
                     Some(Ok((opened, path))) => match if opened.imported { Document::recover(opened.score) } else { Document::new(opened.score) } {
                         Ok(document) => {
                             view.clear_recovery();
+                            view.clicked_mark = None;
+                            view.clicked_bar_mark = None;
                             view.pending_slur = None;
                             view.pending_hairpin = None;
                             view.document = document;
+                            view.review.reset_document();
+                            view.comments = comments::CommentState::default();
+                            view.comment_editor = None;
+                            view.range_editor = None;
                             view.playback.reset_part_mix(
                                 view.document.editor.score(),
                                 view.document.editor.cursor().part,
@@ -1483,7 +1862,9 @@ impl AppView {
                             view.instrument_picker = None;
                             view.key_picker = false;
                             view.time_picker = false;
+                            view.clef_picker = false;
                             view.tempo_picker = None;
+                            view.header_editor = None;
                             view.chord_entry = false;
                             view.entry_accidental = None;
                             view.remember_recent(&path, cx);
@@ -1555,7 +1936,9 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.clef_picker = false;
         self.tempo_picker = None;
+        self.header_editor = None;
         self.ui.file_menu = false;
         self.ui.open_group = None;
         self.export_picker = Some(ui::ExportPicker {
@@ -1713,6 +2096,7 @@ impl AppView {
             self.document.editor.undo()
         };
         if changed {
+            self.clicked_bar_mark = None;
             self.pending_slur = None;
             self.pending_hairpin = None;
             self.playback.stop();
@@ -1732,6 +2116,7 @@ impl AppView {
         if self.busy || self.confirming {
             return;
         }
+        self.ghost = None;
         let was_paused = self.playback.is_paused();
         let selection = self.document.editor.selection();
         self.status = match self.playback.toggle(
@@ -1766,6 +2151,7 @@ impl AppView {
             return;
         }
         self.document.editor.select_part(part);
+        self.clicked_bar_mark = None;
         self.playback
             .follow_staff(part, self.document.editor.cursor().staff);
         self.reveal_selection = true;
@@ -1804,6 +2190,7 @@ impl AppView {
         }
         if self.tempo_picker.is_some() {
             self.tempo_picker = None;
+            self.header_editor = None;
         } else {
             self.signature_from_start = false;
             self.tempo_picker = Some(ui::TempoEditor::new(
@@ -1812,10 +2199,52 @@ impl AppView {
                 cx,
             ));
         }
+        self.header_editor = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.clef_picker = false;
         self.instrument_picker = None;
         self.ui.show_instruments = true;
+        cx.notify();
+    }
+    fn toggle_header_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            return;
+        }
+        if self.header_editor.take().is_none() {
+            let editor = ui::HeaderEditor::new(self.document.editor.score(), cx);
+            editor.focus_first(window, cx);
+            self.header_editor = Some(editor);
+            self.tempo_picker = None;
+            self.key_picker = false;
+            self.time_picker = false;
+            self.clef_picker = false;
+            self.instrument_picker = None;
+            self.ui.show_instruments = true;
+        }
+        cx.notify();
+    }
+    fn apply_header(&mut self, cx: &mut Context<Self>) {
+        let Some(editor) = &self.header_editor else {
+            return;
+        };
+        let (title, credits) = editor.header(cx);
+        // Checked on a copy first so an invalid field keeps the editor open.
+        match self
+            .document
+            .editor
+            .score()
+            .clone()
+            .set_header(&title, &credits)
+        {
+            Err(error) => self.status = error.to_string(),
+            Ok(changed) => {
+                self.header_editor = None;
+                if changed {
+                    self.edit(Command::SetHeader(title, credits), cx);
+                }
+            }
+        }
         cx.notify();
     }
     fn apply_tempo(&mut self, cx: &mut Context<Self>) {
@@ -1834,6 +2263,7 @@ impl AppView {
         self.edit(Command::SetTempoAt(bar, mark.clone()), cx);
         if self.document.editor.score().tempo_at(bar) == &mark {
             self.tempo_picker = None;
+            self.header_editor = None;
             self.status = format!(
                 "{} desde el compás {} · hasta el siguiente cambio",
                 mark.label(),
@@ -1851,13 +2281,51 @@ impl AppView {
         mark.bpm = (mark.bpm as i16 + delta).clamp(20, 400) as u16;
         self.edit(Command::SetTempoAt(bar, mark), cx);
     }
+    fn toggle_clef_picker(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            return;
+        }
+        self.clef_picker = !self.clef_picker;
+        self.time_picker = false;
+        self.key_picker = false;
+        self.tempo_picker = None;
+        self.header_editor = None;
+        self.instrument_picker = None;
+        self.signature_from_start = false;
+        self.ui.show_instruments = true;
+        cx.notify();
+    }
+    fn choose_clef(&mut self, clef: Option<score_core::Clef>, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            return;
+        }
+        let cursor = self.document.editor.cursor();
+        let bar = self.signature_measure();
+        let command = match clef {
+            Some(clef) => Command::SetClefAt(cursor.part, cursor.staff, bar, clef),
+            None => Command::RemoveClefChange(cursor.part, cursor.staff, bar),
+        };
+        self.edit(command, cx);
+        let part = self.document.editor.score().part(cursor.part).unwrap();
+        if clef.is_none() || clef == Some(part.clef_at(cursor.staff, bar)) {
+            self.clef_picker = false;
+            self.status = format!(
+                "{} desde el compás {}",
+                part.clef_at(cursor.staff, bar).label(),
+                bar + 1
+            );
+        }
+        cx.notify();
+    }
     fn toggle_key_picker(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
             return;
         }
         self.key_picker = !self.key_picker;
         self.time_picker = false;
+        self.clef_picker = false;
         self.tempo_picker = None;
+        self.header_editor = None;
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
         self.instrument_picker = None;
@@ -1869,7 +2337,9 @@ impl AppView {
             return;
         }
         self.time_picker = !self.time_picker;
+        self.clef_picker = false;
         self.tempo_picker = None;
+        self.header_editor = None;
         self.key_picker = false;
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
@@ -1904,7 +2374,9 @@ impl AppView {
         self.edit(Command::SetTimeSignatureAt(bar, time), cx);
         if self.document.editor.score().time_at(bar) == time {
             self.time_picker = false;
+            self.clef_picker = false;
             self.tempo_picker = None;
+            self.header_editor = None;
             self.status = format!(
                 "Métrica {}/{} desde el compás {} · hasta el siguiente cambio",
                 time.numerator,
@@ -1966,6 +2438,7 @@ impl AppView {
             self.document.editor.select_part(part);
         }
         self.document.editor.select_display_staff(staff);
+        self.clicked_bar_mark = None;
         self.playback
             .follow_staff(part, self.document.editor.cursor().staff);
         self.reveal_selection = true;
@@ -1991,6 +2464,9 @@ impl AppView {
             return;
         }
         self.ui.note_entry = !self.ui.note_entry;
+        if !self.ui.note_entry {
+            self.ghost = None;
+        }
         self.status = if self.ui.note_entry {
             "Entrada de notas activa"
         } else {
@@ -2003,6 +2479,7 @@ impl AppView {
         if self.busy || self.confirming {
             return;
         }
+        self.ghost = None;
         self.playback.stop();
         self.status = match self.playback.toggle(
             self.document.editor.score(),
@@ -2019,6 +2496,7 @@ impl AppView {
         if self.busy || self.confirming {
             return;
         }
+        self.ghost = None;
         self.selection_drag = None;
         self.status = match self.playback.seek(self.document.editor.score(), tick) {
             Ok(()) => {
@@ -2084,9 +2562,28 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.review.refresh(self.document.editor.score());
+        self.comments.refresh(self.document.editor.score());
+        if self
+            .range_editor
+            .as_ref()
+            .is_some_and(|editor| self.document.editor.score().part(editor.part).is_none())
+        {
+            self.range_editor = None;
+        }
         if !window.is_window_active() {
             self.note_drag = None;
+            self.mark_drag = None;
             self.selection_drag = None;
+            self.ghost = None;
+            self.hover = None;
+        }
+        if self
+            .mark_drag
+            .as_ref()
+            .is_some_and(|drag| drag.zoom_changed(self.ui.zoom))
+        {
+            self.mark_drag = None;
         }
         self.ui.compact = f32::from(window.viewport_size().width) < 1250.;
         self.ui.width = f32::from(window.viewport_size().width);
@@ -2101,7 +2598,13 @@ impl Render for AppView {
         };
         let width =
             ((f32::from(window.viewport_size().width) - panels - 128.) / self.ui.zoom).max(500.);
-        self.layout = if let Some(drag) = &mut self.note_drag
+        let layout = if let Some(preview) = self
+            .mark_drag
+            .as_ref()
+            .and_then(|drag| drag.preview.as_ref())
+        {
+            Rc::clone(preview)
+        } else if let Some(drag) = &mut self.note_drag
             && let Some(score) = &drag.preview
         {
             let mut layout = drag.layout.layout_pitch_preview(score, &drag.geometry);
@@ -2111,6 +2614,11 @@ impl Render for AppView {
             self.document
                 .layout_view(width, self.ui.view_mode, self.ui.zoom)
         };
+        if !Rc::ptr_eq(&self.layout, &layout) {
+            self.ghost = None;
+            self.hover = None;
+        }
+        self.layout = layout;
         self.position = self
             .playback
             .position(self.document.editor.score(), self.document.editor.cursor());
@@ -2121,7 +2629,7 @@ impl Render for AppView {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
         window.set_window_title(&format!(
-            "{}{} — Partitura",
+            "{}{} — Levare",
             title,
             if self.document.is_dirty() { " •" } else { "" }
         ));
@@ -2138,9 +2646,9 @@ impl Render for AppView {
                     || self.instrument_picker.is_some()
                     || self.export_picker.is_some()
                 {
-                    "Partitura Modal"
+                    "Levare Modal"
                 } else {
-                    "Partitura"
+                    "Levare"
                 },
             )
             .on_key_up(cx.listener(Self::key_up))
@@ -2168,22 +2676,13 @@ impl Render for AppView {
     }
 }
 
-fn data_path(name: &str) -> Option<PathBuf> {
-    // Isolated preview/QA sessions can keep recovery, recent files and shortcuts
-    // outside the user's active session without changing their score files.
-    std::env::var_os("PARTITURA_DATA_DIR")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| dirs::data_local_dir().map(|directory| directory.join("Partitura")))
-        .map(|directory| directory.join(name))
-}
-
 fn recovery_path() -> Option<PathBuf> {
     data_path("recovery.partitura")
 }
 
 fn main() {
     Application::new().run(|cx| {
+        app_icon::install();
         // App-level ownership survives window/view teardown during a native
         // Dock quit. GPUI's Context::on_app_quit would only hold a weak view.
         let quit_snapshot =
@@ -2212,7 +2711,7 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(960.), px(680.))),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Partitura".into()),
+                    title: Some("Levare".into()),
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(16.), px(16.))),
                 }),
@@ -2220,7 +2719,7 @@ fn main() {
             },
             |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),
         )
-        .expect("open Partitura window");
+        .expect("open Levare window");
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -2229,4 +2728,265 @@ fn main() {
         .detach();
         cx.activate(true);
     });
+}
+
+/// What a letter A–G does: it writes after a note or fills a selected rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LetterAction {
+    Insert,
+    AddToChord,
+    FillRest,
+}
+
+fn letter_action(editor: &score_edit::Editor, note_entry: bool, chord_entry: bool) -> LetterAction {
+    let selected = editor.selection().and_then(|id| editor.score().event(id));
+    match selected {
+        Some(event) if event.pitches.is_empty() && !note_entry => LetterAction::FillRest,
+        Some(event) if !event.pitches.is_empty() && chord_entry => LetterAction::AddToChord,
+        _ => LetterAction::Insert,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EscapeStep {
+    LeaveEntry,
+    Deselect,
+}
+
+fn escape_step(note_entry: bool) -> EscapeStep {
+    if note_entry {
+        EscapeStep::LeaveEntry
+    } else {
+        EscapeStep::Deselect
+    }
+}
+
+/// The same bar bounds used by score-edit for every form transaction.
+fn form_bounds(editor: &score_edit::Editor) -> (usize, usize) {
+    let ids = editor.selected_ids();
+    let start = ids
+        .iter()
+        .map(|id| id.measure)
+        .min()
+        .unwrap_or(editor.cursor().measure);
+    let end = ids.iter().map(|id| id.measure).max().unwrap_or(start);
+    (start, end)
+}
+
+/// Resolve ribbon/menu commands before entering the normal editor transaction.
+fn form_command(editor: &score_edit::Editor, command: CommandId) -> Option<Command> {
+    let edit = match command {
+        id::REPEAT_START => FormEdit::ToggleRepeatStart,
+        id::REPEAT_END => FormEdit::ToggleRepeatEnd,
+        id::ENDING_1 => return Some(Command::SetEnding(vec![1])),
+        id::ENDING_2 => return Some(Command::SetEnding(vec![2])),
+        id::REMOVE_ENDING => return Some(Command::RemoveEndings),
+        id::DOUBLE_BARLINE | id::FINAL_BARLINE => {
+            let style = if command == id::DOUBLE_BARLINE {
+                Barline::Double
+            } else {
+                Barline::Final
+            };
+            let (_, end) = form_bounds(editor);
+            FormEdit::Barline(if editor.score().bar_form(end).barline == style {
+                Barline::Single
+            } else {
+                style
+            })
+        }
+        id::SEGNO => FormEdit::ToggleSegno,
+        id::CODA => FormEdit::ToggleCoda,
+        id::TO_CODA => FormEdit::ToggleToCoda,
+        id::FINE => FormEdit::ToggleFine,
+        id::DA_CAPO => FormEdit::Jump(Some(Jump::DaCapo)),
+        id::DA_CAPO_AL_FINE => FormEdit::Jump(Some(Jump::DaCapoAlFine)),
+        id::DA_CAPO_AL_CODA => FormEdit::Jump(Some(Jump::DaCapoAlCoda)),
+        id::DAL_SEGNO => FormEdit::Jump(Some(Jump::DalSegno)),
+        id::DAL_SEGNO_AL_FINE => FormEdit::Jump(Some(Jump::DalSegnoAlFine)),
+        id::DAL_SEGNO_AL_CODA => FormEdit::Jump(Some(Jump::DalSegnoAlCoda)),
+        id::CLEAR_FORM => FormEdit::Clear,
+        _ => return None,
+    };
+    Some(Command::EditForm(edit))
+}
+
+#[cfg(test)]
+mod entry_mode_tests {
+    use super::{EscapeStep, LetterAction, escape_step, letter_action};
+    use score_core::{Pitch, Step};
+    use score_edit::{Command, Editor};
+
+    #[test]
+    fn letter_fills_a_selected_rest_when_entry_is_off() {
+        let mut editor = Editor::default();
+        editor.execute(Command::Insert(editor.rest())).unwrap();
+        assert_eq!(letter_action(&editor, false, false), LetterAction::FillRest);
+    }
+
+    #[test]
+    fn letter_after_a_selected_note_inserts_when_entry_is_off() {
+        let mut editor = Editor::default();
+        editor
+            .execute(Command::Insert(editor.note(Step::C)))
+            .unwrap();
+        assert_eq!(letter_action(&editor, false, false), LetterAction::Insert);
+    }
+
+    #[test]
+    fn chord_mode_adds_to_a_selected_note() {
+        let mut editor = Editor::default();
+        editor
+            .execute(Command::Insert(editor.note(Step::C)))
+            .unwrap();
+        for note_entry in [false, true] {
+            assert_eq!(
+                letter_action(&editor, note_entry, true),
+                LetterAction::AddToChord
+            );
+        }
+    }
+
+    #[test]
+    fn letter_with_nothing_selected_inserts() {
+        let mut editor = Editor::default();
+        editor
+            .execute(Command::Insert(editor.note(Step::C)))
+            .unwrap();
+        editor.set_cursor(editor.cursor());
+        assert_eq!(letter_action(&editor, false, false), LetterAction::Insert);
+    }
+
+    #[test]
+    fn entry_on_keeps_inserting_after_a_rest() {
+        let mut editor = Editor::default();
+        editor.execute(Command::Insert(editor.rest())).unwrap();
+        assert_eq!(letter_action(&editor, true, false), LetterAction::Insert);
+    }
+
+    #[test]
+    fn escape_leaves_entry_before_deselecting() {
+        assert_eq!(escape_step(true), EscapeStep::LeaveEntry);
+        assert_eq!(escape_step(false), EscapeStep::Deselect);
+    }
+
+    #[test]
+    fn letter_after_a_selected_note_keeps_the_existing_note() {
+        let mut editor = Editor::default();
+        editor
+            .execute(Command::Insert(editor.note(Step::C)))
+            .unwrap();
+        let first = editor.selection().unwrap();
+        let command = match letter_action(&editor, false, false) {
+            LetterAction::Insert => Command::Insert(editor.note(Step::D)),
+            LetterAction::AddToChord => {
+                Command::AddPitch(editor.note(Step::D).pitches.first().unwrap())
+            }
+            LetterAction::FillRest => {
+                Command::ReplacePitch(editor.note(Step::D).pitches.first().unwrap())
+            }
+        };
+        editor.execute(command).unwrap();
+        assert_ne!(editor.selection(), Some(first));
+        assert_eq!(
+            editor.score().event(first).unwrap().pitches.first(),
+            Pitch::new(Step::C, 4)
+        );
+        let cursor = editor.cursor();
+        assert_eq!(
+            editor
+                .score()
+                .part(cursor.part)
+                .unwrap()
+                .staff(cursor.staff)
+                .unwrap()
+                .measures()[cursor.measure]
+                .len(),
+            2
+        );
+    }
+}
+
+#[cfg(test)]
+mod audition_tests {
+    use super::audition_due;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn first_audition_is_always_due() {
+        assert!(audition_due(None, Instant::now()));
+    }
+
+    #[test]
+    fn held_arrows_do_not_burst() {
+        let last = Instant::now();
+        assert!(!audition_due(Some(last), last + Duration::from_millis(30)));
+        assert!(audition_due(Some(last), last + Duration::from_millis(90)));
+    }
+}
+
+#[cfg(test)]
+mod form_command_tests {
+    use super::{form_bounds, form_command};
+    use score_core::{Barline, Duration, Event, Jump, Notation, Pitch, Pitches, Score, Step};
+    use score_keymap::{CommandId, id};
+
+    fn run(editor: &mut score_edit::Editor, command: CommandId) {
+        let edit = form_command(editor, command).expect("form dispatch");
+        editor.execute(edit).unwrap();
+    }
+
+    #[test]
+    fn repeat_end_dispatch_is_one_undoable_editor_transaction() {
+        let mut editor = score_edit::Editor::default();
+        run(&mut editor, id::REPEAT_END);
+        assert_eq!(editor.score().bar_form(0).repeat_end, Some(2));
+        assert!(editor.undo());
+        assert!(editor.score().bar_form(0).is_plain());
+        assert!(editor.redo());
+        run(&mut editor, id::REPEAT_END);
+        assert!(editor.score().bar_form(0).is_plain());
+    }
+
+    #[test]
+    fn selected_range_dispatch_targets_start_end_and_barline_toggle() {
+        let mut score = Score::default();
+        let event = Event {
+            pitches: Pitches::single(Pitch::new(Step::C, 4)),
+            duration: Duration::Quarter,
+            notation: Notation::default(),
+        };
+        let a = score.insert(1, 0, event).unwrap();
+        let b = score.insert(3, 0, event).unwrap();
+        let mut editor = score_edit::Editor::new(score).unwrap();
+        editor.select(b);
+        editor.extend_selection(a);
+        assert_eq!(form_bounds(&editor), (1, 3));
+        for command in [id::REPEAT_START, id::SEGNO, id::CODA] {
+            run(&mut editor, command);
+        }
+        for command in [id::REPEAT_END, id::TO_CODA, id::FINE, id::DA_CAPO_AL_FINE] {
+            run(&mut editor, command);
+        }
+        let first = editor.score().bar_form(1);
+        assert!(first.repeat_start && first.segno && first.coda);
+        assert!(first.repeat_end.is_none());
+        let last = editor.score().bar_form(3);
+        assert!(last.repeat_end == Some(2) && last.to_coda && last.fine);
+        assert_eq!(last.jump, Some(Jump::DaCapoAlFine));
+        for (command, style) in [
+            (id::DOUBLE_BARLINE, Barline::Double),
+            (id::FINAL_BARLINE, Barline::Final),
+        ] {
+            run(&mut editor, command);
+            assert_eq!(editor.score().bar_form(3).barline, style);
+            run(&mut editor, command);
+            assert_eq!(editor.score().bar_form(3).barline, Barline::Single);
+        }
+        run(&mut editor, id::ENDING_1);
+        let ending = editor.score().ending_at(2).unwrap();
+        assert_eq!((ending.start, ending.end), (1, 3));
+        run(&mut editor, id::CLEAR_FORM);
+        assert!((1..=3).all(|bar| editor.score().bar_form(bar).is_plain()
+            && editor.score().ending_at(bar).is_none()));
+    }
 }

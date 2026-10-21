@@ -76,7 +76,7 @@ fn tempo_labels_follow_each_view_reserve_ink_and_can_be_clicked_after_zoom() {
                         );
                     }
                 }
-                assert!(mark.position.x + mark.width <= bar.origin.x + bar.width);
+                assert!(mark.position.x + mark.width <= layout.width - 12.);
                 assert_eq!(
                     layout.hit_tempo(Point {
                         x: (mark.position.x + 10.) * scale,
@@ -231,13 +231,9 @@ fn horizontal_view_keeps_all_bars_aligned_and_mode_switches_preserve_the_music()
                     .any(|brace| (brace.top - upper.origin.y).abs() < 0.01
                         && (brace.bottom - lower.origin.y - 40.).abs() < 0.01)
             );
-            assert!(
-                layout
-                    .labels
-                    .iter()
-                    .any(|label| label.staff == Some(StaffId::Upper)
-                        && (label.position.y - upper.origin.y - 24.).abs() < 0.01)
-            );
+            assert!(layout.labels.iter().any(|label| label.part == ids[0].part
+                && label.staff.is_none()
+                && (label.position.y - (upper.origin.y + lower.origin.y + 40.) / 2.).abs() < 0.01));
         }
         if mode == ViewMode::SingleSystem {
             assert_eq!(layout.systems.len(), 1);

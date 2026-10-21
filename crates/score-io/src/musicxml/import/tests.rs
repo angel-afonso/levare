@@ -262,7 +262,8 @@ fn unsupported_content_warns_and_unrepresentable_music_is_rejected() {
         ),
     );
     let result = import(&xml);
-    assert_eq!(result.warnings.len(), 2);
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(result.score.bar_form(0).repeat_end, Some(2));
     let invalid = wrap(
         "Piano",
         &format!(
@@ -519,5 +520,197 @@ fn every_supported_tempo_beat_and_boundary_round_trips() {
             assert_eq!(result.score.tempo_at(0), &tempo);
             assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         }
+    }
+}
+
+#[test]
+fn musescore_style_volta_and_words_import() {
+    let data = wrap("Violin",&format!(
+        "<measure number=\"1\"><attributes><divisions>1</divisions></attributes><barline location=\"left\"><ending number=\"1\" type=\"start\"/></barline>{}<barline location=\"right\"><ending number=\"1\" type=\"stop\"/><repeat direction=\"backward\"/></barline></measure>
+        <measure number=\"2\"><barline location=\"left\"><ending number=\"2\" type=\"start\"/></barline><direction><direction-type><words>  D.C.  al Fine </words></direction-type><sound dacapo=\"yes\"/></direction>{}<barline location=\"right\"><ending number=\"2\" type=\"discontinue\"/></barline></measure>
+        <measure number=\"3\"><direction><direction-type><words>Fine</words></direction-type><sound fine=\"yes\"/></direction>{}</measure>",n("C",4,1,1),n("D",4,1,1),n("E",4,1,1)));
+    let result = import(&data);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(result.score.bar_form(0).repeat_end, Some(2));
+    assert_eq!(result.score.bar_form(1).jump, Some(Jump::DaCapoAlFine));
+    assert!(result.score.bar_form(2).fine);
+    assert_eq!(
+        result.score.endings().cloned().collect::<Vec<_>>(),
+        [
+            Ending {
+                start: 0,
+                end: 0,
+                numbers: vec![1]
+            },
+            Ending {
+                start: 1,
+                end: 1,
+                numbers: vec![2]
+            },
+        ]
+    );
+}
+
+#[test]
+fn bad_ending_numbers_warn_and_keep_the_music() {
+    let data = wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes><barline location=\"left\"><ending number=\"9\" type=\"start\"/></barline>{}</measure>",
+            n("C", 4, 1, 1)
+        ),
+    );
+    let result = import(&data);
+    assert_eq!(result.warnings, ["Casilla con números no admitidos"]);
+    assert_eq!(attacks(&result.score).len(), 1);
+    assert_eq!(result.score.endings().count(), 0);
+}
+
+#[test]
+fn form_merges_all_parts_in_partwise_and_timewise_scores() {
+    let list = "<part-list><score-part id=\"P1\"><part-name>Violin</part-name></score-part><score-part id=\"P2\"><part-name>Flute</part-name></score-part></part-list>";
+    let attributes = "<attributes><divisions>1</divisions></attributes>";
+    let bars = [
+        [
+            format!(
+                "{attributes}<direction><direction-type><words>Fine</words></direction-type></direction>{}",
+                n("C", 4, 1, 1)
+            ),
+            n("D", 4, 1, 1),
+        ],
+        [
+            format!(
+                "{attributes}<barline location=\"left\"><ending number=\"2, 1 2, 9\" type=\"start\"/><repeat direction=\"forward\"/></barline><sound dacapo=\"yes\"/>{}",
+                n("E", 4, 1, 1)
+            ),
+            format!(
+                "<direction><direction-type><coda/></direction-type><sound tocoda=\"coda\"/></direction><sound segno=\"s\"/>{}<barline location=\"right\"><bar-style>light-heavy</bar-style><ending number=\"1, 2\" type=\"discontinue\"/><repeat direction=\"backward\" times=\"99\"/></barline>",
+                n("F", 4, 1, 1)
+            ),
+        ],
+    ];
+    for timewise in [false, true] {
+        let mut data = format!(
+            "<score-{} version=\"4.0\">{list}",
+            if timewise { "timewise" } else { "partwise" }
+        );
+        if timewise {
+            for (bar, (first, second)) in bars[0].iter().zip(&bars[1]).enumerate() {
+                data.push_str(&format!("<measure number=\"{}\"><part id=\"P1\">{first}</part><part id=\"P2\">{second}</part></measure>",bar+1));
+            }
+        } else {
+            for (part, bars) in bars.iter().enumerate() {
+                data.push_str(&format!("<part id=\"P{}\">", part + 1));
+                for (bar, body) in bars.iter().enumerate() {
+                    data.push_str(&format!("<measure number=\"{}\">{body}</measure>", bar + 1));
+                }
+                data.push_str("</part>");
+            }
+        }
+        data.push_str(if timewise {
+            "</score-timewise>"
+        } else {
+            "</score-partwise>"
+        });
+        let result = import(&data);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        let first = result.score.bar_form(0);
+        assert!(first.repeat_start && first.fine);
+        assert_eq!(first.jump, Some(Jump::DaCapoAlFine));
+        let last = result.score.bar_form(1);
+        assert!(last.segno && last.to_coda && !last.coda);
+        assert_eq!(last.repeat_end, Some(MAX_REPEAT_TIMES));
+        assert_eq!(last.barline, Barline::Single);
+        assert_eq!(
+            result.score.endings().next(),
+            Some(&Ending {
+                start: 0,
+                end: 1,
+                numbers: vec![1, 2]
+            })
+        );
+    }
+}
+
+#[test]
+fn repeat_counts_and_unclosed_endings_are_bounded_without_losing_notes() {
+    let mut measures = String::new();
+    for (index, times) in ["0", "3", "99"].into_iter().enumerate() {
+        measures.push_str(&format!("<measure number=\"{}\"><attributes><divisions>1</divisions></attributes>{}<barline location=\"right\"><bar-style>dashed</bar-style><repeat direction=\"backward\" times=\"{times}\"/></barline></measure>",index+1,n("C",4,1,1)));
+    }
+    measures = measures.replacen(
+        "<note>",
+        "<barline location=\"left\"><ending number=\"1\" type=\"start\"/></barline><note>",
+        1,
+    );
+    let result = import(&wrap("Violin", &measures));
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(
+        (0..3)
+            .map(|bar| result.score.bar_form(bar).repeat_end)
+            .collect::<Vec<_>>(),
+        [Some(2), Some(3), Some(MAX_REPEAT_TIMES)]
+    );
+    assert_eq!(
+        result.score.endings().next(),
+        Some(&Ending {
+            start: 0,
+            end: 0,
+            numbers: vec![1]
+        })
+    );
+    assert_eq!(attacks(&result.score).len(), 3);
+}
+
+#[test]
+fn two_note_tremolo_warns_and_keeps_both_notes() {
+    let notes = ["start","stop"].into_iter().map(|kind|n("C",1,1,1).replace("</note>",&format!("<notations><ornaments><tremolo type=\"{kind}\">2</tremolo></ornaments></notations></note>"))).collect::<String>();
+    let result = import(&wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{notes}</measure>"
+        ),
+    ));
+    assert_eq!(
+        result.warnings,
+        ["El trémolo entre dos notas no se importa"]
+    );
+    assert_eq!(attacks(&result.score).len(), 2);
+    assert!(
+        result.score.measures()[0]
+            .iter()
+            .all(|(_, event)| event.notation.tremolo.is_none())
+    );
+}
+
+#[test]
+fn mixed_rehearsal_sequence_keeps_only_exception_custom() {
+    let bars=["A","B","Trío"].iter().map(|text|format!("<measure><direction><direction-type><rehearsal>{text}</rehearsal></direction-type></direction></measure>")).collect::<String>();
+    let result = import(&wrap("Violin", &bars));
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(
+        result
+            .score
+            .rehearsal_marks()
+            .map(|(_, m)| m.custom.as_deref())
+            .collect::<Vec<_>>(),
+        [None, None, Some("Trío")]
+    );
+}
+#[test]
+fn rehearsal_from_later_part_and_timewise_and_long_labels() {
+    let direction = "<direction><direction-type><rehearsal>WWWWabcdefghijklmnop</rehearsal></direction-type></direction>";
+    let list = "<part-list><score-part id=\"P1\"><part-name>Violin</part-name></score-part><score-part id=\"P2\"><part-name>Cello</part-name></score-part></part-list>";
+    for xml in [
+        format!(
+            "<score-partwise>{list}<part id=\"P1\"><measure/></part><part id=\"P2\"><measure>{direction}</measure></part></score-partwise>"
+        ),
+        format!(
+            "<score-timewise>{list}<measure><part id=\"P1\"/><part id=\"P2\">{direction}</part></measure></score-timewise>"
+        ),
+    ] {
+        let result = import(&xml);
+        assert_eq!(result.score.rehearsal_label(0).unwrap().chars().count(), 16);
+        assert!(!result.warnings.is_empty());
     }
 }

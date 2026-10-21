@@ -24,6 +24,26 @@ anterior y no repite ninguna tecla: una nota repetida se vuelve a atacar a tiemp
 sin fundirse como una unión. Las cadenas ligadas aplican la indicación final a la
 duración conjunta.
 
+## Interpretación natural
+
+El transporte usa **Natural** al iniciar la sesión; en Sonidos se puede elegir
+**Literal (exacta)**. La opción literal conserva exactamente el plan anterior y la
+audición breve siempre permanece literal. La interpretación natural funciona con
+cualquier banco de sonido.
+
+| Regla | Cambio en Natural |
+| --- | --- |
+| Acento métrico | Primer pulso +4; otros pulsos +1 (tercer pulso de 4/4 +2); subdivisiones −2. En 6/8, 9/8 y 12/8 el pulso agrupa tres corcheas. |
+| Contorno de frase | En frases de tres o más notas, hasta +4 según la altura respecto de los extremos de la frase. |
+| Final de frase | −3 en la última nota, salvo acento o marcato. |
+| Variación humana | Retraso de 0–5 ms y cambio de intensidad de −3 a +3; un acorde y ambas manos del piano comparten retraso. |
+
+El resultado es determinista para una parte y un tiempo escrito: repetir la misma
+partitura produce los mismos ataques. La intensidad final se limita a 1–127. Los
+mensajes de expresión CC11 y sus niveles de referencia permanecen iguales en ambos
+estilos; Natural ajusta solo los ataques, sin modificar el tempo ni la duración
+escrita. Los arpegios conservan sus separaciones internas.
+
 ## NoteEvent
 
 Cada ataque es un `NoteEvent`, igual en `Message::NoteOn`, `HeldNote` y la audición:
@@ -71,11 +91,16 @@ Los canales son 0–31: 15 se reserva para audición y 9 para percusión. Los
 controladores son 7 (volumen), 10 (panorámica) y 11 (expresión). El segundo grupo de canales permite separar las
 manos del piano cuando tienen reguladores independientes.
 
-## VSCO como extra
+## Bibliotecas SFZ como extra
 
-`score-sound-vsco` depende del contrato de `score-platform`, y contiene el manifiesto,
-las rutas SFZ, el enlace sfizz y la selección de muestras. `score-platform` no depende
-de ese paquete. El editor, la interfaz y el transporte solo conocen `SoundBank`.
+`score-sound-vsco` depende del contrato de `score-platform`, y contiene los manifiestos,
+las rutas SFZ, el enlace sfizz y la selección de muestras. Puede cargar VSCO CE y otros
+paquetes de formato 2, incluido Virtual Playing Orchestra. Cuando hay varios, el banco
+combinado consulta cada paquete según la prioridad guardada en `sonidos.json`, antes
+del respaldo GeneralUser. En paquetes `cc1`, el nivel se envía a cada voz antes de
+su ataque; CC11 conserva el control continuo de expresión. Consulta la
+[guía de bibliotecas SFZ](sfz.md). `score-platform` no depende de ese paquete.
+El editor, la interfaz y el transporte solo conocen `SoundBank`.
 
 La única inscripción concreta está en `app-gpui/src/sound_banks.rs`, protegida por
 la característica `vsco`, activa por defecto. Sin esa opción
@@ -92,7 +117,7 @@ Rust arbitrarios ni un host VST/AU.
 
 ```sh
 cargo test --workspace
-cargo test -p partitura --no-default-features --features runtime-shaders
+cargo test -p levare --no-default-features --features runtime-shaders
 cargo test -p score-sound-vsco -- --ignored
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

@@ -40,7 +40,12 @@ pub fn position(
             });
         score.measure_start_tick(cursor.measure) as f64 + f64::from(local)
     };
-    position_at_tick(score, tick, timeline)
+    let mut position = position_at_tick(score, tick, timeline);
+    if let Some((frame, rate)) = clock.filter(|(_, rate)| *rate > 0) {
+        position.seconds = frame as f64 / f64::from(rate);
+        position.at_end = frame >= timeline.total_frames(rate);
+    }
+    position
 }
 
 pub fn position_at_tick(score: &Score, tick: f64, timeline: &Timeline) -> Position {
@@ -141,6 +146,34 @@ pub fn score_bounds(layout: &Layout, cursor: Cursor, position: Position) -> Opti
     ))
 }
 
+/// Input caret on the cursor's displayed staff, in scaled canvas coordinates.
+pub fn caret_bounds(layout: &Layout, cursor: Cursor) -> Option<Bounds<Pixels>> {
+    let at = layout.voice_cursor(
+        cursor.part,
+        cursor.staff,
+        cursor.measure,
+        cursor.voice,
+        cursor.index,
+    )?;
+    let space = score_layout::STAFF_SPACE * layout.scale;
+    Some(Bounds::new(
+        point(px(at.x - 1.), px(at.y - space)),
+        size(px(2.), px(6. * space)),
+    ))
+}
+
+pub fn voice_color(voice: score_core::Voice) -> u32 {
+    match voice {
+        score_core::Voice::One => 0x2f6fdf,
+        score_core::Voice::Two => 0x2f9e57,
+    }
+}
+
+/// The input caret and playback marker are mutually exclusive.
+pub fn indicators(note_entry: bool, playing: bool) -> (bool, bool) {
+    (note_entry && !playing, playing || !note_entry)
+}
+
 pub fn tracking_bounds(
     layout: &Layout,
     cursor: Cursor,
@@ -208,13 +241,169 @@ pub fn note_color(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use score_core::{Duration, Event, Notation, Pitch, Pitches, StaffId, Step};
+    use score_core::{Duration, Event, Notation, Pitch, Pitches, StaffId, Step, Voice};
 
     fn note(step: Step, duration: Duration) -> Event {
         Event {
             pitches: Pitches::single(Pitch::new(step, 4)),
             duration,
             notation: Notation::default(),
+        }
+    }
+
+    #[test]
+    fn caret_stays_on_the_cursor_staff_across_views_and_zoom() {
+        for bytes in [
+            include_bytes!("../../../examples/menuetto-y-trio-orquesta.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-arpegios.partitura").as_slice(),
+        ] {
+            let score = score_io::decode(bytes).unwrap();
+            for mode in [
+                score_layout::ViewMode::Page,
+                score_layout::ViewMode::Continuous,
+                score_layout::ViewMode::SingleSystem,
+            ] {
+                let mut layout =
+                    score_layout::LayoutEngine::default().layout_view(&score, 1000., mode);
+                for scale in [0.5, 0.7, 1., 1.5] {
+                    layout.scale = scale;
+                    for m in layout
+                        .measures
+                        .iter()
+                        .filter(|m| m.source_staff == m.staff && m.source_voice.is_none())
+                    {
+                        let bar = &score
+                            .part(m.part)
+                            .unwrap()
+                            .staff(m.source_staff)
+                            .unwrap()
+                            .measures()[m.index];
+                        for index in 0..=bar.voice_len(Voice::One) {
+                            let cursor = Cursor {
+                                part: m.part,
+                                staff: m.source_staff,
+                                voice: Voice::One,
+                                measure: m.index,
+                                index,
+                            };
+                            let caret = caret_bounds(&layout, cursor).unwrap_or_else(|| {
+                                panic!(
+                                    "missing caret for part {:?} bar {} index {}",
+                                    m.part, m.index, index
+                                )
+                            });
+                            let x = f32::from(caret.origin.x);
+                            let y = f32::from(caret.origin.y);
+                            let height = f32::from(caret.size.height);
+                            assert!(
+                                x >= m.origin.x * scale - 2.
+                                    && x <= (m.origin.x + m.width) * scale + 2.
+                            );
+                            assert!((y - (m.origin.y - 10.) * scale).abs() < 0.01);
+                            assert!((height - 60. * scale).abs() < 0.01);
+                            if let Some(next) = layout
+                                .measures
+                                .iter()
+                                .filter(|other| {
+                                    other.system_start == m.system_start
+                                        && other.index == m.index
+                                        && other.origin.y > m.origin.y
+                                })
+                                .map(|other| other.origin.y - m.origin.y)
+                                .min_by(f32::total_cmp)
+                            {
+                                assert!(height < next * scale);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn voice_two_and_divisi_carets_resolve_to_their_displayed_staves() {
+        let mut checked_voice_two = 0;
+        let mut checked_divisi = 0;
+        for bytes in [
+            include_bytes!("../../../examples/divisi-dentro-del-compas.partitura").as_slice(),
+            include_bytes!("../../../examples/piano-arpegios.partitura").as_slice(),
+        ] {
+            let score = score_io::decode(bytes).unwrap();
+            for mode in [
+                score_layout::ViewMode::Page,
+                score_layout::ViewMode::Continuous,
+                score_layout::ViewMode::SingleSystem,
+            ] {
+                let mut layout =
+                    score_layout::LayoutEngine::default().layout_view(&score, 1000., mode);
+                for scale in [0.5, 1., 1.5] {
+                    layout.scale = scale;
+                    let mut sources = std::collections::HashSet::new();
+                    for m in &layout.measures {
+                        if m.source_staff != m.staff {
+                            checked_divisi += 1;
+                        }
+                        if !sources.insert((m.part, m.source_staff, m.index)) {
+                            continue;
+                        }
+                        let bar = &score
+                            .part(m.part)
+                            .unwrap()
+                            .staff(m.source_staff)
+                            .unwrap()
+                            .measures()[m.index];
+                        for index in 0..=bar.voice_len(Voice::Two) {
+                            let cursor = Cursor {
+                                part: m.part,
+                                staff: m.source_staff,
+                                voice: Voice::Two,
+                                measure: m.index,
+                                index,
+                            };
+                            let caret = caret_bounds(&layout, cursor).unwrap_or_else(|| panic!("missing voice-two caret for part {:?} staff {:?} bar {} index {}", m.part, m.source_staff, m.index, index));
+                            let tick = f64::from(m.source_onsets[1][index]);
+                            let cap = f64::from(m.content.time_positions.last().unwrap().0);
+                            let displayed = layout
+                                .voice_measure_at_tick(
+                                    m.part,
+                                    m.source_staff,
+                                    m.index,
+                                    Voice::Two,
+                                    tick.min(cap - 0.001),
+                                )
+                                .unwrap();
+                            assert!(
+                                (f32::from(caret.origin.y) - (displayed.origin.y - 10.) * scale)
+                                    .abs()
+                                    < 0.01
+                            );
+                            checked_voice_two += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked_voice_two > 0);
+        assert!(checked_divisi > 0);
+    }
+
+    #[test]
+    fn each_voice_has_its_own_caret_color() {
+        assert_ne!(voice_color(Voice::One), voice_color(Voice::Two));
+        assert_ne!(voice_color(Voice::One), 0xe89743);
+        assert_ne!(voice_color(Voice::Two), 0xe89743);
+    }
+
+    #[test]
+    fn indicator_states_cover_entry_and_playback_without_overlap() {
+        for (entry, playing, expected) in [
+            (false, false, (false, true)),
+            (false, true, (false, true)),
+            (true, false, (true, false)),
+            (true, true, (false, true)),
+        ] {
+            assert_eq!(indicators(entry, playing), expected);
         }
     }
 
@@ -539,5 +728,32 @@ mod tests {
                 assert!(line.element.is_none());
             }
         }
+    }
+    #[test]
+    fn repeat_clock_returns_to_the_written_bar_and_elapsed_seconds_keep_growing() {
+        let mut score = Score::new("Repeat".into(), &[score_core::Instrument::Piano], 2).unwrap();
+        score
+            .set_bar_form(
+                1,
+                score_core::BarForm {
+                    repeat_end: Some(2),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let timeline = Timeline::with_repeats(&score, score_playback::Tempo::default(), true);
+        let frame = timeline.performed_frame(2, 0, 48_000);
+        let current = position(&score, Cursor::default(), Some((frame, 48_000)), &timeline);
+        assert_eq!((current.tick, current.measure), (0., 0));
+        assert_eq!(current.seconds, frame as f64 / 48_000.);
+        assert!(current.seconds > 0.);
+        assert!(!current.at_end);
+        let end = position(
+            &score,
+            Cursor::default(),
+            Some((timeline.total_frames(48_000), 48_000)),
+            &timeline,
+        );
+        assert!(end.at_end);
     }
 }

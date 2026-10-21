@@ -63,7 +63,7 @@ impl MusicalClipboard {
     pub fn validate(&self) -> Result<(), ScoreError> {
         if self.format != "partitura-clipboard" || !(1..=6).contains(&self.version) {
             return Err(ScoreError(
-                "El portapapeles no contiene música compatible de Partitura",
+                "El portapapeles no contiene música compatible de Levare",
             ));
         }
         if self.events.is_empty() || self.events.len() > MAX_EVENTS || self.links.len() > 4096 {
@@ -83,7 +83,9 @@ impl MusicalClipboard {
             if (i == 0 && item.offset != 0)
                 || item.offset < end
                 || item.offset % 2 != 0
-                || (item.event.pitches.is_empty() && item.event.notation.articulation.is_some())
+                || (item.event.pitches.is_empty()
+                    && (item.event.notation.articulation.is_some()
+                        || item.event.notation.tremolo.is_some()))
                 || (item.event.pitches.len() < 2 && item.event.notation.arpeggio.is_some())
             {
                 return Err(ScoreError("Pasaje del portapapeles inválido"));
@@ -104,7 +106,7 @@ impl MusicalClipboard {
         Ok(())
     }
     pub fn summary(&self) -> String {
-        format!("Partitura · {} elementos musicales", self.events.len())
+        format!("Levare · {} elementos musicales", self.events.len())
     }
 }
 fn dynamic_before(score: &Score, cursor: Cursor) -> Dynamic {
@@ -347,13 +349,16 @@ impl Editor {
                 let mut notation = event.notation;
                 if !is_first {
                     notation.dynamic = None;
+                    notation.offsets.dynamic = None;
                     notation.technique = None;
+                    notation.offsets.technique = None;
                     notation.division = None;
                     notation.arpeggio = None;
                 }
                 // A split note keeps one fermata, over its final fragment.
                 if !is_last {
                     notation.fermata = false;
+                    notation.offsets.fermata = None;
                 }
                 if let Some(mark) = notation.articulation {
                     let belongs = if matches!(mark, Articulation::Staccato | Articulation::Tenuto) {
@@ -363,6 +368,7 @@ impl Editor {
                     };
                     if !belongs {
                         notation.articulation = None;
+                        notation.offsets.articulation = None;
                     }
                 }
                 let target_key = next

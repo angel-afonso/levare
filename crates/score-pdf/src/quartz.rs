@@ -84,7 +84,16 @@ pub fn export(score: &Score, path: &Path, part: bool) -> Result<usize, String> {
             engraving: &engraving,
         };
         if index == 0 {
-            painter.title(score.title(), page.width);
+            painter.header(score, page.width);
+            painter.text(
+                &score.credits().copyright,
+                "TimesNewRomanPSMT",
+                10.,
+                f64::from(page.width / 2.),
+                f64::from(page.top + page.height - 42.),
+                Align::Center,
+                Some(f64::from(page.width - 112.)),
+            );
         }
         if part {
             painter.text(
@@ -140,9 +149,21 @@ pub fn export(score: &Score, path: &Path, part: bool) -> Result<usize, String> {
     Ok(layout.pages.len())
 }
 
+#[derive(Clone, Copy)]
 enum Align {
     Left,
     Center,
+    Right,
+}
+impl Align {
+    /// How far left of the anchor a line of this width starts.
+    fn offset(self, width: f64) -> f64 {
+        match self {
+            Self::Left => 0.,
+            Self::Center => width / 2.,
+            Self::Right => width,
+        }
+    }
 }
 fn text_line(text: &str, name: &str, size: f64) -> CTLine {
     let font = font::new_from_name(name, size).expect("system Times font");
@@ -199,6 +220,9 @@ impl Painter<'_> {
         align: Align,
         max_width: Option<f64>,
     ) -> f64 {
+        if text.is_empty() {
+            return 0.;
+        }
         let runs = score_layout::text_runs(text);
         if runs
             .iter()
@@ -219,14 +243,7 @@ impl Painter<'_> {
             let width: f64 = widths.iter().sum();
             let factor = max_width.map_or(1., |max| (max / width.max(1.)).min(1.));
             self.context.save();
-            self.context.translate(
-                x - if matches!(align, Align::Center) {
-                    width * factor / 2.
-                } else {
-                    0.
-                },
-                y,
-            );
+            self.context.translate(x - align.offset(width * factor), y);
             self.context.scale(factor, factor);
             let mut at = 0.;
             for (run, advance) in runs.iter().zip(widths) {
@@ -257,14 +274,7 @@ impl Painter<'_> {
         let width = line.get_typographic_bounds().width;
         let factor = max_width.map_or(1., |max| (max / width.max(1.)).min(1.));
         self.context.save();
-        self.context.translate(
-            x - if matches!(align, Align::Center) {
-                width * factor / 2.
-            } else {
-                0.
-            },
-            y,
-        );
+        self.context.translate(x - align.offset(width * factor), y);
         self.context.scale(factor, -factor);
         self.context
             .set_text_matrix(&CGAffineTransform::new(1., 0., 0., 1., 0., 0.));
@@ -273,7 +283,50 @@ impl Painter<'_> {
         self.context.restore();
         width * factor
     }
-    fn title(&self, title: &str, width: f32) {
+    /// Title, subtitle, and the credit columns: lyricist left, composer and
+    /// arranger right, as engraved scores lay them out.
+    fn header(&self, score: &Score, width: f32) {
+        let lines = self.title(score.title(), width);
+        let credits = score.credits();
+        let below = 64. + lines as f64 * 40.;
+        self.text(
+            &credits.subtitle,
+            "TimesNewRomanPSMT",
+            18.,
+            f64::from(width / 2.),
+            below - 8.,
+            Align::Center,
+            Some(f64::from(width - 112.)),
+        );
+        // Fixed rows keep the credits inside the header whatever the title.
+        let column = Some(f64::from(width / 2. - 72.));
+        let row = 130.;
+        for (i, line) in [credits.composer_line(), credits.arranger_line()]
+            .iter()
+            .filter(|line| !line.is_empty())
+            .enumerate()
+        {
+            self.text(
+                line,
+                "TimesNewRomanPSMT",
+                13.,
+                f64::from(width - 56.),
+                row + i as f64 * 17.,
+                Align::Right,
+                column,
+            );
+        }
+        self.text(
+            &credits.lyricist_line(),
+            "TimesNewRomanPSMT",
+            13.,
+            56.,
+            row,
+            Align::Left,
+            column,
+        );
+    }
+    fn title(&self, title: &str, width: f32) -> usize {
         // Two lines keep long titles legible while staying inside the header.
         let words: Vec<_> = title.split_whitespace().collect();
         let split = if title.chars().count() > 48 && words.len() > 1 {
@@ -296,6 +349,7 @@ impl Painter<'_> {
                 Some(f64::from(width - 112.)),
             );
         }
+        lines.len()
     }
     fn line(&self, line: &Line, offset: Point) {
         self.context.begin_path();
@@ -339,6 +393,59 @@ impl Painter<'_> {
         for line in &layout.connectors {
             if on_page(line.from.y) {
                 self.line(line, zero);
+            }
+        }
+        for ending in &layout.rehearsals {
+            for line in &ending.frame {
+                if on_page(line.from.y) {
+                    self.line(line, zero);
+                }
+            }
+            if !ending.text.is_empty() && on_page(ending.position.y) {
+                self.text(
+                    &ending.text,
+                    "TimesNewRomanPS-BoldMT",
+                    18.,
+                    ending.position.x.into(),
+                    ending.position.y.into(),
+                    Align::Left,
+                    None,
+                );
+            }
+        }
+        for ending in &layout.endings {
+            for line in &ending.lines {
+                if on_page(line.from.y) {
+                    self.line(line, zero);
+                }
+            }
+            if !ending.label.is_empty() && on_page(ending.label_position.y) {
+                self.text(
+                    &ending.label,
+                    "TimesNewRomanPS-BoldMT",
+                    14.,
+                    ending.label_position.x.into(),
+                    ending.label_position.y.into(),
+                    Align::Left,
+                    None,
+                );
+            }
+        }
+        for label in &layout.navigation {
+            if on_page(label.position.y) {
+                self.text(
+                    &label.text,
+                    "TimesNewRomanPS-BoldItalicMT",
+                    label.size.into(),
+                    label.position.x.into(),
+                    label.position.y.into(),
+                    if label.right_aligned {
+                        Align::Right
+                    } else {
+                        Align::Left
+                    },
+                    None,
+                );
             }
         }
         for label in &layout.labels {

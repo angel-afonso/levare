@@ -100,6 +100,40 @@ fn piano_braces_remain_inside_the_ensemble_and_solo_has_no_family_bracket() {
 }
 
 #[test]
+fn braced_instruments_are_excluded_from_family_brackets_and_barline_groups() {
+    let mut score = Score::default();
+    score.add_part(Instrument::Piano).unwrap();
+    let guitar1 = score.add_part(Instrument::Guitar).unwrap();
+    score.add_part(Instrument::Harp).unwrap();
+    let guitar2 = score.add_part(Instrument::Guitar).unwrap();
+    score.add_part(Instrument::Harp).unwrap();
+    let layout = LayoutEngine::default().layout_compact(&score, 960.);
+    assert!(!layout.braces.is_empty());
+    for brace in &layout.braces {
+        assert!(
+            layout
+                .brackets
+                .iter()
+                .all(|bracket| bracket.bottom < brace.top || bracket.top > brace.bottom),
+            "a family bracket overlaps a grand-staff brace: {brace:?}"
+        );
+    }
+    // A harp interrupts the plucked-string group rather than joining the
+    // guitars' barlines through its two staves.
+    let first = layout.measure(guitar1, 0).unwrap();
+    let second = layout.measure(guitar2, 0).unwrap();
+    let barline_x = first.origin.x + first.width;
+    assert!(
+        !layout
+            .connectors
+            .iter()
+            .any(|line| (line.from.x - barline_x).abs() < 0.01
+                && line.from.y <= first.origin.y + 40.
+                && line.to.y >= second.origin.y)
+    );
+}
+
+#[test]
 fn repeated_violin_names_distinguish_sections_and_divisi_in_engraving() {
     let mut s = Score::default();
     let piano = s.parts()[0].id();

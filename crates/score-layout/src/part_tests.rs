@@ -58,16 +58,44 @@ fn parts_fit_longer_systems_without_repeated_instrument_names_or_changing_music(
 }
 
 #[test]
-fn piano_part_keeps_hand_labels_and_full_score_keeps_instrument_labels() {
-    let score = Score::default();
+fn grand_staff_labels_show_only_the_instrument_centered_between_staves() {
     let mut engine = LayoutEngine::default();
-    let part = engine.layout_part(&score, 1000., ViewMode::Page);
-    assert!(part.labels.iter().any(|label| label.text == "M. derecha"));
-    assert!(part.labels.iter().any(|label| label.text == "M. izquierda"));
-    assert!(!part.labels.iter().any(|label| label.text == "Piano"));
-    assert!(!part.braces.is_empty());
-    let full = engine.layout_view(&score, 1000., ViewMode::Page);
-    assert!(full.labels.iter().any(|label| label.text == "Piano"));
+    for instrument in [Instrument::Piano, Instrument::Harp] {
+        let score = Score::new("Prueba de nombres".into(), &[instrument], 4).unwrap();
+        let part = score.parts()[0].id();
+        for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
+            for extracted in [false, true] {
+                let layout = if extracted {
+                    engine.layout_part(&score, 1000., mode)
+                } else {
+                    engine.layout_view(&score, 1000., mode)
+                };
+                assert_eq!(layout.labels.len(), layout.systems.len());
+                assert!(
+                    layout
+                        .labels
+                        .iter()
+                        .all(|label| label.staff.is_none() && label.text == score.part_name(part))
+                );
+                for system in &layout.systems {
+                    let upper = layout
+                        .measure_on(part, StaffId::Upper, system.first_measure)
+                        .unwrap();
+                    let lower = layout
+                        .measure_on(part, StaffId::Lower, system.first_measure)
+                        .unwrap();
+                    let center = (upper.origin.y + lower.origin.y + 40.) / 2.;
+                    assert!(
+                        layout
+                            .labels
+                            .iter()
+                            .any(|label| (label.position.y - center).abs() < 0.01)
+                    );
+                }
+                assert!(!layout.braces.is_empty());
+            }
+        }
+    }
     let ensemble = menuetto();
     let layout = engine.layout_part(&ensemble, 1000., ViewMode::Page);
     for instrument in ensemble.parts() {
@@ -81,7 +109,75 @@ fn piano_part_keeps_hand_labels_and_full_score_keeps_instrument_labels() {
 }
 
 #[test]
-fn adjacent_tempo_headings_in_parts_have_room_and_do_not_leave_the_system() {
+fn tempo_text_can_span_barlines_without_changing_rhythmic_spacing() {
+    for annotations in 0..4 {
+        let mut score = Score::new("Tempo".into(), &[Instrument::Violin], 8).unwrap();
+        if annotations & 1 != 0 {
+            score.toggle_rehearsal_mark(0).unwrap();
+        }
+        if annotations & 2 != 0 {
+            score
+                .set_bar_form(
+                    0,
+                    score_core::BarForm {
+                        segno: true,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        let mut long = score.clone();
+        long.set_tempo_at(
+            0,
+            score_core::TempoMark {
+                text: "Allegro molto espressivo e cantabile".into(),
+                ..score.tempo_at(0).clone()
+            },
+        )
+        .unwrap();
+        for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
+            for extracted in [false, true] {
+                let mut engine = LayoutEngine::default();
+                let before = if extracted {
+                    engine.layout_part(&score, 1000., mode)
+                } else {
+                    engine.layout_view(&score, 1000., mode)
+                };
+                let after = if extracted {
+                    engine.layout_part(&long, 1000., mode)
+                } else {
+                    engine.layout_view(&long, 1000., mode)
+                };
+                assert_eq!(before.systems.len(), after.systems.len());
+                for (a, b) in before.measures.iter().zip(&after.measures) {
+                    assert!(
+                        (a.width - b.width).abs() < 0.01,
+                        "tempo text stretched bar {}: {} -> {} ({mode:?}, part={extracted}, annotations={annotations})",
+                        a.index,
+                        a.width,
+                        b.width
+                    );
+                    assert!((a.origin.x - b.origin.x).abs() < 0.01);
+                }
+                let tempo = &after.tempos[0];
+                let bar = &after.measures[0];
+                assert!(
+                    (tempo.position.x
+                        - bar.origin.x
+                        - bar.content.x_at_tick(0.)
+                        - rehearsal_offset(&long, 0))
+                    .abs()
+                        < 0.01
+                );
+                assert!(tempo.position.x + tempo.width > bar.origin.x + bar.width);
+                assert!(tempo.position.x + tempo.width < after.width - 12.);
+            }
+        }
+    }
+}
+
+#[test]
+fn adjacent_tempo_headings_have_room_in_every_view() {
     let mut score = Score::default();
     let mark = score_core::TempoMark {
         text: "Allegro molto espressivo".into(),
@@ -92,18 +188,34 @@ fn adjacent_tempo_headings_in_parts_have_room_and_do_not_leave_the_system() {
         change.bpm += bar as u16;
         score.set_tempo_at(bar, change).unwrap();
     }
-    let layout = LayoutEngine::default().layout_part(&score, 1000., ViewMode::Page);
-    for system in &layout.systems {
-        let headings: Vec<_> = layout
-            .tempos
-            .iter()
-            .filter(|t| (system.first_measure..=system.last_measure).contains(&t.measure))
-            .collect();
-        for heading in &headings {
-            assert!(heading.position.x + heading.width <= layout.width - 12.);
-        }
-        for pair in headings.windows(2) {
-            assert!(pair[0].position.x + pair[0].width + 10. <= pair[1].position.x);
+    for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
+        for extracted in [false, true] {
+            let mut engine = LayoutEngine::default();
+            let layout = if extracted {
+                engine.layout_part(&score, 1000., mode)
+            } else {
+                engine.layout_view(&score, 1000., mode)
+            };
+            for system in &layout.systems {
+                let headings: Vec<_> = layout
+                    .tempos
+                    .iter()
+                    .filter(|t| (system.first_measure..=system.last_measure).contains(&t.measure))
+                    .collect();
+                for heading in &headings {
+                    assert!(heading.position.x + heading.width <= layout.width - 12.);
+                }
+                for (index, first) in headings.iter().enumerate() {
+                    for second in &headings[index + 1..] {
+                        assert!(
+                            first.position.x + first.width + 6. <= second.position.x
+                                || second.position.y + 6. <= first.position.y - 36.
+                                || first.position.y + 6. <= second.position.y - 36.,
+                            "overlapping tempos in {mode:?}: {first:?}, {second:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 }

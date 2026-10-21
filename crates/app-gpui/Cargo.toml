@@ -1,5 +1,5 @@
 [package]
-name = "partitura"
+name = "levare"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -35,3 +35,6 @@ objc = "=0.2.7"
 core-text = "=21.0.0"
 core-graphics = "=0.24.0"
 block = "=0.1.6"
+
+[dev-dependencies]
+tempfile.workspace = true

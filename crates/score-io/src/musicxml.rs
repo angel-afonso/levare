@@ -133,6 +133,117 @@ fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
         "",
     );
 }
+fn ending_numbers(ending: &Ending) -> String {
+    ending
+        .numbers
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn left_barline(xml: &mut String, score: &Score, bar: usize) {
+    let form = score.bar_form(bar);
+    let ending = score.endings().find(|ending| ending.start == bar);
+    if !form.repeat_start && ending.is_none() {
+        return;
+    }
+    xml.push_str("<barline location=\"left\">");
+    if form.repeat_start {
+        xml.push_str("<bar-style>heavy-light</bar-style>");
+    }
+    if let Some(ending) = ending {
+        let _ = write!(
+            xml,
+            "<ending number=\"{}\" type=\"start\">{}</ending>",
+            ending_numbers(ending),
+            ending.label()
+        );
+    }
+    if form.repeat_start {
+        xml.push_str("<repeat direction=\"forward\"/>");
+    }
+    xml.push_str("</barline>\n");
+}
+
+fn right_barline(xml: &mut String, score: &Score, bar: usize) {
+    let form = score.bar_form(bar);
+    let ending = score.endings().find(|ending| ending.end == bar);
+    let style = if form.repeat_end.is_some() {
+        Some("light-heavy")
+    } else {
+        match form.barline {
+            Barline::Double => Some("light-light"),
+            Barline::Final => Some("light-heavy"),
+            Barline::Single if bar + 1 == score.measures().len() => Some("light-heavy"),
+            Barline::Single => None,
+        }
+    };
+    if style.is_none() && ending.is_none() {
+        return;
+    }
+    xml.push_str("<barline location=\"right\">");
+    if let Some(style) = style {
+        let _ = write!(xml, "<bar-style>{style}</bar-style>");
+    }
+    if let Some(ending) = ending {
+        let kind = if score.is_last_ending(ending) {
+            "discontinue"
+        } else {
+            "stop"
+        };
+        let _ = write!(
+            xml,
+            "<ending number=\"{}\" type=\"{kind}\"/>",
+            ending_numbers(ending)
+        );
+    }
+    if let Some(times) = form.repeat_end {
+        if times == 2 {
+            xml.push_str("<repeat direction=\"backward\"/>");
+        } else {
+            let _ = write!(xml, "<repeat direction=\"backward\" times=\"{times}\"/>");
+        }
+    }
+    xml.push_str("</barline>\n");
+}
+
+fn navigation_directions(xml: &mut String, score: &Score, bar: usize) {
+    let form = score.bar_form(bar);
+    for (shown, body, sound) in [
+        (form.segno, "<segno/>", "<sound segno=\"segno\"/>"),
+        (form.coda, "<coda/>", "<sound coda=\"coda\"/>"),
+    ] {
+        if shown {
+            direction(xml, body, 0, 1, 1, sound);
+        }
+    }
+    let tick = score.time_at(bar).capacity();
+    for (shown, label, sound) in [
+        (form.to_coda, "To Coda", "<sound tocoda=\"coda\"/>"),
+        (form.fine, "Fine", "<sound fine=\"yes\"/>"),
+    ] {
+        if shown {
+            direction(xml, &format!("<words>{label}</words>"), tick, 1, 1, sound);
+        }
+    }
+    if let Some(jump) = form.jump {
+        let sound = if jump.from_segno() {
+            "<sound dalsegno=\"segno\"/>"
+        } else {
+            "<sound dacapo=\"yes\"/>"
+        };
+        direction(
+            xml,
+            &format!("<words>{}</words>", jump.label()),
+            tick,
+            1,
+            1,
+            sound,
+        );
+    }
+}
+
 fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u16) -> u8 {
     if staff == StaffId::Lower
         || (part.has_passage_divisi() && voice == Voice::Two && part.divisi_at_tick(bar, tick))
@@ -156,9 +267,47 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n",
     );
+    let credits = score.credits();
+    let mut identification = String::new();
+    for (kind, name) in [
+        ("composer", &credits.composer),
+        ("arranger", &credits.arranger),
+        ("lyricist", &credits.lyricist),
+    ] {
+        if !name.is_empty() {
+            let _ = write!(
+                identification,
+                "<creator type=\"{kind}\">{}</creator>",
+                escape(name)
+            );
+        }
+    }
+    if !credits.copyright.is_empty() {
+        let _ = write!(
+            identification,
+            "<rights>{}</rights>",
+            escape(&credits.copyright)
+        );
+    }
+    identification.push_str("<encoding><software>Levare</software></encoding>");
+    if !credits.year.is_empty() {
+        let _ = write!(
+            identification,
+            "<miscellaneous><miscellaneous-field name=\"year\">{}</miscellaneous-field></miscellaneous>",
+            escape(&credits.year)
+        );
+    }
+    let subtitle = if credits.subtitle.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<credit page=\"1\"><credit-type>subtitle</credit-type><credit-words>{}</credit-words></credit>",
+            escape(&credits.subtitle)
+        )
+    };
     let _ = writeln!(
         xml,
-        "<work><work-title>{}</work-title></work><identification><encoding><software>Partitura</software></encoding></identification><part-list>",
+        "<work><work-title>{}</work-title></work><identification>{identification}</identification>{subtitle}<part-list>",
         escape(score.title())
     );
     for (i, part) in score.parts().iter().enumerate() {
@@ -192,6 +341,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
         let _ = writeln!(xml, "<part id=\"P{}\">", i + 1);
         for bar in 0..score.measures().len() {
             let _ = writeln!(xml, "<measure number=\"{}\">", bar + 1);
+            left_barline(&mut xml, score, bar);
             attributes(&mut xml, score, part, bar);
             directions(&mut xml, score, part, &index, bar, i == 0);
             let capacity = score.time_at(bar).capacity();
@@ -265,11 +415,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
                     }
                 }
             }
-            if bar + 1 == score.measures().len() {
-                xml.push_str(
-                    "<barline location=\"right\"><bar-style>light-heavy</bar-style></barline>\n",
-                );
-            }
+            right_barline(&mut xml, score, bar);
             xml.push_str("</measure>\n");
         }
         xml.push_str("</part>\n");
@@ -318,27 +464,29 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
         );
     }
     let two = part.staves().len() == 2 || part.has_passage_divisi();
-    if bar == 0 {
-        if two {
-            xml.push_str("<staves>2</staves>");
+    if bar == 0 && two {
+        xml.push_str("<staves>2</staves>");
+    }
+    for staff in 1..=if two { 2 } else { 1 } {
+        let staff_id = if staff == 1 {
+            StaffId::Upper
+        } else {
+            StaffId::Lower
+        };
+        if bar != 0 && part.clef_change_at(staff_id, bar).is_none() {
+            continue;
         }
-        for staff in 1..=if two { 2 } else { 1 } {
-            let clef = part.clef(if staff == 1 {
-                StaffId::Upper
-            } else {
-                StaffId::Lower
-            });
-            let (sign, line) = match clef {
-                Clef::Treble => ("G", 2),
-                Clef::Alto => ("C", 3),
-                Clef::Bass => ("F", 4),
-                Clef::Percussion => ("percussion", 2),
-            };
-            let _ = write!(
-                xml,
-                "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line></clef>"
-            );
-        }
+        let (sign, line) = match part.clef_at(staff_id, bar) {
+            Clef::Treble => ("G", 2),
+            Clef::Alto => ("C", 3),
+            Clef::Tenor => ("C", 4),
+            Clef::Bass => ("F", 4),
+            Clef::Percussion => ("percussion", 2),
+        };
+        let _ = write!(
+            xml,
+            "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line></clef>"
+        );
     }
     if part.has_passage_divisi() {
         let show = if part.bar_has_divisi(bar) {
@@ -396,6 +544,17 @@ fn directions(
             1,
             &format!("<sound tempo=\"{bpm}\"/>"),
         );
+    }
+    if conductor && let Some(label) = score.rehearsal_label(bar) {
+        // Rehearsal directions always belong above the conductor staff.
+        let _ = writeln!(
+            xml,
+            "<direction placement=\"above\"><direction-type><rehearsal enclosure=\"square\">{}</rehearsal></direction-type><offset>0</offset><voice>1</voice><staff>1</staff></direction>",
+            escape(&label)
+        );
+    }
+    if conductor {
+        navigation_directions(xml, score, bar);
     }
     if part.is_divisi() && bar == 0 {
         words(xml, "div.", 0, 1, 1);
@@ -590,6 +749,15 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                     Articulation::Marcato => "strong-accent",
                 };
                 let _ = write!(xml, "<articulations><{tag}/></articulations>");
+            }
+            if f.first
+                && let Some(tremolo) = f.event.notation.tremolo
+            {
+                let _ = write!(
+                    xml,
+                    "<ornaments><tremolo type=\"single\">{}</tremolo></ornaments>",
+                    tremolo.strokes()
+                );
             }
             if f.last && f.event.notation.fermata {
                 xml.push_str("<fermata/>");

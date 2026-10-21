@@ -1,4 +1,4 @@
-# Desarrollo de Partitura
+# Desarrollo de Levare
 
 Primera entrega iniciada el 2026-10-17 a partir de `herramientas.md`.
 
@@ -288,9 +288,10 @@ figura y BPM. Las pruebas cubren reapertura y compatibilidad, cambios por compá
 historial, figuras con puntillo, calderones, inversiones del reloj y crescendos
 sobre notas ligadas que atraviesan distintos tempi.
 
-Para pruebas gráficas aisladas, `PARTITURA_DATA_DIR` puede indicar un directorio
+Para pruebas gráficas aisladas, `LEVARE_DATA_DIR` puede indicar un directorio
 absoluto alternativo para recuperación, recientes y atajos, sin cambiar archivos
-de partituras ni los datos de la sesión habitual.
+de partituras ni los datos de la sesión habitual. `PARTITURA_DATA_DIR` se conserva
+como alias para los scripts anteriores.
 
 ## Reproducción integrada
 
@@ -724,10 +725,12 @@ panel de atajos, los menús y el README:
   oficial de Sibelius 2018.4 (3 corchea, 4 negra, 5 blanca, 7/8/9 ♮/♯/♭, 0 silencio,
   `.` puntillo, ↩ unión, F7–F12 distribuciones, ⇧1–9 intervalos en el modo portátil);
   el resto de teclas de una letra sigue la lista de SibAccess (Berklee). Las teclas
-  sin función en Partitura quedan reservadas como *pendientes*.
+  sin función en Levare quedan reservadas como *pendientes*.
 - **Cambios del usuario** (`user.rs`). `atajos.json` en la carpeta de datos
-  (`~/Library/Application Support/Partitura` en macOS) guarda, por comando, la
+  (`~/Library/Application Support/Levare` en macOS) guarda, por comando, la
   lista completa que sustituye a la del perfil; una lista vacía lo deja sin atajo.
+  Si existe la carpeta anterior `Partitura` y todavía no existe `Levare`, la app
+  sigue usando aquella para conservar atajos, recientes y recuperación.
   Escritura atómica y número de versión.
 - **Resolución** (`keymap.rs`). Perfil + cambios + distribución dan los atajos
   activos. Los del usuario ganan; los conflictos, IDs desconocidos y teclas que no
@@ -736,8 +739,8 @@ panel de atajos, los menús y el README:
   registro y un test falla si queda desactualizado.
 
 En la app, `shortcuts.rs` traduce cada atajo a un `KeyBinding` de GPUI con una sola
-acción `Run(CommandId)` y un predicado de contexto: `Partitura` para ⌘…, `Partitura
-&& !Modal && !TextInput` para las teclas sueltas y `Partitura && Modal` para cerrar
+acción `Run(CommandId)` y un predicado de contexto: `Levare` para ⌘…, `Levare
+&& !Modal && !TextInput` para las teclas sueltas y `Levare && Modal` para cerrar
 Preferencias. La raíz añade `Modal` mientras Preferencias está abierto. Los menús
 nativos solo muestran combinaciones con ⌘/⌃ (`MenuRun` para el resto, con la tecla
 en el texto), porque un equivalente de una sola tecla dejaría que macOS disparase el

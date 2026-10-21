@@ -70,8 +70,12 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     div()
                         .text_size(px(12.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(if view.tempo_picker.is_some() {
+                        .child(if view.header_editor.is_some() {
+                            "Información de la partitura".to_owned()
+                        } else if view.tempo_picker.is_some() {
                             "Tempo".to_owned()
+                        } else if view.clef_picker {
+                            "Clave".to_owned()
                         } else if view.time_picker {
                             "Métrica".to_owned()
                         } else if view.key_picker {
@@ -103,10 +107,16 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .flex_col()
                 .gap_1()
+                .when(view.clef_picker, |list| {
+                    list.child(clef_picker::panel(view, cx))
+                })
                 .when(view.key_picker, |list| list.child(key_picker(view, cx)))
                 .when(view.time_picker, |list| list.child(time_picker(view, cx)))
                 .when(view.tempo_picker.is_some(), |list| {
                     list.child(tempo_editor::panel(view, cx))
+                })
+                .when(view.header_editor.is_some(), |list| {
+                    list.child(header_editor::panel(view, cx))
                 })
                 .children(
                     InstrumentFamily::ALL
@@ -179,12 +189,19 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
     let mut description = if divided {
         format!(
             "Divisi · dos pentagramas en clave de {}",
-            clef_name(part.clef(StaffId::Upper))
+            clef_name(part.clef_at(StaffId::Upper, cursor.measure))
         )
     } else if part.staves().len() == 2 {
-        "Claves sol / fa".to_owned()
+        format!(
+            "Claves {} / {}",
+            clef_name(part.clef_at(StaffId::Upper, cursor.measure)),
+            clef_name(part.clef_at(StaffId::Lower, cursor.measure))
+        )
     } else {
-        format!("Clave de {}", clef_name(part.clef(StaffId::Upper)))
+        format!(
+            "Clave de {}",
+            clef_name(part.clef_at(StaffId::Upper, cursor.measure))
+        )
     };
     if !part.transposition().is_concert() {
         description.push_str(&format!(
@@ -412,7 +429,9 @@ fn catalog_row(
                             .h_full()
                             .justify_center()
                             .overflow_hidden()
-                            .child(inline_text(view.music_font.clone(), instrument.name()).w_full()),
+                            .child(
+                                inline_text(view.music_font.clone(), instrument.name()).w_full(),
+                            ),
                     ),
                 false,
                 cx,

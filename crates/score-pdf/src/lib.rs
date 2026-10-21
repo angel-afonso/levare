@@ -108,4 +108,73 @@ mod tests {
         );
         assert_eq!(std::fs::read(&path).unwrap(), b"previous");
     }
+    #[test]
+    fn exports_navigation_and_ending_continuations_in_full_score_and_part() {
+        use score_core::{BarForm, Ending, Instrument, Jump, Score};
+        let mut score =
+            Score::new("Form".into(), &[Instrument::Violin, Instrument::Viola], 80).unwrap();
+        for (bar, form) in [
+            (
+                0,
+                BarForm {
+                    repeat_start: true,
+                    segno: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                3,
+                BarForm {
+                    repeat_end: Some(2),
+                    ..Default::default()
+                },
+            ),
+            (
+                20,
+                BarForm {
+                    jump: Some(Jump::DalSegnoAlCoda),
+                    ..Default::default()
+                },
+            ),
+            (
+                32,
+                BarForm {
+                    to_coda: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                40,
+                BarForm {
+                    coda: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                72,
+                BarForm {
+                    fine: true,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            score.set_bar_form(bar, form).unwrap();
+        }
+        for (start, end, number) in [(3, 3, 1), (4, 14, 2)] {
+            score
+                .set_ending(Ending {
+                    start,
+                    end,
+                    numbers: vec![number],
+                })
+                .unwrap();
+        }
+        let original = score.clone();
+        let dir = tempfile::tempdir().unwrap();
+        let pages = export(&score, &dir.path().join("form.pdf")).unwrap();
+        assert!(pages > 1);
+        let part = score.extract_part(score.parts()[0].id()).unwrap();
+        assert!(export_part(&part, &dir.path().join("form-part.pdf")).unwrap() > 0);
+        assert_eq!(score, original);
+    }
 }

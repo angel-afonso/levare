@@ -18,17 +18,14 @@ impl Score {
                 ..id
             })
         };
-        self.connections = self
-            .connections
-            .iter()
-            .filter_map(|mark| {
-                Some(Connection {
-                    start: element(mark.start)?,
-                    end: element(mark.end)?,
-                    ..*mark
-                })
+        self.remap_comments(element);
+        self.rewrite_connections(|mark| {
+            Some(Connection {
+                start: element(mark.start)?,
+                end: element(mark.end)?,
+                ..mark
             })
-            .collect();
+        });
         self.piano_arpeggios = self
             .piano_arpeggios
             .iter()
@@ -42,10 +39,29 @@ impl Score {
             .collect();
         for part in &mut self.parts {
             part.divisi_changes = shift_map(std::mem::take(&mut part.divisi_changes), remap);
+            for map in part.clefs.values_mut() {
+                map.changes = shift_map(std::mem::take(&mut map.changes), remap);
+            }
         }
         self.time_changes = shift_map(std::mem::take(&mut self.time_changes), remap);
         self.key_changes = shift_map(std::mem::take(&mut self.key_changes), remap);
         self.tempo_changes = shift_map(std::mem::take(&mut self.tempo_changes), remap);
+        self.rehearsals = shift_map(std::mem::take(&mut self.rehearsals), remap);
+        self.form = shift_map(std::mem::take(&mut self.form), remap);
+        self.endings = self
+            .endings
+            .iter()
+            .filter_map(|ending| {
+                let kept: Vec<_> = (ending.start..=ending.end).filter_map(remap).collect();
+                Some(Ending {
+                    start: *kept.first()?,
+                    end: *kept.last()?,
+                    numbers: ending.numbers.clone(),
+                })
+            })
+            .collect();
+        self.bar_offsets = shift_map(std::mem::take(&mut self.bar_offsets), remap);
+        self.prune_bar_offsets();
     }
     /// Insert a blank bar before `index` in every staff. Existing music keeps its signatures.
     pub fn insert_measure(&mut self, index: usize) -> Result<(), ScoreError> {
@@ -80,6 +96,17 @@ impl Score {
             )
         });
         let divisions: Vec<_> = self.parts.iter().map(|part| part.divisi_at(end)).collect();
+        let clefs: Vec<_> = self
+            .parts
+            .iter()
+            .map(|part| {
+                [StaffId::Upper, StaffId::Lower]
+                    .into_iter()
+                    .filter(|staff| *staff == StaffId::Upper || part.instrument.is_grand_staff())
+                    .map(|staff| (staff, part.clef_at(staff, end)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         for part in &mut self.parts {
             for staff in &mut part.staves {
                 for _ in start..end {
@@ -108,6 +135,24 @@ impl Score {
             }
         }
         if let Some((time, key, tempo)) = carry {
+            for (part, clefs) in self.parts.iter_mut().zip(clefs) {
+                for (staff, clef) in clefs {
+                    if start == 0
+                        && let Some(map) = part.clefs.get_mut(&staff)
+                    {
+                        // A later change shifted onto bar zero becomes the initial clef.
+                        map.changes.remove(&0);
+                    }
+                    if part.clef_at(staff, start) != clef {
+                        let map = part.clefs.entry(staff).or_default();
+                        if start == 0 {
+                            map.initial = Some(clef);
+                        } else {
+                            map.changes.insert(start, clef);
+                        }
+                    }
+                }
+            }
             if start == 0 {
                 self.time = time;
                 self.key_signature = key;
@@ -158,6 +203,9 @@ impl Score {
         event.notation.arpeggio = None;
         event.notation.harmonic = None;
         event.notation.articulation = None;
+        event.notation.offsets.harmonic = None;
+        event.notation.offsets.articulation = None;
+        event.notation.tremolo = None;
         self.prune_connections();
         Ok(())
     }

@@ -10,7 +10,7 @@ mod dynamics;
 mod interpretation;
 mod timeline;
 pub use audition::{Audition, MAX_AUDITION_NOTES};
-pub use timeline::{FERMATA_HOLD, Timeline};
+pub use timeline::{FERMATA_HOLD, Instance, Timeline};
 
 pub const PLAYBACK_CHANNELS: usize = 128;
 /// Channel for a validated score's part index; percussion and audition are reserved.
@@ -20,6 +20,13 @@ pub fn part_channel(index: usize) -> u8 {
     ((index / 14) * 32 + slot + usize::from(slot >= 9)) as u8
 }
 pub const TICKS_PER_QUARTER: u64 = score_core::TICKS_PER_QUARTER as u64;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Style {
+    #[default]
+    Literal,
+    Natural,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tempo(u16);
@@ -111,6 +118,9 @@ pub struct HeldNote {
 struct SoundSpan {
     element: ElementId,
     arpeggio: Option<score_core::Arpeggio>,
+    tremolo: Option<score_core::Tremolo>,
+    tremolo_repeat: bool,
+    written_ticks: u64,
     /// Original first fragment, so tied continuations never widen the roll.
     attack_duration: u64,
     articulation: Option<Articulation>,
@@ -125,6 +135,8 @@ struct SoundSpan {
     start: u64,
     end: u64,
     written_end: u64,
+    /// Written bounds disambiguate adjacency when performed bars jump.
+    written_range: (u64, u64),
     channel: u8,
     pitches: Pitches,
     level: u8,
@@ -182,6 +194,7 @@ fn connect_slurred(sounds: &mut [SoundSpan], rate: u32) {
         if previous.slurred
             && previous.end == previous.written_end
             && previous.written_end == next.start
+            && previous.written_range.1 == next.written_range.0
             && !repeated
         {
             previous.end = next.start + overlap.min(next.end - next.start);
@@ -191,11 +204,32 @@ fn connect_slurred(sounds: &mut [SoundSpan], rate: u32) {
 
 impl PlaybackPlan {
     pub fn new(score: &Score, tempo: Tempo, sample_rate: u32) -> Result<Self, ScoreError> {
+        let mut plan = Self::with_repeats(score, tempo, sample_rate, false)?;
+        // Existing callers omit silent trailing bars. Transport callers use
+        // with_repeats, which retains the complete performed duration.
+        plan.duration_frames = plan.spans.iter().map(|span| span.end).max().unwrap_or(0);
+        Ok(plan)
+    }
+    pub fn with_repeats(
+        score: &Score,
+        tempo: Tempo,
+        sample_rate: u32,
+        follow: bool,
+    ) -> Result<Self, ScoreError> {
+        Self::with_style(score, tempo, sample_rate, follow, Style::Literal)
+    }
+    pub fn with_style(
+        score: &Score,
+        tempo: Tempo,
+        sample_rate: u32,
+        follow: bool,
+        style: Style,
+    ) -> Result<Self, ScoreError> {
         score.validate()?;
         if !(16_000..=192_000).contains(&sample_rate) {
             return Err(ScoreError("Frecuencia de audio no compatible"));
         }
-        let timeline = Timeline::new(score, tempo);
+        let timeline = Timeline::with_repeats(score, tempo, follow);
         let mut messages = Vec::new();
         let mut spans = Vec::new();
         let mut sounds: Vec<SoundSpan> = Vec::new();
@@ -206,8 +240,9 @@ impl PlaybackPlan {
             .copied()
             .collect();
         let tied_starts: std::collections::HashSet<_> = ties.iter().map(|c| c.start).collect();
-        let tied_ends: std::collections::HashSet<_> = ties.iter().map(|c| c.end).collect();
-        let mut duration_frames = 0;
+        let tie_start_of: std::collections::HashMap<_, _> =
+            ties.iter().map(|c| (c.end, c.start)).collect();
+        let duration_frames = timeline.total_frames(sample_rate);
         let mut tracks = Vec::new();
         let mut expression: Vec<ExpressionPoint> = Vec::new();
         for (part_index, part) in score.parts().iter().enumerate() {
@@ -259,13 +294,29 @@ impl PlaybackPlan {
                     let first_voice_span = spans.len();
                     let first_voice_sound = sounds.len();
                     let slurs = interpretation::Slurs::new(score, part.id(), staff.id(), voice);
-                    for (index, measure) in staff.measures().iter().enumerate() {
-                        let mut tick = score.measure_start_tick(index);
+                    let mut last_element = None;
+                    for (instance_index, instance) in timeline.instances().iter().enumerate() {
+                        let index = instance.bar;
+                        if instance_index > 0
+                            && timeline.instances()[instance_index - 1].bar + 1 != index
+                        {
+                            last_element = None;
+                        }
+                        let measure = &staff.measures()[index];
+                        let mut tick = instance.written;
                         for (id, event) in measure.voice_iter(voice) {
                             let written_tick = tick;
-                            let start = timeline.frame_at(tick, sample_rate);
+                            let start = timeline.performed_frame(
+                                instance_index,
+                                tick - instance.written,
+                                sample_rate,
+                            );
                             tick += u64::from(event.duration.ticks());
-                            let end = timeline.frame_at(tick, sample_rate);
+                            let end = timeline.performed_frame(
+                                instance_index,
+                                tick - instance.written,
+                                sample_rate,
+                            );
                             let element = ElementId {
                                 staff: staff.id(),
                                 part: part.id(),
@@ -291,7 +342,10 @@ impl PlaybackPlan {
                             let articulation = event.notation.articulation;
                             let slurred = slurs.continues(written_tick);
                             if !pitches.is_empty() {
-                                if tied_ends.contains(&element) {
+                                if tie_start_of
+                                    .get(&element)
+                                    .is_some_and(|source| Some(*source) == last_element)
+                                {
                                     // Whole chords tie as a unit; the original attack and level survive.
                                     let sound = sounds
                                         .last_mut()
@@ -299,6 +353,8 @@ impl PlaybackPlan {
                                     // The final articulation shapes the combined tied duration.
                                     // This also preserves staccato when paste splits a long note.
                                     sound.written_end = end;
+                                    sound.written_range.1 = tick;
+                                    sound.written_ticks += u64::from(event.duration.ticks());
                                     sound.slurred = slurred;
                                     sound.end = if tied_starts.contains(&element) {
                                         end
@@ -324,6 +380,9 @@ impl PlaybackPlan {
                                     sounds.push(SoundSpan {
                                         element,
                                         arpeggio: event.notation.arpeggio,
+                                        tremolo: event.notation.tremolo,
+                                        tremolo_repeat: false,
+                                        written_ticks: u64::from(event.duration.ticks()),
                                         attack_duration: end - start,
                                         articulation: if tied
                                             && articulation == Some(Articulation::Staccato)
@@ -352,6 +411,7 @@ impl PlaybackPlan {
                                             )
                                         },
                                         written_end: end,
+                                        written_range: (written_tick, tick),
                                         channel,
                                         pitches,
                                         level: interpretation::level(
@@ -361,9 +421,10 @@ impl PlaybackPlan {
                                     });
                                 }
                             }
-                            duration_frames = duration_frames.max(end);
+                            last_element = Some(element);
                         }
                     }
+                    interpretation::expand_tremolos(&mut sounds, first_voice_sound, sample_rate);
                     connect_slurred(&mut sounds[first_voice_sound..], sample_rate);
                     voice_ranges.push((
                         voice,
@@ -430,10 +491,13 @@ impl PlaybackPlan {
                 }
             }
         }
+        if style == Style::Natural {
+            interpretation::shape(&mut sounds, score, &timeline, sample_rate, &tracks);
+        }
         let sound_indices: std::collections::HashMap<_, _> = sounds
             .iter()
             .enumerate()
-            .map(|(index, span)| (span.element, index))
+            .map(|(index, span)| ((span.element, span.start), index))
             .collect();
         let piano_arpeggios: std::collections::HashMap<_, _> = score
             .piano_arpeggios()
@@ -450,7 +514,7 @@ impl PlaybackPlan {
             });
             for id in members.into_iter().flatten() {
                 // A tied continuation has no new sound; preserve that sustain.
-                if let Some(index) = sound_indices.get(&id) {
+                if let Some(index) = sound_indices.get(&(id, span.start)) {
                     let member = sounds[*index];
                     gate = gate.min(member.attack_duration.min(member.end - member.start));
                     for pitch in member.pitches.iter() {
@@ -1225,3 +1289,48 @@ mod harmonic_tests;
 
 #[cfg(test)]
 mod orchestra_tests;
+
+#[cfg(test)]
+mod form_tests;
+
+#[cfg(test)]
+mod tremolo_tests;
+
+#[cfg(test)]
+mod style_tests;
+
+#[cfg(test)]
+mod clef_tests {
+    use super::*;
+    use score_core::{Clef, Duration, Event, Notation, PartId};
+    #[test]
+    fn clefs_preserve_the_entire_sounding_plan() {
+        let mut score = Score::new("Cello".into(), &[Instrument::Cello], 4).unwrap();
+        for bar in 0..4 {
+            score
+                .insert_on(
+                    PartId(0),
+                    StaffId::Upper,
+                    bar,
+                    0,
+                    Event {
+                        pitches: Pitches::single(Pitch::new(Step::D, 4)),
+                        duration: Duration::Whole,
+                        notation: Notation::default(),
+                    },
+                )
+                .unwrap();
+        }
+        let before = PlaybackPlan::with_repeats(&score, Tempo::default(), 48_000, true).unwrap();
+        score
+            .set_clef_at(PartId(0), StaffId::Upper, 0, Clef::Tenor)
+            .unwrap();
+        score
+            .set_clef_at(PartId(0), StaffId::Upper, 2, Clef::Treble)
+            .unwrap();
+        let after = PlaybackPlan::with_repeats(&score, Tempo::default(), 48_000, true).unwrap();
+        assert_eq!(before.duration_frames, after.duration_frames);
+        assert_eq!(before.messages, after.messages);
+        assert_eq!(before.spans, after.spans);
+    }
+}

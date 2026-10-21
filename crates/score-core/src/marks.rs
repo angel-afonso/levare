@@ -14,6 +14,7 @@ pub enum MarkKind {
     Arpeggio(Arpeggio),
     Articulation(Articulation),
     Fermata,
+    Tremolo(Tremolo),
     Dynamic(Dynamic),
     Technique(PlayingTechnique),
     Harmonic(Harmonic),
@@ -28,6 +29,7 @@ pub enum MarkFamily {
     Arpeggio,
     Articulation,
     Fermata,
+    Tremolo,
     Dynamic,
     Technique,
     Harmonic,
@@ -42,10 +44,11 @@ pub enum Placement {
     Left,
     Above,
     Below,
+    Stem,
 }
 
 impl MarkKind {
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 29] = [
         Self::Division(Division::Divisi),
         Self::Division(Division::Unison),
         Self::Arpeggio(Arpeggio::Normal),
@@ -56,6 +59,9 @@ impl MarkKind {
         Self::Articulation(Articulation::Accent),
         Self::Articulation(Articulation::Marcato),
         Self::Fermata,
+        Self::Tremolo(Tremolo::One),
+        Self::Tremolo(Tremolo::Two),
+        Self::Tremolo(Tremolo::Three),
         Self::Dynamic(Dynamic::Ppp),
         Self::Dynamic(Dynamic::Pp),
         Self::Dynamic(Dynamic::P),
@@ -80,6 +86,7 @@ impl MarkKind {
             Self::Arpeggio(mark) => mark.label(),
             Self::Articulation(mark) => mark.label(),
             Self::Fermata => "Calderón",
+            Self::Tremolo(mark) => mark.label(),
             Self::Dynamic(mark) => mark.label(),
             Self::Technique(mark) => mark.label(),
             Self::Harmonic(mark) => mark.label(),
@@ -119,6 +126,7 @@ impl MarkKind {
             Self::Arpeggio(_) => MarkFamily::Arpeggio,
             Self::Articulation(_) => MarkFamily::Articulation,
             Self::Fermata => MarkFamily::Fermata,
+            Self::Tremolo(_) => MarkFamily::Tremolo,
             Self::Dynamic(_) => MarkFamily::Dynamic,
             Self::Technique(_) => MarkFamily::Technique,
             Self::Harmonic(_) => MarkFamily::Harmonic,
@@ -134,6 +142,7 @@ impl MarkKind {
             Self::Harmonic(mark) => Some(mark.glyph()),
             Self::Articulation(mark) => Some(mark.glyph()),
             Self::Fermata => Some("\u{e4c0}"),
+            Self::Tremolo(mark) => Some(mark.glyph()),
             Self::Dynamic(mark) => Some(mark.glyph()),
             Self::Division(_) | Self::Technique(_) | Self::Connection(_) => None,
         }
@@ -141,6 +150,7 @@ impl MarkKind {
     pub const fn placement(self) -> Placement {
         match self {
             Self::Arpeggio(_) => Placement::Left,
+            Self::Tremolo(_) => Placement::Stem,
             Self::Dynamic(_) | Self::Connection(ConnectionKind::Crescendo) => Placement::Below,
             Self::Connection(ConnectionKind::Diminuendo) => Placement::Below,
             _ => Placement::Above,
@@ -158,7 +168,11 @@ impl MarkKind {
     pub const fn allowed_on_rest(self) -> bool {
         !matches!(
             self,
-            Self::Arpeggio(_) | Self::Articulation(_) | Self::Harmonic(_) | Self::Connection(_)
+            Self::Arpeggio(_)
+                | Self::Articulation(_)
+                | Self::Harmonic(_)
+                | Self::Tremolo(_)
+                | Self::Connection(_)
         )
     }
 }
@@ -170,6 +184,7 @@ impl MarkFamily {
             Self::Arpeggio => "Arpegio",
             Self::Articulation => "Articulación",
             Self::Fermata => "Calderón",
+            Self::Tremolo => "Trémolo",
             Self::Dynamic => "Dinámica",
             Self::Technique => "Técnica",
             Self::Harmonic => "Armónico",
@@ -192,6 +207,7 @@ pub enum MarkRef {
     Arpeggio(ElementId),
     Articulation(ElementId),
     Fermata(ElementId),
+    Tremolo(ElementId),
     Dynamic(ElementId),
     Technique(ElementId),
     Harmonic(ElementId),
@@ -206,6 +222,7 @@ impl MarkRef {
             | Self::Arpeggio(id)
             | Self::Articulation(id)
             | Self::Fermata(id)
+            | Self::Tremolo(id)
             | Self::Dynamic(id)
             | Self::Technique(id)
             | Self::Harmonic(id) => id,
@@ -219,6 +236,7 @@ impl MarkRef {
             MarkFamily::Arpeggio => Self::Arpeggio(id),
             MarkFamily::Articulation => Self::Articulation(id),
             MarkFamily::Fermata => Self::Fermata(id),
+            MarkFamily::Tremolo => Self::Tremolo(id),
             MarkFamily::Dynamic => Self::Dynamic(id),
             MarkFamily::Technique => Self::Technique(id),
             MarkFamily::Harmonic => Self::Harmonic(id),
@@ -249,6 +267,7 @@ impl Score {
                 .map(|mark| MarkKind::Arpeggio(mark.kind)),
             MarkRef::Articulation(id) => notation(id)?.articulation.map(MarkKind::Articulation),
             MarkRef::Fermata(id) => notation(id)?.fermata.then_some(MarkKind::Fermata),
+            MarkRef::Tremolo(id) => notation(id)?.tremolo.map(MarkKind::Tremolo),
             MarkRef::Dynamic(id) => notation(id)?.dynamic.map(MarkKind::Dynamic),
             MarkRef::Technique(id) => notation(id)?.technique.map(MarkKind::Technique),
             MarkRef::Harmonic(id) => notation(id)?.harmonic.map(MarkKind::Harmonic),
@@ -300,6 +319,10 @@ impl Score {
             }
             (MarkFamily::Articulation, _) => self.set_articulation(id, None),
             (MarkFamily::Fermata, kind) => self.set_fermata(id, kind.is_some()),
+            (MarkFamily::Tremolo, Some(MarkKind::Tremolo(mark))) => {
+                self.set_tremolo(id, Some(mark))
+            }
+            (MarkFamily::Tremolo, _) => self.set_tremolo(id, None),
             (MarkFamily::Dynamic, Some(MarkKind::Dynamic(mark))) => {
                 self.set_dynamic(id, Some(mark))
             }

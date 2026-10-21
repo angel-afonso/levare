@@ -1,6 +1,6 @@
 //! Shortcut engine: command registry, keystrokes, profiles and the user's
 //! changes, resolved into one keymap. Independent of GPUI so it can be tested
-//! and reused; `partitura` translates the result into toolkit bindings.
+//! and reused; `levare` translates the result into toolkit bindings.
 
 pub mod commands;
 pub mod docs;

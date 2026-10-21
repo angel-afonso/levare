@@ -10,7 +10,10 @@ mod menu;
 mod project;
 mod spec;
 
-pub use menu::{FILE_MENU, MenuEntry, MenuItemView, MenuRow, RecentItem, project_menu};
+pub use menu::{
+    BAR_MARK_CONTEXT_MENU, FILE_MENU, MARK_CONTEXT_MENU, MenuEntry, MenuItemView, MenuRow,
+    NOTE_CONTEXT_MENU, RecentItem, project_menu,
+};
 pub use project::{
     CommandState, CommandStates, ControlView, GroupMode, GroupView, Item, Metrics, ToolbarView,
     fit, project,

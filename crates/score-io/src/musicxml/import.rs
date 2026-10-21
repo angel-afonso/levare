@@ -186,11 +186,86 @@ pub fn decode(bytes: &[u8]) -> Result<ImportResult, FileError> {
             "MusicXML: parte no declarada en la lista de instrumentos",
         ));
     }
-    let score = build::score(title, parts, &mut warnings)?;
+    let mut score = build::score(title, parts, &mut warnings)?;
+    let header = credits(root);
+    let title = score.title().to_owned();
+    if score.set_header(&title, &header).is_err() {
+        warnings.add("MusicXML: se omitieron créditos de la cabecera no válidos");
+    }
     Ok(ImportResult {
         score,
         warnings: warnings.0.into_iter().collect(),
     })
+}
+/// Composer, arranger, lyricist and rights from `<identification>`, the year
+/// from a miscellaneous field, and the subtitle (or missing creators) from
+/// typed `<credit>` texts, as MuseScore and Sibelius write them.
+fn credits(root: Node<'_, '_>) -> score_core::Credits {
+    let mut credits = score_core::Credits::default();
+    if let Some(identification) = child(root, "identification") {
+        for creator in identification
+            .children()
+            .filter(|n| n.has_tag_name("creator"))
+        {
+            let slot = match creator.attribute("type") {
+                Some("composer") => &mut credits.composer,
+                Some("arranger") => &mut credits.arranger,
+                Some("lyricist" | "poet") => &mut credits.lyricist,
+                _ => continue,
+            };
+            if slot.is_empty() {
+                *slot = clean(creator.text().unwrap_or_default());
+            }
+        }
+        if let Some(rights) = text(identification, "rights") {
+            credits.copyright = clean(rights);
+        }
+        if let Some(field) = child(identification, "miscellaneous").and_then(|m| {
+            m.children().find(|n| {
+                n.has_tag_name("miscellaneous-field") && n.attribute("name") == Some("year")
+            })
+        }) {
+            credits.year = clean(field.text().unwrap_or_default());
+        }
+    }
+    for credit in root.children().filter(|n| n.has_tag_name("credit")) {
+        let words: Vec<_> = credit
+            .children()
+            .filter(|n| n.has_tag_name("credit-words"))
+            .filter_map(|n| n.text())
+            .collect();
+        let words = clean(&words.join(" "));
+        for kind in credit.children().filter(|n| n.has_tag_name("credit-type")) {
+            let slot = match kind.text().map(str::trim) {
+                Some("subtitle") => &mut credits.subtitle,
+                Some("composer") => &mut credits.composer,
+                Some("arranger") => &mut credits.arranger,
+                Some("lyricist" | "poet") => &mut credits.lyricist,
+                Some("rights") => &mut credits.copyright,
+                _ => continue,
+            };
+            if slot.is_empty() {
+                *slot = words.clone();
+            }
+        }
+    }
+    credits
+}
+/// One printable line of at most 256 bytes.
+fn clean(text: &str) -> String {
+    let mut line: String = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    let mut end = line.len().min(256);
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    line.truncate(end);
+    line
 }
 fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(error)?;
@@ -357,14 +432,27 @@ fn instrument(part: Node<'_, '_>, bars: &[Node<'_, '_>], warnings: &mut Warnings
 
 #[derive(Clone, Default)]
 struct Bar {
+    clefs: BTreeMap<u8, Clef>,
     time: Option<TimeSignature>,
     key: Option<KeySignature>,
     tempo: Option<TempoMark>,
+    rehearsal: Option<String>,
     events: Vec<RawEvent>,
     directions: Vec<Mark>,
     implicit: bool,
     staves: u8,
     texts: Vec<(u16, String)>,
+    repeat_start: bool,
+    repeat_end: Option<u8>,
+    barline: Option<Barline>,
+    ending_start: Option<Vec<u8>>,
+    ending_stop: bool,
+    segno: bool,
+    coda: bool,
+    to_coda: bool,
+    fine: bool,
+    jump: Option<Jump>,
+    jump_from_sound: bool,
 }
 struct PartData {
     instrument: Instrument,
@@ -460,6 +548,7 @@ fn read_part(
                 }
                 "direction" => read_direction(n, cursor, &state, &mut bar, warnings)?,
                 "sound" => {
+                    navigation_sound(n, &mut bar);
                     if let Some(technique) = sound_technique(n)? {
                         bar.directions.push(Mark {
                             tick: cursor,
@@ -523,6 +612,9 @@ fn read_part(
                             last.arpeggio = event.arpeggio;
                         }
                         last.notation.fermata |= event.notation.fermata;
+                        if event.notation.tremolo.is_some() {
+                            last.notation.tremolo = event.notation.tremolo;
+                        }
                         if last.pitches.len() > MAX_CHORD_NOTES + 1 {
                             return Err(error("MusicXML: acorde demasiado grande"));
                         }
@@ -537,13 +629,7 @@ fn read_part(
                         return Err(error("MusicXML: demasiadas notas en un compás"));
                     }
                 }
-                "barline" => {
-                    if n.descendants()
-                        .any(|n| n.has_tag_name("repeat") || n.has_tag_name("ending"))
-                    {
-                        warnings.add("Las repeticiones y casillas no se importan; se conserva la música escrita una vez");
-                    }
-                }
+                "barline" => read_barline(n, &mut bar, index + 1 == measures.len(), warnings),
                 "print" => {}
                 "harmony" => warnings.add("Los cifrados de acordes no se importan"),
                 _ => warnings.add(format!(
@@ -551,6 +637,25 @@ fn read_part(
                     n.tag_name().name()
                 )),
             }
+        }
+        if bar.jump_from_sound {
+            bar.jump = bar.jump.map(|jump| {
+                if bar.fine {
+                    if jump.from_segno() {
+                        Jump::DalSegnoAlFine
+                    } else {
+                        Jump::DaCapoAlFine
+                    }
+                } else if bar.to_coda {
+                    if jump.from_segno() {
+                        Jump::DalSegnoAlCoda
+                    } else {
+                        Jump::DaCapoAlCoda
+                    }
+                } else {
+                    jump
+                }
+            });
         }
         bar.staves = state.staves;
         if index == 0 {
@@ -730,8 +835,25 @@ fn attributes(
         bar.key = Some(transpose_key(key, state.transpose[0], state.intervals[0]));
     }
     for c in n.children().filter(|c| c.has_tag_name("clef")) {
-        if !matches!(text(c, "sign"), Some("G" | "C" | "F" | "percussion")) {
-            warnings.add("Las claves especiales se redibujan con la clave del instrumento");
+        if cursor != 0 {
+            return Err(error(
+                "MusicXML: cambio de clave dentro del compás no admitido",
+            ));
+        }
+        let staff = (staff_index(c.attribute("number").unwrap_or("1"))? + 1) as u8;
+        let line = text(c, "line").unwrap_or("2");
+        let clef = match (text(c, "sign"), line) {
+            (Some("G"), "2") => Some(Clef::Treble),
+            (Some("F"), "4") => Some(Clef::Bass),
+            (Some("C"), "3") => Some(Clef::Alto),
+            (Some("C"), "4") => Some(Clef::Tenor),
+            (Some("percussion"), _) => Some(Clef::Percussion),
+            _ => None,
+        };
+        if let Some(clef) = clef {
+            bar.clefs.insert(staff, clef);
+        } else {
+            warnings.add("La clave especial se redibuja con la clave del instrumento");
         }
         if text(c, "clef-octave-change").is_some() {
             warnings.add("La octava de la clave se conserva mediante las alturas; la clave se redibuja sin indicación de octava");
@@ -990,6 +1112,31 @@ fn read_note(
                         }
                     }
                 }
+                "ornaments" => {
+                    for ornament in m.children().filter(Node::is_element) {
+                        if ornament.has_tag_name("tremolo") {
+                            match ornament.attribute("type") {
+                                None | Some("single") => {
+                                    if let Some(mark) = ornament
+                                        .text()
+                                        .and_then(|value| value.trim().parse::<u8>().ok())
+                                        .and_then(Tremolo::from_strokes)
+                                    {
+                                        notation.tremolo = Some(mark);
+                                    } else {
+                                        warnings.add("Trémolo con un número de barras no admitido");
+                                    }
+                                }
+                                Some("start" | "stop") => {
+                                    warnings.add("El trémolo entre dos notas no se importa")
+                                }
+                                _ => warnings.add("Notación «ornaments» no importada"),
+                            }
+                        } else {
+                            warnings.add("Notación «ornaments» no importada");
+                        }
+                    }
+                }
                 "arpeggiate" => {
                     let kind = match m.attribute("direction") {
                         Some("up") => Arpeggio::Up,
@@ -1066,6 +1213,104 @@ fn sound_technique(n: Node<'_, '_>) -> Result<Option<PlayingTechnique>, FileErro
         None => Ok(None),
     }
 }
+fn read_barline(n: Node<'_, '_>, bar: &mut Bar, last: bool, warnings: &mut Warnings) {
+    for repeat in n.children().filter(|node| node.has_tag_name("repeat")) {
+        match repeat.attribute("direction") {
+            Some("forward") => bar.repeat_start = true,
+            Some("backward") => {
+                let times = repeat
+                    .attribute("times")
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .unwrap_or(2);
+                bar.repeat_end = Some(times.clamp(2, i64::from(MAX_REPEAT_TIMES)) as u8);
+            }
+            _ => {}
+        }
+    }
+    if n.attribute("location") != Some("left") {
+        match text(n, "bar-style") {
+            Some("light-light") => bar.barline = Some(Barline::Double),
+            // A repeat's heavy stroke is implicit; so is the final score bar.
+            Some("light-heavy") if bar.repeat_end.is_none() && !last => {
+                bar.barline = Some(Barline::Final)
+            }
+            _ => {}
+        }
+    }
+    for ending in n.children().filter(|node| node.has_tag_name("ending")) {
+        match ending.attribute("type") {
+            Some("start") => {
+                let numbers: Vec<_> = ending
+                    .attribute("number")
+                    .unwrap_or_default()
+                    .split(|character: char| character == ',' || character.is_whitespace())
+                    .filter_map(|value| value.parse::<u8>().ok())
+                    .filter(|number| (1..=MAX_ENDING_NUMBER).contains(number))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                if numbers.is_empty() {
+                    warnings.add("Casilla con números no admitidos");
+                } else {
+                    bar.ending_start = Some(numbers);
+                }
+            }
+            Some("stop" | "discontinue") => bar.ending_stop = true,
+            _ => {}
+        }
+    }
+}
+
+fn navigation_words(words: &str, bar: &mut Bar) -> bool {
+    let words = words
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let jump = match words.as_str() {
+        "fine" => {
+            bar.fine = true;
+            return true;
+        }
+        "to coda" | "al coda" => {
+            bar.to_coda = true;
+            return true;
+        }
+        "d.c." | "da capo" => Jump::DaCapo,
+        "d.c. al fine" => Jump::DaCapoAlFine,
+        "d.c. al coda" => Jump::DaCapoAlCoda,
+        "d.s." | "dal segno" => Jump::DalSegno,
+        "d.s. al fine" => Jump::DalSegnoAlFine,
+        "d.s. al coda" => Jump::DalSegnoAlCoda,
+        _ => return false,
+    };
+    bar.jump = Some(jump);
+    bar.jump_from_sound = false;
+    true
+}
+
+fn navigation_sound(sound: Node<'_, '_>, bar: &mut Bar) {
+    let present = |name| {
+        sound
+            .attribute(name)
+            .is_some_and(|value| !value.is_empty() && value != "no")
+    };
+    bar.segno |= present("segno");
+    bar.coda |= present("coda");
+    bar.to_coda |= present("tocoda");
+    bar.fine |= present("fine");
+    if bar.jump.is_none() {
+        bar.jump = if present("dalsegno") {
+            Some(Jump::DalSegno)
+        } else if present("dacapo") {
+            Some(Jump::DaCapo)
+        } else {
+            None
+        };
+        bar.jump_from_sound = bar.jump.is_some();
+    }
+}
+
 fn read_direction(
     n: Node<'_, '_>,
     cursor: u16,
@@ -1113,6 +1358,13 @@ fn read_direction(
     for dt in n.children().filter(|d| d.has_tag_name("direction-type")) {
         for d in dt.children().filter(Node::is_element) {
             let kind = match d.tag_name().name() {
+                "rehearsal" => {
+                    let text = d.text().unwrap_or("").trim();
+                    if !text.is_empty() {
+                        bar.rehearsal = Some(text.to_owned());
+                    }
+                    None
+                }
                 "dynamics" => {
                     let dynamic = d.children().filter(Node::is_element).find_map(|n| {
                         Dynamic::ALL
@@ -1127,7 +1379,9 @@ fn read_direction(
                 "words" => {
                     let s = d.text().unwrap_or("").trim();
                     let lower = s.to_lowercase();
-                    if lower.starts_with("pizz") {
+                    if navigation_words(s, bar) {
+                        None
+                    } else if lower.starts_with("pizz") {
                         Some(MarkType::Technique(PlayingTechnique::Pizzicato))
                     } else if lower == "arco" {
                         Some(MarkType::Technique(PlayingTechnique::Arco))
@@ -1141,6 +1395,18 @@ fn read_direction(
                         }
                         None
                     }
+                }
+                "segno" => {
+                    bar.segno = true;
+                    None
+                }
+                "coda" => {
+                    if child(n, "sound").is_some_and(|sound| sound.attribute("tocoda").is_some()) {
+                        bar.to_coda = true;
+                    } else {
+                        bar.coda = true;
+                    }
+                    None
                 }
                 "wedge" => {
                     let typ = d.attribute("type").unwrap_or("");
@@ -1194,6 +1460,9 @@ fn read_direction(
                 });
             }
         }
+    }
+    if let Some(sound) = child(n, "sound") {
+        navigation_sound(sound, bar);
     }
     if let Some(mut tempo) = tempo {
         if tick == 0 {

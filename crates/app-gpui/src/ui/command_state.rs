@@ -8,6 +8,34 @@ use score_toolbar::{CommandState, CommandStates};
 impl CommandStates for AppView {
     fn state(&self, command: CommandId) -> CommandState {
         let editor = &self.document.editor;
+        if let Some(state) = form_state(editor, command) {
+            return state;
+        }
+        let rehearsal = match command {
+            id::REHEARSAL_MARK => Some(
+                editor.score().has_rehearsal_mark(
+                    editor
+                        .selected_ids()
+                        .iter()
+                        .map(|id| id.measure)
+                        .min()
+                        .unwrap_or(editor.cursor().measure),
+                ),
+            ),
+            id::REHEARSAL_LETTERS => {
+                Some(editor.score().rehearsal_style() == score_core::RehearsalStyle::Letters)
+            }
+            id::REHEARSAL_NUMBERS => {
+                Some(editor.score().rehearsal_style() == score_core::RehearsalStyle::Numbers)
+            }
+            id::REHEARSAL_BAR_NUMBERS => {
+                Some(editor.score().rehearsal_style() == score_core::RehearsalStyle::BarNumbers)
+            }
+            _ => None,
+        };
+        if let Some(checked) = rehearsal {
+            return CommandState::checked(checked);
+        }
         let duration = active_duration(self);
         let value = |note: NoteValue| CommandState::checked(duration.value() == note);
         let accidental = |sign: Accidental| {
@@ -33,6 +61,20 @@ impl CommandStates for AppView {
             enabled,
             ..CommandState::default()
         };
+        if let Some(score_core::MarkKind::Tremolo(mark)) = score_toolbar::marks::kind(command) {
+            let ids = editor.selected_ids();
+            return CommandState {
+                checked: !ids.is_empty()
+                    && ids.iter().all(|id| {
+                        editor.score().event(*id).unwrap().notation.tremolo == Some(mark)
+                    }),
+                enabled: !ids.is_empty()
+                    && ids
+                        .iter()
+                        .all(|id| !editor.score().event(*id).unwrap().pitches.is_empty()),
+                ..Default::default()
+            };
+        }
         if let Some(score_core::MarkKind::Harmonic(mark)) = score_toolbar::marks::kind(command) {
             let ids = editor.selected_ids();
             let checked = !ids.is_empty()
@@ -83,6 +125,45 @@ impl CommandStates for AppView {
             );
         }
         match command {
+            id::NEW_COMMENT => enabled(editor.selection().is_some()),
+            id::SHOW_COMMENTS => CommandState::checked(
+                self.comments.open && self.ui.show_inspector && self.ui.inspector == "Revisión",
+            ),
+            id::RESOLVE_COMMENT => {
+                let comment = self
+                    .comments
+                    .active
+                    .and_then(|id| editor.score().comment(id));
+                CommandState {
+                    enabled: comment.is_some(),
+                    label: comment.map(|comment| {
+                        if comment.resolved {
+                            "Reabrir comentario".into()
+                        } else {
+                            "Resolver comentario".into()
+                        }
+                    }),
+                    ..Default::default()
+                }
+            }
+            id::CHECK_SELECTION => enabled(editor.selection().is_some()),
+            id::REVIEW_PREVIOUS | id::REVIEW_NEXT => enabled(!self.review.filtered().is_empty()),
+            id::REVIEW_ISSUES => {
+                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Revisión")
+            }
+            id::SHOW_RANGES => CommandState::checked(self.review.show_ranges),
+            id::EDIT_RANGE => enabled(
+                editor
+                    .score()
+                    .part(editor.cursor().part)
+                    .is_some_and(|part| part.sounding_range().is_some()),
+            ),
+            id::RESET_RANGE => enabled(
+                editor
+                    .score()
+                    .part(editor.cursor().part)
+                    .is_some_and(|part| part.range_override().is_some()),
+            ),
             id::ARPEGGIO_BOTH_HANDS => {
                 let id = editor.selection();
                 CommandState {
@@ -95,6 +176,9 @@ impl CommandStates for AppView {
             }
             id::UNDO => enabled(editor.can_undo()),
             id::REDO => enabled(editor.can_redo()),
+            id::RESET_POSITION => {
+                enabled(editor.selection().is_some() || self.selected_bar_mark().is_some())
+            }
             id::REMOVE_INSTRUMENT => enabled(editor.score().parts().len() > 1),
 
             id::VOICE_1 => CommandState::checked(editor.cursor().voice == score_core::Voice::One),
@@ -134,8 +218,11 @@ impl CommandStates for AppView {
             id::CRESCENDO => hairpin(ConnectionKind::Crescendo),
             id::DIMINUENDO => hairpin(ConnectionKind::Diminuendo),
 
+            id::CLEF => CommandState::checked(self.clef_picker),
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
+            id::REPEATS => CommandState::checked(self.playback.follow_repeats),
             id::TEMPO_TEXT => CommandState::checked(self.tempo_picker.is_some()),
+            id::SCORE_INFO => CommandState::checked(self.header_editor.is_some()),
             id::TIME_SIGNATURE => CommandState::checked(self.time_picker),
             id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker.is_some()),
 
@@ -162,5 +249,134 @@ impl CommandStates for AppView {
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             _ => CommandState::default(),
         }
+    }
+}
+
+fn form_state(editor: &score_edit::Editor, command: CommandId) -> Option<CommandState> {
+    let action = form_command(editor, command)?;
+    let (start, end) = form_bounds(editor);
+    let first = editor.score().bar_form(start);
+    let last = editor.score().bar_form(end);
+    let any_ending = || (start..=end).any(|bar| editor.score().ending_at(bar).is_some());
+    let checked = match action {
+        Command::EditForm(edit) => match edit {
+            FormEdit::ToggleRepeatStart => first.repeat_start,
+            FormEdit::ToggleRepeatEnd => last.repeat_end.is_some(),
+            FormEdit::Barline(_) => {
+                last.barline
+                    == if command == id::DOUBLE_BARLINE {
+                        Barline::Double
+                    } else {
+                        Barline::Final
+                    }
+            }
+            FormEdit::ToggleSegno => first.segno,
+            FormEdit::ToggleCoda => first.coda,
+            FormEdit::ToggleToCoda => last.to_coda,
+            FormEdit::ToggleFine => last.fine,
+            FormEdit::Jump(jump) => last.jump == jump,
+            FormEdit::Clear => {
+                return Some(CommandState {
+                    enabled: any_ending()
+                        || (start..=end).any(|bar| !editor.score().bar_form(bar).is_plain()),
+                    ..Default::default()
+                });
+            }
+        },
+        Command::SetEnding(numbers) => (start..=end).all(|bar| {
+            editor
+                .score()
+                .ending_at(bar)
+                .is_some_and(|ending| numbers.iter().all(|number| ending.numbers.contains(number)))
+        }),
+        Command::RemoveEndings => {
+            return Some(CommandState {
+                enabled: any_ending(),
+                ..Default::default()
+            });
+        }
+        _ => unreachable!("form_command only resolves form operations"),
+    };
+    Some(CommandState::checked(checked))
+}
+
+#[cfg(test)]
+mod form_state_tests {
+    use super::form_state;
+    use crate::form_command;
+    use score_core::{
+        BarForm, Barline, Duration, Event, Jump, Notation, Pitch, Pitches, Score, Step,
+    };
+    use score_keymap::id;
+
+    #[test]
+    fn form_highlights_follow_the_selected_ranges_actual_targets() {
+        let mut score = Score::default();
+        let event = Event {
+            pitches: Pitches::single(Pitch::new(Step::C, 4)),
+            duration: Duration::Quarter,
+            notation: Notation::default(),
+        };
+        let first = score.insert(1, 0, event).unwrap();
+        let last = score.insert(3, 0, event).unwrap();
+        score
+            .set_bar_form(
+                1,
+                BarForm {
+                    repeat_start: true,
+                    segno: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        score
+            .set_bar_form(
+                3,
+                BarForm {
+                    repeat_end: Some(2),
+                    barline: Barline::Double,
+                    jump: Some(Jump::DalSegnoAlCoda),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        score
+            .set_ending(score_core::Ending {
+                start: 1,
+                end: 3,
+                numbers: vec![2],
+            })
+            .unwrap();
+        let mut editor = score_edit::Editor::new(score).unwrap();
+        // Cursor remains at the first selected bar; closing actions target the last.
+        editor.select(last);
+        editor.extend_selection(first);
+        assert_eq!(editor.cursor().measure, 1);
+        for command in [
+            id::REPEAT_START,
+            id::SEGNO,
+            id::REPEAT_END,
+            id::DOUBLE_BARLINE,
+            id::DAL_SEGNO_AL_CODA,
+            id::ENDING_2,
+        ] {
+            assert!(form_state(&editor, command).unwrap().checked, "{command}");
+        }
+        for command in [
+            id::FINAL_BARLINE,
+            id::DA_CAPO,
+            id::ENDING_1,
+            id::FINE,
+            id::CODA,
+        ] {
+            assert!(!form_state(&editor, command).unwrap().checked, "{command}");
+        }
+        assert!(form_state(&editor, id::REMOVE_ENDING).unwrap().enabled);
+        assert!(form_state(&editor, id::CLEAR_FORM).unwrap().enabled);
+        editor
+            .execute(form_command(&editor, id::CLEAR_FORM).unwrap())
+            .unwrap();
+        assert!(!form_state(&editor, id::REMOVE_ENDING).unwrap().enabled);
+        assert!(!form_state(&editor, id::CLEAR_FORM).unwrap().enabled);
     }
 }

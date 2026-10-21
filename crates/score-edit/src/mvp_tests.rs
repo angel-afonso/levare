@@ -3,6 +3,88 @@ use score_core::{
     Connection, ConnectionKind, Duration, KeyMode, KeySignature, NoteValue, StaffId, Step,
     TempoMark, TimeSignature,
 };
+
+fn selected_pitch(editor: &Editor) -> Option<Pitch> {
+    editor
+        .score()
+        .event(editor.selection().unwrap())
+        .unwrap()
+        .pitches
+        .first()
+}
+
+#[test]
+fn letter_entry_picks_the_nearest_octave() {
+    for (first, second, expected) in [
+        (Step::B, Step::C, (4, 5)),
+        (Step::C, Step::B, (4, 3)),
+        (Step::C, Step::G, (4, 3)),
+        (Step::C, Step::F, (4, 4)),
+    ] {
+        let mut editor = Editor::default();
+        editor.execute(Command::Insert(editor.note(first))).unwrap();
+        assert_eq!(selected_pitch(&editor).unwrap().octave(), expected.0);
+        editor
+            .execute(Command::Insert(editor.note(second)))
+            .unwrap();
+        assert_eq!(selected_pitch(&editor).unwrap().octave(), expected.1);
+    }
+}
+
+#[test]
+fn same_letter_repeats_the_same_pitch() {
+    let mut editor = Editor::default();
+    for _ in 0..3 {
+        editor
+            .execute(Command::Insert(editor.note(Step::E)))
+            .unwrap();
+        assert_eq!(selected_pitch(&editor), Pitch::new(Step::E, 4));
+    }
+}
+
+#[test]
+fn entry_octave_override_moves_the_reference() {
+    let mut editor = Editor::default();
+    editor
+        .execute(Command::Insert(editor.note(Step::C)))
+        .unwrap();
+    editor.octave = 5;
+    editor
+        .execute(Command::Insert(editor.note(Step::D)))
+        .unwrap();
+    assert_eq!(selected_pitch(&editor), Pitch::new(Step::D, 5));
+}
+
+#[test]
+fn rest_or_empty_selection_uses_the_staff_octave() {
+    let mut editor = Editor::default();
+    editor.execute(Command::Insert(editor.rest())).unwrap();
+    assert_eq!(selected_pitch(&editor), None);
+    assert_eq!(
+        editor.note(Step::C).pitches.first(),
+        Pitch::new(Step::C, editor.octave)
+    );
+}
+
+#[test]
+fn nearest_octave_never_leaves_the_pitch_range() {
+    let mut editor = Editor::default();
+    editor
+        .execute(Command::Insert(editor.note(Step::B)))
+        .unwrap();
+    editor.octave = 8;
+    let pitch = editor.note(Step::C).pitches.first().unwrap();
+    assert!(pitch.octave() <= 8);
+    assert_eq!(pitch, Pitch::new(Step::C, 8).unwrap());
+
+    let mut editor = Editor::default();
+    editor
+        .execute(Command::Insert(editor.note(Step::C)))
+        .unwrap();
+    editor.octave = 0;
+    assert_eq!(editor.note(Step::B).pitches.first(), Pitch::new(Step::B, 0));
+}
+
 #[test]
 fn replace_selected_tone_erase_preserves_time_and_ripple_delete_undoes() {
     let mut editor = Editor::default();

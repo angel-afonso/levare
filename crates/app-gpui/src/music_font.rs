@@ -381,8 +381,8 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 75);
-        assert!(font.covers("\u{e069}"));
+        assert_eq!(font.outlines.len(), 85);
+        assert!(font.covers("\u{e069}\u{e044}\u{e047}\u{e048}"));
         assert!(font.outlines.values().all(
             |(outline, advance, bounds)| !outline.segments.is_empty()
                 && *advance > 0.

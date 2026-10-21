@@ -31,10 +31,11 @@ impl InstrumentFamily {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Clef {
     Treble,
     Alto,
+    Tenor,
     Bass,
     Percussion,
 }
@@ -43,7 +44,26 @@ impl Clef {
         match self {
             Self::Treble | Self::Percussion => 30,
             Self::Alto => 24,
+            Self::Tenor => 22,
             Self::Bass => 18,
+        }
+    }
+    pub const PITCHED: [Self; 4] = [Self::Treble, Self::Bass, Self::Alto, Self::Tenor];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Treble => "Sol en segunda",
+            Self::Bass => "Fa en cuarta",
+            Self::Alto => "Do en tercera",
+            Self::Tenor => "Do en cuarta",
+            Self::Percussion => "Percusión",
+        }
+    }
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Self::Treble => "\u{e050}",
+            Self::Alto | Self::Tenor => "\u{e05c}",
+            Self::Bass => "\u{e062}",
+            Self::Percussion => "\u{e069}",
         }
     }
 }

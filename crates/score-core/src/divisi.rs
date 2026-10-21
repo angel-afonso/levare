@@ -129,6 +129,7 @@ impl Score {
             current.staves.pop_back();
         }
         current.divided = divided;
+        next.remap_comments(|old| Some(remap.get(&old).copied().unwrap_or(old)));
         for mark in &mut next.connections {
             mark.start = remap.get(&mark.start).copied().unwrap_or(mark.start);
             mark.end = remap.get(&mark.end).copied().unwrap_or(mark.end);

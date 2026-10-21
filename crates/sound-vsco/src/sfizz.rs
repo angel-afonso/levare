@@ -1,14 +1,17 @@
 //! Small owned binding to sfizz 1.2.3's C interface. No native code is required
 //! to build or use the app's default engine. Symbols live as long as every synth.
-use super::{VscoPack, patches};
+#[cfg(test)]
+use super::manifest::vsco_instruments;
+use super::{VscoPack, first_pack_with, manifest::DynamicsMode};
 use crate::{AudioError, error};
 use libloading::Library;
 use score_core::{Articulation, Instrument, PlayingTechnique, Score};
 use score_platform::sound_engine::{NoteEvent, SoundEngine};
 use score_playback::{PlaybackPlan, Tempo};
 use std::{
+    collections::HashMap,
     ffi::{CString, c_char, c_void},
-    path::Path,
+    path::{Path, PathBuf},
     ptr::NonNull,
     sync::Arc,
 };
@@ -23,6 +26,7 @@ struct Api {
     voices: unsafe extern "C" fn(Synth, i32),
     volume: unsafe extern "C" fn(Synth, f32),
     on: unsafe extern "C" fn(Synth, i32, i32, i32),
+    send_cc: unsafe extern "C" fn(Synth, i32, i32, i32),
     off: unsafe extern "C" fn(Synth, i32, i32, i32),
     silence: unsafe extern "C" fn(Synth),
     render: unsafe extern "C" fn(Synth, *mut *mut f32, i32, i32),
@@ -53,6 +57,7 @@ impl Api {
                 voices: symbol!("sfizz_set_num_voices"),
                 volume: symbol!("sfizz_set_volume"),
                 on: symbol!("sfizz_send_note_on"),
+                send_cc: symbol!("sfizz_send_cc"),
                 off: symbol!("sfizz_send_note_off"),
                 silence: symbol!("sfizz_all_sound_off"),
                 render: symbol!("sfizz_render_block"),
@@ -69,6 +74,7 @@ struct Voice {
     synth: NonNull<c_void>,
     range: (u8, u8),
     keys: [bool; 128],
+    last_cc1: Option<u8>,
 }
 
 // SAFETY: the synth is uniquely owned. It is prepared without an audio stream,
@@ -102,6 +108,7 @@ impl Voice {
                 synth,
                 range: key_range(&text),
                 keys: [false; 128],
+                last_cc1: None,
             };
             (api.rate)(synth.as_ptr(), rate as f32);
             (api.block)(synth.as_ptr(), 64);
@@ -127,6 +134,15 @@ impl Voice {
             (self.api.on)(self.synth.as_ptr(), 0, i32::from(key), i32::from(velocity));
         }
     }
+    fn cc1(&mut self, value: u8) {
+        if !update_cc1(&mut self.last_cc1, value) {
+            return;
+        }
+        // SAFETY: same unique callback ownership and zero-delay block as on().
+        unsafe {
+            (self.api.send_cc)(self.synth.as_ptr(), 0, 1, i32::from(value));
+        }
+    }
     fn off(&mut self, key: u8) {
         if std::mem::replace(&mut self.keys[usize::from(key)], false) {
             // SAFETY: same ownership and event ordering as on().
@@ -136,6 +152,7 @@ impl Voice {
         }
     }
     fn silence(&mut self, immediate: bool) {
+        self.last_cc1 = None;
         if immediate {
             // SAFETY: sfizz_all_sound_off is an RT operation on the owned synth.
             unsafe {
@@ -163,6 +180,14 @@ impl Voice {
             );
         }
     }
+}
+
+fn update_cc1(last: &mut Option<u8>, value: u8) -> bool {
+    if *last == Some(value) {
+        return false;
+    }
+    *last = Some(value);
+    true
 }
 impl Drop for Voice {
     fn drop(&mut self) {
@@ -209,31 +234,69 @@ fn spread_velocity_layers(text: &str) -> String {
     patch
 }
 
-/// The shipped VSCO patches explicitly describe integer MIDI region limits.
-/// Outside their recorded range, notes fall back to the bundled General MIDI bank.
+/// SFZ region limits may use MIDI integers or note names (as VPO does).
+/// Outside their recorded range, notes fall back to General MIDI.
 fn key_range(text: &str) -> (u8, u8) {
     let mut low = 127;
     let mut high = 0;
-    for token in text.split_whitespace() {
-        if let Some(value) = token
-            .strip_prefix("lokey=")
-            .and_then(|v| v.parse::<u8>().ok())
-        {
-            low = low.min(value);
-        }
-        if let Some(value) = token
-            .strip_prefix("hikey=")
-            .and_then(|v| v.parse::<u8>().ok())
-        {
-            high = high.max(value);
+    for line in text.lines() {
+        let line = line.split_once("//").map_or(line, |(content, _)| content);
+        for token in line.split_whitespace() {
+            if let Some(value) = token
+                .strip_prefix("lokey=")
+                .and_then(parse_sfz_key)
+                .or_else(|| token.strip_prefix("key=").and_then(parse_sfz_key))
+            {
+                low = low.min(value);
+            }
+            if let Some(value) = token
+                .strip_prefix("hikey=")
+                .and_then(parse_sfz_key)
+                .or_else(|| token.strip_prefix("key=").and_then(parse_sfz_key))
+            {
+                high = high.max(value);
+            }
         }
     }
     if low <= high { (low, high) } else { (0, 127) }
 }
 
+fn parse_sfz_key(value: &str) -> Option<u8> {
+    if let Ok(number) = value.parse::<u8>() {
+        return (number <= 127).then_some(number);
+    }
+    let mut chars = value.chars();
+    let semitone = match chars.next()?.to_ascii_lowercase() {
+        'c' => 0,
+        'd' => 2,
+        'e' => 4,
+        'f' => 5,
+        'g' => 7,
+        'a' => 9,
+        'b' => 11,
+        _ => return None,
+    };
+    let rest = chars.as_str();
+    let (alteration, octave) = if let Some(rest) = rest.strip_prefix('#') {
+        (1, rest)
+    } else if let Some(rest) = rest.strip_prefix('b') {
+        (-1, rest)
+    } else {
+        (0, rest)
+    };
+    let octave: i32 = octave.parse().ok()?;
+    if !(-1..=9).contains(&octave) {
+        return None;
+    }
+    u8::try_from((octave + 1) * 12 + semitone + alteration)
+        .ok()
+        .filter(|key| *key <= 127)
+}
+
 struct Lane {
     channel: u8,
     instrument: Instrument,
+    dynamics: DynamicsMode,
     /// Hairpin target from controller 11, and the gain that follows it per
     /// sample: a slow crescendo arrives in 127 steps that would otherwise zipper.
     expression: f32,
@@ -261,7 +324,16 @@ impl NativeBank {
         audition: Instrument,
         rate: u32,
     ) -> Result<Self, AudioError> {
-        let api = Api::open(&pack.library)?;
+        Self::new_many(std::slice::from_ref(pack), score, audition, rate)
+    }
+
+    pub(crate) fn new_many(
+        packs: &[VscoPack],
+        score: &Score,
+        audition: Instrument,
+        rate: u32,
+    ) -> Result<Self, AudioError> {
+        let mut apis: HashMap<PathBuf, Arc<Api>> = HashMap::new();
         let plan = PlaybackPlan::new(score, Tempo::default(), rate).map_err(error)?;
         let mut routes: Vec<_> = plan
             .tracks
@@ -283,14 +355,22 @@ impl NativeBank {
             if std::mem::replace(&mut seen[usize::from(channel)], true) {
                 continue;
             }
-            let Some(patch) = patches(instrument) else {
+            let Some((pack, patch)) = first_pack_with(packs, instrument) else {
                 continue;
             };
-            // Piano layers follow key velocity, which already matches 61/111.
-            let layers = instrument != Instrument::Piano;
+            let library = pack
+                .library
+                .canonicalize()
+                .unwrap_or_else(|_| pack.library.clone());
+            if !apis.contains_key(&library) {
+                apis.insert(library.clone(), Api::open(&library)?);
+            }
+            let api = &apis[&library];
+            let layers = patch.spread_layers;
             lanes.push(Lane {
                 channel,
                 instrument,
+                dynamics: patch.dynamics,
                 expression: 1.,
                 expression_gain: 1.,
                 expression_settled: true,
@@ -298,16 +378,18 @@ impl NativeBank {
                 balance: (1., 1.),
                 gains: (1., 1.),
                 mix_initialized: false,
-                normal: Voice::load(&api, &pack.root.join(patch.normal), rate, layers)?,
+                normal: Voice::load(api, &pack.root.join(&patch.sustain), rate, layers)?,
                 pizz: patch
-                    .pizz
-                    .map(|file| Voice::load(&api, &pack.root.join(file), rate, layers))
+                    .pizzicato
+                    .as_ref()
+                    .map(|file| Voice::load(api, &pack.root.join(file), rate, layers))
                     .transpose()?,
                 short: patch
-                    .short
+                    .staccato
+                    .as_ref()
                     .map(|file| pack.root.join(file))
                     .filter(|p| p.is_file())
-                    .map(|path| Voice::load(&api, &path, rate, layers))
+                    .map(|path| Voice::load(api, &path, rate, layers))
                     .transpose()?,
             });
         }
@@ -388,6 +470,9 @@ impl SoundEngine for NativeBank {
         let Some(voice) = voice.filter(|v| covers(v)) else {
             return false;
         };
+        if lane.dynamics == DynamicsMode::Cc1 {
+            voice.cc1(note.level);
+        }
         voice.on(key, note.level);
         true
     }
@@ -441,6 +526,220 @@ impl SoundEngine for NativeBank {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cc1_cache_is_per_voice_and_resets_even_after_a_zero_value() {
+        let (mut normal, mut pizz) = (None, None);
+        assert!(update_cc1(&mut normal, 0));
+        assert!(!update_cc1(&mut normal, 0));
+        assert!(
+            update_cc1(&mut pizz, 0),
+            "the first pizzicato attack has its own synth"
+        );
+        assert!(update_cc1(&mut normal, 110));
+        assert!(!update_cc1(&mut pizz, 0));
+        pizz = None;
+        assert!(update_cc1(&mut pizz, 0), "silence resets the voice cache");
+    }
+
+    #[test]
+    fn named_vpo_keys_define_the_real_range_without_comments_or_keyswitches() {
+        let patch = "// lokey=c-1 hikey=g9\n<control> sw_lokey=c2 sw_hikey=c3\n<region> lokey=g3 hikey=g#3 sample=one.wav\n<region> lokey=c4 hikey=d4 sample=two.wav\n";
+        assert_eq!(parse_sfz_key("g3"), Some(55));
+        assert_eq!(parse_sfz_key("g#3"), Some(56));
+        assert_eq!(parse_sfz_key("c32767"), None);
+        assert_eq!(parse_sfz_key("c3000"), None);
+        assert_eq!(parse_sfz_key("128"), None);
+        assert_eq!(key_range(patch), (55, 62));
+    }
+
+    #[test]
+    #[ignore = "requires locally installed Virtual Playing Orchestra and sfizz"]
+    fn installed_vpo_plays_performance_pizzicato_staccato_and_cc1_per_voice() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../soundpacks/Virtual-Playing-Orchestra3/manifest.json");
+        let pack = VscoPack::load(&manifest).unwrap();
+        let score = Score::default();
+        let mut bank = NativeBank::new(&pack, &score, Instrument::Violin, 48_000).unwrap();
+        bank.offline();
+        let note = NoteEvent {
+            key: 69,
+            level: 88,
+            instrument: Instrument::Violin,
+            technique: PlayingTechnique::Arco,
+            harmonic: None,
+            articulation: None,
+            legato: false,
+        };
+        assert_no_alloc::assert_no_alloc(|| assert!(bank.note_on(15, note)));
+        assert_eq!(bank.lanes[0].normal.last_cc1, Some(88));
+        assert_no_alloc::assert_no_alloc(|| {
+            assert!(bank.note_on(
+                15,
+                NoteEvent {
+                    technique: PlayingTechnique::Pizzicato,
+                    ..note
+                }
+            ))
+        });
+        assert_eq!(bank.lanes[0].pizz.as_ref().unwrap().last_cc1, Some(88));
+        assert_no_alloc::assert_no_alloc(|| {
+            assert!(bank.note_on(
+                15,
+                NoteEvent {
+                    articulation: Some(Articulation::Staccato),
+                    ..note
+                }
+            ))
+        });
+        assert_eq!(bank.lanes[0].short.as_ref().unwrap().last_cc1, Some(88));
+        let mut left = [0.; 64];
+        let mut right = left;
+        let mut energy = 0.;
+        assert_no_alloc::assert_no_alloc(|| {
+            for _ in 0..256 {
+                left.fill(0.);
+                right.fill(0.);
+                bank.render(&mut left, &mut right);
+                energy += left
+                    .iter()
+                    .chain(&right)
+                    .map(|sample| sample * sample)
+                    .sum::<f32>();
+            }
+        });
+        assert!(energy > 0.0001, "VPO must render actual samples");
+        bank.silence(None, true);
+        assert!(bank.lanes[0].normal.last_cc1.is_none());
+        assert!(bank.lanes[0].pizz.as_ref().unwrap().last_cc1.is_none());
+        assert!(bank.lanes[0].short.as_ref().unwrap().last_cc1.is_none());
+        // Same note velocity, different CC1 than the SFZ's initial set_cc1=64.
+        let mut render_level = |level, mode| {
+            let mut candidate = pack.clone();
+            candidate
+                .spec
+                .instruments
+                .iter_mut()
+                .find(|(instrument, _)| *instrument == Instrument::Violin)
+                .unwrap()
+                .1
+                .dynamics = mode;
+            let mut bank = NativeBank::new(&candidate, &score, Instrument::Violin, 48_000).unwrap();
+            bank.offline();
+            assert!(bank.note_on(15, NoteEvent { level, ..note }));
+            let mut sum = 0.;
+            for _ in 0..256 {
+                left.fill(0.);
+                right.fill(0.);
+                bank.render(&mut left, &mut right);
+                sum += left
+                    .iter()
+                    .chain(&right)
+                    .map(|sample| sample * sample)
+                    .sum::<f32>();
+            }
+            sum
+        };
+        let soft_cc = render_level(40, DynamicsMode::Cc1);
+        let soft_velocity = render_level(40, DynamicsMode::Velocity);
+        let loud_cc = render_level(110, DynamicsMode::Cc1);
+        assert!(
+            soft_cc > 0.0001 && loud_cc > soft_cc * 2.,
+            "CC1 must shape real VPO output"
+        );
+        assert!(
+            (soft_cc - soft_velocity).abs() > soft_cc.min(soft_velocity) * 0.05,
+            "CC1 must change energy beyond key velocity alone"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires locally installed Virtual Playing Orchestra and sfizz"]
+    fn every_declared_vpo_patch_prepares_and_produces_recorded_audio() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../soundpacks/Virtual-Playing-Orchestra3/manifest.json");
+        let pack = VscoPack::load(&manifest).unwrap();
+        let score = Score::default();
+        for (instrument, patch) in &pack.spec.instruments {
+            for (kind, available) in [
+                ("sustain", true),
+                ("pizzicato", patch.pizzicato.is_some()),
+                ("staccato", patch.staccato.is_some()),
+            ] {
+                if !available {
+                    continue;
+                }
+                let mut bank = NativeBank::new(&pack, &score, *instrument, 48_000).unwrap();
+                bank.offline();
+                let lane = bank.lanes.iter().find(|lane| lane.channel == 15).unwrap();
+                let voice = match kind {
+                    "pizzicato" => lane.pizz.as_ref().unwrap(),
+                    "staccato" => lane.short.as_ref().unwrap(),
+                    _ => &lane.normal,
+                };
+                let (low, high) = voice.range;
+                let middle = low + (high - low) / 2;
+                let mut keys = if let Some(drum) = instrument.percussion_key() {
+                    vec![drum]
+                } else {
+                    let mut keys = vec![middle, low, high];
+                    keys.extend(low..=high);
+                    keys
+                };
+                keys.dedup();
+                let mut sounded = false;
+                for key in keys {
+                    let note = NoteEvent {
+                        key,
+                        level: 88,
+                        instrument: *instrument,
+                        technique: if kind == "pizzicato" {
+                            PlayingTechnique::Pizzicato
+                        } else {
+                            PlayingTechnique::Arco
+                        },
+                        harmonic: None,
+                        articulation: (kind == "staccato").then_some(Articulation::Staccato),
+                        legato: false,
+                    };
+                    if !bank.note_on(15, note) {
+                        continue;
+                    }
+                    let selected = match kind {
+                        "pizzicato" => bank.lanes[0].pizz.as_ref().unwrap(),
+                        "staccato" => bank.lanes[0].short.as_ref().unwrap(),
+                        _ => &bank.lanes[0].normal,
+                    };
+                    if !selected.keys[usize::from(key)] {
+                        bank.silence(None, true);
+                        continue;
+                    }
+                    let mut left = [0.; 64];
+                    let mut right = left;
+                    let mut energy = 0.;
+                    for _ in 0..512 {
+                        left.fill(0.);
+                        right.fill(0.);
+                        bank.render(&mut left, &mut right);
+                        energy += left
+                            .iter()
+                            .chain(&right)
+                            .map(|sample| sample * sample)
+                            .sum::<f32>();
+                    }
+                    bank.silence(None, true);
+                    if energy > 0.000001 {
+                        sounded = true;
+                        break;
+                    }
+                }
+                assert!(
+                    sounded,
+                    "VPO {instrument:?} {kind} has no audible recording in {low}..={high}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn velocity_layers_divide_the_written_dynamics_without_touching_other_opcodes() {
@@ -500,8 +799,8 @@ mod tests {
         let manifest =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../soundpacks/vsco-ce/manifest.json");
         let pack = VscoPack::load(&manifest).unwrap();
-        for instrument in Instrument::ALL {
-            if patches(instrument).is_none_or(|p| p.short.is_none()) {
+        for (instrument, patch) in vsco_instruments() {
+            if patch.staccato.is_none() {
                 continue;
             }
             let mut score = Score::default();
