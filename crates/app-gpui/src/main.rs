@@ -73,6 +73,8 @@ struct AppView {
     time_picker: bool,
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
+    command_search: Option<ui::CommandSearch>,
+    recent_searches: Vec<CommandId>,
     header_editor: Option<ui::HeaderEditor>,
     range_editor: Option<ui::RangeEditor>,
     comment_editor: Option<ui::CommentEditor>,
@@ -249,6 +251,8 @@ impl AppView {
             time_picker: false,
             clef_picker: false,
             tempo_picker: None,
+            command_search: None,
+            recent_searches: Vec::new(),
             header_editor: None,
             range_editor: None,
             comment_editor: None,
@@ -687,6 +691,44 @@ impl AppView {
             return;
         }
         if self
+            .command_search
+            .as_ref()
+            .is_some_and(|search| search.focused(window, cx))
+        {
+            let count = self.command_results(cx).len();
+            match stroke.key.as_str() {
+                "down" | "up" => {
+                    cx.stop_propagation();
+                    if let Some(search) = &mut self.command_search {
+                        search.selected = if stroke.key == "down" {
+                            (search.selected + 1).min(count.saturating_sub(1))
+                        } else {
+                            search.selected.saturating_sub(1)
+                        };
+                    }
+                }
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    let selected = self.command_search.as_ref().map_or(0, |s| s.selected);
+                    if let Some(result) = self.command_results(cx).get(selected) {
+                        self.run_search_result(result.item.command, window, cx);
+                    }
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.command_search = None;
+                    window.focus(&self.focus);
+                }
+                _ => {
+                    if let Some(search) = &mut self.command_search {
+                        search.selected = 0;
+                    }
+                }
+            }
+            cx.notify();
+            return;
+        }
+        if self
             .tempo_picker
             .as_ref()
             .is_some_and(|editor| editor.focused(window, cx))
@@ -867,6 +909,10 @@ impl AppView {
                 .comment_editor
                 .as_ref()
                 .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .command_search
+                .as_ref()
+                .is_some_and(|search| search.focused(window, cx))
         {
             // TextInput owns writing/navigation/clipboard keys while it has focus.
             return;
@@ -1129,6 +1175,7 @@ impl AppView {
                 self.edit(Command::SetArpeggioBothHands(!enabled), cx);
             }
             id::TEMPO_TEXT => self.toggle_tempo_picker(cx),
+            id::COMMAND_SEARCH => self.open_command_search(window, cx),
             id::REPEATS => {
                 self.playback.toggle_repeats();
                 self.status = if self.playback.follow_repeats {
@@ -2185,6 +2232,66 @@ impl AppView {
         self.pending_time = self.document.editor.score().time_at(bar);
         self.key_mode = self.document.editor.score().key_signature_at(bar).mode();
     }
+    fn open_command_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = ui::CommandSearch::new(cx);
+        search.field.focus_handle(cx).focus(window);
+        self.command_search = Some(search);
+        self.ui.file_menu = false;
+        self.ui.open_group = None;
+        self.ui.context_menu = None;
+        cx.notify();
+    }
+
+    /// Ranked results for the typed query; the last commands run from the
+    /// search while it is empty.
+    fn command_results(&self, cx: &App) -> Vec<score_toolbar::SearchResult> {
+        let Some(search) = &self.command_search else {
+            return Vec::new();
+        };
+        let query = search.field.read(cx).value();
+        if query.trim().is_empty() {
+            return self
+                .recent_searches
+                .iter()
+                .map(|command| score_toolbar::SearchResult {
+                    item: score_toolbar::item_view(
+                        *command,
+                        &self.shortcuts.registry,
+                        &self.shortcuts.keymap,
+                        self,
+                    ),
+                    place: score_toolbar::ribbon_place(*command).unwrap_or_else(|| {
+                        self.shortcuts
+                            .spec(*command)
+                            .map_or_else(String::new, |spec| spec.category.label().to_owned())
+                    }),
+                })
+                .collect();
+        }
+        score_toolbar::search(
+            query,
+            &self.shortcuts.registry,
+            &self.shortcuts.keymap,
+            self,
+            10,
+        )
+    }
+
+    fn run_search_result(
+        &mut self,
+        command: CommandId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_search = None;
+        window.focus(&self.focus);
+        self.recent_searches.retain(|recent| *recent != command);
+        self.recent_searches.insert(0, command);
+        self.recent_searches.truncate(5);
+        cx.notify();
+        self.run(command, window, cx);
+    }
+
     fn toggle_tempo_picker(&mut self, cx: &mut Context<Self>) {
         self.toggle_tempo_at(self.document.editor.cursor().measure, cx);
     }

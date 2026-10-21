@@ -6,6 +6,7 @@ pub use comments::CommentEditor;
 mod command_state;
 mod export_picker;
 pub use export_picker::ExportPicker;
+mod command_search;
 mod header_editor;
 mod icons;
 mod instrument_panel;
@@ -13,6 +14,7 @@ mod mixer;
 mod music_text;
 mod tempo_editor;
 pub mod text_input;
+pub use command_search::CommandSearch;
 pub use header_editor::HeaderEditor;
 pub use mixer::MixerDrag;
 use music_text::inline_text;
@@ -364,31 +366,7 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                 .h_full()
                 .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()),
         )
-        .child(
-            div()
-                .w(px(if view.ui.compact { 130. } else { 270. }))
-                .h(px(29.))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(BORDER))
-                .child(icon(Icon::Search, MUTED))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(MUTED))
-                        .truncate()
-                        .child(if view.ui.compact {
-                            "Buscar…"
-                        } else {
-                            "Buscar comandos, instrumentos…"
-                        }),
-                )
-                .child(todo_badge()),
-        )
+        .child(command_search::search_box(view, cx))
         .child(
             command_button(
                 "open-shortcuts",

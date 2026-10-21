@@ -385,6 +385,7 @@ pub mod id {
         PAGE_VIEW = "vista.pagina";
         CONTINUOUS_VIEW = "vista.continua";
         SINGLE_SYSTEM_VIEW = "vista.pentagrama";
+        COMMAND_SEARCH = "vista.buscar-comandos";
     }
 }
 
@@ -626,6 +627,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, R),
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
+    spec(id::COMMAND_SEARCH, C::View, "Buscar comandos…", G, false, R),
 ];
 
 #[cfg(test)]

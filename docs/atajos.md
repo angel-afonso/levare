@@ -275,3 +275,4 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | — | Vista de página |  |
 | — | Vista continua |  |
 | — | Vista de pentagrama |  |
+| `⌘F` | Buscar comandos… |  |

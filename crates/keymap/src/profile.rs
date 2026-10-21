@@ -138,6 +138,7 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("h", id::CRESCENDO),
     ("shift-h", id::DIMINUENDO),
     ("cmd-e", id::EXPRESSION_TEXT),
+    ("cmd-f", id::COMMAND_SEARCH),
     ("cmd-t", id::TECHNIQUE_TEXT),
     ("alt-cmd-t", id::TEMPO_TEXT),
     ("cmd-l", id::LYRICS),

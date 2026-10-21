@@ -354,7 +354,7 @@ fn items(view: &AppView, group: &GroupView, cx: &Context<AppView>) -> Div {
         }))
 }
 
-fn popover(content: impl IntoElement) -> Div {
+pub(super) fn popover(content: impl IntoElement) -> Div {
     div()
         .p_1()
         .flex()
