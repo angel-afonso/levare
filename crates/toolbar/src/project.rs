@@ -494,7 +494,7 @@ mod tests {
                 .iter()
                 .filter(|item| matches!(item, Item::Tile(_)))
                 .count(),
-            8
+            9
         );
     }
 
@@ -528,7 +528,11 @@ mod tests {
                         id::CODA,
                         id::FINE,
                         id::TO_CODA,
+                        id::DA_CAPO,
                         id::DA_CAPO_AL_FINE,
+                        id::DA_CAPO_AL_CODA,
+                        id::DAL_SEGNO,
+                        id::DAL_SEGNO_AL_FINE,
                         id::DAL_SEGNO_AL_CODA,
                     ][..],
                     id::SEGNO,
@@ -685,14 +689,14 @@ mod tests {
         let needed = full_width(&view(TabId::Home, 5000., &Fake(vec![])));
         let home = view(TabId::Home, needed - 1., &Fake(vec![]));
         for group in &home.groups {
-            let expected = if group.title == "Selección" {
+            let expected = if group.title == "Portapapeles" {
                 GroupMode::Folded
             } else {
                 GroupMode::Full
             };
             assert_eq!(
                 group.mode, expected,
-                "{}: selection has the lowest priority",
+                "{}: the clipboard has the lowest priority",
                 group.title
             );
         }

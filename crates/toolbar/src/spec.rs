@@ -10,9 +10,6 @@ pub enum TabId {
     Notation,
     Text,
     Playback,
-    Layout,
-    Appearance,
-    Parts,
     Review,
     View,
 }
@@ -25,9 +22,6 @@ impl TabId {
             Self::Notation => "Notación",
             Self::Text => "Texto",
             Self::Playback => "Reproducción",
-            Self::Layout => "Disposición",
-            Self::Appearance => "Apariencia",
-            Self::Parts => "Partes",
             Self::Review => "Revisión",
             Self::View => "Vista",
         }
@@ -166,6 +160,7 @@ const CLIPBOARD: GroupSpec = GroupSpec {
         small(id::COPY, Icon("copy"), "Copiar"),
         small(id::CUT, Icon("cut"), "Cortar"),
         small(id::REPEAT, Icon("repeat"), "Repetir"),
+        small(id::SELECT_ALL, Plain, "Seleccionar todo"),
     ],
 };
 const INSTRUMENTS: GroupSpec = GroupSpec {
@@ -176,8 +171,6 @@ const INSTRUMENTS: GroupSpec = GroupSpec {
     controls: &[
         large(id::ADD_INSTRUMENT, Visual::Staff, "Añadir"),
         small(id::ADD_PIANO, Visual::Staff, "Piano a dos manos"),
-        small(id::DIVIDE_PART, Visual::Staff, "Dividir pasaje"),
-        small(id::JOIN_PART, Visual::Staff, "Volver a unis."),
         small(id::OSSIA, Visual::Staff, "Ossia"),
     ],
 };
@@ -206,6 +199,17 @@ const TREMOLOS: GroupSpec = GroupSpec {
         )),
     ],
 };
+/// One place for divisi: `div.` opens two staves from the selection, `unis.` closes them.
+const DIVISI: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Divisi",
+    visual: Text("div."),
+    priority: 3,
+    controls: &[
+        small(id::DIVISI, Text("div."), "Dividir (div.)"),
+        small(id::UNISON, Text("unis."), "Unir (unis.)"),
+    ],
+};
 const REPEATS: GroupSpec = GroupSpec {
     dropdown: true,
     title: "Repeticiones",
@@ -230,16 +234,13 @@ const JUMPS: GroupSpec = GroupSpec {
         small(id::CODA, Music("\u{e048}"), "Coda"),
         small(id::FINE, Text("Fine"), "Fine"),
         small(id::TO_CODA, Text("To Coda"), "To Coda"),
-        small(id::DA_CAPO_AL_FINE, Text("D.C."), "al Fine"),
-        small(id::DAL_SEGNO_AL_CODA, Text("D.S."), "al Coda"),
+        small(id::DA_CAPO, Text("D.C."), "D.C."),
+        small(id::DA_CAPO_AL_FINE, Text("D.C."), "D.C. al Fine"),
+        small(id::DA_CAPO_AL_CODA, Text("D.C."), "D.C. al Coda"),
+        small(id::DAL_SEGNO, Text("D.S."), "D.S."),
+        small(id::DAL_SEGNO_AL_FINE, Text("D.S."), "D.S. al Fine"),
+        small(id::DAL_SEGNO_AL_CODA, Text("D.S."), "D.S. al Coda"),
     ],
-};
-const SELECTION: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Selección",
-    visual: Plain,
-    priority: 0,
-    controls: &[small(id::SELECT_ALL, Plain, "Seleccionar todo")],
 };
 /// Sibelius' Notations › Common: what starts or changes the staff itself.
 const COMMON: GroupSpec = GroupSpec {
@@ -260,9 +261,8 @@ const INPUT_MODE: GroupSpec = GroupSpec {
     priority: 4,
     controls: &[
         large(id::TOGGLE_NOTE_INPUT, Music("\u{e1d7}"), "Notas"),
-        small(id::STEP_TIME, Icon("steps"), "Paso a paso"),
-        small(id::FLEXI_TIME, Icon("clock"), "Tiempo real"),
-        small(id::MIDI_INPUT, Icon("keyboard"), "Teclado MIDI"),
+        small(id::ENTRY_OCTAVE_UP, Text("↑"), "Subir octava"),
+        small(id::ENTRY_OCTAVE_DOWN, Text("↓"), "Bajar octava"),
     ],
 };
 const DURATION: GroupSpec = GroupSpec {
@@ -279,6 +279,7 @@ const DURATION: GroupSpec = GroupSpec {
         tile(id::THIRTY_SECOND, Music("\u{e1db}"), "Fusa"),
         tile(id::DOT, Music("\u{e1e7}"), "Puntillo"),
         tile(id::TRIPLET, Music("\u{e883}"), "Tresillo"),
+        tile(id::REST, Music("\u{e4e5}"), "Silencio"),
     ],
 };
 const ACCIDENTALS: GroupSpec = GroupSpec {
@@ -290,6 +291,7 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
         tile(id::NATURAL, Music("\u{e261}"), "Becuadro"),
         tile(id::SHARP, Music("\u{e262}"), "Sostenido"),
         tile(id::FLAT, Music("\u{e260}"), "Bemol"),
+        tile(id::FOLLOW_KEY, Text("arm."), "Según armadura"),
     ],
 };
 /// Chord mode and the intervals that stack a note above the selected one.
@@ -317,19 +319,6 @@ const VOICES: GroupSpec = GroupSpec {
     controls: &[
         tile(id::VOICE_1, Text("1"), "Voz 1"),
         tile(id::VOICE_2, Text("2"), "Voz 2"),
-        symbol(small(id::DIVISI, Text("div."), "div.")),
-        symbol(small(id::UNISON, Text("unis."), "unis.")),
-    ],
-};
-const ELEMENTS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Elementos",
-    visual: Music("\u{e050}"),
-    priority: 2,
-    controls: &[
-        small(id::LINES, Plain, "Líneas"),
-        small(id::SYMBOL, Plain, "Símbolo"),
-        small(id::GRACE_NOTE, Plain, "Nota de adorno"),
     ],
 };
 /// Like MuseScore's note-input bar and Sibelius' keypad: what is written
@@ -405,21 +394,36 @@ const TECHNIQUE: GroupSpec = GroupSpec {
         )),
     ],
 };
-const TEXT_EXPRESSION: GroupSpec = GroupSpec {
+const HEADER: GroupSpec = GroupSpec {
     dropdown: false,
-    title: "Texto musical",
+    title: "Título",
     visual: Text("Aa"),
-    priority: 2,
+    priority: 4,
+    controls: &[large(id::SCORE_INFO, Text("Aa"), "Título y créditos")],
+};
+/// The written tempo: the mark itself and quick ±5 changes to it.
+const TEMPO: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Tempo",
+    visual: Text("Allegro"),
+    priority: 5,
     controls: &[
-        small(id::EXPRESSION_TEXT, Text("espr."), "Expresión"),
-        small(id::TECHNIQUE_TEXT, Text("pizz."), "Técnica"),
-        small(id::TEMPO_TEXT, Text("Allegro"), "Tempo"),
-        small(id::LYRICS, Text("la"), "Letra"),
-        small(id::CHORD_SYMBOL, Text("C7"), "Cifrado"),
-        small(id::REHEARSAL_MARK, Text("A"), "Ensayo"),
-        small(id::REHEARSAL_LETTERS, Text("A"), "Letras"),
-        small(id::REHEARSAL_NUMBERS, Text("1"), "Números"),
-        small(id::REHEARSAL_BAR_NUMBERS, Text("12"), "Compás"),
+        large(id::TEMPO_TEXT, Text("Allegro"), "Tempo"),
+        small(id::TEMPO_UP, Icon("tempo-up"), "Subir tempo"),
+        small(id::TEMPO_DOWN, Icon("tempo-down"), "Bajar tempo"),
+    ],
+};
+/// Write a mark, then choose how every mark of the score is numbered.
+const REHEARSAL: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Marcas de ensayo",
+    visual: Text("A"),
+    priority: 3,
+    controls: &[
+        large(id::REHEARSAL_MARK, Text("A"), "Ensayo"),
+        small(id::REHEARSAL_LETTERS, Text("A, B"), "Letras"),
+        small(id::REHEARSAL_NUMBERS, Text("1, 2"), "Números"),
+        small(id::REHEARSAL_BAR_NUMBERS, Text("12"), "Nº de compás"),
     ],
 };
 const TRANSPORT: GroupSpec = GroupSpec {
@@ -441,8 +445,7 @@ const SOUND: GroupSpec = GroupSpec {
     priority: 4,
     controls: &[
         small(id::AUDITION, Icon("speaker"), "Audición al escribir"),
-        small(id::TEMPO_UP, Icon("tempo-up"), "Subir tempo"),
-        small(id::TEMPO_DOWN, Icon("tempo-down"), "Bajar tempo"),
+        small(id::SOUNDS, Icon("speaker"), "Sonidos"),
         large(id::MIXER, Icon("mixer"), "Mezclador"),
     ],
 };
@@ -543,10 +546,12 @@ const PANELS: GroupSpec = GroupSpec {
 /// dropdown in `menu`. Undo and redo live in the title bar's quick access.
 /// There are no remove buttons: select the mark's note in the score and
 /// press its active control again, or delete the selection.
+/// A tab without real functions is not shown: Layout and Parts return when
+/// their functions exist.
 pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Home,
-        groups: &[CLIPBOARD, INSTRUMENTS, BARS, SELECTION],
+        groups: &[CLIPBOARD, INSTRUMENTS, BARS],
     },
     TabSpec {
         id: TabId::NoteInput,
@@ -562,28 +567,16 @@ pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Notation,
         groups: &[
-            COMMON, DYNAMICS, HAIRPINS, ARPEGGIOS, TECHNIQUE, TREMOLOS, ELEMENTS, REPEATS, JUMPS,
+            COMMON, DYNAMICS, HAIRPINS, ARPEGGIOS, TECHNIQUE, TREMOLOS, DIVISI, REPEATS, JUMPS,
         ],
     },
     TabSpec {
         id: TabId::Text,
-        groups: &[TEXT_EXPRESSION],
+        groups: &[HEADER, TEMPO, REHEARSAL],
     },
     TabSpec {
         id: TabId::Playback,
         groups: &[TRANSPORT, SOUND, INTERPRETATION],
-    },
-    TabSpec {
-        id: TabId::Layout,
-        groups: &[],
-    },
-    TabSpec {
-        id: TabId::Appearance,
-        groups: &[],
-    },
-    TabSpec {
-        id: TabId::Parts,
-        groups: &[],
     },
     TabSpec {
         id: TabId::Review,
@@ -626,6 +619,7 @@ mod tests {
             HAIRPINS,
             TECHNIQUE,
             TREMOLOS,
+            DIVISI,
         ] {
             for visual in
                 std::iter::once(group.visual).chain(group.controls.iter().map(|c| c.visual))
@@ -710,6 +704,70 @@ mod tests {
     }
 
     #[test]
+    fn every_group_has_a_ready_command() {
+        // A group of pending commands only promises; it stays out of the ribbon.
+        let registry = Registry::builtin();
+        for group in TABS.iter().flat_map(|tab| tab.groups) {
+            assert!(
+                group.controls.iter().any(|control| {
+                    registry.get(control.command.as_str()).unwrap().status
+                        == score_keymap::Status::Ready
+                }),
+                "{}",
+                group.title
+            );
+        }
+    }
+
+    #[test]
+    fn each_command_appears_once_in_the_whole_ribbon() {
+        let mut seen = std::collections::HashSet::new();
+        for group in TABS.iter().flat_map(|tab| tab.groups) {
+            for control in group.controls {
+                assert!(
+                    seen.insert(control.command),
+                    "{} → {}",
+                    group.title,
+                    control.command
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn divisi_has_a_single_home_and_basic_entry_tools_are_present() {
+        let commands: Vec<_> = TABS
+            .iter()
+            .flat_map(|tab| tab.groups)
+            .flat_map(|group| group.controls)
+            .map(|control| control.command)
+            .collect();
+        for absent in [
+            id::DIVIDE_PART,
+            id::JOIN_PART,
+            id::STEP_TIME,
+            id::FLEXI_TIME,
+            id::MIDI_INPUT,
+        ] {
+            assert!(!commands.contains(&absent), "{absent}");
+        }
+        for present in [
+            id::REST,
+            id::FOLLOW_KEY,
+            id::ENTRY_OCTAVE_UP,
+            id::ENTRY_OCTAVE_DOWN,
+            id::SCORE_INFO,
+            id::SOUNDS,
+            id::DA_CAPO,
+            id::DA_CAPO_AL_CODA,
+            id::DAL_SEGNO,
+            id::DAL_SEGNO_AL_FINE,
+        ] {
+            assert!(commands.contains(&present), "{present}");
+        }
+    }
+
+    #[test]
     fn every_tab_has_a_spec() {
         for id in [
             TabId::Home,
@@ -717,15 +775,13 @@ mod tests {
             TabId::Notation,
             TabId::Text,
             TabId::Playback,
-            TabId::Layout,
-            TabId::Appearance,
-            TabId::Parts,
             TabId::Review,
             TabId::View,
         ] {
             assert_eq!(tab(id).id, id);
+            assert!(!tab(id).groups.is_empty(), "{id:?}");
         }
-        assert_eq!(TABS.len(), 10);
+        assert_eq!(TABS.len(), 7);
     }
     #[test]
     fn every_form_command_is_ready_for_menu_and_custom_shortcuts() {
@@ -776,7 +832,7 @@ mod rehearsal_tests {
                 score_keymap::Status::Ready
             );
             assert!(
-                TEXT_EXPRESSION
+                REHEARSAL
                     .controls
                     .iter()
                     .any(|control| control.command == command)

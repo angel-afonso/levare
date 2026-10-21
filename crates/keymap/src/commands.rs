@@ -369,6 +369,7 @@ pub mod id {
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
         MIXER = "reproduccion.mezclador";
+        SOUNDS = "reproduccion.sonidos";
         AUDITION = "reproduccion.audicion";
         TEMPO_UP = "reproduccion.tempo-mas";
         TEMPO_DOWN = "reproduccion.tempo-menos";
@@ -598,6 +599,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, P),
     spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, P),
     spec(id::MIXER, C::Playback, "Mostrar el mezclador", S, false, R),
+    spec(id::SOUNDS, C::Playback, "Mostrar los sonidos", S, false, R),
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
     spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),
     spec(id::TEMPO_DOWN, C::Playback, "Bajar el tempo", G, true, R),

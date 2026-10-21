@@ -235,6 +235,9 @@ impl CommandStates for AppView {
             id::MIXER => {
                 CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Mezclador")
             }
+            id::SOUNDS => {
+                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Sonidos")
+            }
 
             id::TOGGLE_INSTRUMENTS_PANEL => CommandState::checked(self.ui.show_instruments),
             id::PAGE_VIEW => {

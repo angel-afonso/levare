@@ -239,6 +239,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥Espacio` | Repetir la última reproducción | Pendiente |
 | `⇧Espacio` | Reproducir a media velocidad | Pendiente |
 | `M` | Mostrar el mezclador |  |
+| — | Mostrar los sonidos |  |
 | — | Audición al escribir |  |
 | — | Subir el tempo |  |
 | — | Bajar el tempo |  |

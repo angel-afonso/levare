@@ -739,20 +739,22 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the GPUI glob would shadow `#[test]` with `gpui::test`.
-    use score_toolbar::{TABS, TabId, Visual};
+    use score_toolbar::{TABS, Visual};
 
     #[test]
-    fn every_view_tab_icon_has_a_drawing() {
-        for group in score_toolbar::tab(TabId::View).groups {
-            let visuals = std::iter::once(group.visual)
-                .chain(group.controls.iter().map(|control| control.visual));
-            for visual in visuals {
-                if let Visual::Icon(name) = visual {
-                    assert!(
-                        super::Icon::named(name).is_some(),
-                        "{}: {name}",
-                        group.title
-                    );
+    fn every_ribbon_icon_has_a_drawing() {
+        for tab in TABS {
+            for group in tab.groups {
+                let visuals = std::iter::once(group.visual)
+                    .chain(group.controls.iter().map(|control| control.visual));
+                for visual in visuals {
+                    if let Visual::Icon(name) = visual {
+                        assert!(
+                            super::Icon::named(name).is_some(),
+                            "{}: {name}",
+                            group.title
+                        );
+                    }
                 }
             }
         }

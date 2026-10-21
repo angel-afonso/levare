@@ -1203,6 +1203,10 @@ impl AppView {
                 self.ui.show_inspector = true;
                 self.ui.inspector = "Mezclador";
             }
+            id::SOUNDS => {
+                self.ui.show_inspector = true;
+                self.ui.inspector = "Sonidos";
+            }
 
             id::ZOOM_IN => self.set_zoom(self.ui.zoom + 0.1),
             id::ZOOM_OUT => self.set_zoom(self.ui.zoom - 0.1),
