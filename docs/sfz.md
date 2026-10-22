@@ -36,6 +36,7 @@ que son relativas a `samples`:
         "pizzicato": "Strings/2nd-violin-SEC-PERF-pizzicato.sfz",
         "staccato": "Strings/2nd-violin-SEC-PERF-staccato.sfz"
       },
+      "tremolo": "Strings/1st-violin-SEC-PERF-tremolo.sfz",
       "solo": {
         "sustain": "Strings/1st-violin-SOLO-PERF.sfz",
         "pizzicato": "Strings/1st-violin-SOLO-PERF-pizzicato.sfz",
@@ -70,6 +71,7 @@ que son relativas a `samples`:
 | `instruments` | Claves con los nombres de instrumento del modelo de Levare. |
 | `sustain` | SFZ obligatorio de cada instrumento declarado. |
 | `pizzicato`, `staccato` | SFZ opcionales para esas técnicas. |
+| `tremolo` | SFZ opcional de trémolo de arco, para los trémolos de tres barras. |
 | `dynamics` | `"velocity"` por defecto o `"cc1"` para bibliotecas de modulación. |
 | `spread_layers` | `false` por defecto; activa el reparto de capas de velocidad de VSCO cuando corresponda. |
 | `solo`, `section` | Grabaciones opcionales para una parte de solista o de sección, con los mismos campos. Sin ellas se usan las principales. |
@@ -87,6 +89,30 @@ más de cuatro partes de cuerda y solistas en música de cámara; una parte llam
 partitura y se puede deshacer. Si dos partes del mismo instrumento tocan del mismo modo,
 la segunda usa `second` cuando el paquete lo declara, de modo que dos secciones al
 unísono no repiten las mismas muestras; una tercera vuelve al conjunto principal.
+
+Cuando una parte repite las grabaciones de otra (una segunda flauta sin `second`, o los
+violines III), se afina unos cents aparte: +5 la primera repetición, −5 la siguiente,
+luego ±9 y como mucho ±13. Dos intérpretes al unísono nunca están exactamente afinados
+entre sí, y dos copias idénticas de una muestra suenan como una sola que vibra. El ajuste
+es fijo para cada parte, así que dos reproducciones suenan igual.
+
+## Trémolo
+
+Un trémolo de tres barras en la cuerda no está medido: la reproducción sigue escribiendo
+fusas para cualquier banco, pero si el parche del instrumento declara `tremolo`, sostiene
+esa grabación durante toda la nota y deja pasar las repeticiones. Los trémolos de una y
+dos barras siguen siendo ataques medidos. Sin grabación de trémolo, o con pizzicato, se
+oyen las repeticiones como antes.
+
+## Comparar sonidos
+
+`examples/ab-tremolo-y-unisonos.partitura` reúne flautas y trompas al unísono y un
+acorde de cuerdas con trémolo de tres barras y luego de dos. Para escucharlo con un
+paquete concreto:
+
+```bash
+cargo run --release --example export_audio -- examples/ab-tremolo-y-unisonos.partitura salida.wav vpo
+```
 
 El cargador comprueba el motor, la licencia declarada y todos los SFZ declarados.
 Para elegir parches, escucha sus registros y articulaciones reales: no basta con el

@@ -20,6 +20,8 @@ pub struct PatchSpec {
     pub sustain: PathBuf,
     pub pizzicato: Option<PathBuf>,
     pub staccato: Option<PathBuf>,
+    /// Unmeasured bowed tremolo, for three-stroke tremolos.
+    pub tremolo: Option<PathBuf>,
     pub dynamics: DynamicsMode,
     pub spread_layers: bool,
 }
@@ -137,6 +139,7 @@ struct RawPatch {
     sustain: PathBuf,
     pizzicato: Option<PathBuf>,
     staccato: Option<PathBuf>,
+    tremolo: Option<PathBuf>,
     dynamics: Option<DynamicsMode>,
     spread_layers: Option<bool>,
 }
@@ -147,6 +150,7 @@ impl RawPatch {
             sustain: self.sustain,
             pizzicato: self.pizzicato,
             staccato: self.staccato,
+            tremolo: self.tremolo,
             dynamics: self.dynamics.unwrap_or(dynamics),
             spread_layers: self.spread_layers.unwrap_or(spread_layers),
         }
@@ -237,15 +241,14 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
                 return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
             }
         }
-        if legacy {
-            patch.staccato = patch
-                .staccato
-                .take()
-                .filter(|path| root.join(path).is_file());
-        } else if let Some(file) = &patch.staccato {
-            let path = root.join(file);
-            if !path.is_file() {
-                return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
+        for optional in [&mut patch.staccato, &mut patch.tremolo] {
+            if legacy {
+                *optional = optional.take().filter(|path| root.join(path).is_file());
+            } else if let Some(file) = optional {
+                let path = root.join(file);
+                if !path.is_file() {
+                    return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
+                }
             }
         }
     }
@@ -299,53 +302,94 @@ pub fn patch_for(spec: &PackSpec, instrument: Instrument, seat: Seat) -> Option<
 
 pub fn vsco_instruments() -> Vec<(Instrument, InstrumentSpec)> {
     use Instrument::*;
-    let entries: &[(Instrument, &str, Option<&str>, Option<&str>)] = &[
-        (Piano, "UprightPiano.sfz", None, None),
+    /// Instrument, then its sustain, pizzicato, staccato and tremolo files.
+    type Entry = (
+        Instrument,
+        &'static str,
+        Option<&'static str>,
+        Option<&'static str>,
+        Option<&'static str>,
+    );
+    let entries: &[Entry] = &[
+        (Piano, "UprightPiano.sfz", None, None, None),
         (
             Violin,
             "SViolinVib.sfz",
             Some("SViolinPizz.sfz"),
             Some("SViolinSpic.sfz"),
+            Some("SViolinTrem.sfz"),
         ),
         (
             Viola,
             "ViolaEnsSusVib.sfz",
             Some("ViolaEnsPizz.sfz"),
             Some("ViolaEnsSpic.sfz"),
+            Some("ViolaEnsTrem.sfz"),
         ),
         (
             Cello,
             "CelloEnsSusVib.sfz",
             Some("CelloEnsPizz.sfz"),
             Some("CelloEnsSpic.sfz"),
+            Some("CelloEnsTrem.sfz"),
         ),
         (
             DoubleBass,
             "ContrabassSusVB.sfz",
             Some("ContrabassPizz.sfz"),
             Some("ContrabassSpic.sfz"),
+            Some("ContrabassTrem.sfz"),
         ),
-        (Flute, "FluteSusVib.sfz", None, Some("FluteStac.sfz")),
-        (Oboe, "OboeSusVib.sfz", None, Some("OboeStac.sfz")),
-        (Clarinet, "ClarinetSus.sfz", None, Some("ClarinetStac.sfz")),
-        (Bassoon, "BassoonSus.sfz", None, Some("BassoonStac.sfz")),
-        (Trumpet, "TrumpetSus.sfz", None, Some("TrumpetStac.sfz")),
-        (Horn, "FHornSus.sfz", None, Some("FHornStac.sfz")),
-        (Trombone, "TromboneSus.sfz", None, Some("TromboneStac.sfz")),
+        (Flute, "FluteSusVib.sfz", None, Some("FluteStac.sfz"), None),
+        (Oboe, "OboeSusVib.sfz", None, Some("OboeStac.sfz"), None),
+        (
+            Clarinet,
+            "ClarinetSus.sfz",
+            None,
+            Some("ClarinetStac.sfz"),
+            None,
+        ),
+        (
+            Bassoon,
+            "BassoonSus.sfz",
+            None,
+            Some("BassoonStac.sfz"),
+            None,
+        ),
+        (
+            Trumpet,
+            "TrumpetSus.sfz",
+            None,
+            Some("TrumpetStac.sfz"),
+            None,
+        ),
+        (Horn, "FHornSus.sfz", None, Some("FHornStac.sfz"), None),
+        (
+            Trombone,
+            "TromboneSus.sfz",
+            None,
+            Some("TromboneStac.sfz"),
+            None,
+        ),
     ];
-    let patch =
-        |sustain: &str, pizzicato: Option<&str>, staccato: Option<&str>, layers| PatchSpec {
-            sustain: sustain.into(),
-            pizzicato: pizzicato.map(Into::into),
-            staccato: staccato.map(Into::into),
-            dynamics: DynamicsMode::Velocity,
-            spread_layers: layers,
-        };
+    let patch = |sustain: &str,
+                 pizzicato: Option<&str>,
+                 staccato: Option<&str>,
+                 tremolo: Option<&str>,
+                 layers| PatchSpec {
+        sustain: sustain.into(),
+        pizzicato: pizzicato.map(Into::into),
+        staccato: staccato.map(Into::into),
+        tremolo: tremolo.map(Into::into),
+        dynamics: DynamicsMode::Velocity,
+        spread_layers: layers,
+    };
     entries
         .iter()
-        .map(|&(instrument, sustain, pizzicato, staccato)| {
+        .map(|&(instrument, sustain, pizzicato, staccato, tremolo)| {
+            let layers = instrument != Piano;
             let mut spec =
-                InstrumentSpec::from(patch(sustain, pizzicato, staccato, instrument != Piano));
+                InstrumentSpec::from(patch(sustain, pizzicato, staccato, tremolo, layers));
             // The main violin is a soloist; VSCO also recorded a violin section.
             if instrument == Violin {
                 spec.section = Some(Variant {
@@ -353,6 +397,7 @@ pub fn vsco_instruments() -> Vec<(Instrument, InstrumentSpec)> {
                         "ViolinEnsSusVib.sfz",
                         Some("ViolinEnsPizz.sfz"),
                         Some("ViolinEnsSpic.sfz"),
+                        Some("ViolinEnsTrem.sfz"),
                         true,
                     ),
                     second: None,

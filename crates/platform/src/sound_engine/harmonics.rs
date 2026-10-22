@@ -307,6 +307,7 @@ mod tests {
             harmonic: Some(Harmonic::Natural),
             articulation: None,
             legato: false,
+            tremolo: None,
         }
     }
     fn render(engine: &mut impl SoundEngine, frames: usize) -> Vec<f32> {
@@ -436,6 +437,7 @@ mod calibration_tests {
                     harmonic: Some(score_core::Harmonic::Natural),
                     articulation: None,
                     legato: false,
+                    tremolo: None,
                 },
             );
             let mut sum = 0.;

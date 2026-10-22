@@ -80,6 +80,18 @@ pub struct NoteEvent {
     /// Under a slur. The plan already overlaps connected notes; a slurred
     /// staccato is portato and should keep a sustained recording.
     pub legato: bool,
+    /// Place of this attack in an unmeasured tremolo.
+    pub tremolo: Option<TremoloAttack>,
+}
+
+/// An attack of an unmeasured (three-stroke) tremolo. The plan writes
+/// measured repeats for every bank; one with tremolo recordings sustains the
+/// first attack and lets the repeats and their releases pass until the last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TremoloAttack {
+    First,
+    Repeat,
+    Last,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +132,7 @@ struct SoundSpan {
     arpeggio: Option<score_core::Arpeggio>,
     tremolo: Option<score_core::Tremolo>,
     tremolo_repeat: bool,
+    tremolo_attack: Option<TremoloAttack>,
     written_ticks: u64,
     /// Original first fragment, so tied continuations never widen the roll.
     attack_duration: u64,
@@ -382,6 +395,7 @@ impl PlaybackPlan {
                                         arpeggio: event.notation.arpeggio,
                                         tremolo: event.notation.tremolo,
                                         tremolo_repeat: false,
+                                        tremolo_attack: None,
                                         written_ticks: u64::from(event.duration.ticks()),
                                         attack_duration: end - start,
                                         articulation: if tied
@@ -548,6 +562,7 @@ impl PlaybackPlan {
                         harmonic: span.harmonic,
                         articulation: span.articulation,
                         legato: span.legato,
+                        tremolo: span.tremolo_attack,
                     }),
                 });
                 messages.push(ScheduledMessage {
@@ -727,6 +742,7 @@ mod tests {
             harmonic: None,
             articulation: None,
             legato: false,
+            tremolo: None,
         }
     }
     fn note(step: Step, duration: Duration) -> Event {

@@ -45,6 +45,8 @@ incluido el proyecto cuando se abre `target/Levare.app`.
 - Piano vertical; violín solista y sección de violines (según **Intérpretes** en el
   Mezclador); secciones de viola y violoncello; contrabajo solista; flauta, oboe, clarinete,
   fagot, trompeta, corno y trombón.
+- Los trémolos de tres barras en la cuerda usan las grabaciones de trémolo de VSCO
+  (violín solista y sección, viola, violoncello y contrabajo).
 - El cambio **pizzicato / arco** usa grabaciones distintas de cada instrumento de
   cuerda. Se conservan las capas de intensidad y las variaciones que contiene el SFZ.
 - Los reguladores modifican la expresión de cada canal, también en notas sostenidas.

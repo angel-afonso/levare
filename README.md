@@ -866,6 +866,8 @@ Cada cambio del pasaje se deshace en un paso.
 
 La reproducción reparte ataques de corchea, semicorchea o fusa dentro de la
 duración escrita, también con ligaduras de unión, calderones y repeticiones.
+En la cuerda, el trémolo de tres barras usa la grabación de trémolo del paquete de
+sonido cuando la tiene ([detalles](docs/sfz.md#trémolo)).
 Solo el primer ataque conserva el acento. Las marcas se conservan al copiar y
 pegar y en los formatos nativo, PDF y MusicXML.
 

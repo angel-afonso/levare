@@ -7,6 +7,7 @@ use crate::{AudioError, error};
 use libloading::Library;
 use score_core::{Articulation, Instrument, PlayingTechnique, Score};
 use score_platform::sound_engine::{NoteEvent, SoundEngine};
+use score_playback::TremoloAttack;
 use score_playback::{PlaybackPlan, Tempo};
 use std::{
     collections::HashMap,
@@ -32,6 +33,7 @@ struct Api {
     render: unsafe extern "C" fn(Synth, *mut *mut f32, i32, i32),
     preloaded: unsafe extern "C" fn(Synth) -> usize,
     offline: unsafe extern "C" fn(Synth),
+    tuning: unsafe extern "C" fn(Synth, f32),
     _library: Library,
 }
 
@@ -63,6 +65,7 @@ impl Api {
                 render: symbol!("sfizz_render_block"),
                 preloaded: symbol!("sfizz_get_num_preloaded_samples"),
                 offline: symbol!("sfizz_enable_freewheeling"),
+                tuning: symbol!("sfizz_set_tuning_frequency"),
                 _library: library,
             }))
         }
@@ -132,6 +135,13 @@ impl Voice {
         // inside the following block; all buffers/voices were reserved at load.
         unsafe {
             (self.api.on)(self.synth.as_ptr(), 0, i32::from(key), i32::from(velocity));
+        }
+    }
+    /// Shift the whole patch by `cents` from A4 = 440 Hz.
+    fn tune(&mut self, cents: f32) {
+        // SAFETY: called on the preparation thread, before callback ownership.
+        unsafe {
+            (self.api.tuning)(self.synth.as_ptr(), 440. * 2f32.powf(cents / 1200.));
         }
     }
     fn cc1(&mut self, value: u8) {
@@ -310,6 +320,40 @@ struct Lane {
     normal: Voice,
     pizz: Option<Voice>,
     short: Option<Voice>,
+    trem: Option<Voice>,
+    /// Keys sustaining an unmeasured tremolo while the plan's repeats pass.
+    tremolo: [Hold; 128],
+    /// Fixed detuning of a part that repeats another part's recordings.
+    cents: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Hold {
+    Free,
+    /// Repeats follow; their releases are ignored.
+    Held,
+    /// The last repeat has started; its release ends the tremolo.
+    Ending,
+}
+
+impl Lane {
+    fn voices_mut(&mut self) -> impl Iterator<Item = &mut Voice> {
+        std::iter::once(&mut self.normal)
+            .chain(self.pizz.iter_mut())
+            .chain(self.short.iter_mut())
+            .chain(self.trem.iter_mut())
+    }
+}
+
+/// Players in unison are never exactly in tune with each other, and identical
+/// samples would lock in phase. `twin` counts the earlier parts playing the
+/// same recordings; the offset alternates sides and grows a little each pair.
+fn unison_cents(twin: usize) -> f32 {
+    if twin == 0 {
+        return 0.;
+    }
+    let size = (5 + 4 * ((twin - 1) / 2)).min(13) as f32;
+    if twin % 2 == 1 { size } else { -size }
 }
 
 pub(crate) struct NativeBank {
@@ -336,6 +380,8 @@ impl NativeBank {
         let mut apis: HashMap<PathBuf, Arc<Api>> = HashMap::new();
         let plan = PlaybackPlan::new(score, Tempo::default(), rate).map_err(error)?;
         let seats = crate::seats(score);
+        // The first part to use each recording, so later parts can be detuned.
+        let mut recordings: Vec<(score_core::PartId, PathBuf)> = Vec::new();
         let mut routes: Vec<_> = plan
             .tracks
             .iter()
@@ -347,6 +393,7 @@ impl NativeBank {
                     .unwrap_or_default();
                 (
                     track.channel,
+                    Some(track.part),
                     score
                         .part(track.part)
                         .expect("validated track")
@@ -355,10 +402,10 @@ impl NativeBank {
                 )
             })
             .collect();
-        routes.push((15, audition, Default::default()));
+        routes.push((15, None, audition, Default::default()));
         let mut seen = [false; score_playback::PLAYBACK_CHANNELS];
         let mut lanes = Vec::new();
-        for (channel, instrument, seat) in routes {
+        for (channel, part, instrument, seat) in routes {
             if std::mem::replace(&mut seen[usize::from(channel)], true) {
                 continue;
             }
@@ -374,7 +421,18 @@ impl NativeBank {
             }
             let api = &apis[&library];
             let layers = patch.spread_layers;
-            lanes.push(Lane {
+            let recording = pack.root.join(&patch.sustain);
+            let twin = part.map_or(0, |part| {
+                let earlier = recordings
+                    .iter()
+                    .filter(|(other, path)| *other != part && *path == recording)
+                    .count();
+                if !recordings.contains(&(part, recording.clone())) {
+                    recordings.push((part, recording));
+                }
+                earlier
+            });
+            let mut lane = Lane {
                 channel,
                 instrument,
                 dynamics: patch.dynamics,
@@ -398,7 +456,21 @@ impl NativeBank {
                     .filter(|p| p.is_file())
                     .map(|path| Voice::load(api, &path, rate, layers))
                     .transpose()?,
-            });
+                trem: patch
+                    .tremolo
+                    .as_ref()
+                    .map(|file| Voice::load(api, &pack.root.join(file), rate, layers))
+                    .transpose()?,
+                tremolo: [Hold::Free; 128],
+                cents: unison_cents(twin),
+            };
+            if lane.cents != 0. {
+                let cents = lane.cents;
+                for voice in lane.voices_mut() {
+                    voice.tune(cents);
+                }
+            }
+            lanes.push(lane);
         }
         let mut bank = Self {
             lanes,
@@ -415,10 +487,7 @@ impl NativeBank {
 impl SoundEngine for NativeBank {
     fn offline(&mut self) {
         for lane in &mut self.lanes {
-            for voice in std::iter::once(&mut lane.normal)
-                .chain(lane.pizz.iter_mut())
-                .chain(lane.short.iter_mut())
-            {
+            for voice in lane.voices_mut() {
                 // SAFETY: mode change happens on the processing thread before rendering.
                 unsafe {
                     (voice.api.offline)(voice.synth.as_ptr());
@@ -462,6 +531,25 @@ impl SoundEngine for NativeBank {
         };
         let key = note.key;
         let covers = |voice: &Voice| (voice.range.0..=voice.range.1).contains(&key);
+        if let Some(attack) = note.tremolo
+            && note.technique == PlayingTechnique::Arco
+            && let Some(voice) = lane.trem.as_mut().filter(|voice| covers(voice))
+        {
+            let hold = &mut lane.tremolo[usize::from(key)];
+            // A start mid-tremolo, after a seek, begins the recording too.
+            if attack == TremoloAttack::First || *hold == Hold::Free {
+                if lane.dynamics == DynamicsMode::Cc1 {
+                    voice.cc1(note.level);
+                }
+                voice.on(key, note.level);
+            }
+            *hold = if attack == TremoloAttack::Last {
+                Hold::Ending
+            } else {
+                Hold::Held
+            };
+            return true;
+        }
         // Pizzicato wins over the bowed short recording. A slurred staccato is
         // portato: the sustained recording with the plan's shorter length.
         let voice = if note.technique == PlayingTechnique::Pizzicato {
@@ -489,6 +577,13 @@ impl SoundEngine for NativeBank {
             for voice in lane.pizz.iter_mut().chain(lane.short.iter_mut()) {
                 voice.off(key);
             }
+            let hold = &mut lane.tremolo[usize::from(key)];
+            if *hold != Hold::Held {
+                *hold = Hold::Free;
+                if let Some(voice) = lane.trem.as_mut() {
+                    voice.off(key);
+                }
+            }
         }
     }
     fn silence(&mut self, channel: Option<u8>, immediate: bool) {
@@ -497,10 +592,10 @@ impl SoundEngine for NativeBank {
             .iter_mut()
             .filter(|lane| channel.is_none_or(|c| lane.channel == c))
         {
-            lane.normal.silence(immediate);
-            for voice in lane.pizz.iter_mut().chain(lane.short.iter_mut()) {
+            for voice in lane.voices_mut() {
                 voice.silence(immediate);
             }
+            lane.tremolo = [Hold::Free; 128];
             lane.expression_settled |= immediate;
         }
     }
@@ -516,10 +611,7 @@ impl SoundEngine for NativeBank {
                 gain_left[i] = lane.gains.0 * lane.expression_gain;
                 gain_right[i] = lane.gains.1 * lane.expression_gain;
             }
-            for voice in std::iter::once(&mut lane.normal)
-                .chain(lane.pizz.iter_mut())
-                .chain(lane.short.iter_mut())
-            {
+            for voice in lane.voices_mut() {
                 voice.render(&mut self.left[..n], &mut self.right[..n]);
                 for i in 0..n {
                     left[i] += self.left[i] * gain_left[i];
@@ -534,6 +626,103 @@ impl SoundEngine for NativeBank {
 mod tests {
     use super::*;
     use crate::manifest::InstrumentSpec;
+
+    #[test]
+    fn unison_detuning_alternates_sides_and_grows_slowly() {
+        let cents: Vec<_> = (0..8).map(unison_cents).collect();
+        assert_eq!(cents, [0., 5., -5., 9., -9., 13., -13., 13.]);
+    }
+
+    fn installed_vpo() -> VscoPack {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../soundpacks/Virtual-Playing-Orchestra3/manifest.json");
+        VscoPack::load(&manifest).unwrap()
+    }
+
+    #[test]
+    #[ignore = "requires locally installed Virtual Playing Orchestra and sfizz"]
+    fn unmeasured_tremolo_sustains_the_recording_until_the_last_repeat() {
+        let pack = installed_vpo();
+        let mut bank =
+            NativeBank::new(&pack, &Score::default(), Instrument::Violin, 48_000).unwrap();
+        bank.offline();
+        let note = |tremolo| NoteEvent {
+            key: 67,
+            level: 88,
+            instrument: Instrument::Violin,
+            technique: PlayingTechnique::Arco,
+            harmonic: None,
+            articulation: None,
+            legato: false,
+            tremolo,
+        };
+        let sounding = |bank: &NativeBank| {
+            let lane = bank.lanes.iter().find(|lane| lane.channel == 15).unwrap();
+            assert!(!lane.normal.keys[67]);
+            lane.trem.as_ref().unwrap().keys[67]
+        };
+        assert!(bank.note_on(15, note(Some(TremoloAttack::First))));
+        assert!(sounding(&bank));
+        let mut left = [0.; 64];
+        let mut right = left;
+        let mut energy = 0.;
+        for _ in 0..256 {
+            left.fill(0.);
+            right.fill(0.);
+            bank.render(&mut left, &mut right);
+            energy += left.iter().chain(&right).map(|s| s * s).sum::<f32>();
+        }
+        assert!(energy > 0.000001, "the tremolo recording must sound");
+        for repeat in [TremoloAttack::Repeat, TremoloAttack::Last] {
+            bank.note_off(15, 67);
+            assert!(sounding(&bank), "a repeat follows");
+            assert!(bank.note_on(15, note(Some(repeat))));
+        }
+        bank.note_off(15, 67);
+        assert!(!sounding(&bank));
+        // Starting mid-tremolo, after a seek, plays the recording as well.
+        assert!(bank.note_on(15, note(Some(TremoloAttack::Repeat))));
+        assert!(sounding(&bank));
+        bank.silence(None, true);
+        assert!(!sounding(&bank));
+    }
+
+    #[test]
+    #[ignore = "requires locally installed Virtual Playing Orchestra and sfizz"]
+    fn only_parts_repeating_another_parts_recordings_are_detuned() {
+        use Instrument::*;
+        let pack = installed_vpo();
+        let score = Score::new(
+            "".into(),
+            &[
+                Flute, Flute, Flute, Violin, Violin, Violin, Viola, Cello, DoubleBass,
+            ],
+            1,
+        )
+        .unwrap();
+        let bank = NativeBank::new(&pack, &score, Viola, 48_000).unwrap();
+        let cents: Vec<_> = bank
+            .lanes
+            .iter()
+            .filter(|lane| lane.channel != 15)
+            .map(|lane| (lane.instrument, lane.cents))
+            .collect();
+        // Violins II have their own recordings; Violins III repeat the first.
+        assert_eq!(
+            cents,
+            [
+                (Flute, 0.),
+                (Flute, 5.),
+                (Flute, -5.),
+                (Violin, 0.),
+                (Violin, 0.),
+                (Violin, 5.),
+                (Viola, 0.),
+                (Cello, 0.),
+                (DoubleBass, 0.),
+            ]
+        );
+    }
 
     #[test]
     fn cc1_cache_is_per_voice_and_resets_even_after_a_zero_value() {
@@ -578,6 +767,7 @@ mod tests {
             harmonic: None,
             articulation: None,
             legato: false,
+            tremolo: None,
         };
         assert_no_alloc::assert_no_alloc(|| assert!(bank.note_on(15, note)));
         assert_eq!(bank.lanes[0].normal.last_cc1, Some(88));
@@ -718,6 +908,7 @@ mod tests {
                         harmonic: None,
                         articulation: (kind == "staccato").then_some(Articulation::Staccato),
                         legato: false,
+                        tremolo: None,
                     };
                     if !bank.note_on(15, note) {
                         continue;
@@ -842,6 +1033,7 @@ mod tests {
                 harmonic: None,
                 articulation: Some(Articulation::Staccato),
                 legato: false,
+                tremolo: None,
             };
             assert!(bank.note_on(0, staccato));
             assert!(bank.lanes[0].short.as_ref().unwrap().keys[usize::from(key)]);

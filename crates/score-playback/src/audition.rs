@@ -57,6 +57,7 @@ impl Audition {
             harmonic: self.harmonic,
             articulation: self.articulation,
             legato: self.legato,
+            tremolo: None,
         }
     }
     pub fn note_at(&self, index: usize) -> NoteEvent {

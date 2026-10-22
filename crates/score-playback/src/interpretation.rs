@@ -283,6 +283,7 @@ pub(crate) fn expand_tremolos(sounds: &mut Vec<super::SoundSpan>, from: usize, r
         for repetition in 0..repetitions {
             let start = sound.start + duration * repetition / repetitions;
             let next = sound.start + duration * (repetition + 1) / repetitions;
+            let unmeasured = sound.tremolo == Some(score_core::Tremolo::Three);
             let mut attack = super::SoundSpan {
                 start,
                 end: next - legato_overlap(rate).min((next - start) / 4),
@@ -290,6 +291,11 @@ pub(crate) fn expand_tremolos(sounds: &mut Vec<super::SoundSpan>, from: usize, r
                 written_end: next,
                 slurred: false,
                 tremolo_repeat: repetition > 0,
+                tremolo_attack: unmeasured.then_some(match repetition {
+                    0 => super::TremoloAttack::First,
+                    last if last + 1 == repetitions => super::TremoloAttack::Last,
+                    _ => super::TremoloAttack::Repeat,
+                }),
                 ..sound
             };
             if repetition > 0 {
