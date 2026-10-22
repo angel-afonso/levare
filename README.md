@@ -322,9 +322,12 @@ cambios se guardan y admiten deshacer/rehacer. Ejemplo:
   Se prolonga el sonido sin un nuevo ataque, también entre compases. Los acordes se
   ligan completos; los sonidos deben coincidir en todas sus alturas. Volver a pulsar
   `↩` quita solo la unión con la siguiente. Las cadenas pueden continuar varias notas.
-- **Expresión (`S`):** selecciona el inicio, pulsa `S`, selecciona la nota final del mismo
-  pentagrama y pulsa `S` otra vez. Esc cancela la operación. Pulsar `S` con la primera
-  nota de una frase seleccionada la quita. La frase se dibuja con
+- **Expresión (`S`):** selecciona un pasaje y pulsa `S`: la frase va de su primera a
+  su última nota; repetirlo sobre el mismo pasaje la quita. También puedes
+  seleccionar el inicio, pulsar `S`, seleccionar la nota final del mismo pentagrama y
+  pulsar `S` otra vez. Esc cancela la operación. Pulsar `S` con la primera
+  nota de una frase seleccionada la quita. Hay más formas de dibujarla en
+  [Dibujar ligaduras y reguladores](#dibujar-ligaduras-y-reguladores). La frase se dibuja con
   una curva, incluso entre sistemas. Los extremos pertenecen a la misma voz;
   pueden coincidir frases de voces diferentes, pero no solaparse dos de una misma voz. En la reproducción, las notas de la frase se unen con un breve
   solapamiento (legato); la última se separa como de costumbre y un staccato dentro
@@ -372,12 +375,44 @@ diminuendo), y pulsar la misma la quita. Esc vuelve a la nota; con una marca
 seleccionada, las flechas no transportan la nota. Un clic sobre la cabeza de la nota
 sigue seleccionando la nota.
 
+**Mover dinámicas, técnicas, calderones y reguladores:** su posición en el tiempo
+decide cómo suenan, así que al arrastrarlos hacia los lados saltan a la nota o silencio
+más cercano de su voz y, al soltar, suenan desde ahí. Un regulador se mueve entero y
+conserva su duración. Mientras arrastras, una línea discontinua une la marca con la
+nota o las notas a las que pertenece. En vertical solo cambia la altura. Con `⌘`
+pulsado se mueven sin cambiar de nota, como las demás marcas. Con la marca
+seleccionada, `⌥←` y `⌥→` la llevan a la nota anterior o siguiente. Si en el destino
+ya hay una marca de la misma familia, la barra de estado lo indica y al soltar no
+cambia nada.
+
 Las articulaciones, dinámicas, técnicas y alteraciones activas aparecen resaltadas
 en la cinta; volver a pulsarlas las quita. El inspector permite además quitar
 indicaciones y las ligaduras que tocan la nota elegida.
 Si una edición de alturas, una inserción o un borrado invalida una unión, se retira
 esa ligadura; deshacer recupera tanto las notas como sus marcas. El inicio de
 reproducción desde una selección recupera la dinámica vigente y las notas ligadas.
+
+## Dibujar ligaduras y reguladores
+
+Las ligaduras de expresión y los reguladores se escriben de cuatro maneras:
+
+- **Sobre un pasaje:** selecciónalo con Shift+clic, con Shift+flechas o arrastrando
+  desde un hueco del pentagrama (arrastrar una nota la mueve), y pulsa `S` (ligadura), `H` (crescendo) o `⇧H` (diminuendo). Si el
+  pasaje empieza o acaba en silencios, la ligadura se ajusta a sus notas.
+- **Mientras escribes:** con la entrada de notas activa, pulsa `S` o `H` sobre la nota
+  recién escrita. La marca se alarga con cada nota nueva y en un silencio espera a la
+  siguiente nota. Pulsa la misma tecla otra vez, o Esc, para terminarla. Deshacer la
+  última nota devuelve la marca a su final anterior.
+- **Con ⌥ y el ratón:** mantén `⌥` y arrastra desde una nota hasta otra de la misma voz
+  para una ligadura; `⌥⌘` dibuja un crescendo y `⌥⇧⌘` un diminuendo. Mientras arrastras,
+  la partitura muestra el resultado; si el final no es válido, la barra de estado
+  explica por qué y al soltar no cambia nada.
+- **Estirar una existente:** haz clic sobre una ligadura o un regulador; aparecen dos
+  asas redondas en sus extremos. Arrastra un asa hasta otra nota para alargarla o
+  acortarla. Arrastrar el resto de un regulador lo lleva entero a otras notas; en una
+  ligadura, la desplaza. Se conserva el desplazamiento manual que tuviera.
+
+Todas admiten Deshacer/Rehacer y Esc cancela un arrastre en curso.
 
 ## Crescendo y diminuendo con reguladores
 

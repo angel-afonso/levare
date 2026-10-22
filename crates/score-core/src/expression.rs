@@ -332,6 +332,66 @@ impl Score {
         }
         None
     }
+    pub fn previous_event(&self, id: ElementId) -> Option<ElementId> {
+        let staff = self.part(id.part)?.staff(id.staff)?;
+        let voice = self.voice_of(id)?;
+        let index = staff
+            .measures()
+            .get(id.measure)?
+            .voice_index_of(voice, id.event)?;
+        if let Some(index) = index.checked_sub(1) {
+            let event = staff.measures()[id.measure].voice_id_at(voice, index)?;
+            return Some(ElementId { event, ..id });
+        }
+        (0..id.measure).rev().find_map(|measure| {
+            let bar = &staff.measures()[measure];
+            let last = bar.voice_len(voice).checked_sub(1)?;
+            bar.voice_id_at(voice, last).map(|event| ElementId {
+                event,
+                measure,
+                ..id
+            })
+        })
+    }
+    /// `connection` starting at `start` instead, lasting as long as the onsets
+    /// of that voice allow. A slur still ends on a note.
+    pub fn shifted_connection(
+        &self,
+        connection: Connection,
+        start: ElementId,
+    ) -> Option<Connection> {
+        let length = self.event_tick(connection.end)? - self.event_tick(connection.start)?;
+        let from = self.event_tick(start)?;
+        let voice = self.voice_of(start)?;
+        let staff = self.part(start.part)?.staff(start.staff)?;
+        let end = staff
+            .measures()
+            .iter()
+            .enumerate()
+            .flat_map(|(measure, bar)| {
+                let offset = self.measure_start_tick(measure);
+                bar.timed_iter()
+                    .filter(move |(v, _, _, event)| {
+                        *v == voice && (connection.kind.is_hairpin() || !event.pitches.is_empty())
+                    })
+                    .map(move |(_, onset, event, _)| {
+                        let id = ElementId {
+                            measure,
+                            event,
+                            ..start
+                        };
+                        (id, offset + u64::from(onset))
+                    })
+            })
+            .filter(|(_, tick)| *tick > from)
+            .min_by_key(|(_, tick)| tick.abs_diff(from + length))?
+            .0;
+        Some(Connection {
+            start,
+            end,
+            kind: connection.kind,
+        })
+    }
     fn valid_connection(&self, c: Connection) -> bool {
         let (Some(a), Some(b), Some(start), Some(end)) = (
             self.event(c.start),

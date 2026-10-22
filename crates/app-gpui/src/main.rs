@@ -2,6 +2,7 @@ mod app_icon;
 mod app_paths;
 mod clipboard;
 mod comments;
+mod connection_input;
 mod follow;
 mod ghost;
 mod keyboard;
@@ -87,6 +88,10 @@ struct AppView {
     entry_accidental: Option<Accidental>,
     pending_slur: Option<ElementId>,
     pending_hairpin: Option<(ElementId, ConnectionKind)>,
+    /// The line from the pending start to the last note typed in entry mode;
+    /// it grows with each note until S, H or Esc ends it.
+    open_line: Option<Connection>,
+    connection_drag: Option<connection_input::ConnectionDrag>,
     /// A mark clicked in the score. Its note is the editor's selection, so
     /// the ribbon's toggles change or remove it; see `selected_mark`.
     clicked_mark: Option<MarkRef>,
@@ -265,6 +270,8 @@ impl AppView {
             entry_accidental: None,
             pending_slur: None,
             pending_hairpin: None,
+            open_line: None,
+            connection_drag: None,
             clicked_mark: None,
             clicked_bar_mark: None,
             hover: None,
@@ -375,6 +382,17 @@ impl AppView {
                 && editor.selected_ids().len() == 1
         })
     }
+    /// The line whose ends show drag handles: the one being dragged, else a
+    /// picked slur or hairpin.
+    pub(crate) fn line_handles(&self) -> Option<Connection> {
+        if let Some(drag) = &self.connection_drag {
+            return drag.candidate.or(drag.original);
+        }
+        match self.selected_mark() {
+            Some(MarkRef::Connection(line)) if line.kind != ConnectionKind::Tie => Some(line),
+            _ => None,
+        }
+    }
     pub(crate) fn selected_bar_mark(&self) -> Option<BarMarkRef> {
         let editor = &self.document.editor;
         self.clicked_bar_mark.filter(|mark| {
@@ -404,6 +422,50 @@ impl AppView {
             cx.notify();
         }
     }
+    /// Take a mark that follows time to another note; it then sounds there.
+    fn move_mark(
+        &mut self,
+        from: MarkRef,
+        to: MarkRef,
+        offset: score_core::Offset,
+        cx: &mut Context<Self>,
+    ) {
+        let label = self
+            .document
+            .editor
+            .score()
+            .mark_label(from)
+            .unwrap_or_default();
+        if self.try_edit(Command::MoveMark(from, to, offset), cx) {
+            self.document.editor.select(to.anchor());
+            self.clicked_mark = Some(to);
+            self.status = format!(
+                "{label}: {} · ⌘Z para deshacer",
+                mark_drag::place_label(self.document.editor.score(), to.anchor())
+            );
+        }
+        cx.notify();
+    }
+    /// ⌥← and ⌥→ move a mark that follows time one note earlier or later.
+    fn step_mark(&mut self, mark: MarkRef, later: bool, cx: &mut Context<Self>) {
+        let score = self.document.editor.score();
+        let Some(to) = mark_drag::stepped(score, mark, later) else {
+            self.status = if matches!(mark, MarkRef::Connection(_)) {
+                "El regulador no cabe ahí".into()
+            } else if later {
+                "No hay más notas después en esta voz".into()
+            } else {
+                "No hay más notas antes en esta voz".into()
+            };
+            cx.notify();
+            return;
+        };
+        let offset = score_core::Offset {
+            dx: 0,
+            dy: score.mark_offset(mark).dy,
+        };
+        self.move_mark(mark, to, offset, cx);
+    }
     fn nudge_mark(&mut self, mark: MarkRef, dx: i16, dy: i16, cx: &mut Context<Self>) {
         let base = self.document.editor.score().mark_offset(mark);
         let max = i32::from(score_core::Offset::MAX);
@@ -423,8 +485,87 @@ impl AppView {
             cx.notify();
         }
     }
+    /// The line following the typed notes, while its start is still pending.
+    fn following_line(&self, kind: ConnectionKind) -> Option<Connection> {
+        let start = if kind == ConnectionKind::Slur {
+            self.pending_slur
+        } else {
+            self.pending_hairpin
+                .filter(|(_, pending)| *pending == kind)
+                .map(|(start, _)| start)
+        }?;
+        self.open_line
+            .filter(|line| line.kind == kind && line.start == start)
+            .filter(|line| self.document.editor.score().connections().contains(line))
+    }
+    /// S or H on a line that follows the typed notes ends it where it is.
+    fn close_open_line(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) -> bool {
+        if self.following_line(kind).is_none() {
+            return false;
+        }
+        self.pending_slur = None;
+        self.pending_hairpin = None;
+        self.open_line = None;
+        let (name, ending) = connection_words(kind);
+        self.status = format!("{name} terminad{ending}");
+        cx.notify();
+        true
+    }
+    /// After a note typed in entry mode, stretch the pending line to it. One
+    /// undo removes the note and gives the line back its previous end. A line
+    /// that cannot reach the note ends where it was; the message says why.
+    fn extend_open_line(&mut self) -> Option<String> {
+        let (start, kind) = match (self.pending_slur, self.pending_hairpin) {
+            (Some(start), _) => (start, ConnectionKind::Slur),
+            (None, Some(pending)) => pending,
+            (None, None) => return None,
+        };
+        let end = self.document.editor.selection()?;
+        let (next, command) = connection_input::follow_command(
+            self.document.editor.score(),
+            start,
+            end,
+            kind,
+            self.following_line(kind),
+        )?;
+        match self.document.editor.execute_joined(command) {
+            Ok(_) => {
+                self.open_line = Some(next);
+                None
+            }
+            Err(error) => {
+                self.pending_slur = None;
+                self.pending_hairpin = None;
+                self.open_line = None;
+                let (name, ending) = connection_words(kind);
+                Some(format!("{name} terminad{ending}: {}", error.0))
+            }
+        }
+    }
+    fn line_prompt(&self, kind: ConnectionKind) -> String {
+        let command = match kind {
+            ConnectionKind::Slur => id::SLUR,
+            ConnectionKind::Crescendo => id::CRESCENDO,
+            _ => id::DIMINUENDO,
+        };
+        let key = self
+            .shortcuts
+            .label(command)
+            .map_or_else(String::new, |key| format!(" ({key})"));
+        let (name, ending) = connection_words(kind);
+        if self.ui.note_entry {
+            format!(
+                "{name} abiert{ending}: sigue a las notas que escribas; pulsa de nuevo{key} o Esc para terminar"
+            )
+        } else {
+            format!("{name}: selecciona la nota final y pulsa de nuevo{key}. Esc cancela")
+        }
+    }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
+            return;
+        }
+        if self.close_open_line(kind, cx) {
             return;
         }
         // A hairpin picked in the score: the same kind removes it, the other
@@ -476,15 +617,41 @@ impl AppView {
         } else {
             self.pending_slur = None;
             self.pending_hairpin = Some((selected, kind));
-            self.status = format!(
-                "{}: selecciona el final y pulsa el mismo regulador. Esc cancela",
-                kind.label()
-            );
+            self.open_line = None;
+            self.status = self.line_prompt(kind);
             cx.notify();
         }
     }
     fn toggle_slur(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
+            return;
+        }
+        if self.close_open_line(ConnectionKind::Slur, cx) {
+            return;
+        }
+        let ids = self.document.editor.selected_ids();
+        if ids.len() > 1 {
+            let score = self.document.editor.score();
+            match connection_input::passage_endpoints(score, &ids, ConnectionKind::Slur) {
+                Some((start, end)) => {
+                    let slur = Connection {
+                        start,
+                        end,
+                        kind: ConnectionKind::Slur,
+                    };
+                    // The same passage again takes its slur away.
+                    let command = if score.connections().contains(&slur) {
+                        Command::RemoveConnection(slur)
+                    } else {
+                        Command::AddConnection(slur)
+                    };
+                    self.edit(command, cx);
+                }
+                None => {
+                    self.status = "El pasaje necesita al menos dos notas o acordes".into();
+                    cx.notify();
+                }
+            }
             return;
         }
         let Some(id) = self.document.editor.selection() else {
@@ -523,8 +690,8 @@ impl AppView {
         {
             self.pending_slur = Some(id);
             self.pending_hairpin = None;
-            self.status =
-                "Selecciona la nota final y pulsa Terminar expresión (L). Esc cancela".into();
+            self.open_line = None;
+            self.status = self.line_prompt(ConnectionKind::Slur);
             cx.notify();
         } else {
             self.status = "Elige una nota o acorde, no un silencio".into();
@@ -540,6 +707,7 @@ impl AppView {
         self.selection_drag = None;
         self.note_drag = None;
         self.mark_drag = None;
+        self.connection_drag = None;
         self.ghost = None;
         if self.busy || self.confirming || self.instrument_picker.is_some() {
             return false;
@@ -558,11 +726,26 @@ impl AppView {
                 .floor() as u64
         });
         let mut changed = false;
+        let mut line_message = None;
         self.status = match self.document.execute(command.clone()) {
             Ok(true) => {
                 changed = true;
-                self.pending_slur = None;
-                self.pending_hairpin = None;
+                // Typing in entry mode carries a pending slur or hairpin along.
+                let typed = self.ui.note_entry
+                    && matches!(
+                        command,
+                        Command::Insert(_)
+                            | Command::Write(_)
+                            | Command::WriteAt { .. }
+                            | Command::AddPitch(_)
+                    );
+                if typed {
+                    line_message = self.extend_open_line();
+                } else {
+                    self.pending_slur = None;
+                    self.pending_hairpin = None;
+                    self.open_line = None;
+                }
                 if !matches!(
                     command,
                     Command::SetHeader(..)
@@ -630,6 +813,9 @@ impl AppView {
             Ok(false) => self.status.clone(),
             Err(error) => error.to_string(),
         };
+        if let Some(message) = line_message {
+            self.status = message;
+        }
         self.sync_quit_snapshot();
         cx.notify();
         changed
@@ -661,6 +847,18 @@ impl AppView {
                 if drag.active {
                     self.status = "Movimiento de la marca cancelado".into();
                 }
+                cx.stop_propagation();
+                return;
+            }
+        }
+        if let Some(drag) = self.connection_drag.take() {
+            self.selection_drag = None;
+            if let Some(line) = drag.original {
+                self.clicked_mark = Some(MarkRef::Connection(line));
+            }
+            cx.notify();
+            if stroke.key == "escape" {
+                self.status = "Dibujo cancelado".into();
                 cx.stop_propagation();
                 return;
             }
@@ -816,6 +1014,18 @@ impl AppView {
                 cx.stop_propagation();
                 window.focus(&self.focus);
             }
+            return;
+        }
+        if let Some(mark) = self.selected_mark()
+            && mark.follows_time()
+            && self
+                .preferences
+                .as_ref()
+                .is_none_or(|p| p.recording.is_none())
+            && let Some(later) = mark_drag::step(&stroke.key, stroke.modifiers)
+        {
+            cx.stop_propagation();
+            self.step_mark(mark, later, cx);
             return;
         }
         // A selected mark is nudged by physical arrows, leaving Tab for navigation.
@@ -1445,10 +1655,23 @@ impl AppView {
         } else if self.clicked_mark.take().is_some() {
             self.status = "Nota seleccionada".into();
             cx.notify();
-        } else if self.pending_hairpin.take().is_some() {
-            self.status = "Regulador cancelado".into();
-        } else if self.pending_slur.take().is_some() {
-            self.status = "Ligadura cancelada".into();
+        } else if let Some(kind) = self
+            .pending_hairpin
+            .map(|(_, kind)| kind)
+            .or(self.pending_slur.map(|_| ConnectionKind::Slur))
+        {
+            // A line that already follows the typed notes stays where it is.
+            let (name, ending) = connection_words(kind);
+            self.status = if self.following_line(kind).is_some() {
+                format!("{name} terminad{ending}")
+            } else if kind.is_hairpin() {
+                "Regulador cancelado".into()
+            } else {
+                "Ligadura cancelada".into()
+            };
+            self.pending_hairpin = None;
+            self.pending_slur = None;
+            self.open_line = None;
         } else if self.playback.is_playing() || self.playback.is_paused() {
             self.stop_playback(cx);
         } else {
@@ -2740,6 +2963,10 @@ impl Render for AppView {
             .and_then(|drag| drag.preview.as_ref())
         {
             Rc::clone(preview)
+        } else if let Some(drag) = &mut self.connection_drag
+            && let Some(layout) = drag.shown(self.ui.zoom)
+        {
+            layout
         } else if let Some(drag) = &mut self.note_drag
             && let Some(score) = &drag.preview
         {
@@ -2894,6 +3121,17 @@ fn escape_step(note_entry: bool) -> EscapeStep {
         EscapeStep::LeaveEntry
     } else {
         EscapeStep::Deselect
+    }
+}
+
+/// Status-bar name of a line and its gender ending: «ligadura terminada»,
+/// «crescendo terminado».
+fn connection_words(kind: ConnectionKind) -> (&'static str, &'static str) {
+    match kind {
+        ConnectionKind::Slur => ("Ligadura", "a"),
+        ConnectionKind::Tie => ("Unión", "a"),
+        ConnectionKind::Crescendo => ("Crescendo", "o"),
+        ConnectionKind::Diminuendo => ("Diminuendo", "o"),
     }
 }
 

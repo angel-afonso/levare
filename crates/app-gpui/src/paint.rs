@@ -19,6 +19,10 @@ pub struct CanvasState {
     /// A mark picked in the score is highlighted on its own, not its note.
     pub selected_mark: Option<MarkRef>,
     pub selected_bar_mark: Option<BarMarkRef>,
+    /// The slur or hairpin whose ends can be dragged, picked or mid-drag.
+    pub line_handles: Option<score_core::Connection>,
+    /// From a dragged mark to the notes it sounds on, in canvas pixels.
+    pub anchor_lines: Vec<(ScorePoint, ScorePoint)>,
     pub hover: Option<crate::selection::Hover>,
     pub position: crate::playhead::Position,
     pub(super) time_target: Option<crate::note_drag::TimeTarget>,
@@ -106,6 +110,8 @@ pub fn score_canvas(
         selected_pitch,
         selected_mark,
         selected_bar_mark,
+        line_handles,
+        anchor_lines,
         hover,
         position,
         time_target,
@@ -751,6 +757,33 @@ pub fn score_canvas(
                             },
                         ),
                     );
+                }
+            }
+            // Round handles at both ends of the picked slur or hairpin.
+            if let Some(connection) = line_handles
+                && let Some(ends) = crate::connection_input::handles(&layout, connection)
+            {
+                let radius = crate::connection_input::HANDLE_RADIUS * scale.max(0.8);
+                for (x, y) in [ends.0, ends.1] {
+                    window.paint_quad(quad(
+                        Bounds::new(
+                            origin + point(px(x - radius), px(y - radius)),
+                            size(px(radius * 2.), px(radius * 2.)),
+                        ),
+                        px(radius),
+                        rgb(0xffffff),
+                        px(1.5),
+                        rgb(crate::playhead::SELECTED),
+                        Default::default(),
+                    ));
+                }
+            }
+            for (from, to) in &anchor_lines {
+                let mut path = PathBuilder::stroke(px(1.)).dash_array(&[px(3.), px(3.)]);
+                path.move_to(origin + point(px(from.x), px(from.y)));
+                path.line_to(origin + point(px(to.x), px(to.y)));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, rgb(crate::playhead::SELECTED));
                 }
             }
             if let Some(id) = selection

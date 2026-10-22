@@ -229,6 +229,14 @@ impl MarkRef {
             Self::Connection(connection) => connection.start,
         }
     }
+    /// Whether the mark's place in time is musical: dragged sideways, it goes
+    /// to another note and sounds there.
+    pub fn follows_time(self) -> bool {
+        matches!(
+            self,
+            Self::Dynamic(_) | Self::Technique(_) | Self::Fermata(_)
+        ) || matches!(self, Self::Connection(connection) if connection.kind.is_hairpin())
+    }
     /// The point mark of `family` on `id`, whether or not it is written yet.
     pub fn point(family: MarkFamily, id: ElementId) -> Option<Self> {
         Some(match family {
@@ -351,6 +359,55 @@ impl Score {
             }
             _ => self.set_point_mark(mark.anchor(), kind.family(), None),
         }
+    }
+    /// Take a mark to another place on its staff, with `offset` as its manual
+    /// adjustment there: a point mark to another note or rest, a line to other
+    /// ends. Returns whether anything changed.
+    pub fn move_mark(
+        &mut self,
+        from: MarkRef,
+        to: MarkRef,
+        offset: Offset,
+    ) -> Result<bool, ScoreError> {
+        let kind = self
+            .mark_kind(from)
+            .ok_or(ScoreError("La marca ya no está en la partitura"))?;
+        if !from.can_move() {
+            return Err(ScoreError("Esta marca no se puede mover"));
+        }
+        let (source, target) = (from.anchor(), to.anchor());
+        if source.part != target.part || source.staff != target.staff {
+            return Err(ScoreError("Las marcas se mueven dentro de su pentagrama"));
+        }
+        if from != to {
+            match (from, to) {
+                (MarkRef::Connection(old), MarkRef::Connection(new)) if old.kind == new.kind => {
+                    self.remove_connection(old);
+                    self.add_connection(new)?;
+                }
+                (MarkRef::Connection(_), _) | (_, MarkRef::Connection(_)) => {
+                    return Err(ScoreError("La marca no pertenece a esa familia"));
+                }
+                _ => {
+                    let family = kind.family();
+                    if MarkRef::point(family, target) != Some(to) {
+                        return Err(ScoreError("La marca no pertenece a esa familia"));
+                    }
+                    if self.has_mark(to) {
+                        return Err(ScoreError(match family {
+                            MarkFamily::Dynamic => "Ahí ya hay una dinámica",
+                            MarkFamily::Technique => "Ahí ya hay una técnica",
+                            MarkFamily::Fermata => "Ahí ya hay un calderón",
+                            _ => "Ahí ya hay una marca de ese tipo",
+                        }));
+                    }
+                    self.set_point_mark(source, family, None)?;
+                    self.set_point_mark(target, family, Some(kind))?;
+                }
+            }
+        }
+        let adjusted = self.set_mark_offset(to, offset)?;
+        Ok(from != to || adjusted)
     }
 }
 
@@ -520,5 +577,109 @@ mod tests {
             .set_point_mark(rest, MarkFamily::Fermata, Some(MarkKind::Fermata))
             .unwrap();
         assert!(score.event(rest).unwrap().notation.fermata);
+    }
+
+    #[test]
+    fn a_moved_mark_leaves_its_note_and_keeps_only_the_offset_it_is_given() {
+        let mut score = Score::default();
+        let a = score.insert(0, 0, note(Step::C)).unwrap();
+        let rest = Event {
+            pitches: Pitches::default(),
+            ..note(Step::C)
+        };
+        let b = score.insert(0, 1, rest).unwrap();
+        let c = score.insert(0, 2, note(Step::E)).unwrap();
+        score.set_dynamic(a, Some(Dynamic::F)).unwrap();
+        score.set_dynamic(c, Some(Dynamic::P)).unwrap();
+        score
+            .set_mark_offset(MarkRef::Dynamic(a), Offset { dx: 30, dy: 12 })
+            .unwrap();
+        let low = Offset { dx: 0, dy: 12 };
+
+        // A dynamic may land on a rest, but not where another one is written.
+        assert!(
+            score
+                .move_mark(MarkRef::Dynamic(a), MarkRef::Dynamic(b), low)
+                .unwrap()
+        );
+        assert_eq!(score.event(a).unwrap().notation.dynamic, None);
+        assert_eq!(score.event(a).unwrap().notation.offsets.dynamic, None);
+        assert_eq!(score.event(b).unwrap().notation.dynamic, Some(Dynamic::F));
+        assert_eq!(score.mark_offset(MarkRef::Dynamic(b)), low);
+        assert_eq!(
+            score.move_mark(MarkRef::Dynamic(b), MarkRef::Dynamic(c), low),
+            Err(ScoreError("Ahí ya hay una dinámica"))
+        );
+        assert!(
+            !score
+                .move_mark(MarkRef::Dynamic(b), MarkRef::Dynamic(b), low)
+                .unwrap()
+        );
+        assert!(
+            score
+                .move_mark(MarkRef::Dynamic(b), MarkRef::Fermata(c), low)
+                .is_err()
+        );
+        score.set_fermata(a, true).unwrap();
+        score
+            .move_mark(MarkRef::Fermata(a), MarkRef::Fermata(b), Offset::ZERO)
+            .unwrap();
+        assert!(score.event(b).unwrap().notation.fermata);
+        score.validate().unwrap();
+
+        let other = score.add_part(Instrument::Violin).unwrap();
+        let elsewhere = score.insert_in(other, 0, 0, note(Step::G)).unwrap();
+        assert_eq!(
+            score.move_mark(
+                MarkRef::Dynamic(b),
+                MarkRef::Dynamic(elsewhere),
+                Offset::ZERO
+            ),
+            Err(ScoreError("Las marcas se mueven dentro de su pentagrama"))
+        );
+    }
+
+    #[test]
+    fn a_shifted_hairpin_keeps_its_length_as_far_as_the_onsets_allow() {
+        let mut score = Score::default();
+        let quarter = |step| Event {
+            duration: Duration::Quarter,
+            ..note(step)
+        };
+        let ids: Vec<_> = (0..4)
+            .map(|index| score.insert(0, index, quarter(Step::C)).unwrap())
+            .collect();
+        let hairpin = Connection {
+            start: ids[0],
+            end: ids[2],
+            kind: ConnectionKind::Crescendo,
+        };
+        score.add_connection(hairpin).unwrap();
+        let shifted = score.shifted_connection(hairpin, ids[1]).unwrap();
+        assert_eq!((shifted.start, shifted.end), (ids[1], ids[3]));
+        // Near the end of the music it ends on the last onset it can reach.
+        let last = score.shifted_connection(hairpin, ids[2]).unwrap();
+        assert_eq!(last.end, ids[3]);
+        assert_eq!(score.shifted_connection(hairpin, ids[3]), None);
+
+        assert!(
+            score
+                .move_mark(
+                    MarkRef::Connection(hairpin),
+                    MarkRef::Connection(shifted),
+                    Offset { dx: 0, dy: 8 },
+                )
+                .unwrap()
+        );
+        assert_eq!(
+            score.connections().iter().copied().collect::<Vec<_>>(),
+            [shifted]
+        );
+        assert_eq!(
+            score.mark_offset(MarkRef::Connection(shifted)),
+            Offset { dx: 0, dy: 8 }
+        );
+        assert_eq!(score.previous_event(ids[1]), Some(ids[0]));
+        assert_eq!(score.previous_event(ids[0]), None);
     }
 }

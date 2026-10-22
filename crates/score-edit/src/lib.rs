@@ -80,6 +80,9 @@ pub enum Command {
     RemoveMark(score_core::MarkRef),
     /// Move one written mark in tenths of a staff space; zero restores engraving.
     SetMarkOffset(score_core::MarkRef, score_core::Offset),
+    /// Take a mark to another note, or a line to other ends, on the same staff,
+    /// with its manual offset there.
+    MoveMark(score_core::MarkRef, score_core::MarkRef, score_core::Offset),
     SetBarMarkOffset(score_core::BarMarkRef, score_core::Offset),
     ResetBarMarkOffset(score_core::BarMarkRef),
     /// Restore one mark, or all marks on selected notes and spans starting there.
@@ -507,12 +510,23 @@ impl Editor {
                 if !next.score.connections().contains(&old) {
                     return Err(ScoreError("La marca ya no está en la partitura"));
                 }
+                let offset = next.score.mark_offset(score_core::MarkRef::Connection(old));
                 next.score.remove_connection(old);
                 next.score.add_connection(new)?;
+                // A stretched or reversed mark stays where the user nudged it.
+                if offset != score_core::Offset::ZERO {
+                    next.score
+                        .set_mark_offset(score_core::MarkRef::Connection(new), offset)?;
+                }
             }
             Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
             Command::SetMarkOffset(mark, offset) => {
                 if !next.score.set_mark_offset(mark, offset)? {
+                    return Ok(false);
+                }
+            }
+            Command::MoveMark(from, to, offset) => {
+                if !next.score.move_mark(from, to, offset)? {
                     return Ok(false);
                 }
             }
@@ -1142,6 +1156,7 @@ impl Editor {
                 )
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
+                | Command::MoveMark(..)
                 | Command::SetBarMarkOffset(_, _)
                 | Command::ResetBarMarkOffset(_)
                 | Command::ResetMarkOffsets(_)
@@ -1183,6 +1198,17 @@ impl Editor {
             self.sync_octave();
         }
         Ok(true)
+    }
+
+    /// Like `execute`, but one undo removes this edit and the previous one,
+    /// as when a slur follows each note typed after it.
+    pub fn execute_joined(&mut self, command: Command) -> Result<bool, ScoreError> {
+        let previous = self.undo.len();
+        let changed = self.execute(command)?;
+        if changed && previous > 0 {
+            self.undo.pop();
+        }
+        Ok(changed)
     }
 
     fn commit(&mut self, next: Snapshot) {

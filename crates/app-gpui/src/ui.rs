@@ -1257,6 +1257,16 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
                     .note_drag
                     .as_ref()
                     .and_then(|drag| drag.preview.as_ref())
+                    .or_else(|| {
+                        view.connection_drag
+                            .as_ref()
+                            .and_then(|drag| drag.preview.as_ref())
+                    })
+                    .or_else(|| {
+                        view.mark_drag
+                            .as_ref()
+                            .and_then(|drag| drag.preview_score())
+                    })
                     .unwrap_or_else(|| editor.score())
                     .clone(),
                 notation_point: view.document.editor.divisi_position(),
@@ -1270,8 +1280,19 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
                     .as_ref()
                     .and_then(|d| d.target)
                     .or_else(|| editor.selected_pitch()),
-                selected_mark: view.selected_mark(),
+                selected_mark: view
+                    .mark_drag
+                    .as_ref()
+                    .filter(|drag| drag.active)
+                    .and_then(|drag| drag.shown_mark())
+                    .or_else(|| view.selected_mark()),
                 selected_bar_mark: view.selected_bar_mark(),
+                line_handles: view.line_handles(),
+                anchor_lines: view
+                    .mark_drag
+                    .as_ref()
+                    .map(|drag| drag.anchor_lines())
+                    .unwrap_or_default(),
                 hover: view.hover,
                 playheads: view.playback.playheads.clone(),
                 position: view.position,
