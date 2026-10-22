@@ -1,4 +1,4 @@
-# Levare — Herramientas e integraciones
+# Levare: herramientas e integraciones
 
 Inventario de las piezas necesarias para que Levare sea una alternativa sólida a Sibelius:
 capacidades completas, alta estabilidad y, sobre todo, velocidad.
@@ -13,11 +13,12 @@ capacidades completas, alta estabilidad y, sobre todo, velocidad.
 
 ## 0. Punto de partida
 
-El workspace empezó como un esqueleto. Estado tras la primera entrega:
+El workspace empezó como un esqueleto. Estado tras la primera entrega (foto fija;
+el estado actual está en [desarrollo.md](desarrollo.md)):
 
 | Crate | Rol previsto | Estado |
 |---|---|---|
-| `partitura` (`crates/app-gpui`) | Aplicación GPUI | Interfaz oscura con cinta, orden automático por familias, eliminación visible de instrumentos, inspector, transporte, zoom y controles TODO |
+| `levare` (`crates/app-gpui`) | Aplicación GPUI | Interfaz oscura con cinta, orden automático por familias, eliminación visible de instrumentos, inspector, transporte, zoom y controles pendientes |
 | `score-core` | Modelo musical | Partes, pentagramas, instrumentos, acordes de hasta ocho notas, sostenidos/bemoles/becuadros, armaduras mayores/menores, ligaduras de unión/expresión, dinámicas, reguladores de crescendo/diminuendo, articulaciones, pizzicato/arco, silencios, duraciones con puntillo y tresillo 3:2, compases e IDs |
 | `score-edit` | Comandos y deshacer/rehacer | Selección de pasajes, copiar/cortar/pegar con ligaduras y marcas, ediciones transaccionales e instantáneas persistentes |
 | `score-document` | Documento/sesión | Editor, caché de layout y estado de guardado |
@@ -27,7 +28,7 @@ El workspace empezó como un esqueleto. Estado tras la primera entrega:
 | `score-platform` (`crates/platform`) | Audio y MIDI del sistema (cpal, midir) | Audio CPAL, piano RustySynth/GeneralUser GS, cola rtrb; MIDI externo pendiente |
 
 `assets/fonts` incluye Bravura y su licencia; hay instrucciones de desarrollo y CI
-en `.github/workflows`. El proyecto aún no es un repositorio git.
+en `.github/workflows`.
 
 ### Ajustes de arquitectura detectados y resueltos en la primera entrega
 
@@ -69,7 +70,7 @@ en `.github/workflows`. El proyecto aún no es un repositorio git.
 | Base de instrumentos | ★ datos propios | Nombres, claves, transposición, rangos, programa General MIDI. (Las listas de MuseScore son GPL; no se pueden copiar en un proyecto MIT.) |
 | Entrada rápida | ★ capa de comandos y atajos | Estilo Sibelius: letra = nota, número = duración, flechas = moverse/transponer. Es el corazón de "rápido de usar". |
 
-## 4. Motor de layout (`score-layout`) — la parte más difícil
+## 4. Motor de layout (`score-layout`): la parte más difícil
 
 | Pieza | Herramienta | Para qué |
 |---|---|---|
@@ -147,7 +148,7 @@ Presupuestos propuestos (a confirmar):
 ## Riesgos
 
 1. **GPUI es joven:** su API cambia entre versiones y tiene poca documentación. Fijar la versión
-   (como ya hace `Cargo.toml`) y aislar su uso en `partitura` para que el resto no dependa de ella.
+   (como ya hace `Cargo.toml`) y aislar su uso en `levare` (`crates/app-gpui`) para que el resto no dependa de ella.
 2. **El motor de layout** concentra la mayor parte del trabajo real: es lo que separa una
    partitura profesional de una amateur.
 3. **Licencias:** MuseScore y LilyPond son GPL. Sirven para estudiar ideas, no para copiar código ni datos.
@@ -155,8 +156,8 @@ Presupuestos propuestos (a confirmar):
 4. **Tiempo real de audio:** cualquier bloqueo o reserva de memoria en el hilo de audio provoca cortes;
    hay que diseñarlo así desde el principio.
 
-## Preguntas abiertas
+## Preguntas resueltas
 
-- Plataformas objetivo: ¿solo macOS, o también Windows y Linux?
-- Sonido: ¿sintetizador integrado, MIDI externo o ambos desde la primera versión?
-- Alcance de la primera versión: qué capacidades entran primero y cuáles después.
+- Plataformas: primero macOS; Windows y Linux todavía no están validados (README).
+- Sonido: sonidos integrados (GeneralUser GS y VSCO CE); el MIDI externo sigue pendiente.
+- Alcance de cada entrega: lo fija [desarrollo.md](desarrollo.md).

@@ -1,5 +1,5 @@
-//! Native editor chrome. Pending controls are visibly marked TODO; score data
-//! and transport readouts always come from the current document/session.
+//! Native editor chrome. Pending controls are visibly marked «Pendiente»; score
+//! data and transport readouts always come from the current document/session.
 mod clef_picker;
 mod comments;
 pub use comments::CommentEditor;
@@ -22,6 +22,7 @@ pub use tempo_editor::TempoEditor;
 mod preferences;
 mod review;
 pub use review::RangeEditor;
+mod theme;
 mod toolbar;
 use super::*;
 use icons::{Icon, icon};
@@ -31,14 +32,8 @@ use score_core::Duration;
 use score_keymap::{CommandId, id};
 use score_toolbar::CommandStates;
 
-pub const BG: u32 = 0x131417;
-pub const TEXT: u32 = 0xe8e9ee;
-const PANEL: u32 = 0x18191d;
-const FIELD: u32 = 0x222329;
-const BORDER: u32 = 0x2b2d35;
-const MUTED: u32 = 0x969ba7;
-const BLUE: u32 = 0x79a4ff;
-const SELECT: u32 = 0x22314d;
+use theme::*;
+pub use theme::{BG, TEXT};
 pub const LEFT_WIDTH: f32 = 240.;
 pub const RIGHT_WIDTH: f32 = 286.;
 
@@ -110,6 +105,18 @@ fn action(
     cx: &Context<AppView>,
     click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
 ) -> Stateful<Div> {
+    action_with_hover(id, content, selected, |s| s.bg(rgb(FIELD_HOVER)), cx, click)
+}
+/// Like `action`, but the caller picks the hover style: GPUI allows setting
+/// it only once, so it cannot be chained after `action(...)`.
+fn action_with_hover(
+    id: impl Into<SharedString>,
+    content: impl IntoElement,
+    selected: bool,
+    hover: impl Fn(StyleRefinement) -> StyleRefinement + 'static,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
     div()
         .id(id.into())
         .flex()
@@ -121,14 +128,14 @@ fn action(
         .rounded_md()
         .border_1()
         .border_color(if selected {
-            Hsla::from(rgb(0x3c5d94))
+            Hsla::from(rgb(SELECT_BORDER))
         } else {
             transparent_black()
         })
         .bg(rgb(if selected { SELECT } else { FIELD }))
-        .text_color(rgb(if selected { 0xb8ceff } else { TEXT }))
+        .text_color(rgb(if selected { ACCENT_TEXT } else { TEXT }))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(0x30343e)))
+        .hover(hover)
         .child(content)
         .on_click(cx.listener(move |view, _, window, cx| {
             view.focus.focus(window);
@@ -152,16 +159,26 @@ fn icon_button(
     .w(px(28.))
     .h(px(28.))
 }
-fn todo_badge() -> Div {
+fn pending_mark() -> Div {
     div()
-        .text_size(px(8.))
-        .text_color(rgb(0xa3a7b2))
+        .flex_shrink_0()
+        .text_size(px(9.))
+        .text_color(rgb(MUTED))
+        .child("Pendiente")
+}
+fn pending_badge() -> Div {
+    div()
+        .text_size(px(9.))
+        .text_color(rgb(MUTED))
         .px_1()
         .rounded_sm()
         .border_1()
-        .border_color(rgb(BORDER))
-        .child("TODO")
+        .border_dashed()
+        .border_color(rgb(PENDING_OUTLINE))
+        .child("Pendiente")
 }
+/// Panel headings are written in capitals: at 10 px they must read as
+/// headings, not as one more muted label. Sentences keep normal case.
 fn caption(text: impl Into<SharedString>) -> Div {
     div()
         .text_size(px(10.))
@@ -174,7 +191,7 @@ fn shortcut(text: impl Into<SharedString>) -> Div {
         .px_1()
         .rounded_sm()
         .border_1()
-        .border_color(rgb(0x3b3d46))
+        .border_color(rgb(POPOVER_BORDER))
         .text_size(px(9.))
         .text_color(rgb(MUTED))
         .child(text.into())
@@ -194,7 +211,7 @@ impl Render for HoverHint {
             .max_w(px(360.))
             .rounded_md()
             .border_1()
-            .border_color(rgb(0x3b3d46))
+            .border_color(rgb(POPOVER_BORDER))
             .bg(rgb(FIELD))
             .shadow_md()
             .text_size(px(11.))
@@ -387,28 +404,34 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .h(px(28.))
             .text_size(px(11.)),
         )
-        .child(icon_button(
-            "toggle-instruments",
-            Icon::LeftPanel,
-            view.ui.show_instruments,
-            cx,
-            |v, _, cx| {
-                v.ui.show_instruments = !v.ui.show_instruments;
-                v.reveal_selection = true;
-                cx.notify();
-            },
-        ))
-        .child(icon_button(
-            "toggle-inspector",
-            Icon::RightPanel,
-            view.ui.show_inspector,
-            cx,
-            |v, _, cx| {
-                v.ui.show_inspector = !v.ui.show_inspector;
-                v.reveal_selection = true;
-                cx.notify();
-            },
-        ))
+        .child(
+            icon_button(
+                "toggle-instruments",
+                Icon::LeftPanel,
+                view.ui.show_instruments,
+                cx,
+                |v, _, cx| {
+                    v.ui.show_instruments = !v.ui.show_instruments;
+                    v.reveal_selection = true;
+                    cx.notify();
+                },
+            )
+            .tooltip(command_hint(view, id::TOGGLE_INSTRUMENTS_PANEL)),
+        )
+        .child(
+            icon_button(
+                "toggle-inspector",
+                Icon::RightPanel,
+                view.ui.show_inspector,
+                cx,
+                |v, _, cx| {
+                    v.ui.show_inspector = !v.ui.show_inspector;
+                    v.reveal_selection = true;
+                    cx.notify();
+                },
+            )
+            .tooltip(command_hint(view, id::TOGGLE_INSPECTOR)),
+        )
         .child(
             action(
                 "export-pdf",
@@ -416,7 +439,7 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(icon(Icon::Export, 0x222329))
+                    .child(icon(Icon::Export, FIELD))
                     .child("Exportar…"),
                 false,
                 cx,
@@ -426,8 +449,8 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             )
             .px_3()
             .h(px(30.))
-            .bg(rgb(0xe8e9ed))
-            .text_color(rgb(0x222329)),
+            .bg(rgb(TEXT))
+            .text_color(rgb(FIELD)),
         )
 }
 const MUSIC_SYMBOL_PADDING: f32 = 4.;
@@ -1099,7 +1122,7 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
         .min_w_0()
         .flex()
         .flex_col()
-        .bg(rgb(0x24252a))
+        .bg(rgb(CANVAS))
         .child(
             div()
                 .id("score-readouts")
@@ -1289,9 +1312,9 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
         .py(px(4. * scale))
         .rounded_md()
         .cursor_pointer()
-        .hover(|header| header.bg(gpui::rgba(0x79a4ff14)))
+        .hover(|header| header.bg(gpui::rgba(HEADER_HOVER)))
         .text_center()
-        .text_color(rgb(0x242323))
+        .text_color(rgb(PAPER_INK))
         .font_family("Times New Roman")
         .tooltip(command_hint(view, id::SCORE_INFO))
         .on_mouse_down(
@@ -1317,7 +1340,7 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
                 .h(px(24. * scale))
                 .flex()
                 .justify_center()
-                .child(line(credits.subtitle.clone(), 18., 0x4f4b45)),
+                .child(line(credits.subtitle.clone(), 18., PAPER_SECONDARY)),
         )
         .child(
             div()
@@ -1329,7 +1352,7 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
                 .child(div().flex_1().min_w_0().text_left().child(line(
                     credits.lyricist_line(),
                     14.,
-                    0x4f4b45,
+                    PAPER_SECONDARY,
                 )))
                 .child(
                     div()
@@ -1339,10 +1362,14 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
                         .flex_col()
                         .items_end()
                         .when(empty, |column| {
-                            column.child(line("Compositor, arreglista, año…".into(), 14., 0xb3ada3))
+                            column.child(line(
+                                "Compositor, arreglista, año…".into(),
+                                14.,
+                                PAPER_PLACEHOLDER,
+                            ))
                         })
-                        .child(line(credits.composer_line(), 14., 0x4f4b45))
-                        .child(line(credits.arranger_line(), 14., 0x4f4b45)),
+                        .child(line(credits.composer_line(), 14., PAPER_SECONDARY))
+                        .child(line(credits.arranger_line(), 14., PAPER_SECONDARY)),
                 ),
         )
 }
@@ -1365,7 +1392,7 @@ fn copyright(view: &AppView) -> Option<Div> {
             .truncate()
             .font_family("Times New Roman")
             .text_size(px(10. * scale))
-            .text_color(rgb(0x67635c))
+            .text_color(rgb(PAPER_FINE))
             .child(text.clone()),
     )
 }
@@ -1495,7 +1522,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
             .child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(0xbfc3ce))
+                    .text_color(rgb(SECONDARY))
                     .child(format!(
                         "{} · Compás {} · Tiempo {}",
                         instrument_name(score, cursor.part),
@@ -1578,9 +1605,9 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                         .px_2()
                         .py_2()
                         .rounded_md()
-                        .bg(rgb(0x362126))
+                        .bg(rgb(ERROR_BG))
                         .text_size(px(11.))
-                        .text_color(rgb(0xff9da5))
+                        .text_color(rgb(ERROR))
                         .child(inline_text(
                             view.music_font.clone(),
                             format!("Fuera del registro habitual. Rango en altura real: {range}."),
@@ -1715,12 +1742,12 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .child(
             section("REPRODUCCIÓN")
-                .child(slider_placeholder("Velocidad personalizada", "TODO", 0.69))
-                .child(slider_placeholder("Duración personalizada", "TODO", 1.))
+                .child(slider_placeholder("Velocidad personalizada", "Pendiente", 0.69))
+                .child(slider_placeholder("Duración personalizada", "Pendiente", 1.))
                 .child(button(view,
                     "audition-property",
                     if view.playback.audition {
-                        "● Audición al escribir"
+                        "Audición al escribir"
                     } else {
                         "Audición desactivada"
                     },
@@ -2017,7 +2044,7 @@ fn slider_placeholder(label: &'static str, value: &'static str, fraction: f32) -
                         .w(px(10.))
                         .h(px(10.))
                         .rounded_full()
-                        .bg(rgb(0x6c7280)),
+                        .bg(rgb(KNOB)),
                 ),
         )
 }
@@ -2078,9 +2105,9 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             "Instala bibliotecas SFZ en {}. Ver docs/sfz.md.",
             crate::data_path("soundpacks").map_or_else(|| "la carpeta de datos".into(), |path| path.display().to_string())
         )))
-        .children(view.playback.sound_discovery_errors.iter().map(|error| div().text_size(px(10.)).text_color(rgb(0xf2b282)).child(error.clone())))
+        .children(view.playback.sound_discovery_errors.iter().map(|error| div().text_size(px(10.)).text_color(rgb(WARNING)).child(error.clone())))
         .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
-        .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(0xf2b282)).child(error)))
+        .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(WARNING)).child(error)))
         .child(caption("INSTRUMENTO ACTUAL"))
         .child(div().text_size(px(14.)).child(instrument.name()))
         .child(
@@ -2130,7 +2157,7 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             body.child(
                 div()
                     .text_size(px(11.))
-                    .text_color(rgb(0xf2b282))
+                    .text_color(rgb(WARNING))
                     .child(view.playback.error.clone().unwrap()),
             )
             .child(button(view,
@@ -2187,7 +2214,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
             .h(px(38.))
             .rounded_full()
             .tooltip(command_hint(view, id::PLAY))
-            .bg(rgb(0xe8e9ee)),
+            .bg(rgb(TEXT)),
         )
         .child(
             icon_button("stop-playback", Icon::Stop, false, cx, |v, _, cx| {
@@ -2202,7 +2229,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                 false,
                 cx,
                 |v, _, cx| {
-                    v.status = "TODO · Reproducción en bucle".into();
+                    v.status = "Reproducción en bucle: pendiente".into();
                     cx.notify();
                 },
             )
@@ -2211,7 +2238,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
             .gap_2()
             .h(px(28.))
             .tooltip(hover_hint("Reproducción en bucle · pendiente", None))
-            .child(todo_badge()),
+            .child(pending_badge()),
         )
         .child(
             div()
@@ -2326,7 +2353,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex_col()
                 .gap_1()
                 .child(caption("MIDI"))
-                .child(todo_badge()),
+                .child(pending_badge()),
         )
 }
 fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> impl IntoElement {
@@ -2373,7 +2400,7 @@ fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> 
                     window.paint_quad(quad(
                         bounds,
                         px(4.),
-                        rgb(0x1b1d22),
+                        rgb(TRACK),
                         px(1.),
                         rgb(BORDER),
                         Default::default(),
@@ -2399,7 +2426,7 @@ fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> 
                                     bounds.origin + point(px(x), px(17.)),
                                     size(px(1.), px(17.)),
                                 ),
-                                rgb(0x606572),
+                                rgb(TICK),
                             ));
                         }
                         if bar_width / f32::from(*beats) >= 7. {
@@ -2410,7 +2437,7 @@ fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> 
                                         bounds.origin + point(px(x), px(27.)),
                                         size(px(1.), px(7.)),
                                     ),
-                                    rgb(0x393d47),
+                                    rgb(MINOR_TICK),
                                 ));
                             }
                         }
@@ -2439,7 +2466,7 @@ fn statusbar(view: &AppView) -> Div {
     let status = if view.busy {
         "Procesando archivo…".to_owned()
     } else if let Some(error) = &view.playback.error {
-        format!("Audio: {error}")
+        error.clone()
     } else {
         view.status.clone()
     };
@@ -2461,7 +2488,7 @@ fn statusbar(view: &AppView) -> Div {
                 .min_w_0()
                 .child(
                     div()
-                        .text_color(rgb(0xb8ceff))
+                        .text_color(rgb(ACCENT_TEXT))
                         .child(if view.ui.note_entry {
                             format!(
                                 "Entrada de notas · Voz {}",
@@ -2500,7 +2527,7 @@ fn statusbar(view: &AppView) -> Div {
         .child(
             div()
                 .flex_shrink_0()
-                .text_color(rgb(if recovery_ready { MUTED } else { 0xe69292 }))
+                .text_color(rgb(if recovery_ready { MUTED } else { ERROR }))
                 .child(if recovery_ready {
                     "Autoguardado activo"
                 } else {
@@ -2516,9 +2543,9 @@ fn statusbar(view: &AppView) -> Div {
                     MUTED
                 }))
                 .child(if view.document.is_dirty() {
-                    "● Cambios sin guardar"
+                    "Cambios sin guardar"
                 } else {
-                    "✓ Guardado"
+                    "Guardado"
                 }),
         )
 }

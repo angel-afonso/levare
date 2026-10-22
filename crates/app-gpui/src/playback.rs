@@ -77,7 +77,11 @@ impl Playback {
         self.sound_signature = None;
         match AudioOutput::open() {
             Ok(output) => self.install_output(output),
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => {
+                self.error = Some(format!(
+                    "No se pudo abrir la salida de audio ({error}). Pulsa Reintentar audio en Sonidos."
+                ))
+            }
         }
     }
     pub fn sound_name(&self) -> String {
@@ -277,9 +281,9 @@ impl Playback {
                 .map_or(Instrument::Piano, |part| part.instrument()),
         )?;
         let output = self.output.as_mut().ok_or_else(|| {
-            self.error
-                .clone()
-                .unwrap_or_else(|| "No hay audio disponible".into())
+            self.error.clone().unwrap_or_else(|| {
+                "No hay salida de audio. Pulsa Reintentar audio en Sonidos.".into()
+            })
         })?;
         let plan = Arc::new(transport_plan(
             score,
@@ -382,7 +386,8 @@ impl Playback {
             self.playhead = None;
             self.clock = None;
             self.playheads.clear();
-            self.error = Some("La salida de audio se desconectó. Pulsa Reintentar audio.".into());
+            self.error =
+                Some("La salida de audio se desconectó. Pulsa Reintentar audio en Sonidos.".into());
             return true;
         }
         let playing = output.control.is_playing();

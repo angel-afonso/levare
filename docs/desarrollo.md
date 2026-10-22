@@ -611,7 +611,8 @@ cinta por pestañas, lista de instrumentos por familia, inspector, hoja y
 transporte. `ui::icons` dibuja los iconos como vectores nativos. El archivo
 `main.rs` conserva las acciones, los diálogos, el estado del documento y sus
 salvaguardas. La apariencia toma la referencia proporcionada por el usuario;
-los controles sin función musical disponible se identifican con TODO.
+los controles sin función musical disponible se identifican como «Pendiente».
+Los colores de la interfaz están en `ui/theme.rs`, con el contraste comprobado.
 
 Los atajos siguen el perfil de Sibelius descrito en **Motor de atajos**; las
 etiquetas de la cinta, del inspector y de los menús se leen del mapa activo.
@@ -684,7 +685,7 @@ AppView::run          punto único de ejecución · ui/command_state.rs implemen
   La app la responde en `ui/command_state.rs`; los tests usan un falso.
 - **Proyección** (`project`): une descripción, registro, mapa y estado, apila las filas
   pequeñas en columnas de tres y mide con valores fijos (`Metrics`). `fit` pliega
-  grupos por prioridad —el de menor prioridad y, a igualdad, el de la derecha—
+  grupos por prioridad (el de menor prioridad y, a igualdad, el de la derecha)
   hasta que la fila cabe. La cinta nunca hace scroll; un grupo plegado es un botón con
   desplegable.
 - **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del

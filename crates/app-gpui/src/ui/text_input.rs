@@ -497,7 +497,10 @@ impl Element for TextElement {
         let style = window.text_style();
 
         let (display_text, text_color) = if content.is_empty() {
-            (input.placeholder.clone(), hsla(0., 0., 0., 0.2))
+            (
+                input.placeholder.clone(),
+                rgb(super::theme::PLACEHOLDER).into(),
+            )
         } else {
             (content, style.color)
         };
@@ -561,7 +564,7 @@ impl Element for TextElement {
                         point(text_left + cursor_pos, bounds.top()),
                         size(px(2.), bounds.bottom() - bounds.top()),
                     ),
-                    gpui::blue(),
+                    rgb(super::theme::BLUE),
                 )),
             )
         } else {
@@ -577,7 +580,7 @@ impl Element for TextElement {
                             bounds.bottom(),
                         ),
                     ),
-                    rgba(0x3311ff30),
+                    rgba(super::theme::TEXT_SELECTION),
                 )),
                 None,
             )
@@ -633,7 +636,8 @@ impl Element for TextElement {
 }
 
 impl Render for TextInput {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let focused = self.focus_handle.is_focused(window);
         div()
             .flex()
             .key_context("TextInput")
@@ -642,7 +646,11 @@ impl Render for TextInput {
             .rounded_md()
             .overflow_hidden()
             .border_1()
-            .border_color(rgb(super::BORDER))
+            .border_color(rgb(if focused {
+                super::theme::BLUE
+            } else {
+                super::BORDER
+            }))
             .text_color(rgb(super::TEXT))
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))

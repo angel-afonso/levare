@@ -76,7 +76,8 @@ ver el conjunto de cinco instrumentos.
 - **Vista:** página, desplazamiento continuo o un solo sistema y zoom entre 50 y 150 %,
   con selección y seguimiento ajustados a la escala. El zoom inicial es 70 %.
 
-Los controles que llevan **TODO** son pendientes: varias pestañas de documentos,
+Los controles marcados como **Pendiente** (o con borde discontinuo en la cinta)
+todavía no funcionan: varias pestañas de documentos,
 búsqueda, impresión directa, entrada MIDI/tiempo real, voces 3–4, plicas manuales,
 velocidad/duración sonora por nota, silencio/solo y cambio de timbre.
 Guardar actualiza el archivo elegido; la recuperación automática conserva además
@@ -424,6 +425,38 @@ se pegan en instrumentos compatibles. En una nota ligada, el timbre del ataque s
 mantiene hasta terminar la cadena; el cambio afecta al siguiente ataque.
 Puedes asignar atajos en Preferencias. Ejemplo:
 [`examples/cuerdas-pizzicato.partitura`](examples/cuerdas-pizzicato.partitura).
+
+## Armónicos de cuerda
+
+Selecciona una nota o un pasaje y usa **Expresión › Armónico natural** o
+**Armónico artificial**, también disponibles en la cinta y en Propiedades.
+Pulsa de nuevo la misma opción para quitarla; también puedes seleccionar el
+círculo o el rombo y borrar únicamente esa marca. Se conserva el historial de
+Deshacer, el portapapeles, el autoguardado y la exportación a PDF.
+
+- **Natural:** escribe la altura que debe sonar. Se añade el círculo de Bravura.
+- **Artificial:** escribe una sola nota pisada; el programa añade el rombo a una
+  cuarta justa por encima y reproduce únicamente el sonido dos octavas más alto.
+  Admite notas pisadas de C0 a B6 para mantener el sonido dentro del rango del editor.
+
+Son marcas de cada evento, compatibles con arco, pizzicato, articulaciones,
+ligaduras, dos voces y divisi. En un pasaje se aplican a todas las notas
+seleccionadas en una sola operación; los silencios no admiten armónicos.
+La reproducción respeta la altura sonora y usa un timbre sintetizado propio para
+los armónicos: sostenido y aéreo al arco, con ataque breve y resonancia que decae
+en pizzicato. Funciona también al escuchar notas y al continuar desde una
+selección, tanto con GeneralUser como con VSCO CE. Es una aproximación por síntesis;
+no son grabaciones de armónicos de una biblioteca orquestal.
+Ejemplo: `examples/armonicos-cuerdas.partitura`.
+
+Para comparar a la misma altura y dinámica el arco normal, el armónico al arco,
+el pizzicato normal y el armónico pizzicato:
+
+```sh
+cargo run --offline --locked -p score-platform --example harmonics_compare
+```
+
+Genera `output/audio/comparacion-armonicos.wav` con el mismo motor de la app.
 
 ## Partituras con varios instrumentos
 
@@ -944,35 +977,3 @@ copyright Steinberg Media Technologies GmbH, bajo la
 [SIL Open Font License](assets/fonts/OFL.txt).
 También se incluye [GeneralUser GS 2.0.3](assets/sounds/README.md) de S. Christian
 Collins, con su [licencia original](assets/sounds/LICENSE.txt).
-
-## Armónicos de cuerda
-
-Selecciona una nota o un pasaje y usa **Expresión › Armónico natural** o
-**Armónico artificial**, también disponibles en la cinta y en Propiedades.
-Pulsa de nuevo la misma opción para quitarla; también puedes seleccionar el
-círculo o el rombo y borrar únicamente esa marca. Se conserva el historial de
-Deshacer, el portapapeles, el autoguardado y la exportación a PDF.
-
-- **Natural:** escribe la altura que debe sonar. Se añade el círculo de Bravura.
-- **Artificial:** escribe una sola nota pisada; el programa añade el rombo a una
-  cuarta justa por encima y reproduce únicamente el sonido dos octavas más alto.
-  Admite notas pisadas de C0 a B6 para mantener el sonido dentro del rango del editor.
-
-Son marcas de cada evento, compatibles con arco, pizzicato, articulaciones,
-ligaduras, dos voces y divisi. En un pasaje se aplican a todas las notas
-seleccionadas en una sola operación; los silencios no admiten armónicos.
-La reproducción respeta la altura sonora y usa un timbre sintetizado propio para
-los armónicos: sostenido y aéreo al arco, con ataque breve y resonancia que decae
-en pizzicato. Funciona también al escuchar notas y al continuar desde una
-selección, tanto con GeneralUser como con VSCO CE. Es una aproximación por síntesis;
-no son grabaciones de armónicos de una biblioteca orquestal.
-Ejemplo: `examples/armonicos-cuerdas.partitura`.
-
-Para comparar a la misma altura y dinámica el arco normal, el armónico al arco,
-el pizzicato normal y el armónico pizzicato:
-
-```sh
-cargo run --offline --locked -p score-platform --example harmonics_compare
-```
-
-Genera `output/audio/comparacion-armonicos.wav` con el mismo motor de la app.

@@ -2,8 +2,6 @@
 use super::*;
 use text_input::TextInput;
 
-const ROW_HOVER: u32 = 0x2c2e36;
-
 pub struct CommandSearch {
     pub field: Entity<TextInput>,
     pub selected: usize,
@@ -37,7 +35,7 @@ pub(super) fn search_box(view: &AppView, cx: &Context<AppView>) -> Div {
                 .border_1()
                 .border_color(rgb(BORDER))
                 .cursor_pointer()
-                .hover(|style| style.bg(rgb(ROW_HOVER)))
+                .hover(|style| style.bg(rgb(HOVER)))
                 .tooltip(command_hint(view, id::COMMAND_SEARCH))
                 .on_click(cx.listener(|v, _, window, cx| v.run(id::COMMAND_SEARCH, window, cx)))
                 .child(icon(Icon::Search, MUTED))
@@ -80,8 +78,8 @@ pub(super) fn search_box(view: &AppView, cx: &Context<AppView>) -> Div {
                                 .gap_2()
                                 .rounded_md()
                                 .cursor_pointer()
-                                .bg(rgb(if index == selected { SELECT } else { 0x1d1e23 }))
-                                .hover(|style| style.bg(rgb(ROW_HOVER)))
+                                .bg(rgb(if index == selected { SELECT } else { POPOVER }))
+                                .hover(|style| style.bg(rgb(HOVER)))
                                 .on_click(cx.listener(move |v, _, window, cx| {
                                     v.run_search_result(command, window, cx)
                                 }))
@@ -106,14 +104,7 @@ pub(super) fn search_box(view: &AppView, cx: &Context<AppView>) -> Div {
                                                 .child(result.place.clone()),
                                         ),
                                 )
-                                .when(result.item.pending, |row| {
-                                    row.child(
-                                        div()
-                                            .text_size(px(9.))
-                                            .text_color(rgb(MUTED))
-                                            .child("Pendiente"),
-                                    )
-                                })
+                                .when(result.item.pending, |row| row.child(pending_mark()))
                                 .children(result.item.keys.clone().map(shortcut))
                         }))
                         .when(results.is_empty() && typed, |list| {

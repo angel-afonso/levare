@@ -416,7 +416,6 @@ impl Shortcuts {
         list
     }
 
-    /// The keys of `command` once `keys` is taken away from it.
     pub fn without_keys(&self, command: CommandId, keys: &KeySequence) -> Vec<KeySequence> {
         self.keymap
             .keys_for(command)

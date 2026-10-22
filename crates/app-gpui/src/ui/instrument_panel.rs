@@ -155,7 +155,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     .w_full()
                     .mt_2()
                     .h(px(34.))
-                    .border_color(rgb(0x424652))
+                    .border_color(rgb(STRONG_BORDER))
                     .bg(rgb(PANEL))
                     .tooltip(command_hint(view, id::ADD_INSTRUMENT)),
                 ),
@@ -230,7 +230,7 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                 .rounded_md()
                 .border_1()
                 .border_color(if selected {
-                    rgb(0x3c5d94).into()
+                    rgb(SELECT_BORDER).into()
                 } else {
                     transparent_black()
                 })
@@ -253,7 +253,7 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                             .child(
                                 div()
                                     .text_size(px(9.))
-                                    .text_color(rgb(if selected { 0xa9bfe7 } else { MUTED }))
+                                    .text_color(rgb(if selected { ACCENT_TEXT } else { MUTED }))
                                     .child(inline_text(view.music_font.clone(), description)),
                             ),
                         false,
@@ -341,9 +341,9 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     let total = picker.total();
     let available = MAX_PARTS.saturating_sub(view.document.editor.score().parts().len());
     div().id("instruments-dialog").absolute().top_0().left_0().size_full()
-        .flex().items_center().justify_center().bg(rgba(0x08090ccc)).occlude()
+        .flex().items_center().justify_center().bg(rgba(SCRIM)).occlude()
         .child(div().w(px(620.)).max_w(relative(0.94)).h(px(660.)).max_h(relative(0.92))
-            .flex().flex_col().bg(rgb(PANEL)).border_1().border_color(rgb(0x3a3d46))
+            .flex().flex_col().bg(rgb(PANEL)).border_1().border_color(rgb(POPOVER_BORDER))
             .rounded_lg().shadow_lg().overflow_hidden()
             .child(div().p_4().flex().items_start().gap_3().border_b_1().border_color(rgb(BORDER))
                 .child(div().flex_1().flex().flex_col().gap_2()
@@ -358,7 +358,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                             .map(|(index, instrument)| catalog_row(view, index, instrument, available, cx)))
                 })))
             .child(div().p_4().flex().flex_col().gap_3().border_t_1().border_color(rgb(BORDER))
-                .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(11.)).text_color(rgb(0xf1a4a4)).child(error)))
+                .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(11.)).text_color(rgb(ERROR)).child(error)))
                 .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(if available == 0 {
                     format!("La partitura ya tiene el máximo de {MAX_PARTS} instrumentos.")
                 } else {

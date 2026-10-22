@@ -108,7 +108,7 @@ fn draft_form(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(draft.field.clone())
         .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(format!("{} / {} caracteres · Enter guarda; Esc cancela", text.trim().chars().count(), score_core::MAX_COMMENT_CHARS)))
         .when(!text.is_empty(), |body| body.child(div().id("comment-draft-preview").max_h(px(128.)).overflow_y_scroll().text_size(px(12.)).child(review::wrapped_text(view, &text))))
-        .when(draft.source != *score, |body| body.child(div().text_size(px(11.)).text_color(rgb(0xffc47e)).child("La partitura cambió. Actualiza el vínculo antes de guardar; el borrador conserva tu texto.")))
+        .when(draft.source != *score, |body| body.child(div().text_size(px(11.)).text_color(rgb(WARNING)).child("La partitura cambió. Actualiza el vínculo antes de guardar; el borrador conserva tu texto.")))
         .child(div().flex().gap_2()
             .child(button(view, "save-comment", "Guardar", true, cx, |v, _, cx| v.apply_comment(cx)).flex_1())
             .child(button(view, "cancel-comment", "Cancelar", false, cx, |v, _, cx| { v.comment_editor = None; cx.notify(); }).flex_1()))
@@ -138,7 +138,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             let resolved = comment.resolved;
             div().flex().flex_col().gap_1().pb_2().border_b_1().border_color(rgb(BORDER))
                 .child(action(format!("comment-{id:?}"), div().w_full().min_w_0().flex().flex_col().gap_1()
-                    .child(div().text_size(px(10.)).text_color(rgb(if resolved { 0x85c6a2 } else { 0xffc47e })).child(if resolved { "RESUELTO" } else { "PENDIENTE" }))
+                    .child(div().text_size(px(10.)).text_color(rgb(if resolved { SUCCESS } else { WARNING })).child(if resolved { "Resuelto" } else { "Pendiente" }))
                     .child(div().text_size(px(11.)).text_color(rgb(BLUE)).child(review::wrapped_text(view, comment_label(score, comment))))
                     .child(div().text_size(px(12.)).child(review::wrapped_text(view, &comment.text))), state.active == Some(id), cx, move |v, _, cx| v.goto_comment(id, cx)).w_full().justify_start().px_2().py_2())
                 .child(div().flex().flex_wrap().gap_1()

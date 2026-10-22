@@ -215,13 +215,14 @@ pub fn score_canvas(
                     text_at(
                         &format!("{} / {}", index + 1, layout.pages.len()),
                         font(".SystemUIFont"),
-                        12. * scale,
+                        (12. * scale).max(10.),
                         origin
                             + point(
                                 px((page.width / 2. - 12.) * scale),
                                 px((page.top + page.height - 24.) * scale),
                             ),
-                        0x878277,
+                        // 5.7:1 on the paper; with the 10 px floor it stays legible zoomed out.
+                        0x67635c,
                         window,
                         cx,
                     );

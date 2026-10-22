@@ -1,5 +1,5 @@
 //! GPUI adapter of the toolbar model: paints `ToolbarView` and the File menu
-//! and turns every click into a command. No decisions are taken here — what
+//! and turns every click into a command. No decisions are taken here: what
 //! exists, its state and what folds all come from `score_toolbar`.
 
 use super::*;
@@ -13,14 +13,6 @@ const CONTROL_HEIGHT: f32 = 58.;
 const ROW_HEIGHT: f32 = 18.;
 const ROW_GAP: f32 = 2.;
 const GROUP_HEIGHT: f32 = 76.;
-
-const CARD: u32 = 0x1f2026;
-const SUNKEN: u32 = 0x16171b;
-const HOVER: u32 = 0x2c2e36;
-const OUTLINE: u32 = 0x33353e;
-const CHOSEN: u32 = 0x2b4a85;
-const CAPTION: u32 = 0x7d8291;
-const PENDING_OUTLINE: u32 = 0x4a4d58;
 
 fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyElement> {
     match visual {
@@ -76,7 +68,7 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
 
 fn ink(control: &ControlView) -> u32 {
     if control.checked && control.role == Role::Choice {
-        0xffffff
+        ON_ACCENT
     } else if control.checked {
         BLUE
     } else if control.pending {
@@ -84,42 +76,6 @@ fn ink(control: &ControlView) -> u32 {
     } else {
         TEXT
     }
-}
-
-/// Like `action`, but the caller picks the hover style: GPUI allows setting
-/// it only once, so it cannot be chained after `action(...)`.
-fn ribbon_action(
-    id: impl Into<SharedString>,
-    content: impl IntoElement,
-    selected: bool,
-    hover: impl Fn(StyleRefinement) -> StyleRefinement + 'static,
-    cx: &Context<AppView>,
-    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
-) -> Stateful<Div> {
-    div()
-        .id(id.into())
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap_1()
-        .flex_shrink_0()
-        .text_size(px(12.))
-        .rounded_md()
-        .border_1()
-        .border_color(if selected {
-            Hsla::from(rgb(0x3c5d94))
-        } else {
-            transparent_black()
-        })
-        .bg(rgb(if selected { SELECT } else { FIELD }))
-        .text_color(rgb(if selected { 0xb8ceff } else { TEXT }))
-        .cursor_pointer()
-        .hover(hover)
-        .child(content)
-        .on_click(cx.listener(move |view, _, window, cx| {
-            view.focus.focus(window);
-            click(view, window, cx);
-        }))
 }
 
 /// Every control shares this frame: same corners, hover, checked colour and
@@ -132,7 +88,7 @@ fn frame(
     close: bool,
 ) -> Stateful<Div> {
     let command = control.command;
-    ribbon_action(
+    action_with_hover(
         element,
         content,
         control.checked,
@@ -160,7 +116,14 @@ fn frame(
     })
     .text_color(rgb(ink(control)))
     .when(!control.enabled, |frame| frame.opacity(0.4))
-    .tooltip(hover_hint(control.description, control.keys.clone()))
+    .tooltip(hover_hint(
+        if control.pending {
+            format!("{} · Pendiente", control.description)
+        } else {
+            control.description.to_string()
+        },
+        control.keys.clone(),
+    ))
 }
 
 fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Stateful<Div> {
@@ -308,6 +271,7 @@ fn row(
             .when(named, |row| {
                 row.child(div().flex_1().truncate().child(control.label.clone()))
             })
+            .when(named && control.pending, |row| row.child(pending_mark()))
             .when(close, |row| {
                 row.children(control.keys.clone().map(shortcut))
             }),
@@ -361,9 +325,9 @@ pub(super) fn popover(content: impl IntoElement) -> Div {
         .flex()
         .flex_col()
         .gap(px(1.))
-        .bg(rgb(0x1d1e23))
+        .bg(rgb(POPOVER))
         .border_1()
-        .border_color(rgb(0x3a3d46))
+        .border_color(rgb(POPOVER_BORDER))
         .rounded_lg()
         .shadow_lg()
         .child(content)
@@ -411,7 +375,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
             .w_full()
             .h(px(GROUP_HEIGHT))
             .child(
-                ribbon_action(
+                action_with_hover(
                     format!("fold-main-{title}"),
                     div()
                         .flex()
@@ -439,7 +403,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                 .tooltip(hover_hint(target.description, target.keys.clone())),
             )
             .child(
-                ribbon_action(
+                action_with_hover(
                     format!("fold-arrow-{title}"),
                     "▾",
                     active,
@@ -456,7 +420,7 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
             )
     } else {
         div().w_full().child(
-            ribbon_action(
+            action_with_hover(
                 format!("fold-{title}"),
                 div()
                     .flex()
@@ -617,6 +581,7 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
             .gap_3()
             .w_full()
             .child(div().flex_1().child(item.label.clone()))
+            .when(item.pending, |row| row.child(pending_mark()))
             .children(
                 item.keys
                     .clone()
@@ -638,7 +603,7 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
     .w_full()
     .h(px(28.))
     .px_2()
-    .bg(rgb(0x1d1e23))
+    .bg(rgb(POPOVER))
     .text_size(px(12.5))
     .text_color(rgb(if item.pending { MUTED } else { TEXT }))
     .when(!item.enabled, |row| row.opacity(0.4))
@@ -758,7 +723,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                     .w_full()
                                     .h(px(28.))
                                     .px_2()
-                                    .when(!recent_open, |row| row.bg(rgb(0x1d1e23)))
+                                    .when(!recent_open, |row| row.bg(rgb(POPOVER)))
                                     .text_size(px(12.5))
                                     .into_any_element(),
                                 }
@@ -825,7 +790,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                         .w_full()
                                         .h(px(40.))
                                         .px_2()
-                                        .bg(rgb(0x1d1e23))
+                                        .bg(rgb(POPOVER))
                                     }))
                                     .child(separator())
                                     .child(menu_row(view, clear, cx)),
@@ -951,7 +916,7 @@ fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
         } else {
             2
         };
-        format!("● Escribiendo{duration} · Voz {voice}")
+        format!("Escribiendo{duration} · Voz {voice}")
     } else {
         match view.shortcuts.label(id::TOGGLE_NOTE_INPUT) {
             Some(key) => format!("Seleccionar · {key} para escribir"),
@@ -968,8 +933,8 @@ fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     .px_3()
     .rounded_full()
     .border_0()
-    .bg(rgb(if writing { 0x1d2b45 } else { FIELD }))
-    .text_color(rgb(if writing { 0xa9c4ff } else { MUTED }))
+    .bg(rgb(if writing { SELECT } else { FIELD }))
+    .text_color(rgb(if writing { ACCENT_TEXT } else { MUTED }))
     .text_size(px(11.))
 }
 

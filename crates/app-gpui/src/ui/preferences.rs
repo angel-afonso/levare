@@ -72,7 +72,7 @@ pub fn overlay(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_center()
-        .bg(rgba(0x08090ccc))
+        .bg(rgba(SCRIM))
         .occlude()
         .child(
             div()
@@ -84,7 +84,7 @@ pub fn overlay(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                 .flex_col()
                 .bg(rgb(PANEL))
                 .border_1()
-                .border_color(rgb(0x3a3d46))
+                .border_color(rgb(POPOVER_BORDER))
                 .rounded_lg()
                 .shadow_lg()
                 .overflow_hidden()
@@ -109,11 +109,11 @@ pub fn overlay(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                         .text_size(px(10.))
                         .text_color(rgb(MUTED))
                         .when_some(preferences.message.clone(), |footer, message| {
-                            footer.child(div().text_color(rgb(0xb8ceff)).child(message))
+                            footer.child(div().text_color(rgb(ACCENT_TEXT)).child(message))
                         })
                         .children(
                             shortcuts.problems.iter().map(|problem| {
-                                div().text_color(rgb(0xf2b282)).child(problem.clone())
+                                div().text_color(rgb(WARNING)).child(problem.clone())
                             }),
                         )
                         .child(match &shortcuts.path {
@@ -256,7 +256,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                                 .gap_2()
                                 .child(div().text_size(px(12.)).truncate().child(spec.label))
                                 .when(spec.status == Status::Pending, |row| {
-                                    row.child(badge("Pendiente", 0xa3a7b2))
+                                    row.child(badge("Pendiente", MUTED))
                                 })
                                 .when(overridden, |row| row.child(badge("Modificado", BLUE))),
                         )
@@ -268,7 +268,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                                     chips.child(
                                         div()
                                             .text_size(px(11.))
-                                            .text_color(rgb(0xb8ceff))
+                                            .text_color(rgb(ACCENT_TEXT))
                                             .child("Pulsa una combinación…"),
                                     )
                                 })
@@ -357,7 +357,7 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                             .items_center()
                             .gap_2()
                             .text_size(px(11.))
-                            .text_color(rgb(0xf2b282))
+                            .text_color(rgb(WARNING))
                             .child(div().flex_1().child(format!(
                                 "{} ya se usa para «{other}».",
                                 conflict.keys.label()
@@ -391,7 +391,8 @@ fn commands(view: &AppView, category: Category, cx: &Context<AppView>) -> Statef
                                 |v, _, cx| {
                                     if let Some(preferences) = &mut v.preferences {
                                         preferences.conflict = None;
-                                        preferences.message = Some("Sin cambios".into());
+                                        preferences.message =
+                                            Some("Se conserva el atajo anterior.".into());
                                     }
                                     cx.notify();
                                 },

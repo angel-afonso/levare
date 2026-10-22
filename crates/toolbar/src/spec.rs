@@ -75,9 +75,9 @@ pub enum Visual {
 pub enum Role {
     /// One option among its neighbours: consecutive choice tiles form a segment.
     Choice,
-    /// Switches something on or off.
+    /// An on/off state; drawn with an outline while off.
     Toggle,
-    /// Does something once.
+    /// Runs once; drawn without an outline.
     Action,
 }
 

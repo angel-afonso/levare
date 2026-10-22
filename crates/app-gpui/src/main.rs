@@ -1302,7 +1302,7 @@ impl AppView {
                 self.ui.show_inspector = !self.ui.show_inspector;
                 self.reveal_selection = true;
             }
-            _ => self.status = format!("Sin acción para «{}»", spec.label),
+            _ => self.status = format!("«{}» no está disponible en esta versión", spec.label),
         }
         cx.notify();
     }
@@ -1561,7 +1561,7 @@ impl AppView {
             let result = self.playback.preview(self.document.editor.score(), id);
             self.last_audition = Some(now);
             if let Err(error) = result {
-                self.status = format!("Audio: {error}");
+                self.status = format!("No se pudo escuchar la nota: {error}");
             }
         }
     }
@@ -2686,10 +2686,7 @@ impl AppView {
                 .playback
                 .choose_sound(bank, score, self.document.editor.cursor().part)
             {
-                Ok(()) => format!(
-                    "Sonido: {} · Listo para reproducir",
-                    self.playback.sound_name()
-                ),
+                Ok(()) => format!("Sonido: {}", self.playback.sound_name()),
                 Err(error) => {
                     self.playback.sound_error = Some(error.clone());
                     error
@@ -2768,7 +2765,7 @@ impl Render for AppView {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
         window.set_window_title(&format!(
-            "{}{} — Levare",
+            "{}{} · Levare",
             title,
             if self.document.is_dirty() { " •" } else { "" }
         ));

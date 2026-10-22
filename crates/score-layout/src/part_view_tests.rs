@@ -1,5 +1,5 @@
-//! Research for plan 025: can the canvas show an extracted part while edits
-//! still address the full score through the same `ElementId`s?
+//! Can the canvas show an extracted part while edits still address the full
+//! score through the same `ElementId`s? See ADR 0003.
 use super::*;
 use score_core::{
     Connection, ConnectionKind, DivisiPoint, Event, Notation, Pitch, Pitches, Step, Voice,
