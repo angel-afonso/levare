@@ -335,27 +335,34 @@ impl NativeBank {
     ) -> Result<Self, AudioError> {
         let mut apis: HashMap<PathBuf, Arc<Api>> = HashMap::new();
         let plan = PlaybackPlan::new(score, Tempo::default(), rate).map_err(error)?;
+        let seats = crate::seats(score);
         let mut routes: Vec<_> = plan
             .tracks
             .iter()
             .map(|track| {
+                let seat = seats
+                    .iter()
+                    .find(|(part, _)| *part == track.part)
+                    .map(|(_, seat)| *seat)
+                    .unwrap_or_default();
                 (
                     track.channel,
                     score
                         .part(track.part)
                         .expect("validated track")
                         .instrument(),
+                    seat,
                 )
             })
             .collect();
-        routes.push((15, audition));
+        routes.push((15, audition, Default::default()));
         let mut seen = [false; score_playback::PLAYBACK_CHANNELS];
         let mut lanes = Vec::new();
-        for (channel, instrument) in routes {
+        for (channel, instrument, seat) in routes {
             if std::mem::replace(&mut seen[usize::from(channel)], true) {
                 continue;
             }
-            let Some((pack, patch)) = first_pack_with(packs, instrument) else {
+            let Some((pack, patch)) = first_pack_with(packs, instrument, seat) else {
                 continue;
             };
             let library = pack
@@ -526,6 +533,7 @@ impl SoundEngine for NativeBank {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::InstrumentSpec;
 
     #[test]
     fn cc1_cache_is_per_voice_and_resets_even_after_a_zero_value() {
@@ -623,6 +631,8 @@ mod tests {
                 .find(|(instrument, _)| *instrument == Instrument::Violin)
                 .unwrap()
                 .1
+                .main
+                .first
                 .dynamics = mode;
             let mut bank = NativeBank::new(&candidate, &score, Instrument::Violin, 48_000).unwrap();
             bank.offline();
@@ -660,7 +670,14 @@ mod tests {
             .join("../../soundpacks/Virtual-Playing-Orchestra3/manifest.json");
         let pack = VscoPack::load(&manifest).unwrap();
         let score = Score::default();
-        for (instrument, patch) in &pack.spec.instruments {
+        let patches =
+            pack.spec.instruments.iter().flat_map(|(instrument, spec)| {
+                spec.patches().map(move |patch| (instrument, patch))
+            });
+        for (instrument, patch) in patches {
+            // Every declared recording set, alone, as the audition patch.
+            let mut single = pack.clone();
+            single.spec.instruments = vec![(*instrument, InstrumentSpec::from(patch.clone()))];
             for (kind, available) in [
                 ("sustain", true),
                 ("pizzicato", patch.pizzicato.is_some()),
@@ -669,7 +686,7 @@ mod tests {
                 if !available {
                     continue;
                 }
-                let mut bank = NativeBank::new(&pack, &score, *instrument, 48_000).unwrap();
+                let mut bank = NativeBank::new(&single, &score, *instrument, 48_000).unwrap();
                 bank.offline();
                 let lane = bank.lanes.iter().find(|lane| lane.channel == 15).unwrap();
                 let voice = match kind {
@@ -800,7 +817,7 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../soundpacks/vsco-ce/manifest.json");
         let pack = VscoPack::load(&manifest).unwrap();
         for (instrument, patch) in vsco_instruments() {
-            if patch.staccato.is_none() {
+            if patch.main.first.staccato.is_none() {
                 continue;
             }
             let mut score = Score::default();

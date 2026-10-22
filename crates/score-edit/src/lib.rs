@@ -123,6 +123,8 @@ pub enum Command {
     SetHeader(String, score_core::Credits),
     RemoveTempoChange(usize),
     SetInstrumentRange(PartId, Option<score_core::InstrumentRange>),
+    /// Solo or section recordings for one part; `None` lets the score decide.
+    SetPlayers(PartId, Option<score_core::Players>),
 }
 
 #[derive(Clone)]
@@ -380,6 +382,11 @@ impl Editor {
             }
             Command::SetInstrumentRange(part, range) => {
                 if !next.score.set_instrument_range(part, range)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetPlayers(part, players) => {
+                if !next.score.set_players(part, players)? {
                     return Ok(false);
                 }
             }
@@ -1144,6 +1151,7 @@ impl Editor {
                 | Command::SetCommentResolved(..)
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
+                | Command::SetPlayers(_, _)
                 | Command::ToggleRehearsalMark
                 | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
@@ -1175,6 +1183,7 @@ impl Editor {
                 | Command::SetCommentResolved(..)
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
+                | Command::SetPlayers(_, _)
                 | Command::ToggleMark(score_core::MarkKind::Division(_))
         ) {
             next.divisi_anchor = None;

@@ -807,6 +807,17 @@ impl AppView {
                         parts.len()
                     ),
                     Command::SetHeader(..) => "Cabecera actualizada. Puedes deshacer.".into(),
+                    Command::SetPlayers(part, _) => {
+                        let score = self.document.editor.score();
+                        format!(
+                            "{}: grabaciones de {} · ⌘Z para deshacer",
+                            ui::instrument_name(score, part),
+                            match score.players(part) {
+                                score_core::Players::Solo => "solista",
+                                score_core::Players::Section => "sección",
+                            }
+                        )
+                    }
                     _ => "Partitura actualizada".into(),
                 }
             }

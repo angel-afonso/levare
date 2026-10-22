@@ -40,6 +40,8 @@ mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod instrument_range;
 pub use instrument_range::InstrumentRange;
+mod players;
+pub use players::Players;
 mod review;
 pub use review::{ReviewIssue, ReviewKind, ReviewTarget};
 mod comments;
@@ -345,6 +347,8 @@ pub struct Part {
     transposition: Transposition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     instrument_range: Option<InstrumentRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    players: Option<Players>,
     /// Keeps the section's identity when extracted from an orchestral score.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -370,6 +374,7 @@ impl Part {
             instrument,
             transposition: instrument.standard_transposition(),
             instrument_range: None,
+            players: None,
             name: None,
             clefs: Default::default(),
             divided: false,

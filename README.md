@@ -69,7 +69,10 @@ ver el conjunto de cinco instrumentos.
   reverberación suave con cantidad, tamaño de sala y encendido/apagado. Los deslizadores
   responden a clic, arrastre y botones −/+, incluso durante la reproducción.
   Los ajustes son de sesión, se conservan al cambiar de banco de sonidos y no se guardan
-  en la partitura. Sonidos permite elegir banco, añadir/quitar parte y reconectar audio.
+  en la partitura. **Intérpretes** elige grabaciones de solista o de sección para cada
+  cuerda, madera o metal; esa elección sí se guarda y se puede deshacer
+  ([detalles](docs/sfz.md#solista-o-sección)). Sonidos permite elegir banco, añadir/quitar
+  parte y reconectar audio.
   Reproducción incluye tempo y audición.
 - **Transporte:** reproducir/pausar, detener e iniciar desde el principio sin
   borrar la selección. Reloj y regla siguen la posición musical real.

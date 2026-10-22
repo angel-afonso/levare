@@ -1,4 +1,5 @@
 use super::*;
+use score_core::{InstrumentFamily, Players};
 
 #[derive(Clone, Copy)]
 enum Target {
@@ -217,6 +218,42 @@ fn slider(
         )
 }
 
+/// Solo or section recordings, for instruments a pack may have both of.
+/// Choosing the score's own default stores no choice in the document.
+fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {
+    let current = view.document.editor.score().players(part);
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .child("Intérpretes"),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_1()
+                .children([Players::Solo, Players::Section].map(|players| {
+                    button(
+                        view,
+                        format!("players-{}-{}", part.0, players.label()),
+                        players.label(),
+                        current == players,
+                        cx,
+                        move |v, _, cx| {
+                            let automatic = v.document.editor.score().default_players(part);
+                            let choice = (players != automatic).then_some(players);
+                            v.edit(Command::SetPlayers(part, choice), cx);
+                        },
+                    )
+                    .text_size(px(10.))
+                })),
+        )
+}
+
 pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
     section("SALIDA GENERAL")
         .child(slider("master-volume".into(), "Volumen general", Target::Master, view, cx))
@@ -241,9 +278,16 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                         v.playback.apply_mixer(v.document.editor.score(), v.document.editor.cursor().part);
                         cx.notify();
                     }).text_size(px(9.))))
+                .when(
+                    matches!(
+                        part.instrument().family(),
+                        InstrumentFamily::Strings | InstrumentFamily::Woodwinds | InstrumentFamily::Brass
+                    ),
+                    |row| row.child(players(view, id, cx)),
+                )
                 .child(slider(format!("part-volume-{}", id.0), "Volumen", Target::Volume(id), view, cx))
                 .child(slider(format!("part-pan-{}", id.0), "Posición estéreo", Target::Pan(id), view, cx))
         }))
         .child(div().mt_3().text_size(px(10.)).text_color(rgb(MUTED))
-            .child("Ajustes de esta sesión. Puedes cambiarlos mientras escuchas; no modifican la partitura."))
+            .child("Volumen y posición son ajustes de esta sesión y no modifican la partitura. Solista o Sección se guarda con ella y se puede deshacer."))
 }

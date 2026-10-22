@@ -30,12 +30,31 @@ que son relativas a `samples`:
       "pizzicato": "Strings/1st-violin-SEC-PERF-pizzicato.sfz",
       "staccato": "Strings/1st-violin-SEC-PERF-staccato.sfz",
       "dynamics": "cc1",
-      "spread_layers": false
+      "spread_layers": false,
+      "second": {
+        "sustain": "Strings/2nd-violin-SEC-PERF.sfz",
+        "pizzicato": "Strings/2nd-violin-SEC-PERF-pizzicato.sfz",
+        "staccato": "Strings/2nd-violin-SEC-PERF-staccato.sfz"
+      },
+      "solo": {
+        "sustain": "Strings/1st-violin-SOLO-PERF.sfz",
+        "pizzicato": "Strings/1st-violin-SOLO-PERF-pizzicato.sfz",
+        "staccato": "Strings/1st-violin-SOLO-PERF-staccato.sfz",
+        "second": {
+          "sustain": "Strings/2nd-violin-SOLO-PERF.sfz",
+          "pizzicato": "Strings/2nd-violin-SOLO-PERF-pizzicato.sfz",
+          "staccato": "Strings/2nd-violin-SOLO-PERF-staccato.sfz"
+        }
+      }
     },
     "Flute": {
-      "sustain": "Woodwinds/flute-SEC-PERF.sfz",
-      "staccato": "Woodwinds/flute-SEC-PERF-staccato.sfz",
-      "dynamics": "cc1"
+      "sustain": "Woodwinds/flute-SOLO-PERF.sfz",
+      "staccato": "Woodwinds/flute-SOLO-PERF-staccato.sfz",
+      "dynamics": "cc1",
+      "section": {
+        "sustain": "Woodwinds/flute-SEC-PERF.sfz",
+        "staccato": "Woodwinds/flute-SEC-PERF-staccato.sfz"
+      }
     }
   }
 }
@@ -53,6 +72,21 @@ que son relativas a `samples`:
 | `pizzicato`, `staccato` | SFZ opcionales para esas técnicas. |
 | `dynamics` | `"velocity"` por defecto o `"cc1"` para bibliotecas de modulación. |
 | `spread_layers` | `false` por defecto; activa el reparto de capas de velocidad de VSCO cuando corresponda. |
+| `solo`, `section` | Grabaciones opcionales para una parte de solista o de sección, con los mismos campos. Sin ellas se usan las principales. |
+| `second` | Grabaciones opcionales para la segunda parte del mismo instrumento, como los violines II, dentro del conjunto principal, de `solo` o de `section`. |
+
+`dynamics` y `spread_layers` se heredan si no se repiten: `solo` y `section` toman los
+del instrumento, y `second` los de su conjunto.
+
+## Solista o sección
+
+Cada parte de cuerda, madera o metal tiene en **Mezclador › Intérpretes** la opción
+**Solista** o **Sección**. Por defecto, las cuerdas son secciones si la partitura tiene
+más de cuatro partes de cuerda y solistas en música de cámara; una parte llamada
+«solista» o «solo», y cualquier madera o metal, es solista. La elección se guarda en la
+partitura y se puede deshacer. Si dos partes del mismo instrumento tocan del mismo modo,
+la segunda usa `second` cuando el paquete lo declara, de modo que dos secciones al
+unísono no repiten las mismas muestras; una tercera vuelve al conjunto principal.
 
 El cargador comprueba el motor, la licencia declarada y todos los SFZ declarados.
 Para elegir parches, escucha sus registros y articulaciones reales: no basta con el

@@ -127,10 +127,35 @@ impl CombinedPack {
 pub(crate) fn first_pack_with(
     packs: &[SfzPack],
     instrument: Instrument,
+    seat: manifest::Seat,
 ) -> Option<(&SfzPack, &manifest::PatchSpec)> {
-    packs
+    packs.iter().find_map(|pack| {
+        manifest::patch_for(&pack.spec, instrument, seat).map(|patch| (pack, patch))
+    })
+}
+
+/// The seat of every part: its players, and whether an earlier part plays
+/// the same instrument family with the same players.
+pub(crate) fn seats(score: &Score) -> Vec<(score_core::PartId, manifest::Seat)> {
+    let family = |instrument| manifest::fallback_family(instrument).unwrap_or(instrument);
+    let mut seen = Vec::new();
+    score
+        .parts()
         .iter()
-        .find_map(|pack| manifest::patch_for(&pack.spec, instrument).map(|patch| (pack, patch)))
+        .map(|part| {
+            let players = score.players(part.id());
+            let key = (family(part.instrument()), players);
+            let count = seen.iter().filter(|seen| **seen == key).count();
+            seen.push(key);
+            (
+                part.id(),
+                manifest::Seat {
+                    players,
+                    second: count % 2 == 1,
+                },
+            )
+        })
+        .collect()
 }
 
 impl SoundBank for CombinedPack {

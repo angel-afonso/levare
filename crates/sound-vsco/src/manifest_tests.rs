@@ -1,5 +1,5 @@
-use super::manifest::{DynamicsMode, load_manifest, patch_for, vsco_instruments};
-use score_core::Instrument;
+use super::manifest::{DynamicsMode, Seat, load_manifest, patch_for, vsco_instruments};
+use score_core::{Instrument, Players, Score};
 use std::collections::BTreeSet;
 use std::{fs, path::Path};
 
@@ -34,7 +34,7 @@ fn format_two_manifest_loads_paths_and_cc1() {
     assert_eq!(pack.name, "Test SFZ");
     assert_eq!(pack.engine, dir.path().join("engine.dylib"));
     assert_eq!(pack.license, Some(dir.path().join("LICENSE")));
-    let patch = patch_for(&pack, Instrument::Violin).unwrap();
+    let patch = patch_for(&pack, Instrument::Violin, Seat::default()).unwrap();
     assert_eq!(patch.dynamics, DynamicsMode::Cc1);
     assert!(!patch.spread_layers);
 }
@@ -68,7 +68,10 @@ fn legacy_violin_keeps_all_three_original_patches() {
     let dir = tempfile::tempdir().unwrap();
     write(&dir.path().join("engine.dylib"), "");
     write(&dir.path().join("samples/LICENSE"), "test license");
-    for (_, patch) in vsco_instruments() {
+    for patch in vsco_instruments()
+        .iter()
+        .flat_map(|(_, instrument)| instrument.patches())
+    {
         for file in std::iter::once(&patch.sustain).chain(patch.pizzicato.as_ref()) {
             write(
                 &dir.path().join("samples").join(file),
@@ -86,7 +89,7 @@ fn legacy_violin_keeps_all_three_original_patches() {
         r#"{"format":1,"kind":"vsco-ce","samples":"samples","engine":"engine.dylib"}"#,
     );
     let pack = load_manifest(&path).unwrap();
-    let violin = patch_for(&pack, Instrument::Violin).unwrap();
+    let violin = patch_for(&pack, Instrument::Violin, Seat::default()).unwrap();
     assert_eq!(violin.sustain, Path::new("SViolinVib.sfz"));
     assert_eq!(
         violin.pizzicato.as_deref(),
@@ -108,14 +111,14 @@ fn clarinet_alias_uses_the_family_patch() {
         .replace("Violin", "Clarinet");
     write(&path, &text);
     let pack = load_manifest(&path).unwrap();
-    assert!(patch_for(&pack, Instrument::ClarinetBb).is_some());
+    assert!(patch_for(&pack, Instrument::ClarinetBb, Seat::default()).is_some());
 }
 
 #[test]
 fn unsupported_guitar_has_no_patch() {
     let dir = tempfile::tempdir().unwrap();
     let pack = load_manifest(&format_two(dir.path())).unwrap();
-    assert!(patch_for(&pack, Instrument::Guitar).is_none());
+    assert!(patch_for(&pack, Instrument::Guitar, Seat::default()).is_none());
 }
 
 fn package(dir: &Path, folder: &str, id: &str, instrument: &str) {
@@ -164,7 +167,7 @@ fn combined_priority_selects_the_first_package_with_a_patch() {
     let (mut packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
     assert!(errors.is_empty());
     assert_eq!(
-        crate::first_pack_with(&packs, Instrument::Violin)
+        crate::first_pack_with(&packs, Instrument::Violin, Seat::default())
             .unwrap()
             .0
             .spec
@@ -173,12 +176,96 @@ fn combined_priority_selects_the_first_package_with_a_patch() {
     );
     packs.reverse();
     assert_eq!(
-        crate::first_pack_with(&packs, Instrument::Violin)
+        crate::first_pack_with(&packs, Instrument::Violin, Seat::default())
             .unwrap()
             .0
             .spec
             .id,
         "b"
     );
-    assert!(crate::first_pack_with(&packs, Instrument::Guitar).is_none());
+    assert!(crate::first_pack_with(&packs, Instrument::Guitar, Seat::default()).is_none());
+}
+
+#[test]
+fn soloists_sections_and_second_parts_get_their_own_recordings() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = format_two(dir.path());
+    for file in ["violin-solo", "violin-2", "violin-solo-2"] {
+        write(
+            &dir.path().join(format!("samples/{file}.sfz")),
+            "<region> key=60 sample=sample.wav\n",
+        );
+    }
+    write(
+        &path,
+        r#"{"format":2,"kind":"sfz","id":"test","name":"Test SFZ","samples":"samples","engine":"engine.dylib","license":"LICENSE","instruments":{"Violin":{"sustain":"violin.sfz","dynamics":"cc1","second":{"sustain":"violin-2.sfz"},"solo":{"sustain":"violin-solo.sfz","dynamics":"velocity","second":{"sustain":"violin-solo-2.sfz"}}}}}"#,
+    );
+    let pack = load_manifest(&path).unwrap();
+    let seat = |players, second| Seat { players, second };
+    let sustain = |seat| {
+        let patch = patch_for(&pack, Instrument::Violin, seat).unwrap();
+        (patch.sustain.to_str().unwrap().to_owned(), patch.dynamics)
+    };
+    // Sections have no set of their own here, so they use the main one,
+    // whose dynamics a second part inherits.
+    assert_eq!(
+        sustain(seat(Players::Section, false)),
+        ("violin.sfz".into(), DynamicsMode::Cc1)
+    );
+    assert_eq!(
+        sustain(seat(Players::Section, true)),
+        ("violin-2.sfz".into(), DynamicsMode::Cc1)
+    );
+    assert_eq!(
+        sustain(seat(Players::Solo, false)),
+        ("violin-solo.sfz".into(), DynamicsMode::Velocity)
+    );
+    assert_eq!(
+        sustain(seat(Players::Solo, true)),
+        ("violin-solo-2.sfz".into(), DynamicsMode::Velocity)
+    );
+
+    fs::remove_file(dir.path().join("samples/violin-solo-2.sfz")).unwrap();
+    assert!(
+        load_manifest(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("violin-solo-2.sfz")
+    );
+}
+
+#[test]
+fn repeated_parts_alternate_recordings_within_their_players() {
+    let score = Score::new(
+        "".into(),
+        &[
+            Instrument::ClarinetBb,
+            Instrument::ClarinetA,
+            Instrument::Violin,
+            Instrument::Violin,
+            Instrument::Violin,
+            Instrument::Viola,
+            Instrument::Cello,
+            Instrument::DoubleBass,
+        ],
+        1,
+    )
+    .unwrap();
+    let seats: Vec<_> = crate::seats(&score)
+        .into_iter()
+        .map(|(_, seat)| (seat.players, seat.second))
+        .collect();
+    assert_eq!(
+        seats,
+        [
+            (Players::Solo, false),
+            (Players::Solo, true),
+            (Players::Section, false),
+            (Players::Section, true),
+            (Players::Section, false),
+            (Players::Section, false),
+            (Players::Section, false),
+            (Players::Section, false),
+        ]
+    );
 }
