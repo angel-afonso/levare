@@ -147,6 +147,9 @@ impl AppView {
 
     /// Go to the typed bar; during playback the music jumps there too.
     pub(crate) fn confirm_go_to_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(field) = &self.go_to_bar else {
             return;
         };

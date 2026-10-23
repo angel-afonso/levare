@@ -199,7 +199,7 @@ impl AppView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_blocks(cx) {
             return;
         }
         self.focus.focus(window);
@@ -280,6 +280,7 @@ impl AppView {
         if !self.ui.note_entry
             || self.busy
             || self.confirming
+            || self.agent_locked()
             || self.ui.context_menu.is_some()
             || self.note_drag.is_some()
             || self.mark_drag.is_some()
@@ -330,7 +331,7 @@ impl AppView {
         self.connection_drag = None;
         self.ghost = None;
         self.hover = None;
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_blocks(cx) {
             return;
         }
         self.reveal_selection = false;
@@ -681,10 +682,14 @@ impl AppView {
     }
 
     fn extend_passage_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let locked = self.agent_locked();
         let Some(drag) = self.selection_drag.as_mut() else {
             return;
         };
-        if self.busy || self.confirming || self.document.editor.score().event(drag.anchor).is_none()
+        if self.busy
+            || self.confirming
+            || locked
+            || self.document.editor.score().event(drag.anchor).is_none()
         {
             self.selection_drag = None;
             return;
@@ -729,6 +734,7 @@ impl AppView {
                 && self.mark_drag.is_none()
                 && !self.busy
                 && !self.confirming
+                && !self.agent_locked()
             {
                 let point = canvas_point(event.position, self.canvas_origin);
                 self.layout.hit(point).map(|hit| Hover {
@@ -871,7 +877,7 @@ impl AppView {
         modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             self.cancel_note_drag(cx);
             self.selection_drag = None;
             self.connection_drag = None;

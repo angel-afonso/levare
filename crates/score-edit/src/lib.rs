@@ -1384,7 +1384,8 @@ impl Editor {
     }
 
     /// Puts the cursor and selection back as they were at `mark`, leaving the
-    /// score and the history alone.
+    /// score and the history alone. If an edit since the mark took away what
+    /// they point at, the current ones stay.
     pub fn restore_selection(&mut self, mark: &HistoryMark) {
         let Snapshot {
             cursor,
@@ -1394,12 +1395,42 @@ impl Editor {
             tone,
             ..
         } = mark.snapshot;
+        if !self.fits(cursor, selection, range_anchor) {
+            return;
+        }
         self.state.cursor = cursor;
         self.state.selection = selection;
         self.state.range_anchor = range_anchor;
         self.state.divisi_anchor = divisi_anchor;
         self.state.tone = tone;
         self.sync_octave_if_cursor_part_exists();
+    }
+
+    /// Whether a cursor and selection still point into the score, as
+    /// `selected_ids` reads a range: both ends in the focus's staff and the
+    /// cursor's voice.
+    fn fits(
+        &self,
+        cursor: Cursor,
+        selection: Option<ElementId>,
+        range_anchor: Option<ElementId>,
+    ) -> bool {
+        let score = self.score();
+        let staff = |part, staff| score.part(part).and_then(|p| p.staff(staff));
+        let cursor_fits = staff(cursor.part, cursor.staff)
+            .and_then(|staff| staff.measures().get(cursor.measure))
+            .is_some_and(|measure| cursor.index <= measure.voice_len(cursor.voice));
+        let Some(focus) = selection else {
+            return cursor_fits;
+        };
+        let in_range = |id: ElementId| {
+            staff(focus.part, focus.staff)
+                .and_then(|staff| staff.measures().get(id.measure))
+                .is_some_and(|measure| measure.voice_index_of(cursor.voice, id.event).is_some())
+        };
+        cursor_fits
+            && score.event(focus).is_some()
+            && range_anchor.is_none_or(|anchor| in_range(anchor) && in_range(focus))
     }
 
     fn sync_octave_if_cursor_part_exists(&mut self) {

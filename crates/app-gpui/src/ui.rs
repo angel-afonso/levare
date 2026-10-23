@@ -1614,7 +1614,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                             Some(p) == pitch,
                             cx,
                             move |v, _, cx| {
-                                if !v.busy && !v.confirming {
+                                if !v.busy && !v.confirming && !v.agent_locked() {
                                     v.document.editor.select_tone(index);
                                     cx.notify();
                                 }
@@ -1697,7 +1697,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                                 view.entry_accidental == sign,
                                 cx,
                                 move |v, _, cx| {
-                                    if !v.busy && !v.confirming {
+                                    if !v.busy && !v.confirming && !v.agent_locked() {
                                         v.entry_accidental = sign;
                                         cx.notify();
                                     }
@@ -1718,7 +1718,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                             false,
                             cx,
                             |v, _, cx| {
-                                if !v.busy && !v.confirming {
+                                if !v.busy && !v.confirming && !v.agent_locked() {
                                     v.document.editor.octave =
                                         v.document.editor.octave.saturating_sub(1);
                                     cx.notify();
@@ -1726,7 +1726,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                             },
                         ))
                         .child(button(view, "octave-up", "+ Octava", false, cx, |v, _, cx| {
-                            if !v.busy && !v.confirming {
+                            if !v.busy && !v.confirming && !v.agent_locked() {
                                 v.document.editor.octave = (v.document.editor.octave + 1).min(8);
                                 cx.notify();
                             }
@@ -1739,7 +1739,7 @@ fn properties(view: &AppView, cx: &Context<AppView>) -> Div {
                         false,
                         cx,
                         |v, window, cx| {
-                            if !v.busy && !v.confirming {
+                            if !v.busy && !v.confirming && !v.agent_locked() {
                                 v.ui.note_entry = true;
                                 v.run(id::REST, window, cx);
                             }

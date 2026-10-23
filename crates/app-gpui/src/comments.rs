@@ -95,6 +95,9 @@ impl AppView {
     }
 
     pub(super) fn apply_comment(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(draft) = &self.comment_editor else {
             return;
         };
@@ -185,6 +188,9 @@ impl AppView {
     }
 
     pub(super) fn goto_comment(&mut self, id: CommentId, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         if self.document.editor.score().comment(id).is_none() {
             return;
         }

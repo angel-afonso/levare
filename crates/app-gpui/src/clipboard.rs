@@ -54,6 +54,9 @@ impl AppView {
         cx.notify();
     }
     pub(super) fn paste_music(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let clip = cx
             .read_from_clipboard()
             .ok_or("El portapapeles está vacío".to_owned())

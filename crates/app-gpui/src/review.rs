@@ -164,6 +164,9 @@ impl AppView {
     }
 
     pub(super) fn goto_review_issue(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(issue) = self.review.issues.get(index).copied() else {
             return;
         };
@@ -225,6 +228,9 @@ impl AppView {
     }
 
     pub(super) fn apply_range(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.range_editor else {
             return;
         };

@@ -1,3 +1,6 @@
+mod agent;
+#[cfg(test)]
+mod agent_tests;
 mod app_icon;
 mod app_paths;
 mod clipboard;
@@ -134,6 +137,10 @@ struct AppView {
     held: HashMap<String, Instant>,
     recent: score_io::RecentFiles,
     recent_path: Option<PathBuf>,
+    agent: agent::AgentState,
+    /// Set while one of the agent's tool calls runs a command, which lets it
+    /// past the lock that holds the user's input during the turn.
+    agent_acting: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -192,7 +199,7 @@ impl AppView {
         let view = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             view.update(cx, |view, cx| {
-                if view.busy || view.confirming {
+                if view.busy || view.confirming || !view.agent_allows_close(cx) {
                     return false;
                 }
                 if view.document.is_dirty() {
@@ -318,6 +325,8 @@ impl AppView {
             held: HashMap::new(),
             recent,
             recent_path,
+            agent: agent::AgentState::default(),
+            agent_acting: false,
             _subscriptions: vec![interceptor, layout_change],
         }
     }
@@ -367,7 +376,7 @@ impl AppView {
     /// pedal or trill of its own, and a glissando to the next note; the same
     /// command on a written line removes it.
     fn toggle_line(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if let Some(MarkRef::Connection(old)) = self.selected_mark()
@@ -406,7 +415,7 @@ impl AppView {
         }
     }
     fn toggle_tie(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let score = self.document.editor.score();
@@ -626,7 +635,7 @@ impl AppView {
         }
     }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.close_open_line(kind, cx) {
@@ -687,7 +696,7 @@ impl AppView {
         }
     }
     fn toggle_slur(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.close_open_line(ConnectionKind::Slur, cx) {
@@ -773,7 +782,7 @@ impl AppView {
         self.mark_drag = None;
         self.connection_drag = None;
         self.ghost = None;
-        if self.busy || self.confirming || self.instrument_picker.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.instrument_picker.is_some() {
             return false;
         }
         self.clicked_bar_mark = None;
@@ -1294,14 +1303,22 @@ impl AppView {
                 .as_ref()
                 .is_some_and(|search| search.focused(window, cx))
         {
-            // TextInput owns writing/navigation/clipboard keys while it has focus.
-            return;
+            // TextInput owns writing/navigation/clipboard keys while it has focus;
+            // the agent's commands are not keys.
+            if !self.agent_acting {
+                return;
+            }
         }
         self.selection_drag = None;
         let Some(spec) = self.shortcuts.spec(command).copied() else {
             return;
         };
         if self.busy || self.confirming {
+            return;
+        }
+        if !agent::user_may_run(spec.category, self.agent_locked()) {
+            self.status = agent::LOCKED.into();
+            cx.notify();
             return;
         }
         if self.instrument_picker.is_some() {
@@ -1754,7 +1771,7 @@ impl AppView {
     }
 
     fn choose_voice(&mut self, voice: score_core::Voice, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.document.editor.select_voice(voice);
@@ -1926,7 +1943,7 @@ impl AppView {
     }
 
     fn toggle_rhythm(&mut self, triplet: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let current = self
@@ -2132,7 +2149,7 @@ impl AppView {
     }
 
     fn open_instrument_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming || self.preferences.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.preferences.is_some() {
             return;
         }
         self.instrument_picker = Some(ui::InstrumentPicker::default());
@@ -2154,7 +2171,7 @@ impl AppView {
     }
 
     fn confirm_instruments(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let Some(mut picker) = self.instrument_picker.take() else {
@@ -2265,7 +2282,7 @@ impl AppView {
     fn request_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         self.note_drag = None;
         self.mark_drag = None;
-        if self.busy || self.confirming || self.instrument_picker.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.instrument_picker.is_some() {
             return;
         }
         self.playback.stop();
@@ -2303,6 +2320,7 @@ impl AppView {
                 self.clicked_bar_mark = None;
                 self.pending_slur = None;
                 self.pending_hairpin = None;
+                self.end_agent_conversation(cx);
                 self.document = Document::default();
                 self.review.reset_document();
                 self.comments = comments::CommentState::default();
@@ -2385,6 +2403,7 @@ impl AppView {
                             view.clicked_bar_mark = None;
                             view.pending_slur = None;
                             view.pending_hairpin = None;
+                            view.end_agent_conversation(cx);
                             view.document = document;
                             view.review.reset_document();
                             view.comments = comments::CommentState::default();
@@ -2466,7 +2485,7 @@ impl AppView {
     }
 
     fn export_score(&mut self, musicxml: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.playback.stop();
@@ -2557,7 +2576,7 @@ impl AppView {
     }
 
     fn save(&mut self, save_as: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.busy = true;
@@ -2624,7 +2643,7 @@ impl AppView {
 
     fn history(&mut self, redo: bool, cx: &mut Context<Self>) {
         self.selection_drag = None;
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let changed = if redo {
@@ -2684,7 +2703,7 @@ impl AppView {
     }
 
     fn select_part(&mut self, part: PartId, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.document.editor.select_part(part);
@@ -2782,7 +2801,7 @@ impl AppView {
         self.toggle_tempo_at(self.document.editor.cursor().measure, cx);
     }
     fn toggle_tempo_at(&mut self, measure: usize, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.tempo_picker.is_some() {
@@ -2805,7 +2824,7 @@ impl AppView {
         cx.notify();
     }
     fn toggle_header_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.header_editor.take().is_none() {
@@ -2822,6 +2841,9 @@ impl AppView {
         cx.notify();
     }
     fn apply_header(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.header_editor else {
             return;
         };
@@ -2845,6 +2867,9 @@ impl AppView {
         cx.notify();
     }
     fn apply_tempo(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.tempo_picker else {
             return;
         };
@@ -2879,7 +2904,7 @@ impl AppView {
         self.edit(Command::SetTempoAt(bar, mark), cx);
     }
     fn toggle_clef_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.clef_picker = !self.clef_picker;
@@ -2893,7 +2918,7 @@ impl AppView {
         cx.notify();
     }
     fn choose_clef(&mut self, clef: Option<score_core::Clef>, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let cursor = self.document.editor.cursor();
@@ -2915,7 +2940,7 @@ impl AppView {
         cx.notify();
     }
     fn toggle_key_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.key_picker = !self.key_picker;
@@ -2930,7 +2955,7 @@ impl AppView {
         cx.notify();
     }
     fn toggle_time_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.time_picker = !self.time_picker;
@@ -2945,7 +2970,7 @@ impl AppView {
         cx.notify();
     }
     fn choose_key(&mut self, key: KeySignature, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if !self.key_picker {
@@ -2964,7 +2989,7 @@ impl AppView {
         cx.notify();
     }
     fn choose_time(&mut self, time: score_core::TimeSignature, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let bar = self.signature_measure();
@@ -2993,7 +3018,7 @@ impl AppView {
         note
     }
     fn apply_accidental(&mut self, accidental: Option<Accidental>, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.document.editor.selection().is_some() {
@@ -3005,7 +3030,7 @@ impl AppView {
         }
     }
     fn toggle_chord(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.chord_entry = !self.chord_entry;
@@ -3019,7 +3044,7 @@ impl AppView {
     }
 
     fn select_hand(&mut self, part: PartId, staff: StaffId, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.document.editor.score().part(part).is_none_or(|part| {
@@ -3057,7 +3082,7 @@ impl AppView {
     }
 
     fn toggle_note_entry(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.ui.note_entry = !self.ui.note_entry;

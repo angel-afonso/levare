@@ -12,7 +12,7 @@ impl AppView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self
@@ -40,6 +40,9 @@ impl AppView {
     /// Write the field's words; an empty field removes them. Words that do
     /// not fit keep the editor open with the reason.
     pub(super) fn apply_text(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.text_editor else {
             return;
         };
@@ -70,7 +73,7 @@ impl AppView {
 impl AppView {
     /// Sing at the selected note, from the verse of a clicked syllable.
     pub(super) fn open_lyric_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.lyric_editor.take().is_some() {
@@ -111,6 +114,9 @@ impl AppView {
     /// Write the field as the note's syllable joined by `join`; with
     /// `advance`, go on to the next note that can take one.
     pub(super) fn apply_syllable(&mut self, join: Join, advance: bool, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.lyric_editor else {
             return;
         };
@@ -151,7 +157,7 @@ impl AppView {
     }
 
     pub(super) fn open_chord_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.chord_editor.take().is_some() {
@@ -174,6 +180,9 @@ impl AppView {
     /// Write the typed symbol; an empty field removes it. With `advance`,
     /// stay open on the next note or rest.
     pub(super) fn apply_chord(&mut self, advance: bool, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.chord_editor else {
             return;
         };

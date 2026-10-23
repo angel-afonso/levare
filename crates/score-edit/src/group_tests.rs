@@ -81,3 +81,22 @@ fn restore_selection_keeps_score_and_history() {
     assert!(editor.undo());
     assert_eq!(editor.score(), &before);
 }
+
+#[test]
+fn restore_selection_keeps_the_current_one_when_the_marked_is_gone() {
+    let mut editor = Editor::default();
+    write_three(&mut editor);
+    let last = editor.selection().unwrap();
+    editor.extend_navigation(false);
+    editor.extend_navigation(false);
+    assert_eq!(editor.selected_ids().len(), 3);
+    let mark = editor.mark();
+    // Removing the passage takes away both ends of the marked range.
+    editor.execute(Command::Delete).unwrap();
+    assert!(editor.score().event(last).is_none());
+    let (selection, cursor) = (editor.selection(), editor.cursor());
+    editor.restore_selection(&mark);
+    assert_eq!(editor.selection(), selection);
+    assert_eq!(editor.cursor(), cursor);
+    assert!(editor.selected_ids().len() <= 1);
+}
