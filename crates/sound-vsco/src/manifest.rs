@@ -110,7 +110,7 @@ struct Manifest {
     format: u32,
     kind: String,
     samples: PathBuf,
-    engine: PathBuf,
+    engine: Option<PathBuf>,
     id: Option<String>,
     name: Option<String>,
     license: Option<PathBuf>,
@@ -177,6 +177,12 @@ impl RawInstrument {
 }
 
 pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
+    load_manifest_with(path, bundled_engine())
+}
+
+/// `engine` serves manifests that name none, as packs installed from the
+/// catalog must: they never bring code of their own.
+pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSpec, AudioError> {
     let data = std::fs::read(path).map_err(error)?;
     let raw: Manifest = serde_json::from_slice(&data).map_err(error)?;
     let parent = path.parent().unwrap_or(Path::new("."));
@@ -217,7 +223,10 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
         (id, name, instruments)
     };
     let root = parent.join(raw.samples);
-    let engine = parent.join(raw.engine);
+    let engine = match raw.engine {
+        Some(engine) => parent.join(engine),
+        None => engine.ok_or_else(|| error("Falta el motor SFZ de Levare (sfizz)"))?,
+    };
     if !engine.is_file() {
         return Err(error(format!("Falta motor SFZ: {}", engine.display())));
     }
@@ -260,6 +269,28 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
         license,
         instruments,
     })
+}
+
+/// The sfizz library shipped in the app bundle (`Contents/Frameworks`), or in
+/// development the one installed with VSCO next to an ancestor of the
+/// executable. `LEVARE_SFIZZ` overrides both.
+pub fn bundled_engine() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("LEVARE_SFIZZ") {
+        return Some(PathBuf::from(path));
+    }
+    let executable = std::env::current_exe().ok()?;
+    let frameworks = executable
+        .parent()?
+        .parent()
+        .map(|contents| contents.join("Frameworks/libsfizz.dylib"));
+    frameworks
+        .into_iter()
+        .chain(
+            executable
+                .ancestors()
+                .map(|directory| directory.join("soundpacks/vsco-ce/libsfizz.dylib")),
+        )
+        .find(|path| path.is_file())
 }
 
 pub fn fallback_family(instrument: Instrument) -> Option<Instrument> {

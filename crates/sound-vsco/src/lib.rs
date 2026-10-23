@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod installed_tests;
 mod manifest;
+pub use manifest::bundled_engine;
 #[cfg(test)]
 mod manifest_tests;
 #[cfg(test)]
@@ -38,7 +39,15 @@ pub type VscoPack = SfzPack;
 
 impl SfzPack {
     pub fn load(path: &Path) -> Result<Self, AudioError> {
-        let spec = manifest::load_manifest(path)?;
+        Self::from_spec(manifest::load_manifest(path)?)
+    }
+
+    /// Like `load`, with `engine` for a manifest that names none.
+    pub fn load_with_engine(path: &Path, engine: &Path) -> Result<Self, AudioError> {
+        Self::from_spec(manifest::load_manifest_with(path, Some(engine.into()))?)
+    }
+
+    fn from_spec(spec: manifest::PackSpec) -> Result<Self, AudioError> {
         Ok(Self {
             root: spec.root.clone(),
             library: spec.engine.clone(),
@@ -83,6 +92,8 @@ fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
             Ok(entries) => {
                 for entry in entries {
                     match entry {
+                        // Hidden folders hold installs in progress or replaced versions.
+                        Ok(entry) if entry.file_name().to_string_lossy().starts_with('.') => {}
                         Ok(entry) => {
                             let path = entry.path().join("manifest.json");
                             if path.is_file() {

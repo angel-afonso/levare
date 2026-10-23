@@ -7,7 +7,7 @@ license.workspace = true
 [features]
 default = ["runtime-shaders", "vsco"]
 runtime-shaders = ["gpui/runtime_shaders"]
-vsco = ["dep:score-sound-vsco"]
+vsco = ["dep:score-sound-vsco", "dep:score-sound-store"]
 
 [dependencies]
 gpui.workspace = true
@@ -24,6 +24,7 @@ score-io.workspace = true
 score-export.workspace = true
 score-platform.workspace = true
 score-sound-vsco = { path = "../sound-vsco", optional = true }
+score-sound-store = { path = "../sound-store", optional = true }
 score-keymap.workspace = true
 score-toolbar.workspace = true
 serde_json.workspace = true

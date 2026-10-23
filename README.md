@@ -72,7 +72,8 @@ ver el conjunto de cinco instrumentos.
   en la partitura. **Intérpretes** elige grabaciones de solista o de sección para cada
   cuerda, madera o metal; esa elección sí se guarda y se puede deshacer
   ([detalles](docs/sfz.md#solista-o-sección)). Sonidos permite elegir banco, añadir/quitar
-  parte y reconectar audio.
+  parte y reconectar audio, y **Más sonidos** instala paquetes adicionales del catálogo
+  con su licencia ([detalles](docs/sfz.md#más-sonidos)).
   Reproducción incluye tempo y audición.
 - **Transporte:** reproducir/pausar, detener e iniciar desde el principio sin
   borrar la selección. Reloj y regla siguen la posición musical real.

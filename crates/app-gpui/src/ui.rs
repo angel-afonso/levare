@@ -21,6 +21,8 @@ use music_text::inline_text;
 pub use tempo_editor::TempoEditor;
 mod preferences;
 mod review;
+#[cfg(feature = "vsco")]
+mod sound_store;
 pub use review::RangeEditor;
 mod theme;
 mod toolbar;
@@ -2127,6 +2129,7 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
             crate::data_path("soundpacks").map_or_else(|| "la carpeta de datos".into(), |path| path.display().to_string())
         )))
         .children(view.playback.sound_discovery_errors.iter().map(|error| div().text_size(px(10.)).text_color(rgb(WARNING)).child(error.clone())))
+        .children(more_sounds(view, cx))
         .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
         .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(WARNING)).child(error)))
         .child(caption("INSTRUMENTO ACTUAL"))
@@ -2192,6 +2195,18 @@ fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
                 },
             ))
         })
+}
+/// The packs available on demand, when Levare is built with SFZ support.
+fn more_sounds(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
+    #[cfg(feature = "vsco")]
+    {
+        Some(sound_store::panel(view, cx))
+    }
+    #[cfg(not(feature = "vsco"))]
+    {
+        let _ = (view, cx);
+        None
+    }
 }
 fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();

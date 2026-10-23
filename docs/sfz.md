@@ -7,7 +7,39 @@ Levare (`soundpacks/`). La app descubre cada `manifest.json`, muestra los paquet
 válidos en **Sonidos** y conserva los errores de los paquetes inválidos para que
 puedas corregirlos. GeneralUser GS sigue disponible como respaldo para instrumentos
 o teclas que un paquete no cubra. Las bibliotecas y sus licencias pertenecen a sus
-respectivos autores; Levare no las distribuye.
+respectivos autores.
+
+## Más sonidos
+
+**Sonidos › Más sonidos** instala paquetes del catálogo que viene dentro de la app,
+uno cada vez y en segundo plano, sin dejar de escribir. Cada paquete muestra su
+descarga, lo que ocupa instalado y su licencia; **Instalar…** enseña la licencia y
+**Aceptar e instalar** empieza. La descarga se comprueba con el SHA-256 publicado en el
+catálogo, se descomprime en una carpeta temporal y solo pasa a
+`soundpacks/<id>` de la carpeta de datos cuando su manifiesto es válido; una
+actualización que falla deja la versión anterior. **Cancelar** no deja nada a medias.
+**Quitar…** pide confirmación y borra solo paquetes instalados desde aquí: los que
+copias a mano no se tocan.
+
+Un paquete solo trae muestras y texto SFZ. Al descomprimir se descartan bibliotecas,
+guiones y cualquier archivo que no sea audio, SFZ o documentación, y una ruta que
+intente salir de su carpeta rechaza el paquete entero. El motor sfizz va dentro de
+Levare (`Contents/Frameworks`): un manifiesto instalado desde el catálogo no puede
+indicar `engine`. Fuera de la app, en desarrollo, se usa el sfizz de
+`soundpacks/vsco-ce/` o el que indique `LEVARE_SFIZZ`.
+
+Hay dos clases de entradas. Las que Levare publica, como **VSCO CE · Alta calidad**,
+solo se hacen con bibliotecas que permiten redistribuirse; se construyen con
+`scripts/build_soundpack_vsco.py`, que convierte a FLAC sin pérdida las grabaciones que
+Levare usa y escribe un zip reproducible con su SHA-256. Las bibliotecas cuya licencia
+pide no redistribuirlas se instalan con una receta: Levare las descarga de la web de su
+autor, comprueba el checksum y añade su propio manifiesto. Si el autor cambia el archivo,
+la receta falla hasta que se actualice el checksum del catálogo.
+
+Para publicar un paquete: construye el zip, súbelo como recurso de una versión de GitHub
+con la etiqueta `sonidos-<id>-<versión>` y añade su URL, tamaño y SHA-256 a
+`crates/sound-store/src/catalog.json`. Una versión nueva de un paquete sube `version`, y
+los usuarios ven **Actualizar**.
 
 ## Manifiesto de formato 2
 
@@ -22,7 +54,6 @@ que son relativas a `samples`:
   "id": "vpo",
   "name": "Virtual Playing Orchestra · Performance",
   "samples": "Virtual-Playing-Orchestra3",
-  "engine": "../vsco-ce/libsfizz.dylib",
   "license": "Virtual-Playing-Orchestra3/Documentation/license.htm",
   "instruments": {
     "Violin": {
@@ -66,7 +97,7 @@ que son relativas a `samples`:
 | `format`, `kind` | Deben ser `2` y `"sfz"`. |
 | `id`, `name` | Identificador estable y nombre visible. `sfz-combinadas` está reservado. |
 | `samples` | Carpeta raíz de los SFZ y las muestras que estos referencian. |
-| `engine` | Biblioteca dinámica de sfizz; varios paquetes pueden compartirla. |
+| `engine` | Opcional: biblioteca dinámica de sfizz. Sin él se usa el motor de Levare; los paquetes del catálogo no pueden indicarlo. |
 | `license` | Ruta opcional; si se declara, el archivo debe existir. |
 | `instruments` | Claves con los nombres de instrumento del modelo de Levare. |
 | `sustain` | SFZ obligatorio de cada instrumento declarado. |
@@ -121,6 +152,12 @@ fundidos `xfin_locc1`; por eso conviene `dynamics: "cc1"`. Otras bibliotecas pue
 usar `amp_velcurve` o capas de velocidad y requieren `"velocity"`. El control CC1 se
 envía antes de cada ataque cuando cambia el nivel de esa voz, incluso en el primer
 ataque a nivel cero. CC11 sigue controlando la expresión continua del transporte.
+
+**Más sonidos** instala Virtual Playing Orchestra 3 con una receta: descarga de la web
+de su autor las muestras 3.2 (616 MB, alojadas en su Google Drive) y los guiones
+Performance 3.3, comprueba sus SHA-256, los descomprime en la misma carpeta, como pide
+el autor, y añade este manifiesto, con solistas, secciones, segundos violines y
+trémolos. Lo que sigue describe una instalación hecha a mano.
 
 En la instalación VPO local, los SFZ Performance están en
 `Virtual-Playing-Orchestra3/Virtual-Playing-Orchestra3/`, mientras que sus WAV están

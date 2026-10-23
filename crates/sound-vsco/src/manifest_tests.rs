@@ -269,3 +269,33 @@ fn repeated_parts_alternate_recordings_within_their_players() {
         ]
     );
 }
+
+#[test]
+fn a_manifest_without_engine_uses_the_one_levare_provides() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = format_two(dir.path());
+    let text = fs::read_to_string(&path)
+        .unwrap()
+        .replace(r#""engine":"engine.dylib","#, "");
+    write(&path, &text);
+    let engine = dir.path().join("bundled.dylib");
+    write(&engine, "");
+    let pack = super::manifest::load_manifest_with(&path, Some(engine.clone())).unwrap();
+    assert_eq!(pack.engine, engine);
+    assert!(
+        super::manifest::load_manifest_with(&path, None)
+            .unwrap_err()
+            .to_string()
+            .contains("sfizz")
+    );
+}
+
+#[test]
+fn hidden_folders_in_progress_are_not_packages() {
+    let dir = tempfile::tempdir().unwrap();
+    package(dir.path(), "a", "a", "Violin");
+    package(dir.path(), ".instalando-b", "b", "Violin");
+    let (packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
+    assert!(errors.is_empty());
+    assert_eq!(packs.len(), 1);
+}

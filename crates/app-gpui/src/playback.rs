@@ -133,6 +133,36 @@ impl Playback {
             Err("Bibliotecas SFZ no disponibles".into())
         }
     }
+    /// Reread the installed packs. The chosen bank stays chosen while it
+    /// exists; the combined one is prepared again, since it may gain a pack.
+    #[cfg(feature = "vsco")]
+    pub fn rediscover(&mut self, score: &Score, audition_part: PartId) -> Result<(), String> {
+        let selected = self
+            .selected_bank
+            .and_then(|index| self.banks.get(index))
+            .map(|bank| bank.id().to_owned());
+        let catalog = crate::sound_banks::discover();
+        self.banks = catalog.banks;
+        self.sound_discovery_errors = catalog.errors;
+        self.sound_priority = catalog.priority;
+        self.sfz_packs = catalog.packs;
+        let Some(selected) = selected else {
+            return Ok(());
+        };
+        let index = crate::sound_banks::index_by_id(&self.banks, &selected);
+        if index.is_some() && selected != "sfz-combinadas" {
+            self.selected_bank = index;
+            return Ok(());
+        }
+        self.choose_sound(index, score, audition_part)
+    }
+    /// Whether the chosen bank plays samples from pack `id`.
+    #[cfg(feature = "vsco")]
+    pub fn uses_pack(&self, id: &str) -> bool {
+        self.selected_bank
+            .and_then(|index| self.banks.get(index))
+            .is_some_and(|bank| bank.id() == id || bank.id() == "sfz-combinadas")
+    }
     pub fn choose_sound(
         &mut self,
         bank: Option<usize>,

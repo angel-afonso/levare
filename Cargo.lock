@@ -3137,6 +3137,7 @@ dependencies = [
  "score-layout",
  "score-platform",
  "score-playback",
+ "score-sound-store",
  "score-sound-vsco",
  "score-toolbar",
  "serde_json",
@@ -5115,6 +5116,22 @@ name = "score-playback"
 version = "0.1.0"
 dependencies = [
  "score-core",
+]
+
+[[package]]
+name = "score-sound-store"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "score-core",
+ "score-platform",
+ "score-sound-vsco",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "zed-reqwest",
+ "zip",
 ]
 
 [[package]]
@@ -7623,6 +7640,7 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",

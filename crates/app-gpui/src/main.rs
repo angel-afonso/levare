@@ -17,6 +17,8 @@ mod review;
 mod selection;
 mod shortcuts;
 mod sound_banks;
+#[cfg(feature = "vsco")]
+mod store;
 mod ui;
 
 use app_paths::data_path;
@@ -61,6 +63,8 @@ enum Next {
 }
 
 struct AppView {
+    #[cfg(feature = "vsco")]
+    store: store::Store,
     document: Document,
     ui: ui::UiState,
     focus: FocusHandle,
@@ -205,6 +209,10 @@ impl AppView {
                             view.status = format!("No se pudo autoguardar: {error}");
                             cx.notify();
                         }
+                        #[cfg(feature = "vsco")]
+                        if view.store.moved() {
+                            cx.notify();
+                        }
                         if view.playback.tick() {
                             let cursor = view.document.editor.cursor();
                             let score = view.document.editor.score();
@@ -284,6 +292,8 @@ impl AppView {
             mark_drag: None,
             ghost: None,
             mixer_drag: None,
+            #[cfg(feature = "vsco")]
+            store: store::Store::new(),
             viewport: follow::PlaybackViewport::default(),
             layout,
             position,
