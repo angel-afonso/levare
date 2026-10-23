@@ -18,3 +18,4 @@ agent-client-protocol = { workspace = true, features = ["process"] }
 [dev-dependencies]
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 reqwest.workspace = true
+tempfile.workspace = true

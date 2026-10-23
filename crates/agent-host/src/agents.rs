@@ -1,22 +1,36 @@
+use std::fs;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// The text a session fails with when the agent cannot reach Levare's tools.
 pub(crate) const NO_LEVARE_TOOLS: &str = "Este agente no admite las herramientas de Levare.";
 const OFFLINE: &str = "Sin conexión para descargar el adaptador.";
+const NO_SHELL_PATH: &str =
+    "No se pudo leer el PATH de tu shell; se buscó solo en las carpetas habituales.";
+/// How much of an agent's own message is shown.
+const MESSAGE_LIMIT: usize = 500;
 
-/// A login shell can wait on something forever; past this, nothing is found.
+/// A login shell can wait on something forever; past this, the usual
+/// folders are searched instead.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-/// Prints the login shell's `PATH` and where each tool is, one `name=path`
-/// line per tool found.
-const PROBE_SCRIPT: &str = r#"printf 'PATH=%s\n' "$PATH"
-for tool in npx claude codex gemini; do
-  found=$(command -v "$tool") && printf '%s=%s\n' "$tool" "$found"
-done"#;
+/// Prints the shell's `PATH`; valid in zsh, bash and fish, where a quoted
+/// `$PATH` is joined with `:` too.
+const PROBE_SCRIPT: &str = r#"printf 'LEVARE_PATH=%s\n' "$PATH""#;
+const PROBE_KEY: &str = "LEVARE_PATH=";
+/// Where installers put these tools, searched when the shell's `PATH`
+/// could not be read. Relative ones are under the home folder.
+const USUAL_FOLDERS: [&str; 5] = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    ".local/bin",
+    ".bun/bin",
+    ".npm-global/bin",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentKind {
@@ -51,75 +65,127 @@ impl AgentKind {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ResolvedTools {
     pub path_env: String,
+    /// Whether `path_env` is the shell's. If not, it is the app's own
+    /// `PATH` plus the usual folders, and a missing tool may be installed
+    /// after all.
+    pub from_shell: bool,
     pub npx: Option<PathBuf>,
+    pub node: Option<PathBuf>,
     pub claude: Option<PathBuf>,
     pub codex: Option<PathBuf>,
     pub gemini: Option<PathBuf>,
 }
 
-/// Reads the probe's output. Lines the shell's startup files print are
-/// ignored, and so is anything `command -v` gives that is not a path (an
-/// alias, a function).
-pub fn parse_probe(output: &str) -> ResolvedTools {
-    let mut tools = ResolvedTools::default();
-    for line in output.lines() {
-        let Some((name, value)) = line.split_once('=') else {
-            continue;
-        };
-        if name == "PATH" {
-            tools.path_env = value.to_string();
-            continue;
-        }
-        let slot = match name {
-            "npx" => &mut tools.npx,
-            "claude" => &mut tools.claude,
-            "codex" => &mut tools.codex,
-            "gemini" => &mut tools.gemini,
-            _ => continue,
-        };
-        if Path::new(value).is_absolute() {
-            *slot = Some(PathBuf::from(value));
-        }
-    }
-    tools
+/// The `PATH` in the probe's output. Lines the shell's startup files print
+/// are ignored, and so is a last line the deadline cut short.
+pub fn parse_probe(output: &str) -> Option<String> {
+    output
+        .split_inclusive('\n')
+        .filter_map(|line| line.strip_suffix('\n'))
+        .filter_map(|line| line.trim_end_matches('\r').strip_prefix(PROBE_KEY))
+        .next_back()
+        .map(String::from)
 }
 
-/// Runs the user's login shell to find their `PATH` and tools. Blocks for
-/// up to five seconds, so it runs off the UI thread.
+/// Finds each tool as the first executable file named so in a folder of
+/// `path_env`. Aliases and shell functions don't count: the agent is not
+/// started by a shell.
+pub fn resolve_tools(path_env: &str, from_shell: bool) -> ResolvedTools {
+    let find = |name: &str| {
+        path_env
+            .split(':')
+            .map(Path::new)
+            .filter(|folder| folder.is_absolute())
+            .map(|folder| folder.join(name))
+            .find(|candidate| is_executable(candidate))
+    };
+    ResolvedTools {
+        path_env: path_env.to_string(),
+        from_shell,
+        npx: find("npx"),
+        node: find("node"),
+        claude: find("claude"),
+        codex: find("codex"),
+        gemini: find("gemini"),
+    }
+}
+
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+/// Asks the user's interactive login shell for its `PATH` and finds the
+/// tools on it. Interactive, because installers (Claude Code's in
+/// `~/.local/bin`, nvm) add to `PATH` in `.zshrc`. Blocks for up to five
+/// seconds, so it runs off the UI thread.
 pub fn probe() -> ResolvedTools {
     let shell = std::env::var("SHELL")
         .ok()
         .filter(|shell| !shell.is_empty())
         .unwrap_or_else(|| "/bin/zsh".into());
-    let mut tools = parse_probe(&run_probe(&shell).unwrap_or_default());
-    if tools.path_env.is_empty() {
-        tools.path_env = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into());
+    let mut command = Command::new(shell);
+    command.args(["-ilc", PROBE_SCRIPT]);
+    match read_shell_path(command, PROBE_TIMEOUT) {
+        Some(path) if !path.is_empty() => resolve_tools(&path, true),
+        _ => resolve_tools(&usual_path(), false),
     }
-    tools
 }
 
-/// An interactive login shell: tools installed by their own installers
-/// (`~/.local/bin` for Claude Code, nvm for Node) are added to `PATH` in
-/// `.zshrc`, which a login shell alone does not read.
-fn run_probe(shell: &str) -> Option<String> {
-    let mut child = Command::new(shell)
-        .args(["-ilc", PROBE_SCRIPT])
+/// Runs `command` and returns the `PATH` it prints, as soon as it is
+/// printed: a daemon the startup files leave behind may keep stdout open.
+/// `None` if nothing came before `timeout`.
+pub(crate) fn read_shell_path(mut command: Command, timeout: Duration) -> Option<String> {
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
     let mut stdout = child.stdout.take()?;
-    let (sender, receiver) = mpsc::channel();
+    let (chunks, received) = mpsc::channel();
+    // Blocks until stdout closes, which a leftover daemon may delay; only
+    // this thread waits for it.
     thread::spawn(move || {
-        let mut output = String::new();
-        let _ = stdout.read_to_string(&mut output);
-        let _ = sender.send(output);
+        let mut buffer = [0u8; 4096];
+        while let Ok(read @ 1..) = stdout.read(&mut buffer) {
+            if chunks.send(buffer[..read].to_vec()).is_err() {
+                break;
+            }
+        }
     });
-    let output = receiver.recv_timeout(PROBE_TIMEOUT).ok();
+    let deadline = Instant::now() + timeout;
+    let mut output = Vec::new();
+    let mut path = None;
+    while path.is_none() {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let Ok(chunk) = received.recv_timeout(left) else {
+            break;
+        };
+        output.extend(chunk);
+        path = parse_probe(&String::from_utf8_lossy(&output));
+    }
     let _ = child.kill();
     let _ = child.wait();
-    output
+    path
+}
+
+/// The app's own `PATH` followed by the usual folders.
+fn usual_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let own = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into());
+    let mut folders: Vec<String> = own.split(':').map(String::from).collect();
+    for folder in USUAL_FOLDERS {
+        let folder = if folder.starts_with('/') {
+            folder.to_string()
+        } else {
+            format!("{home}/{folder}")
+        };
+        if !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    folders.join(":")
 }
 
 /// How to start an agent's ACP adapter.
@@ -132,23 +198,34 @@ pub struct LaunchCommand {
 
 /// The command for `kind`, or what is missing to run it.
 pub fn launch_command(kind: AgentKind, tools: &ResolvedTools) -> Result<LaunchCommand, String> {
-    let npx = || found(&tools.npx, "npx", "Node.js");
+    let mut missing = Vec::new();
     let mut env = vec![("PATH".to_string(), tools.path_env.clone())];
     let (program, args) = match kind {
         AgentKind::Claude => {
-            let (npx, _claude) = both(npx(), found(&tools.claude, "claude", "Claude Code"))?;
+            let npx = require_npx(tools, &mut missing);
+            require(&tools.claude, "claude", "Claude Code", &mut missing);
             (
                 npx,
                 vec!["-y", "@agentclientprotocol/claude-agent-acp@0.94.0"],
             )
         }
         AgentKind::Codex => {
-            let (npx, codex) = both(npx(), found(&tools.codex, "codex", "Codex"))?;
+            let npx = require_npx(tools, &mut missing);
+            let codex = require(&tools.codex, "codex", "Codex", &mut missing);
             env.push(("CODEX_PATH".into(), codex.display().to_string()));
             (npx, vec!["-y", "@agentclientprotocol/codex-acp@2.2.2"])
         }
-        AgentKind::Gemini => (found(&tools.gemini, "gemini", "Gemini CLI")?, vec!["--acp"]),
+        AgentKind::Gemini => {
+            let gemini = require(&tools.gemini, "gemini", "Gemini CLI", &mut missing);
+            (gemini, vec!["--acp"])
+        }
     };
+    if !missing.is_empty() {
+        if !tools.from_shell {
+            missing.push(NO_SHELL_PATH.into());
+        }
+        return Err(missing.join(" "));
+    }
     Ok(LaunchCommand {
         program,
         args: args.into_iter().map(String::from).collect(),
@@ -156,39 +233,31 @@ pub fn launch_command(kind: AgentKind, tools: &ResolvedTools) -> Result<LaunchCo
     })
 }
 
-fn found(tool: &Option<PathBuf>, name: &str, install: &str) -> Result<PathBuf, String> {
-    tool.clone()
-        .ok_or_else(|| format!("No se encontró `{name}`: instala {install}."))
+/// `npx`, and the `node` it runs on.
+fn require_npx(tools: &ResolvedTools, missing: &mut Vec<String>) -> PathBuf {
+    let npx = require(&tools.npx, "npx", "Node.js", missing);
+    if tools.npx.is_some() {
+        require(&tools.node, "node", "Node.js", missing);
+    }
+    npx
 }
 
-/// Both tools, or everything that is missing.
-fn both(
-    first: Result<PathBuf, String>,
-    second: Result<PathBuf, String>,
-) -> Result<(PathBuf, PathBuf), String> {
-    match (first, second) {
-        (Ok(first), Ok(second)) => Ok((first, second)),
-        (Err(first), Err(second)) => Err(format!("{first} {second}")),
-        (Err(error), _) | (_, Err(error)) => Err(error),
-    }
+/// The tool's path; if it is missing, says so in `missing`.
+fn require(
+    tool: &Option<PathBuf>,
+    name: &str,
+    install: &str,
+    missing: &mut Vec<String>,
+) -> PathBuf {
+    tool.clone().unwrap_or_else(|| {
+        missing.push(format!("No se encontró `{name}`: instala {install}."));
+        PathBuf::new()
+    })
 }
 
 /// What to tell the user about a session's failure. `raw` is the text of
-/// `AgentEvent::Failed`; what is not recognised is returned as it is.
+/// `AgentEvent::Failed`; the agent's own message is kept, shortened.
 pub fn explain_error(kind: AgentKind, raw: &str) -> String {
-    let lower = raw.to_lowercase();
-    // All three adapters refuse a session or a turn without a login with
-    // ACP's `auth_required` (-32000).
-    let auth = raw.contains("(-32000)")
-        || ["auth_required", "authentication required", "not logged in"]
-            .iter()
-            .any(|signal| lower.contains(signal));
-    if auth {
-        return format!(
-            "Inicia sesión una vez en la terminal con `{}`.",
-            kind.login_command()
-        );
-    }
     if raw.contains(NO_LEVARE_TOOLS) || raw.contains("mcpCapabilities") {
         return NO_LEVARE_TOOLS.into();
     }
@@ -199,8 +268,63 @@ pub fn explain_error(kind: AgentKind, raw: &str) -> String {
         "ECONNRESET",
         "ETIMEDOUT",
     ];
-    if lower.contains("npm") && network.iter().any(|code| raw.contains(code)) {
+    if raw.to_lowercase().contains("npm") && network.iter().any(|code| raw.contains(code)) {
         return OFFLINE.into();
     }
-    raw.to_string()
+    let (message, code) = split_code(raw);
+    let lower = message.to_lowercase();
+    // The three adapters refuse a session or a turn without a login with
+    // ACP's `auth_required` (-32000), but Gemini uses that code for other
+    // refusals too: the message decides.
+    let generic = ["authentication required", "auth_required", "auth required"]
+        .contains(&lower.trim_end_matches('.'))
+        || (code == Some(-32000) && message.parse::<i32>().is_ok());
+    let auth = generic
+        || [
+            "auth_required",
+            "authentication",
+            "not logged in",
+            "/login",
+            "log in",
+            "sign in",
+            "sign-in",
+            "api key",
+            "unauthorized",
+            "oauth",
+            "credentials",
+        ]
+        .iter()
+        .any(|signal| lower.contains(signal));
+    if !auth {
+        return shortened(message);
+    }
+    let hint = format!(
+        "Inicia sesión una vez en la terminal con `{}`.",
+        kind.login_command()
+    );
+    if generic {
+        hint
+    } else {
+        format!("{hint} (El agente dice: {})", shortened(message))
+    }
+}
+
+/// The message and the JSON-RPC code the session appends as ` (code)`.
+fn split_code(raw: &str) -> (&str, Option<i32>) {
+    let raw = raw.trim();
+    let code = raw
+        .strip_suffix(')')
+        .and_then(|rest| rest.rsplit_once(" ("))
+        .and_then(|(message, code)| Some((message, code.parse().ok()?)));
+    match code {
+        Some((message, code)) => (message.trim(), Some(code)),
+        None => (raw, None),
+    }
+}
+
+fn shortened(message: &str) -> String {
+    match message.char_indices().nth(MESSAGE_LIMIT) {
+        Some((end, _)) => format!("{}…", &message[..end]),
+        None => message.to_string(),
+    }
 }

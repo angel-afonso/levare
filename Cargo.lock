@@ -78,6 +78,7 @@ dependencies = [
  "rmcp",
  "schemars 1.2.3",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
 ]

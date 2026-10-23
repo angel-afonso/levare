@@ -13,6 +13,7 @@ mod session_tests;
 
 pub use agents::{
     AgentKind, LaunchCommand, ResolvedTools, explain_error, launch_command, parse_probe, probe,
+    resolve_tools,
 };
 pub use mcp::{McpServer, ToolInvocation};
 pub use runtime::Runtime;
