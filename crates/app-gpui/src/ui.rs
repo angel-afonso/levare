@@ -2260,21 +2260,34 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .child(
             action(
-                "loop-todo",
-                icon(Icon::Loop, MUTED),
-                false,
+                "loop",
+                icon(Icon::Loop, if view.playback.looping { BLUE } else { MUTED }),
+                view.playback.looping,
                 cx,
-                |v, _, cx| {
-                    v.status = "Reproducción en bucle: pendiente".into();
-                    cx.notify();
-                },
+                |v, _, cx| v.toggle_loop(cx),
             )
-            .min_w(px(76.))
-            .px_2()
-            .gap_2()
+            .w(px(34.))
             .h(px(28.))
-            .tooltip(hover_hint("Reproducción en bucle · pendiente", None))
-            .child(pending_badge()),
+            .tooltip(command_hint(view, id::LOOP)),
+        )
+        .child(
+            action(
+                "half-speed",
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(if view.playback.half_speed {
+                        BLUE
+                    } else {
+                        MUTED
+                    }))
+                    .child("½×"),
+                view.playback.half_speed,
+                cx,
+                |v, _, cx| v.toggle_half_speed(cx),
+            )
+            .w(px(34.))
+            .h(px(28.))
+            .tooltip(command_hint(view, id::HALF_SPEED)),
         )
         .child(
             div()
@@ -2284,17 +2297,26 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex_col()
                 .gap_1()
                 .child(caption("COMPÁS · TIEMPO").text_size(px(8.)))
-                .child(
-                    div()
-                        .font_family("Menlo")
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(21.))
-                        .child(if position.at_end {
-                            format!("{:03} : FIN", bar + 1)
-                        } else {
-                            format!("{:03} : {:02}", bar + 1, beat.floor() as u16)
-                        }),
-                )
+                .child(match &view.go_to_bar {
+                    Some(field) => div().h(px(28.)).child(field.clone()),
+                    None => div().child(
+                        div()
+                            .id("go-to-bar")
+                            .cursor_pointer()
+                            .rounded_md()
+                            .hover(|style| style.bg(rgb(HOVER)))
+                            .font_family("Menlo")
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_size(px(21.))
+                            .tooltip(command_hint(view, id::GO_TO_BAR))
+                            .on_click(cx.listener(|v, _, window, cx| v.open_go_to_bar(window, cx)))
+                            .child(if position.at_end {
+                                format!("{:03} : FIN", bar + 1)
+                            } else {
+                                format!("{:03} : {:02}", bar + 1, beat.floor() as u16)
+                            }),
+                    ),
+                })
                 .child(
                     div()
                         .text_size(px(9.))

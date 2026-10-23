@@ -11,6 +11,8 @@ mod instrument_tests;
 #[cfg(test)]
 mod move_tests;
 #[cfg(test)]
+mod navigation_tests;
+#[cfg(test)]
 mod range_tests;
 mod selection;
 #[cfg(test)]
@@ -358,6 +360,66 @@ impl Editor {
                 index: measure.voice_len(cursor.voice),
             });
         }
+    }
+
+    /// ⌘→ selects the first note or rest of the next bar; ⌘← the first of
+    /// this bar, or of the previous one when already there. An empty bar
+    /// takes the cursor instead. Returns whether anything moved.
+    pub fn navigate_bar(&mut self, forward: bool) -> bool {
+        let cursor = self.cursor();
+        let staff = self
+            .score()
+            .part(cursor.part)
+            .expect("cursor part")
+            .staff(cursor.staff)
+            .expect("cursor staff");
+        let current = self.selection().map_or(cursor.measure, |id| id.measure);
+        let at_start = match self.selection() {
+            Some(id) => {
+                staff.measures()[id.measure].voice_index_of(cursor.voice, id.event) == Some(0)
+            }
+            None => cursor.index == 0,
+        };
+        let measure = if forward {
+            current + 1
+        } else if at_start {
+            match current.checked_sub(1) {
+                Some(previous) => previous,
+                None => return false,
+            }
+        } else {
+            current
+        };
+        self.go_to_bar(measure)
+    }
+
+    /// Select the first note or rest of `measure` on the cursor's staff and
+    /// voice, or put the cursor there if that bar is empty.
+    pub fn go_to_bar(&mut self, measure: usize) -> bool {
+        let cursor = self.cursor();
+        let staff = self
+            .score()
+            .part(cursor.part)
+            .expect("cursor part")
+            .staff(cursor.staff)
+            .expect("cursor staff");
+        let Some(bar) = staff.measures().get(measure) else {
+            return false;
+        };
+        match bar.voice_id_at(cursor.voice, 0) {
+            Some(event) => self.select(ElementId {
+                part: cursor.part,
+                staff: cursor.staff,
+                measure,
+                event,
+            }),
+            None => self.set_cursor(Cursor {
+                measure,
+                index: 0,
+                ..cursor
+            }),
+        }
+        true
     }
 
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {

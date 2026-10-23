@@ -38,6 +38,33 @@ enum Command {
         epoch: u64,
         audition: score_playback::Audition,
     },
+    Loop {
+        epoch: u64,
+        looping: Option<Loop>,
+    },
+}
+
+/// A passage played again and again. At `end` the callback releases what
+/// sounds and resumes at `start` with the notes and levels sounding there,
+/// prepared here so the wrap needs no plan search beyond one bisection.
+#[derive(Clone, Copy)]
+struct Loop {
+    start: u64,
+    end: u64,
+    held_notes: [Option<score_playback::HeldNote>; score_core::MAX_SOUNDING_NOTES],
+    expressions: [u8; score_playback::PLAYBACK_CHANNELS],
+}
+
+impl Loop {
+    fn new(plan: &PlaybackPlan, start: u64, end: u64) -> Option<Self> {
+        let end = end.min(plan.duration_frames);
+        (start < end).then(|| Self {
+            start,
+            end,
+            held_notes: plan.held_notes_at(start),
+            expressions: plan.expressions_at(start),
+        })
+    }
 }
 
 struct Active {
@@ -138,6 +165,21 @@ impl Control {
             start_frame,
         });
         Ok(())
+    }
+
+    /// Play frames `start..end` of the current plan again and again, or
+    /// play on with `None`. A new start clears the loop.
+    pub fn set_loop(&mut self, region: Option<(u64, u64)>) -> Result<(), AudioError> {
+        let Some(active) = &self.active else {
+            return Ok(());
+        };
+        let looping = region.and_then(|(start, end)| Loop::new(&active.plan, start, end));
+        self.commands
+            .push(Command::Loop {
+                epoch: active.epoch,
+                looping,
+            })
+            .map_err(|_| error("La cola de audio está ocupada; inténtalo de nuevo"))
     }
 
     pub fn preview(&mut self, key: u8) -> Result<(), AudioError> {
@@ -291,6 +333,7 @@ pub struct Renderer {
     /// Fixed storage: no pending attack can allocate in the audio callback.
     preview: Option<(score_playback::Audition, u64)>,
     preview_attacked: [bool; score_playback::MAX_AUDITION_NOTES],
+    looping: Option<Loop>,
     left: [f32; BLOCK],
     right: [f32; BLOCK],
     mix: [u32; score_playback::PLAYBACK_CHANNELS],
@@ -335,6 +378,7 @@ impl Renderer {
             preview_off: None,
             preview: None,
             preview_attacked: [false; score_playback::MAX_AUDITION_NOTES],
+            looping: None,
             left: [0.; BLOCK],
             right: [0.; BLOCK],
             mix: [u32::MAX; score_playback::PLAYBACK_CHANNELS],
@@ -437,10 +481,14 @@ impl Renderer {
                         start_frame,
                     });
                     self.frame = start_frame;
+                    self.looping = None;
                     self.preview_off = None;
                     self.preview = None;
                     self.shared.frame.store(start_frame, Ordering::Release);
                     self.shared.started.store(epoch, Ordering::Release);
+                }
+                Command::Loop { epoch, looping } if epoch == self.epoch => {
+                    self.looping = looping;
                 }
                 Command::Preview { epoch, audition } if epoch == self.epoch => {
                     self.engines.silence(Some(15), true);
@@ -454,7 +502,36 @@ impl Renderer {
         }
     }
 
+    /// Back to the loop's start once its end is reached, before any message
+    /// scheduled at the end itself can sound.
+    fn wrap_loop(&mut self) {
+        let Some(active) = &self.active else {
+            return;
+        };
+        if self
+            .looping
+            .as_ref()
+            .is_none_or(|looping| self.frame < looping.end)
+        {
+            return;
+        }
+        let looping = self.looping.expect("checked loop");
+        self.next_message = active
+            .plan
+            .messages
+            .partition_point(|message| message.frame < looping.start);
+        self.engines.silence(None, false);
+        for (channel, value) in looping.expressions.into_iter().enumerate() {
+            self.midi(channel as u8, 0xb0, 11, value);
+        }
+        for held in looping.held_notes.into_iter().flatten() {
+            self.note_on(held.channel, held.note);
+        }
+        self.frame = looping.start;
+    }
+
     fn due_messages(&mut self) {
+        self.wrap_loop();
         while let Some(message) = self
             .active
             .as_ref()
@@ -546,6 +623,9 @@ impl Renderer {
                     .map(|message| message.frame)
                     .unwrap_or(active.plan.duration_frames);
                 count = count.min((next - self.frame) as usize);
+                if let Some(looping) = &self.looping {
+                    count = count.min(looping.end.saturating_sub(self.frame) as usize);
+                }
             }
             if let Some(off) = self.preview_off {
                 count = count.min((off - self.clock) as usize);
@@ -1267,6 +1347,54 @@ mod tests {
                 .is_err()
         );
         assert_eq!(control.position().unwrap().frame, 31_024);
+    }
+
+    #[test]
+    fn a_loop_wraps_exactly_at_its_end_without_allocating_and_can_be_lifted() {
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        let plan = plan();
+        // Without playback there is nothing to loop yet.
+        control.set_loop(Some((0, 24_000))).unwrap();
+        control.play(plan.clone()).unwrap();
+        control.set_loop(Some((0, 24_000))).unwrap();
+        let mut output = [0f32; 2048];
+        assert_no_alloc(|| {
+            for _ in 0..30 {
+                renderer.render(&mut output, 2);
+            }
+        });
+        // 30 blocks of 1024 frames, wrapped once at the first quarter's end.
+        let position = control.position().unwrap();
+        assert_eq!(position.frame, 30 * 1024 - 24_000);
+        assert_eq!(position.element, plan.element_at(0));
+        assert!(output.iter().any(|sample| sample.abs() > 0.001));
+        assert!(control.is_playing());
+
+        control.set_loop(None).unwrap();
+        assert_no_alloc(|| {
+            for _ in 0..42 {
+                renderer.render(&mut output, 2);
+            }
+        });
+        assert!(!control.is_playing());
+    }
+
+    #[test]
+    fn a_loop_past_the_end_of_the_music_stops_at_its_end() {
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        let plan = plan();
+        control.play_from_frame(plan.clone(), 30_000).unwrap();
+        control
+            .set_loop(Some((24_000, plan.duration_frames * 4)))
+            .unwrap();
+        let mut output = [0f32; 2048];
+        assert_no_alloc(|| {
+            for _ in 0..20 {
+                renderer.render(&mut output, 2);
+            }
+        });
+        let frame = control.position().unwrap().frame;
+        assert!((24_000..plan.duration_frames).contains(&frame), "{frame}");
     }
 
     #[test]

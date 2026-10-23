@@ -174,7 +174,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘B` | Añadir un compás al final |  |
 | `⇧⌘B` | Insertar un compás antes del actual |  |
 | `⌘⌫` | Eliminar compases seleccionados |  |
-| `⌥⌘G` | Ir al compás… | Pendiente |
+| `⌥⌘G` | Ir al compás… |  |
 | Sin atajo | Inicio de repetición |  |
 | Sin atajo | Fin de repetición |  |
 | Sin atajo | Primera casilla |  |
@@ -225,8 +225,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘↓` | Bajar una octava |  |
 | `⌥↑` | Nota superior del acorde o pentagrama de arriba |  |
 | `⌥↓` | Nota inferior del acorde o pentagrama de abajo |  |
-| `⌘←` | Inicio del compás | Pendiente |
-| `⌘→` | Compás siguiente | Pendiente |
+| `⌘←` | Inicio del compás |  |
+| `⌘→` | Compás siguiente |  |
 
 ## Reproducción
 
@@ -236,10 +236,10 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `P` | Reproducir desde la selección |  |
 | Sin atajo | Reproducir desde el inicio |  |
 | `⇧O` | Detener la reproducción |  |
-| `⌘[` | Llevar la línea de reproducción al inicio | Pendiente |
-| `⌥P` | Reproducción en bucle | Pendiente |
-| `⌥Espacio` | Repetir la última reproducción | Pendiente |
-| `⇧Espacio` | Reproducir a media velocidad | Pendiente |
+| `⌘[` | Llevar la línea de reproducción al inicio |  |
+| `⌥P` | Reproducción en bucle |  |
+| `⌥Espacio` | Repetir la última reproducción |  |
+| `⇧Espacio` | Reproducir a media velocidad |  |
 | `M` | Mostrar el mezclador |  |
 | Sin atajo | Mostrar los sonidos |  |
 | Sin atajo | Audición al escribir |  |

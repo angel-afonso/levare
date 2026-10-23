@@ -13,6 +13,7 @@ mod note_drag;
 mod paint;
 mod playback;
 mod playhead;
+mod practice;
 mod review;
 mod selection;
 mod shortcuts;
@@ -79,6 +80,8 @@ struct AppView {
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
     command_search: Option<ui::CommandSearch>,
+    /// The bar number field of «Ir al compás», open in the transport.
+    go_to_bar: Option<Entity<ui::text_input::TextInput>>,
     recent_searches: Vec<CommandId>,
     header_editor: Option<ui::HeaderEditor>,
     range_editor: Option<ui::RangeEditor>,
@@ -265,6 +268,7 @@ impl AppView {
             clef_picker: false,
             tempo_picker: None,
             command_search: None,
+            go_to_bar: None,
             recent_searches: Vec::new(),
             header_editor: None,
             range_editor: None,
@@ -948,6 +952,24 @@ impl AppView {
             return;
         }
         if self
+            .go_to_bar
+            .as_ref()
+            .is_some_and(|field| field.focus_handle(cx).is_focused(window))
+        {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    self.confirm_go_to_bar(window, cx);
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.close_go_to_bar(window, cx);
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self
             .tempo_picker
             .as_ref()
             .is_some_and(|editor| editor.focused(window, cx))
@@ -1473,6 +1495,12 @@ impl AppView {
                 self.toggle_playback(cx);
             }
             id::PLAY_FROM_START => self.playback_from_start(cx),
+            id::PLAYLINE_TO_START => self.playline_to_start(cx),
+            id::LOOP => self.toggle_loop(cx),
+            id::REPLAY => self.replay(cx),
+            id::HALF_SPEED => self.toggle_half_speed(cx),
+            id::BAR_START | id::NEXT_BAR => self.move_by_bar(command == id::NEXT_BAR, cx),
+            id::GO_TO_BAR => self.open_go_to_bar(window, cx),
             id::STOP => self.stop_playback(cx),
             id::AUDITION => {
                 self.playback.audition = !self.playback.audition;

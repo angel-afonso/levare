@@ -796,6 +796,25 @@ desde el inicio. Al editar o deshacer se detiene la secuencia anterior y, si cor
 suena la nueva nota. Se respetan los silencios y la duración restante de los compases
 interiores y finales que muestra la regla.
 
+### Practicar y revisar
+
+- **Bucle** (`⌥P`, o el botón de bucle del transporte): repite lo seleccionado. Con
+  un pasaje seleccionado se repite de su primera a su última nota; con una sola nota,
+  su compás; sin selección, toda la partitura. La vuelta al inicio es exacta y las
+  notas que ya sonaban en ese punto vuelven a sonar. Si lo activas mientras suena
+  fuera del pasaje, la reproducción salta a su comienzo. Para cambiar el pasaje,
+  quita el bucle, selecciona otro y vuelve a activarlo.
+- **Media velocidad** (`⇧Espacio`, o **½×**): toca al 50 % del tempo escrito, sin
+  cambiar las indicaciones de la partitura. Parado, empieza a reproducir; sonando,
+  cambia de velocidad en el mismo punto. Funciona también con el bucle.
+- **Repetir la última reproducción** (`⌥Espacio`): vuelve a empezar desde donde
+  empezó la reproducción anterior.
+- **Línea de reproducción al inicio** (`⌘[`): lleva el cabezal al compás 1, sonando o parado.
+- **Compás siguiente** (`⌘→`) e **Inicio del compás** (`⌘←`): seleccionan la primera
+  nota del compás siguiente, o la del compás actual; si ya estás ahí, la del anterior.
+- **Ir al compás…** (`⌥⌘G`, o un clic en el contador **COMPÁS · TIEMPO**): escribe el
+  número y pulsa Enter. Si suena, la reproducción salta también allí.
+
 El tempo inicial es **120 negras por minuto**. Sus indicaciones y cambios forman
 parte del archivo `.partitura`. El volumen se ajusta sin detener la reproducción
 y sigue siendo un ajuste de sesión.
@@ -1011,7 +1030,7 @@ Dos voces por pentagrama y divisi en uno o dos pentagramas, acordes de hasta och
 y claves de sol, do y fa. El grabado incluye barrado, líneas adicionales,
 articulaciones, dinámicas, ligaduras y reguladores, con caché por compás.
 La reproducción mezcla las partes en un reloj común, con inicio desde selección,
-pausa y continuación. Aún no hay MIDI externo.
+pausa y continuación, bucle y media velocidad. Aún no hay MIDI externo.
 
 Se incluye [Bravura 1.392](https://github.com/steinbergmedia/bravura/tree/bravura-1.392),
 copyright Steinberg Media Technologies GmbH, bajo la
