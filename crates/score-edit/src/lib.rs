@@ -9,6 +9,8 @@ mod comment_tests;
 #[cfg(test)]
 mod grace_tests;
 #[cfg(test)]
+mod group_tests;
+#[cfg(test)]
 mod instrument_tests;
 #[cfg(test)]
 mod move_tests;
@@ -152,6 +154,12 @@ struct Snapshot {
     range_anchor: Option<ElementId>,
     divisi_anchor: Option<score_core::DivisiPoint>,
     tone: usize,
+}
+
+/// Opaque position in an `Editor`'s history; see `Editor::mark`.
+pub struct HistoryMark {
+    undo_len: usize,
+    snapshot: Snapshot,
 }
 
 pub struct Editor {
@@ -1345,6 +1353,59 @@ impl Editor {
             self.undo.pop();
         }
         Ok(changed)
+    }
+
+    /// A point in the history that `rollback` and `squash` can return to.
+    pub fn mark(&self) -> HistoryMark {
+        HistoryMark {
+            undo_len: self.undo.len(),
+            snapshot: self.state.clone(),
+        }
+    }
+
+    /// Returns to the state at `mark` and forgets everything done since.
+    pub fn rollback(&mut self, mark: &HistoryMark) {
+        self.undo.truncate(mark.undo_len);
+        self.redo.clear();
+        self.state = mark.snapshot.clone();
+        self.sync_octave_if_cursor_part_exists();
+    }
+
+    /// Folds every edit since `mark` into one undo step that goes back to the
+    /// mark. Returns whether there was anything to fold.
+    pub fn squash(&mut self, mark: &HistoryMark) -> bool {
+        if self.undo.len() <= mark.undo_len {
+            return false;
+        }
+        self.undo.truncate(mark.undo_len);
+        self.undo.push(mark.snapshot.clone());
+        self.redo.clear();
+        true
+    }
+
+    /// Puts the cursor and selection back as they were at `mark`, leaving the
+    /// score and the history alone.
+    pub fn restore_selection(&mut self, mark: &HistoryMark) {
+        let Snapshot {
+            cursor,
+            selection,
+            range_anchor,
+            divisi_anchor,
+            tone,
+            ..
+        } = mark.snapshot;
+        self.state.cursor = cursor;
+        self.state.selection = selection;
+        self.state.range_anchor = range_anchor;
+        self.state.divisi_anchor = divisi_anchor;
+        self.state.tone = tone;
+        self.sync_octave_if_cursor_part_exists();
+    }
+
+    fn sync_octave_if_cursor_part_exists(&mut self) {
+        if self.score().part(self.cursor().part).is_some() {
+            self.sync_octave();
+        }
     }
 
     fn commit(&mut self, next: Snapshot) {
