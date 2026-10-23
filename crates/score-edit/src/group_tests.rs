@@ -46,6 +46,24 @@ fn squash_without_changes_adds_nothing() {
 }
 
 #[test]
+fn squash_of_edits_that_cancel_out_leaves_no_step() {
+    let mut editor = Editor::default();
+    editor.execute(Command::Write(event(Step::G))).unwrap();
+    let mark = editor.mark();
+    let before = editor.score().clone();
+    editor.execute(Command::ToggleRehearsalMark).unwrap();
+    editor.execute(Command::ToggleRehearsalMark).unwrap();
+    // Moving the selection does not count as a change.
+    editor.navigate(false);
+    assert_eq!(editor.score(), &before);
+    assert!(!editor.squash(&mark));
+    assert_eq!(editor.score(), &before);
+    // The edit before the mark is the only one left to undo.
+    assert!(editor.undo());
+    assert!(!editor.can_undo());
+}
+
+#[test]
 fn rollback_discards_partial_edits() {
     let mut editor = Editor::default();
     editor.execute(Command::Write(event(Step::G))).unwrap();

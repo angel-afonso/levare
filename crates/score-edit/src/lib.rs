@@ -1372,14 +1372,19 @@ impl Editor {
     }
 
     /// Folds every edit since `mark` into one undo step that goes back to the
-    /// mark. Returns whether there was anything to fold.
+    /// mark. Returns whether there was anything to fold: edits that leave
+    /// the score as it was at the mark are forgotten instead, whatever they
+    /// did to the selection.
     pub fn squash(&mut self, mark: &HistoryMark) -> bool {
         if self.undo.len() <= mark.undo_len {
             return false;
         }
         self.undo.truncate(mark.undo_len);
-        self.undo.push(mark.snapshot.clone());
         self.redo.clear();
+        if self.state.score == mark.snapshot.score {
+            return false;
+        }
+        self.undo.push(mark.snapshot.clone());
         true
     }
 
