@@ -1,8 +1,8 @@
-use crate::agent::{Turn, user_may_run};
-use agent_tools::{EscribirArgs, Host, ToolCall, dispatch};
+use crate::agent::{Selected, Turn, follows_agent, refusal, user_may_run};
+use agent_tools::{EscribirArgs, Host, LeerArgs, Position, SeleccionarArgs, ToolCall, dispatch};
 use score_core::{Duration, ElementId, Event, Instrument, Pitch, Pitches, Score, Step};
 use score_edit::{Command, Editor};
-use score_keymap::{Category, CommandId, Registry};
+use score_keymap::{Category, CommandId, Registry, id};
 
 /// The tools over a bare editor; no registry command reaches it.
 struct EditorHost(Editor);
@@ -142,4 +142,87 @@ fn turn_without_edits_adds_no_undo() {
         assert!(editor.undo());
     }
     assert!(!editor.can_undo());
+}
+
+#[test]
+fn refusal_is_the_status_of_a_command_that_changed_nothing() {
+    let why = "Selecciona el inicio de la ligadura de unión";
+    let refused = |category, command, changed, after: &str| {
+        refusal(category, command, changed, "Partitura actualizada", after)
+    };
+    assert_eq!(
+        refused(Category::Expression, id::TIE, false, why),
+        Some(why.to_string())
+    );
+    // An edit that went through, or a command that said nothing new.
+    assert_eq!(refused(Category::Expression, id::TIE, true, why), None);
+    assert_eq!(
+        refused(
+            Category::Expression,
+            id::TIE,
+            false,
+            "Partitura actualizada"
+        ),
+        None
+    );
+    // Playback, review and copying only report.
+    assert_eq!(
+        refused(Category::Playback, id::PLAY, false, "Reproduciendo"),
+        None
+    );
+    assert_eq!(
+        refused(Category::Review, id::CHECK_SCORE, false, "Sin avisos"),
+        None
+    );
+    assert_eq!(
+        refused(Category::Edit, id::COPY, false, "Copiados 4 elementos"),
+        None
+    );
+}
+
+#[test]
+fn view_follows_only_calls_that_move_the_selection() {
+    let mut host = EditorHost(violin());
+    let registry = Registry::builtin();
+    let call = |host: &mut EditorHost, call| {
+        let before = Selected::of(&host.0);
+        dispatch(host, &registry, call).unwrap();
+        follows_agent(false, &before, &Selected::of(&host.0))
+    };
+    assert!(!call(&mut host, ToolCall::Resumen));
+    assert!(!call(
+        &mut host,
+        ToolCall::Leer(LeerArgs {
+            partes: None,
+            desde: 1,
+            hasta: 3,
+        })
+    ));
+    let first = Position {
+        parte: "1".into(),
+        compas: 1,
+        tiempo: 1.,
+        pentagrama: None,
+        voz: None,
+    };
+    assert!(call(
+        &mut host,
+        ToolCall::Seleccionar(SeleccionarArgs {
+            desde: first,
+            hasta: None,
+        })
+    ));
+    assert!(call(
+        &mut host,
+        ToolCall::Escribir(EscribirArgs {
+            parte: "1".into(),
+            pentagrama: None,
+            voz: None,
+            desde_compas: 2,
+            compases: vec!["G4:1".into()],
+        })
+    ));
+    // A reveal already due is kept.
+    let here = Selected::of(&host.0);
+    assert!(follows_agent(true, &here, &here));
 }

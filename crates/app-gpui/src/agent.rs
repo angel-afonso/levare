@@ -14,8 +14,8 @@ use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::stream;
 use gpui::{Context, Task, Window};
-use score_core::{Accidental, BarMarkRef, Duration, MarkRef};
-use score_edit::{Editor, HistoryMark};
+use score_core::{Accidental, BarMarkRef, Duration, ElementId, MarkRef, Score};
+use score_edit::{Cursor, Editor, HistoryMark};
 use score_keymap::{Category, CommandId, Registry};
 
 use crate::AppView;
@@ -31,11 +31,51 @@ const STOPPED: &str = "Agente detenido · ⌘Z deshace lo que llegó a hacer";
 const NO_TURN: &str = "El turno ya terminó: Levare no aplica más cambios hasta el próximo mensaje.";
 const BUSY: &str = "Levare está ocupado con un diálogo; vuelve a intentarlo en un momento.";
 const NO_FOLDER: &str = "No se encontró la carpeta de datos de Levare para el agente.";
+const MODAL: &str = "Levare tiene abierta una ventana del usuario (preferencias o selector de instrumentos) que no deja ejecutar comandos; pídele que la cierre.";
 
 /// Whether a command of `category` reaches the user's score: during the
 /// agent's turn only playback and the view do.
 pub fn user_may_run(category: Category, turn_active: bool) -> bool {
     !turn_active || matches!(category, Category::Playback | Category::View)
+}
+
+/// Where the selection and the cursor are, to tell whether a tool call moved
+/// them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Selected {
+    ids: Vec<ElementId>,
+    cursor: Cursor,
+}
+
+impl Selected {
+    pub fn of(editor: &Editor) -> Self {
+        Self {
+            ids: editor.selected_ids(),
+            cursor: editor.cursor(),
+        }
+    }
+}
+
+/// Whether the score view follows the agent after one tool call: when the
+/// call moved the selection, or a reveal was already due. Read-only calls
+/// leave the user's scrolling alone.
+pub fn follows_agent(due: bool, before: &Selected, after: &Selected) -> bool {
+    due || before != after
+}
+
+/// What the agent hears when a command it ran changed nothing it can see:
+/// the status the command left, which says why. Playback and review
+/// commands, and copying, only report, so their status is no refusal.
+pub fn refusal(
+    category: Category,
+    command: CommandId,
+    changed: bool,
+    status_before: &str,
+    status_after: &str,
+) -> Option<String> {
+    let reports = matches!(category, Category::Playback | Category::Review)
+        || command == score_keymap::id::COPY;
+    (!changed && !reports && status_after != status_before).then(|| status_after.to_string())
 }
 
 /// One turn of the agent: everything it does between `start` and `finish`
@@ -203,6 +243,45 @@ enum Incoming {
     Closed,
 }
 
+/// What a command may change that the agent can tell apart: the score, the
+/// selection and the note-entry state.
+struct Seen {
+    score: Score,
+    selected: Selected,
+    note_entry: bool,
+    chord_entry: bool,
+    entry_accidental: Option<Accidental>,
+    duration: Duration,
+    octave: u8,
+}
+
+impl Seen {
+    fn of(view: &AppView) -> Self {
+        let editor = &view.document.editor;
+        Self {
+            score: editor.score().clone(),
+            selected: Selected::of(editor),
+            note_entry: view.ui.note_entry,
+            chord_entry: view.chord_entry,
+            entry_accidental: view.entry_accidental,
+            duration: editor.duration,
+            octave: editor.octave,
+        }
+    }
+
+    /// Whether `view` still shows this, without copying its score again.
+    fn still(&self, view: &AppView) -> bool {
+        let editor = &view.document.editor;
+        *editor.score() == self.score
+            && Selected::of(editor) == self.selected
+            && view.ui.note_entry == self.note_entry
+            && view.chord_entry == self.chord_entry
+            && view.entry_accidental == self.entry_accidental
+            && editor.duration == self.duration
+            && editor.octave == self.octave
+    }
+}
+
 /// The tools' view of the app while one call runs. Commands go through
 /// `AppView::run` as a shortcut would, past the lock.
 struct AgentHost<'a, 'b> {
@@ -220,20 +299,40 @@ impl agent_tools::Host for AgentHost<'_, '_> {
         &mut self.view.document.editor
     }
 
+    /// `AppView::run` refuses through the status line; a refusal comes back
+    /// as the error, so the agent learns why nothing changed.
     fn run(&mut self, command: CommandId) -> Result<(), String> {
         let registry = Rc::clone(&self.view.agent.registry);
-        if !agent_tools::allowed_commands(&registry)
-            .iter()
-            .any(|spec| spec.id == command)
-        {
+        let Some(spec) = agent_tools::allowed_commands(&registry)
+            .into_iter()
+            .find(|spec| spec.id == command)
+        else {
             return Err(format!(
                 "El comando «{command}» no está disponible para el agente."
             ));
+        };
+        let view = &mut *self.view;
+        if view.busy || view.confirming {
+            return Err(BUSY.into());
         }
-        self.view.agent_acting = true;
-        self.view.run(command, self.window, self.cx);
-        self.view.agent_acting = false;
-        Ok(())
+        if view.instrument_picker.is_some() || view.preferences.is_some() {
+            return Err(MODAL.into());
+        }
+        let before = Seen::of(view);
+        // Emptied, so a refusal repeated word for word still counts as new.
+        let status = std::mem::take(&mut view.status);
+        view.agent_acting = true;
+        view.run(command, self.window, self.cx);
+        view.agent_acting = false;
+        let changed = !before.still(view);
+        let refused = refusal(spec.category, command, changed, "", &view.status);
+        if view.status.is_empty() {
+            view.status = status;
+        }
+        match refused {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
     }
 }
 
@@ -626,6 +725,7 @@ impl AppView {
             Err(BUSY.to_string())
         } else {
             let registry = Rc::clone(&self.agent.registry);
+            let (due, before) = (self.reveal_selection, Selected::of(&self.document.editor));
             let result = agent_tools::dispatch(
                 &mut AgentHost {
                     view: self,
@@ -635,6 +735,10 @@ impl AppView {
                 &registry,
                 invocation.call,
             );
+            // Every call that moved the selection shows it, whether it went
+            // through a command or straight to the editor.
+            self.reveal_selection =
+                follows_agent(due, &before, &Selected::of(&self.document.editor));
             self.sync_quit_snapshot();
             cx.notify();
             result

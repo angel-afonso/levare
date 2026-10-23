@@ -129,6 +129,9 @@ impl AppView {
     }
 
     pub(crate) fn open_go_to_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let field = cx.new(|cx| ui::text_input::TextInput::new("", cx));
         field.focus_handle(cx).focus(window);
         self.go_to_bar = Some(field);

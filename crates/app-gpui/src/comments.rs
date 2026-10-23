@@ -75,6 +75,9 @@ impl AppView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         self.show_review();
         self.comments.open = true;
         match ui::CommentEditor::new(
@@ -198,7 +201,9 @@ impl AppView {
         self.comments.open = true;
         self.comments.active = Some(id);
         if self.document.editor.select_comment(id) {
-            self.playback.stop();
+            if !self.agent_acting {
+                self.playback.stop();
+            }
             self.note_drag = None;
             self.mark_drag = None;
             self.selection_drag = None;

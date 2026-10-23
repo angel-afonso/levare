@@ -63,7 +63,9 @@ impl AppView {
             .and_then(|item| decode_item(&item));
         match clip.and_then(|clip| self.document.editor.paste(&clip).map_err(|e| e.to_string())) {
             Ok(count) => {
-                self.playback.stop();
+                if !self.agent_acting {
+                    self.playback.stop();
+                }
                 self.pending_slur = None;
                 self.pending_hairpin = None;
                 self.reveal_selection = true;

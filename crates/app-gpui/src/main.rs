@@ -826,7 +826,9 @@ impl AppView {
                         | Command::SaveComment { .. }
                         | Command::SetCommentResolved(..)
                         | Command::RemoveComment(_)
-                ) {
+                ) && !self.agent_acting
+                {
+                    // The agent's edits leave the user's playback running.
                     self.playback.stop();
                 }
                 if let Some(tick) = tempo_tick {
@@ -834,25 +836,27 @@ impl AppView {
                 }
 
                 self.reveal_selection = true;
-                if matches!(
-                    command,
-                    Command::Insert(_)
-                        | Command::Write(_)
-                        | Command::WriteAt { .. }
-                        | Command::ReplacePitch(_)
-                        | Command::Transpose(_)
-                        | Command::AddPitch(_)
-                        | Command::RemoveHighestPitch
-                        | Command::SetAccidental(_)
-                        | Command::SetKeySignature(_)
-                        | Command::SetKeySignatureAt(_, _)
-                        | Command::RemoveKeyChange(_)
-                        | Command::SetTechnique(_)
-                        | Command::SetDynamic(_)
-                        | Command::SetArticulation(_)
-                        | Command::ToggleMark(_)
-                        | Command::SetArpeggioBothHands(_)
-                ) && let Some(id) = self.document.editor.selection()
+                if !self.agent_acting
+                    && matches!(
+                        command,
+                        Command::Insert(_)
+                            | Command::Write(_)
+                            | Command::WriteAt { .. }
+                            | Command::ReplacePitch(_)
+                            | Command::Transpose(_)
+                            | Command::AddPitch(_)
+                            | Command::RemoveHighestPitch
+                            | Command::SetAccidental(_)
+                            | Command::SetKeySignature(_)
+                            | Command::SetKeySignatureAt(_, _)
+                            | Command::RemoveKeyChange(_)
+                            | Command::SetTechnique(_)
+                            | Command::SetDynamic(_)
+                            | Command::SetArticulation(_)
+                            | Command::ToggleMark(_)
+                            | Command::SetArpeggioBothHands(_)
+                    )
+                    && let Some(id) = self.document.editor.selection()
                     && self
                         .document
                         .editor
@@ -2018,7 +2022,8 @@ impl AppView {
     }
 
     fn audition_selection(&mut self) {
-        if self.playback.is_playing() {
+        // The agent's moves are silent.
+        if self.playback.is_playing() || self.agent_acting {
             return;
         }
         let now = Instant::now();
@@ -2143,6 +2148,9 @@ impl AppView {
     }
 
     fn open_preferences(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         self.preferences = Some(ui::Preferences::default());
         self.playback.stop();
         cx.notify();

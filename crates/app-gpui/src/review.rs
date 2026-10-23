@@ -179,7 +179,9 @@ impl AppView {
         else {
             return;
         };
-        self.playback.stop();
+        if !self.agent_acting {
+            self.playback.stop();
+        }
         self.note_drag = None;
         self.mark_drag = None;
         self.selection_drag = None;
@@ -212,6 +214,9 @@ impl AppView {
     }
 
     pub(super) fn open_range_editor(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         self.show_review();
         let part = self
             .document
