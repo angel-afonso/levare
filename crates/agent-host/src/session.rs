@@ -20,10 +20,16 @@ use futures::channel::oneshot;
 use tokio::task::AbortHandle;
 
 use crate::agents::{LaunchCommand, NO_LEVARE_TOOLS};
+use crate::calls::{self, Calls, Described};
 use crate::{McpServer, Runtime};
 
 pub(crate) const BUSY: &str = "Espera a que termine la petición actual.";
 const CLOSED: &str = "El agente se cerró.";
+pub(crate) const NO_START: &str = "El agente no respondió al arrancar en 2 minutos. \
+                                   Vuelve a enviar el mensaje para intentarlo otra vez.";
+/// How long the agent may take to answer `initialize` and `session/new`:
+/// the first run downloads the adapter through npx, which can be slow.
+const START_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// What the agent's session reports, in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,8 +51,9 @@ pub enum AgentEvent {
     },
     /// The prompt in flight finished, normally or cancelled.
     TurnEnded,
-    /// The raw text of a failure, for [`crate::explain_error`]. The session
-    /// is over when the event stream ends after it.
+    /// The raw text of a failure, for [`crate::explain_error`]. It ends the
+    /// prompt in flight, if any, as `TurnEnded` would; the session is over
+    /// when the event stream ends after it.
     Failed(String),
 }
 
@@ -122,7 +129,7 @@ pub fn start_session(
         url: mcp.url.clone(),
         token: mcp.token.clone(),
     };
-    spawn_session(rt, agent, cwd, endpoint)
+    spawn_session(rt, agent, cwd, endpoint, START_TIMEOUT)
 }
 
 /// [`start_session`] over any transport to an agent.
@@ -131,11 +138,13 @@ pub(crate) fn spawn_session(
     agent: impl ConnectTo<Client>,
     cwd: PathBuf,
     mcp: McpEndpoint,
+    start_timeout: Duration,
 ) -> (SessionHandle, UnboundedReceiver<AgentEvent>) {
     let (commands, received) = mpsc::unbounded();
     let (events, stream) = mpsc::unbounded();
     let task = rt.handle().spawn(async move {
-        let failure = match run(agent, cwd, mcp, received, events.clone()).await {
+        let started = run(agent, cwd, mcp, start_timeout, received, events.clone());
+        let failure = match started.await {
             Ok(Ended::Done) => return,
             Ok(Ended::Closed) => CLOSED.to_string(),
             Err(error) => describe(&error),
@@ -183,10 +192,13 @@ async fn run(
     agent: impl ConnectTo<Client>,
     cwd: PathBuf,
     mcp: McpEndpoint,
+    start_timeout: Duration,
     commands: UnboundedReceiver<Command>,
     events: UnboundedSender<AgentEvent>,
 ) -> Result<Ended, acp::Error> {
     let permissions = SharedPermissions::default();
+    // Updates and permission requests may leave out what a call was opened with.
+    let calls = Arc::new(Mutex::new(Calls::default()));
     let (error, transport_error) = oneshot::channel();
     let transport = Watched {
         transport: agent,
@@ -197,10 +209,10 @@ async fn run(
         .on_receive_notification(
             {
                 let events = events.clone();
-                // Updates to a call may leave its title out.
-                let mut titles = HashMap::<String, String>::new();
+                let calls = calls.clone();
                 async move |notification: SessionNotification, _cx: ConnectionTo<Agent>| {
-                    if let Some(event) = event_for(notification.update, &mut titles) {
+                    let event = event_for(notification.update, &mut calls.lock().unwrap());
+                    if let Some(event) = event {
                         let _ = events.unbounded_send(event);
                     }
                     Ok(())
@@ -212,10 +224,29 @@ async fn run(
             {
                 let events = events.clone();
                 let permissions = permissions.clone();
+                let calls = calls.clone();
                 // Kept for the user to answer; returning frees the dispatch loop.
                 async move |request: RequestPermissionRequest,
                             responder: Responder<RequestPermissionResponse>,
                             _cx: ConnectionTo<Agent>| {
+                    let (allowed, title) = {
+                        let calls = calls.lock().unwrap();
+                        let call = &request.tool_call;
+                        let title = call.fields.title.clone().or_else(|| {
+                            calls
+                                .title(&call.tool_call_id.to_string())
+                                .map(String::from)
+                        });
+                        (calls::auto_answer(&calls, &request), title)
+                    };
+                    // The user asked for the edits: Levare's own tools run
+                    // without a card.
+                    if let Some(option) = allowed {
+                        let outcome = RequestPermissionOutcome::Selected(
+                            SelectedPermissionOutcome::new(option),
+                        );
+                        return responder.respond(RequestPermissionResponse::new(outcome));
+                    }
                     let id = {
                         let mut permissions = permissions.lock().unwrap();
                         let id = permissions.next;
@@ -230,7 +261,7 @@ async fn run(
                         .collect();
                     let _ = events.unbounded_send(AgentEvent::Permission {
                         request: id,
-                        title: request.tool_call.fields.title.unwrap_or_default(),
+                        title: title.unwrap_or_default(),
                         options,
                     });
                     Ok(())
@@ -239,7 +270,16 @@ async fn run(
             acp::on_receive_request!(),
         )
         .connect_with(transport, async move |cx: ConnectionTo<Agent>| {
-            let ended = drive(&cx, cwd, mcp, commands, &events, &permissions).await;
+            let ended = drive(
+                &cx,
+                cwd,
+                mcp,
+                start_timeout,
+                commands,
+                &events,
+                &permissions,
+            )
+            .await;
             let closed = match &ended {
                 Ok(Ended::Done) => false,
                 Ok(Ended::Closed) => true,
@@ -291,23 +331,39 @@ async fn drive(
     cx: &ConnectionTo<Agent>,
     cwd: PathBuf,
     mcp: McpEndpoint,
+    start_timeout: Duration,
     mut commands: UnboundedReceiver<Command>,
     events: &UnboundedSender<AgentEvent>,
     permissions: &SharedPermissions,
 ) -> Result<Ended, acp::Error> {
+    // A start that never answers fails, and dropping the connection ends
+    // the process.
+    let no_start = || {
+        let _ = events.unbounded_send(AgentEvent::Failed(NO_START.into()));
+        Ok(Ended::Done)
+    };
     let initialize = InitializeRequest::new(ProtocolVersion::V1)
         .client_info(Implementation::new("levare", env!("CARGO_PKG_VERSION")));
-    let agent = cx.send_request(initialize).block_task().await?;
-    if !agent.agent_capabilities.mcp_capabilities.http {
+    let initialized =
+        tokio::time::timeout(start_timeout, cx.send_request(initialize).block_task()).await;
+    let Ok(agent) = initialized else {
+        return no_start();
+    };
+    if !agent?.agent_capabilities.mcp_capabilities.http {
         let _ = events.unbounded_send(AgentEvent::Failed(NO_LEVARE_TOOLS.into()));
         return Ok(Ended::Done);
     }
-    let levare = McpServerHttp::new("levare", mcp.url).headers(vec![HttpHeader::new(
+    let levare = McpServerHttp::new(calls::SERVER, mcp.url).headers(vec![HttpHeader::new(
         "Authorization",
         format!("Bearer {}", mcp.token),
     )]);
     let new_session = NewSessionRequest::new(cwd).mcp_servers(vec![AcpMcpServer::Http(levare)]);
-    let session = cx.send_request(new_session).block_task().await?.session_id;
+    let opened =
+        tokio::time::timeout(start_timeout, cx.send_request(new_session).block_task()).await;
+    let Ok(opened) = opened else {
+        return no_start();
+    };
+    let session = opened?.session_id;
 
     let mut turn = None;
     let mut closed = pin!(cx.incoming_closed());
@@ -356,8 +412,9 @@ async fn drive(
     }
 }
 
-/// The event for a session update; thoughts and the rest are left out.
-fn event_for(update: SessionUpdate, titles: &mut HashMap<String, String>) -> Option<AgentEvent> {
+/// The event for a session update; thoughts, reviews of Levare's calls
+/// and the rest are left out.
+fn event_for(update: SessionUpdate, calls: &mut Calls) -> Option<AgentEvent> {
     let done = |status| matches!(status, ToolCallStatus::Completed | ToolCallStatus::Failed);
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
@@ -366,22 +423,16 @@ fn event_for(update: SessionUpdate, titles: &mut HashMap<String, String>) -> Opt
         },
         SessionUpdate::ToolCall(call) => {
             let id = call.tool_call_id.to_string();
-            titles.insert(id.clone(), call.title.clone());
+            let title = calls.report(&id, Described::call(&call))?;
             Some(AgentEvent::Tool {
                 id,
-                title: call.title,
+                title,
                 done: done(call.status),
             })
         }
         SessionUpdate::ToolCallUpdate(update) => {
             let id = update.tool_call_id.to_string();
-            let title = match update.fields.title {
-                Some(title) => {
-                    titles.insert(id.clone(), title.clone());
-                    title
-                }
-                None => titles.get(&id).cloned().unwrap_or_default(),
-            };
+            let title = calls.report(&id, Described::update(&update))?;
             Some(AgentEvent::Tool {
                 id,
                 title,

@@ -4,6 +4,9 @@
 mod agents;
 #[cfg(test)]
 mod agents_tests;
+mod calls;
+#[cfg(test)]
+mod calls_tests;
 mod mcp;
 mod runtime;
 mod schema;

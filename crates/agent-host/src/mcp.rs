@@ -12,6 +12,7 @@ use futures::channel::{mpsc, oneshot};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
+    ToolAnnotations,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -148,9 +149,17 @@ impl ServerHandler for LevareTools {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        // Read-only tools tell the agent it may run them without asking.
         let tools = agent_tools::tool_descriptions()
             .into_iter()
-            .map(|(name, description)| Tool::new(name, description, input_schema(name)))
+            .map(|(name, description)| {
+                let tool = Tool::new(name, description, input_schema(name));
+                if agent_tools::READ_ONLY_TOOLS.contains(&name) {
+                    tool.annotate(ToolAnnotations::new().read_only(true))
+                } else {
+                    tool
+                }
+            })
             .collect();
         Ok(ListToolsResult::with_all_items(tools))
     }

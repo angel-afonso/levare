@@ -13,7 +13,6 @@ fn all_tools() -> ResolvedTools {
         npx: Some("/opt/homebrew/bin/npx".into()),
         node: Some("/opt/homebrew/bin/node".into()),
         claude: Some("/Users/ana/.local/bin/claude".into()),
-        codex: Some("/opt/homebrew/bin/codex".into()),
         gemini: Some("/opt/homebrew/bin/gemini".into()),
     }
 }
@@ -46,7 +45,8 @@ fn resolve_finds_executables_on_path() {
     // Not executable, so the one further on is taken.
     file(&first.path().join("claude"), 0o644);
     file(&second.path().join("claude"), 0o755);
-    fs::create_dir(first.path().join("codex")).unwrap();
+    // A folder named like a tool is not the tool.
+    fs::create_dir(first.path().join("gemini")).unwrap();
     file(&second.path().join("gemini-real"), 0o755);
     std::os::unix::fs::symlink(
         second.path().join("gemini-real"),
@@ -66,7 +66,6 @@ fn resolve_finds_executables_on_path() {
     assert_eq!(tools.npx, Some(first.path().join("npx")));
     assert_eq!(tools.node, Some(first.path().join("node")));
     assert_eq!(tools.claude, Some(second.path().join("claude")));
-    assert_eq!(tools.codex, None);
     assert_eq!(tools.gemini, Some(second.path().join("gemini")));
 }
 
@@ -137,20 +136,15 @@ fn launch_runs_adapters_through_npx() {
         ["-y", "@agentclientprotocol/claude-agent-acp@0.94.0"]
     );
 
+    // The adapter runs the Codex it bundles, so the user's own `codex` is
+    // neither needed nor passed.
     let codex = launch_command(AgentKind::Codex, &all_tools()).unwrap();
+    assert_eq!(codex.program, PathBuf::from("/opt/homebrew/bin/npx"));
     assert_eq!(codex.args, ["-y", "@agentclientprotocol/codex-acp@2.2.2"]);
-    assert!(
-        codex
-            .env
-            .contains(&("CODEX_PATH".into(), "/opt/homebrew/bin/codex".into()))
+    assert_eq!(
+        codex.env,
+        [("PATH".to_string(), "/opt/homebrew/bin:/usr/bin".to_string())]
     );
-
-    let without_codex = ResolvedTools {
-        codex: None,
-        ..all_tools()
-    };
-    let error = launch_command(AgentKind::Codex, &without_codex).unwrap_err();
-    assert!(error.contains("codex"), "{error}");
 
     let without_node = ResolvedTools {
         node: None,

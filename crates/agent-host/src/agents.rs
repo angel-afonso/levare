@@ -72,7 +72,6 @@ pub struct ResolvedTools {
     pub npx: Option<PathBuf>,
     pub node: Option<PathBuf>,
     pub claude: Option<PathBuf>,
-    pub codex: Option<PathBuf>,
     pub gemini: Option<PathBuf>,
 }
 
@@ -105,7 +104,6 @@ pub fn resolve_tools(path_env: &str, from_shell: bool) -> ResolvedTools {
         npx: find("npx"),
         node: find("node"),
         claude: find("claude"),
-        codex: find("codex"),
         gemini: find("gemini"),
     }
 }
@@ -199,7 +197,7 @@ pub struct LaunchCommand {
 /// The command for `kind`, or what is missing to run it.
 pub fn launch_command(kind: AgentKind, tools: &ResolvedTools) -> Result<LaunchCommand, String> {
     let mut missing = Vec::new();
-    let mut env = vec![("PATH".to_string(), tools.path_env.clone())];
+    let env = vec![("PATH".to_string(), tools.path_env.clone())];
     let (program, args) = match kind {
         AgentKind::Claude => {
             let npx = require_npx(tools, &mut missing);
@@ -209,10 +207,10 @@ pub fn launch_command(kind: AgentKind, tools: &ResolvedTools) -> Result<LaunchCo
                 vec!["-y", "@agentclientprotocol/claude-agent-acp@0.94.0"],
             )
         }
+        // The adapter runs the Codex it bundles: the user's own may be too
+        // old for the model their account picks.
         AgentKind::Codex => {
             let npx = require_npx(tools, &mut missing);
-            let codex = require(&tools.codex, "codex", "Codex", &mut missing);
-            env.push(("CODEX_PATH".into(), codex.display().to_string()));
             (npx, vec!["-y", "@agentclientprotocol/codex-acp@2.2.2"])
         }
         AgentKind::Gemini => {

@@ -48,6 +48,17 @@ async fn lists_levare_tools() {
         .map(|(name, _)| name)
         .collect();
     assert_eq!(names, expected);
+    let read_only: Vec<&str> = tools
+        .iter()
+        .filter(|tool| {
+            tool.annotations
+                .as_ref()
+                .and_then(|annotations| annotations.read_only_hint)
+                == Some(true)
+        })
+        .map(|tool| tool.name.as_ref())
+        .collect();
+    assert_eq!(read_only, ["resumen", "leer", "seleccionar", "comandos"]);
     for tool in &tools {
         assert_eq!(
             tool.input_schema.get("type"),

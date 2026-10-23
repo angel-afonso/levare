@@ -13,7 +13,7 @@ use futures::StreamExt;
 use futures::channel::mpsc;
 
 use super::*;
-use crate::session::{BUSY, McpEndpoint, spawn_session};
+use crate::session::{BUSY, McpEndpoint, NO_START, spawn_session};
 
 const SESSION: &str = "sesion-1";
 
@@ -27,7 +27,9 @@ fn text(text: &str) -> ContentChunk {
 
 /// An in-process ACP agent. A prompt `hola` answers with a thought, a
 /// message and a tool call; `permiso` asks for permission first and
-/// reports what was chosen. Every `session/new` is sent to `sessions`.
+/// reports what was chosen, `levare` does the same for a Levare tool, and
+/// `sin título` for a call it opened before and names by id only. Every
+/// `session/new` is sent to `sessions`.
 fn fake_agent(
     http: bool,
     sessions: mpsc::UnboundedSender<NewSessionRequest>,
@@ -63,15 +65,28 @@ fn fake_agent(
                 let ContentBlock::Text(prompt) = &request.prompt[0] else {
                     unreachable!()
                 };
-                if prompt.text == "permiso" {
+                let asked = match prompt.text.as_str() {
+                    "permiso" => Some(("t2", Some("Escribir compases"))),
+                    "levare" => Some(("t3", Some("mcp.levare.escribir"))),
+                    "sin título" => {
+                        update(
+                            &cx,
+                            SessionUpdate::ToolCall(ToolCall::new("t4", "Editar notas.txt")),
+                        )?;
+                        Some(("t4", None))
+                    }
+                    _ => None,
+                };
+                if let Some((id, title)) = asked {
                     // Waiting for the answer must not hold the dispatch loop.
                     cx.spawn({
                         let cx = cx.clone();
                         async move {
-                            let tool = ToolCallUpdate::new(
-                                "t2",
-                                ToolCallUpdateFields::new().title("Escribir compases".to_string()),
-                            );
+                            let mut fields = ToolCallUpdateFields::new();
+                            if let Some(title) = title {
+                                fields = fields.title(title.to_string());
+                            }
+                            let tool = ToolCallUpdate::new(id, fields);
                             let options = vec![
                                 PermissionOption::new(
                                     "si",
@@ -132,6 +147,9 @@ fn fake_agent(
         )
 }
 
+/// A start timeout no test reaches.
+const SLOW: Duration = Duration::from_secs(60);
+
 fn endpoint() -> McpEndpoint {
     McpEndpoint {
         url: "http://127.0.0.1:9/mcp".into(),
@@ -153,7 +171,8 @@ fn cwd() -> PathBuf {
 fn prompt_streams_messages_and_tools_then_ends_the_turn() {
     let rt = Runtime::new().unwrap();
     let (sessions, mut opened) = mpsc::unbounded();
-    let (session, mut events) = spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint());
+    let (session, mut events) =
+        spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint(), SLOW);
 
     session.prompt("hola".into());
 
@@ -189,7 +208,8 @@ fn prompt_streams_messages_and_tools_then_ends_the_turn() {
 fn permission_round_trip() {
     let rt = Runtime::new().unwrap();
     let (sessions, _opened) = mpsc::unbounded();
-    let (session, mut events) = spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint());
+    let (session, mut events) =
+        spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint(), SLOW);
 
     session.prompt("permiso".into());
     let Some(AgentEvent::Permission {
@@ -228,7 +248,8 @@ fn permission_round_trip() {
 fn cancel_answers_pending_permission_and_ends_the_turn() {
     let rt = Runtime::new().unwrap();
     let (sessions, _opened) = mpsc::unbounded();
-    let (session, mut events) = spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint());
+    let (session, mut events) =
+        spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint(), SLOW);
 
     session.prompt("permiso".into());
     assert!(matches!(
@@ -250,7 +271,8 @@ fn cancel_answers_pending_permission_and_ends_the_turn() {
 fn agent_without_http_mcp_fails() {
     let rt = Runtime::new().unwrap();
     let (sessions, _opened) = mpsc::unbounded();
-    let (_session, mut events) = spawn_session(&rt, fake_agent(false, sessions), cwd(), endpoint());
+    let (_session, mut events) =
+        spawn_session(&rt, fake_agent(false, sessions), cwd(), endpoint(), SLOW);
 
     let Some(AgentEvent::Failed(raw)) = next(&rt, &mut events) else {
         panic!("expected a failure")
@@ -375,5 +397,98 @@ fn dropping_the_handle_ends_the_session_and_the_process() {
     while running() {
         assert!(dropped.elapsed() < Duration::from_secs(5), "still running");
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn levare_tool_permission_is_answered_without_the_user() {
+    let rt = Runtime::new().unwrap();
+    let (sessions, _opened) = mpsc::unbounded();
+    let (session, mut events) =
+        spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint(), SLOW);
+
+    session.prompt("levare".into());
+    // «Permitir» is the option that allows once.
+    assert_eq!(
+        next(&rt, &mut events),
+        Some(AgentEvent::Message("elegiste si".into()))
+    );
+    assert_eq!(next(&rt, &mut events), Some(AgentEvent::TurnEnded));
+}
+
+#[test]
+fn permission_without_title_takes_the_calls() {
+    let rt = Runtime::new().unwrap();
+    let (sessions, _opened) = mpsc::unbounded();
+    let (session, mut events) =
+        spawn_session(&rt, fake_agent(true, sessions), cwd(), endpoint(), SLOW);
+
+    session.prompt("sin título".into());
+    assert!(matches!(
+        next(&rt, &mut events),
+        Some(AgentEvent::Tool { .. })
+    ));
+    let Some(AgentEvent::Permission { title, .. }) = next(&rt, &mut events) else {
+        panic!("expected a permission request")
+    };
+    assert_eq!(title, "Editar notas.txt");
+}
+
+/// An agent that answers `initialize` (or not) and never `session/new`.
+fn stuck_agent(initializes: bool) -> impl ConnectTo<Client> {
+    Agent
+        .builder()
+        .on_receive_request(
+            async move |_request: InitializeRequest,
+                        responder: Responder<InitializeResponse>,
+                        cx: ConnectionTo<Client>| {
+                if !initializes {
+                    // Held, unanswered, while the connection lives.
+                    return cx.spawn(async move {
+                        futures::future::pending::<()>().await;
+                        drop(responder);
+                        Ok(())
+                    });
+                }
+                responder.respond(
+                    InitializeResponse::new(acp::schema::ProtocolVersion::V1).agent_capabilities(
+                        AgentCapabilities::new()
+                            .mcp_capabilities(McpCapabilities::new().http(true)),
+                    ),
+                )
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_request: NewSessionRequest,
+                        responder: Responder<NewSessionResponse>,
+                        cx: ConnectionTo<Client>| {
+                cx.spawn(async move {
+                    futures::future::pending::<()>().await;
+                    drop(responder);
+                    Ok(())
+                })
+            },
+            acp::on_receive_request!(),
+        )
+}
+
+#[test]
+fn start_that_never_answers_fails() {
+    let rt = Runtime::new().unwrap();
+    for initializes in [false, true] {
+        let (_session, mut events) = spawn_session(
+            &rt,
+            stuck_agent(initializes),
+            cwd(),
+            endpoint(),
+            Duration::from_millis(200),
+        );
+        assert_eq!(
+            next(&rt, &mut events),
+            Some(AgentEvent::Failed(NO_START.into())),
+            "initializes: {initializes}"
+        );
+        assert_eq!(next(&rt, &mut events), None);
     }
 }
