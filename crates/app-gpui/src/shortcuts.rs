@@ -398,6 +398,7 @@ impl Shortcuts {
                     Some(id::FULL_SCREEN),
                     Some(id::TOGGLE_INSTRUMENTS_PANEL),
                     Some(id::TOGGLE_INSPECTOR),
+                    Some(id::TOGGLE_AGENT_PANEL),
                 ]),
             },
         ]

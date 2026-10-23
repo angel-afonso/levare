@@ -282,6 +282,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘U` | Pantalla completa |  |
 | Sin atajo | Mostrar u ocultar instrumentos |  |
 | Sin atajo | Mostrar u ocultar propiedades |  |
+| Sin atajo | Panel de agente |  |
 | Sin atajo | Vista de página |  |
 | Sin atajo | Vista continua |  |
 | Sin atajo | Vista de pentagrama |  |

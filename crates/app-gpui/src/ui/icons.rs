@@ -20,6 +20,7 @@ pub enum Icon {
     HalfSpeed,
     LeftPanel,
     RightPanel,
+    Agent,
     Export,
     Clipboard,
     First,
@@ -212,6 +213,21 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                         11.
                     };
                     line(&[(x, 3.), (x, 15.)]);
+                }
+                Icon::Agent => {
+                    // A speech bubble: the conversation with the agent.
+                    line(&[
+                        (2., 3.),
+                        (16., 3.),
+                        (16., 12.),
+                        (8., 12.),
+                        (4., 15.5),
+                        (4., 12.),
+                        (2., 12.),
+                        (2., 3.),
+                    ]);
+                    line(&[(5., 6.5), (13., 6.5)]);
+                    line(&[(5., 9.), (10., 9.)]);
                 }
                 Icon::Export => {
                     line(&[(9., 13.), (9., 1.), (5., 5.)]);

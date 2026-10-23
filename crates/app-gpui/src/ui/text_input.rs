@@ -76,6 +76,10 @@ impl TextInput {
         self.max_chars = max_chars;
         self
     }
+    pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
     pub fn value(&self) -> &str {
         &self.content
     }

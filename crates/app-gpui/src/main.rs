@@ -138,6 +138,8 @@ struct AppView {
     recent: score_io::RecentFiles,
     recent_path: Option<PathBuf>,
     agent: agent::AgentState,
+    /// The agent panel's message field.
+    agent_field: Entity<ui::text_input::TextInput>,
     /// Set while one of the agent's tool calls runs a command, which lets it
     /// past the lock that holds the user's input during the turn.
     agent_acting: bool,
@@ -326,6 +328,7 @@ impl AppView {
             recent,
             recent_path,
             agent: agent::AgentState::default(),
+            agent_field: ui::agent_panel::field(cx),
             agent_acting: false,
             _subscriptions: vec![interceptor, layout_change],
         }
@@ -1014,6 +1017,23 @@ impl AppView {
             cx.notify();
             return;
         }
+        if self.agent_field_focused(window, cx) {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    if !repeated {
+                        self.send_agent_field(window, cx);
+                    }
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    window.focus(&self.focus);
+                    cx.notify();
+                }
+                _ => {}
+            }
+            return;
+        }
         if self
             .go_to_bar
             .as_ref()
@@ -1306,10 +1326,12 @@ impl AppView {
                 .command_search
                 .as_ref()
                 .is_some_and(|search| search.focused(window, cx))
+            || self.agent_field_focused(window, cx)
         {
             // TextInput owns writing/navigation/clipboard keys while it has focus;
-            // the agent's commands are not keys.
-            if !self.agent_acting {
+            // the agent's commands are not keys, and the agent panel, which has
+            // no key, closes from the menu while its field is in use.
+            if !self.agent_acting && command != id::TOGGLE_AGENT_PANEL {
                 return;
             }
         }
@@ -1760,6 +1782,16 @@ impl AppView {
             id::TOGGLE_INSPECTOR => {
                 self.ui.show_inspector = !self.ui.show_inspector;
                 self.reveal_selection = true;
+            }
+            id::TOGGLE_AGENT_PANEL => {
+                self.ui.show_agent = !self.ui.show_agent;
+                self.reveal_selection = true;
+                if self.ui.show_agent {
+                    self.probe_agents(cx);
+                    self.agent_field.focus_handle(cx).focus(window);
+                } else if self.agent_field_focused(window, cx) {
+                    window.focus(&self.focus);
+                }
             }
             _ => self.status = format!("«{}» no está disponible en esta versión", spec.label),
         }
@@ -3220,6 +3252,10 @@ impl Render for AppView {
             0.
         } + if self.ui.show_inspector {
             ui::RIGHT_WIDTH
+        } else {
+            0.
+        } + if self.ui.show_agent {
+            ui::AGENT_WIDTH
         } else {
             0.
         };

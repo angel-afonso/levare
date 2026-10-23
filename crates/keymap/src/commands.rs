@@ -392,6 +392,7 @@ pub mod id {
         FULL_SCREEN = "vista.pantalla-completa";
         TOGGLE_INSTRUMENTS_PANEL = "vista.panel-instrumentos";
         TOGGLE_INSPECTOR = "vista.panel-propiedades";
+        TOGGLE_AGENT_PANEL = "vista.panel-agente";
         PAGE_VIEW = "vista.pagina";
         CONTINUOUS_VIEW = "vista.continua";
         SINGLE_SYSTEM_VIEW = "vista.pentagrama";
@@ -653,6 +654,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::FULL_SCREEN, C::View, "Pantalla completa", G, false, R),
     spec(id::TOGGLE_INSTRUMENTS_PANEL, C::View, "Mostrar u ocultar instrumentos", G, false, R),
     spec(id::TOGGLE_INSPECTOR, C::View, "Mostrar u ocultar propiedades", G, false, R),
+    spec(id::TOGGLE_AGENT_PANEL, C::View, "Panel de agente", G, false, R),
     spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, R),
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),

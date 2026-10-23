@@ -56,6 +56,7 @@ pub const EXCLUDED: &[CommandId] = &[
     id::SOUNDS,
     id::TOGGLE_INSTRUMENTS_PANEL,
     id::TOGGLE_INSPECTOR,
+    id::TOGGLE_AGENT_PANEL,
 ];
 
 /// Ready commands of the categories that change or walk the music.

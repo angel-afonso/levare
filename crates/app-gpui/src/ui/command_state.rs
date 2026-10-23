@@ -311,6 +311,7 @@ impl CommandStates for AppView {
                 CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
             }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
+            id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
             id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),
             id::TAB_NOTE_INPUT => {
                 CommandState::checked(self.ui.tab == score_toolbar::TabId::NoteInput)

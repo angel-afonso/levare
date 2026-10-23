@@ -1,4 +1,5 @@
-use crate::agent::{Selected, Turn, follows_agent, refusal, user_may_run};
+use crate::agent::{Entry, Log, Selected, Turn, follows_agent, refusal, user_may_run};
+use agent_host::{AgentEvent, AgentKind};
 use agent_tools::{EscribirArgs, Host, LeerArgs, Position, SeleccionarArgs, ToolCall, dispatch};
 use score_core::{Duration, ElementId, Event, Instrument, Pitch, Pitches, Score, Step};
 use score_edit::{Command, Editor};
@@ -225,4 +226,69 @@ fn view_follows_only_calls_that_move_the_selection() {
     // A reveal already due is kept.
     let here = Selected::of(&host.0);
     assert!(follows_agent(true, &here, &here));
+}
+
+fn tool(id: &str, title: &str, done: bool) -> AgentEvent {
+    AgentEvent::Tool {
+        id: id.into(),
+        title: title.into(),
+        done,
+    }
+}
+
+#[test]
+fn log_merges_message_chunks() {
+    let mut log = Log::default();
+    log.push(Entry::User("Pon un trino".into()));
+    log.apply(AgentKind::Claude, AgentEvent::Message("Hola ".into()));
+    log.apply(AgentKind::Claude, AgentEvent::Message("mundo".into()));
+    assert_eq!(
+        log.entries(),
+        [
+            Entry::User("Pon un trino".into()),
+            Entry::Agent("Hola mundo".into())
+        ]
+    );
+    // A tool call in between starts a new answer.
+    log.apply(AgentKind::Claude, tool("1", "leer", true));
+    log.apply(AgentKind::Claude, AgentEvent::Message("Listo".into()));
+    assert_eq!(log.entries().last(), Some(&Entry::Agent("Listo".into())));
+    assert_eq!(log.entries().len(), 4);
+}
+
+#[test]
+fn log_updates_tool_by_id() {
+    let mut log = Log::default();
+    log.apply(AgentKind::Codex, tool("1", "escribir", false));
+    log.apply(AgentKind::Codex, tool("2", "leer", false));
+    log.apply(AgentKind::Codex, tool("1", "", true));
+    assert_eq!(
+        log.entries(),
+        [
+            Entry::Tool {
+                id: "1".into(),
+                title: "escribir".into(),
+                done: true
+            },
+            Entry::Tool {
+                id: "2".into(),
+                title: "leer".into(),
+                done: false
+            }
+        ]
+    );
+}
+
+#[test]
+fn log_explains_failure() {
+    let mut log = Log::default();
+    log.apply(AgentKind::Codex, AgentEvent::TurnEnded);
+    log.apply(
+        AgentKind::Codex,
+        AgentEvent::Failed("Authentication required (-32000)".into()),
+    );
+    let [Entry::Error(text)] = log.entries() else {
+        panic!("{:?}", log.entries());
+    };
+    assert!(text.contains("`codex login`"), "{text}");
 }

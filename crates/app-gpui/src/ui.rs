@@ -1,5 +1,6 @@
 //! Native editor chrome. Pending controls are visibly marked «Pendiente»; score
 //! data and transport readouts always come from the current document/session.
+pub mod agent_panel;
 mod clef_picker;
 mod comments;
 pub use comments::CommentEditor;
@@ -40,10 +41,12 @@ use theme::*;
 pub use theme::{BG, TEXT};
 pub const LEFT_WIDTH: f32 = 240.;
 pub const RIGHT_WIDTH: f32 = 286.;
+pub const AGENT_WIDTH: f32 = 320.;
 
 pub struct UiState {
     pub show_instruments: bool,
     pub show_inspector: bool,
+    pub show_agent: bool,
     pub note_entry: bool,
     pub compact: bool,
     pub zoom: f32,
@@ -70,6 +73,7 @@ impl Default for UiState {
         Self {
             show_instruments: true,
             show_inspector: true,
+            show_agent: false,
             note_entry: true,
             compact: false,
             zoom: 0.7,
@@ -301,7 +305,10 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
                     row.child(instrument_panel::panel(view, cx))
                 })
                 .child(score_area(view, cx))
-                .when(view.ui.show_inspector, |row| row.child(inspector(view, cx))),
+                .when(view.ui.show_inspector, |row| row.child(inspector(view, cx)))
+                .when(view.ui.show_agent, |row| {
+                    row.child(agent_panel::panel(view, cx))
+                }),
         )
         .child(transport(view, cx))
         .child(statusbar(view))
@@ -435,6 +442,16 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                 },
             )
             .tooltip(command_hint(view, id::TOGGLE_INSPECTOR)),
+        )
+        .child(
+            icon_button(
+                "toggle-agent",
+                Icon::Agent,
+                view.ui.show_agent,
+                cx,
+                |v, window, cx| v.run(id::TOGGLE_AGENT_PANEL, window, cx),
+            )
+            .tooltip(command_hint(view, id::TOGGLE_AGENT_PANEL)),
         )
         .child(
             action(

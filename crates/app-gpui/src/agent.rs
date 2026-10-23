@@ -1,6 +1,7 @@
 //! The agent's turn over the open score: while it works the score is locked
 //! to the user, its tool calls run here on the UI thread, and everything it
 //! did folds into one undo step when the turn ends.
+use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
@@ -13,7 +14,7 @@ use agent_host::{
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::stream;
-use gpui::{Context, Task, Window};
+use gpui::{Context, ScrollHandle, Task, Window};
 use score_core::{Accidental, BarMarkRef, Duration, ElementId, MarkRef, Score};
 use score_edit::{Cursor, Editor, HistoryMark};
 use score_keymap::{Category, CommandId, Registry};
@@ -31,6 +32,8 @@ const STOPPED: &str = "Agente detenido · ⌘Z deshace lo que llegó a hacer";
 const NO_TURN: &str = "El turno ya terminó: Levare no aplica más cambios hasta el próximo mensaje.";
 const BUSY: &str = "Levare está ocupado con un diálogo; vuelve a intentarlo en un momento.";
 const NO_FOLDER: &str = "No se encontró la carpeta de datos de Levare para el agente.";
+const REFUSED: &str = "Rechazado";
+pub const UNANSWERED: &str = "Sin respuesta: el turno terminó";
 const MODAL: &str = "Levare tiene abierta una ventana del usuario (preferencias o selector de instrumentos) que no deja ejecutar comandos; pídele que la cierre.";
 
 /// Whether a command of `category` reaches the user's score: during the
@@ -101,13 +104,86 @@ impl Turn {
 
 /// One line of the conversation, in order, for the panel to show.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Said {
+pub enum Entry {
     User(String),
-    /// As the session reported it; consecutive message pieces are joined.
-    Agent(AgentEvent),
-    /// What Levare itself tells the user: why the agent could not start or
-    /// what went wrong, already explained.
-    Notice(String),
+    /// The agent's answer; consecutive message pieces are joined.
+    Agent(String),
+    Tool {
+        id: String,
+        title: String,
+        done: bool,
+    },
+    /// The agent asks before going on; `options` are `(id, label)`.
+    Permission {
+        request: u64,
+        title: String,
+        options: Vec<(String, String)>,
+    },
+    /// What Levare tells the user went wrong, already explained.
+    Error(String),
+}
+
+/// The conversation as the panel shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Log(Vec<Entry>);
+
+impl Log {
+    pub fn entries(&self) -> &[Entry] {
+        &self.0
+    }
+
+    pub fn push(&mut self, entry: Entry) {
+        self.0.push(entry);
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Adds what the session of a `kind` agent reported: message pieces join
+    /// the answer they continue, a tool call already shown is updated, and a
+    /// failure is explained.
+    pub fn apply(&mut self, kind: AgentKind, event: AgentEvent) {
+        match event {
+            AgentEvent::Message(more) => match self.0.last_mut() {
+                Some(Entry::Agent(text)) => text.push_str(&more),
+                _ => self.0.push(Entry::Agent(more)),
+            },
+            AgentEvent::Tool { id, title, done } => {
+                let shown = self.0.iter_mut().rev().find_map(|entry| match entry {
+                    Entry::Tool {
+                        id: shown,
+                        title,
+                        done,
+                    } if *shown == id => Some((title, done)),
+                    _ => None,
+                });
+                match shown {
+                    Some((shown_title, shown_done)) => {
+                        // Updates may leave the title out.
+                        if !title.is_empty() {
+                            *shown_title = title;
+                        }
+                        *shown_done = done;
+                    }
+                    None => self.0.push(Entry::Tool { id, title, done }),
+                }
+            }
+            AgentEvent::Permission {
+                request,
+                title,
+                options,
+            } => self.0.push(Entry::Permission {
+                request,
+                title,
+                options,
+            }),
+            AgentEvent::TurnEnded => {}
+            AgentEvent::Failed(raw) => self
+                .0
+                .push(Entry::Error(agent_host::explain_error(kind, &raw))),
+        }
+    }
 }
 
 /// The note-entry state the agent's commands may change; it goes back as
@@ -165,7 +241,11 @@ pub struct AgentState {
     /// What `probe` found, once it ran.
     pub tools: Option<ResolvedTools>,
     /// The conversation so far, for the agent panel to draw.
-    pub conversation: Vec<Said>,
+    pub log: Log,
+    /// What the user answered to each permission of `log`, by its index.
+    answers: HashMap<usize, String>,
+    /// The conversation's scroll, kept at its end as entries arrive.
+    pub scroll: ScrollHandle,
     turn: Option<Turn>,
     user: Option<UserContext>,
     session: Option<Session>,
@@ -187,7 +267,9 @@ impl Default for AgentState {
         Self {
             kind: AgentKind::Claude,
             tools: None,
-            conversation: Vec::new(),
+            log: Log::default(),
+            answers: HashMap::new(),
+            scroll: ScrollHandle::new(),
             turn: None,
             user: None,
             session: None,
@@ -213,16 +295,59 @@ impl AgentState {
         self.turn.is_none() && !self.stopping
     }
 
-    fn say(&mut self, said: Said) {
-        if let (
-            Some(Said::Agent(AgentEvent::Message(text))),
-            Said::Agent(AgentEvent::Message(more)),
-        ) = (self.conversation.last_mut(), &said)
-        {
-            text.push_str(more);
+    /// The answer the user gave to the permission at `index` of the log,
+    /// or why it got none.
+    pub fn answer(&self, index: usize) -> Option<&str> {
+        self.answers.get(&index).map(String::as_str)
+    }
+
+    fn say(&mut self, entry: Entry) {
+        self.log.push(entry);
+        self.scroll.scroll_to_bottom();
+    }
+
+    fn hear(&mut self, event: AgentEvent) {
+        self.log.apply(self.kind, event);
+        self.scroll.scroll_to_bottom();
+    }
+
+    /// Notes the answer to the latest unanswered permission `request`; its
+    /// card then shows it instead of the buttons.
+    fn record_answer(&mut self, request: u64, option_id: Option<&str>) {
+        let found = self
+            .log
+            .entries()
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, entry)| match entry {
+                Entry::Permission {
+                    request: asked,
+                    options,
+                    ..
+                } if *asked == request && !self.answers.contains_key(&index) => {
+                    Some((index, options))
+                }
+                _ => None,
+            });
+        let Some((index, options)) = found else {
             return;
+        };
+        let answer = option_id
+            .and_then(|id| options.iter().find(|(option, _)| option == id))
+            .map_or_else(|| REFUSED.to_string(), |(_, label)| label.clone());
+        self.answers.insert(index, answer);
+    }
+
+    /// Permissions still waiting when the turn ends were cancelled with it.
+    fn expire_permissions(&mut self) {
+        for (index, entry) in self.log.entries().iter().enumerate() {
+            if matches!(entry, Entry::Permission { .. }) {
+                self.answers
+                    .entry(index)
+                    .or_insert_with(|| UNANSWERED.to_string());
+            }
         }
-        self.conversation.push(said);
     }
 
     /// Ends the session; the next message starts a new one.
@@ -410,12 +535,12 @@ impl AppView {
     pub(crate) fn end_agent_conversation(&mut self, cx: &mut Context<Self>) {
         self.finish_turn(cx);
         self.agent.drop_session();
-        self.agent.conversation.clear();
+        self.agent.log.clear();
+        self.agent.answers.clear();
     }
 }
 
 /// What the agent panel calls.
-#[allow(dead_code, reason = "the agent panel is not drawn yet")]
 impl AppView {
     /// Sends the user's message and starts the agent's turn, starting the
     /// session first if there is none.
@@ -436,7 +561,7 @@ impl AppView {
             self.close_instrument_picker(cx);
         }
         self.start_turn();
-        self.agent.say(Said::User(text.clone()));
+        self.agent.say(Entry::User(text.clone()));
         if let Some(session) = &mut self.agent.session {
             prompt(session, text);
         } else {
@@ -483,6 +608,7 @@ impl AppView {
         option_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        self.agent.record_answer(request, option_id.as_deref());
         if let Some(session) = &self.agent.session {
             session.handle.answer_permission(request, option_id);
         }
@@ -501,8 +627,18 @@ impl AppView {
                 .spawn(async { agent_host::probe() })
                 .await;
             let _ = view.update(cx, |view, cx| {
-                view.agent.probing = false;
-                view.agent.tools.get_or_insert(tools);
+                let agent = &mut view.agent;
+                agent.probing = false;
+                let tools = agent.tools.get_or_insert(tools);
+                // Before the first message, an agent that cannot start gives
+                // way to one that can.
+                let usable = |kind| agent_host::launch_command(kind, tools).is_ok();
+                if agent.log.entries().is_empty()
+                    && !usable(agent.kind)
+                    && let Some(kind) = AgentKind::ALL.into_iter().find(|&kind| usable(kind))
+                {
+                    agent.kind = kind;
+                }
                 cx.notify();
             });
         })
@@ -533,6 +669,7 @@ impl AppView {
             return;
         };
         self.agent.pending = None;
+        self.agent.expire_permissions();
         turn.finish(&mut self.document.editor);
         self.pending_slur = None;
         self.pending_hairpin = None;
@@ -547,7 +684,7 @@ impl AppView {
     /// The turn could not start: says why and unlocks the score.
     fn fail_start(&mut self, error: String, cx: &mut Context<Self>) {
         self.agent.starting = false;
-        self.agent.say(Said::Notice(error));
+        self.agent.say(Entry::Error(error));
         self.finish_turn(cx);
         self.status = "El agente no pudo empezar".into();
         cx.notify();
@@ -759,14 +896,13 @@ impl AppView {
             }
             AgentEvent::Failed(raw) => {
                 self.agent.stopping = false;
-                let explained = agent_host::explain_error(self.agent.kind, &raw);
-                self.agent.say(Said::Notice(explained));
+                self.agent.hear(AgentEvent::Failed(raw));
                 if self.agent.turn_active() {
                     self.finish_turn(cx);
                     self.status = "El agente se detuvo por un error".into();
                 }
             }
-            event => self.agent.say(Said::Agent(event)),
+            event => self.agent.hear(event),
         }
         cx.notify();
     }

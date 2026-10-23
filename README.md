@@ -79,6 +79,8 @@ ver el conjunto de cinco instrumentos.
   borrar la selección. Reloj y regla siguen la posición musical real.
 - **Vista:** página, desplazamiento continuo o un solo sistema y zoom entre 50 y 150 %,
   con selección y seguimiento ajustados a la escala. El zoom inicial es 70 %.
+- **Agente:** conversación con un agente de IA que edita la partitura abierta; se
+  muestra con el icono de la cabecera (ver [Panel de agente](#panel-de-agente)).
 
 Los controles marcados como **Pendiente** (o con borde discontinuo en la cinta)
 todavía no funcionan: varias pestañas de documentos,
@@ -86,6 +88,32 @@ búsqueda, impresión directa, entrada MIDI/tiempo real, voces 3–4, plicas man
 velocidad/duración sonora por nota, silencio/solo y cambio de timbre.
 Guardar actualiza el archivo elegido; la recuperación automática conserva además
 una copia de la sesión para reabrirla después de un cierre inesperado.
+
+## Panel de agente
+
+El icono del bocadillo de la cabecera, o **Vista › Panel de agente**, abre a la
+derecha una conversación con un agente de IA que lee y edita la partitura abierta
+con las mismas acciones del editor. Pídele lo que harías a mano, como se lo dirías
+a un copista: «pon una ligadura en los tiempos 1 y 3 del compás 4 y un trino en el
+siguiente».
+
+- **Agentes:** Claude Code, Codex o Gemini CLI, con tu propia suscripción; Levare no
+  usa claves de API. Claude Code y Codex necesitan además Node.js (`npx`). Un agente
+  que no está instalado aparece desactivado y, al pasar el cursor, dice qué falta.
+  La primera vez, inicia sesión en la terminal (`claude`, `codex login` o `gemini`);
+  si no, el panel te lo recuerda.
+- **Conversación:** escribe en el campo inferior y pulsa **Enviar** o Enter; Esc
+  vuelve a la partitura. Las respuestas y las herramientas que usa el agente
+  aparecen en orden. Si el agente pide permiso para algo, elige una de sus opciones
+  o **Rechazar**.
+- **Mientras trabaja:** la partitura queda bloqueada para editar, deshacer y rehacer,
+  pero puedes reproducir, desplazarte y hacer zoom. **Detener** lo para en cualquier
+  momento y conserva lo que ya hizo.
+- **Deshacer:** todo lo que el agente hace en respuesta a un mensaje se deshace con
+  un solo ⌘Z. Al terminar, el cursor y la selección vuelven a donde los dejaste.
+- Hay una conversación por documento: abrir otro o cerrar la ventana la termina, y
+  cambiar de agente empieza una nueva. El agente nunca guarda, abre ni cierra
+  archivos.
 
 ## Uso
 
