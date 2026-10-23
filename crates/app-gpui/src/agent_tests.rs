@@ -1,4 +1,6 @@
-use crate::agent::{Entry, Log, Selected, Turn, follows_agent, refusal, user_may_run};
+use crate::agent::{
+    AgentState, Entry, Log, Selected, Turn, UNANSWERED, follows_agent, refusal, user_may_run,
+};
 use agent_host::{AgentEvent, AgentKind};
 use agent_tools::{EscribirArgs, Host, LeerArgs, Position, SeleccionarArgs, ToolCall, dispatch};
 use score_core::{Duration, ElementId, Event, Instrument, Pitch, Pitches, Score, Step};
@@ -291,4 +293,62 @@ fn log_explains_failure() {
         panic!("{:?}", log.entries());
     };
     assert!(text.contains("`codex login`"), "{text}");
+}
+
+fn asks(request: u64) -> AgentEvent {
+    AgentEvent::Permission {
+        request,
+        title: "Editar archivo".into(),
+        options: vec![("allow".into(), "Permitir".into())],
+    }
+}
+
+#[test]
+fn permission_after_stop_is_born_expired() {
+    let mut editor = violin();
+    let mut agent = AgentState::default();
+    agent.begin_turn(Turn::start(&mut editor));
+    // Stop ends the turn before the cancelled prompt reports its end.
+    agent.end_turn().unwrap().finish(&mut editor);
+    assert_eq!(agent.hear(asks(0)), Some(0), "refused on the session");
+    assert_eq!(agent.answer(0), Some(UNANSWERED));
+    // The next turn does not bring it back.
+    agent.begin_turn(Turn::start(&mut editor));
+    assert_eq!(agent.record_answer(0, Some("allow")), None);
+    assert_eq!(agent.answer(0), Some(UNANSWERED));
+}
+
+#[test]
+fn old_card_cannot_answer_the_new_sessions_request() {
+    let mut editor = violin();
+    let mut agent = AgentState::default();
+    agent.begin_turn(Turn::start(&mut editor));
+    assert_eq!(agent.hear(asks(0)), None);
+    // A new session, whose request ids start over.
+    agent.drop_session();
+    assert_eq!(agent.answer(0), Some(UNANSWERED));
+    assert_eq!(agent.hear(asks(0)), None);
+    assert_eq!(agent.record_answer(0, Some("allow")), None);
+    assert_eq!(agent.answer(1), None, "the new card still waits");
+    assert_eq!(agent.record_answer(1, Some("allow")), Some(0));
+    assert_eq!(agent.answer(1), Some("Permitir"));
+    assert_eq!(agent.answer(0), Some(UNANSWERED));
+}
+
+#[test]
+fn answering_by_index_marks_exactly_that_card() {
+    let mut editor = violin();
+    let mut agent = AgentState::default();
+    agent.begin_turn(Turn::start(&mut editor));
+    agent.hear(asks(4));
+    agent.hear(asks(5));
+    assert_eq!(agent.record_answer(0, None), Some(4));
+    assert_eq!(agent.answer(0), Some("Rechazado"));
+    assert_eq!(agent.answer(1), None);
+    // Answered once only.
+    assert_eq!(agent.record_answer(0, Some("allow")), None);
+    assert_eq!(agent.answer(0), Some("Rechazado"));
+    // An index that is not a permission answers nothing.
+    agent.hear(AgentEvent::Message("Hecho".into()));
+    assert_eq!(agent.record_answer(2, None), None);
 }

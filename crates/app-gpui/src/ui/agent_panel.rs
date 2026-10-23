@@ -198,11 +198,9 @@ fn line(view: &AppView, index: usize, entry: &Entry, cx: &Context<AppView>) -> A
                 title.clone()
             }))
             .into_any_element(),
-        Entry::Permission {
-            request,
-            title,
-            options,
-        } => permission(view, index, *request, title, options, cx).into_any_element(),
+        Entry::Permission { title, options, .. } => {
+            permission(view, index, title, options, cx).into_any_element()
+        }
         Entry::Error(text) => div()
             .px_2()
             .py_1()
@@ -219,7 +217,6 @@ fn line(view: &AppView, index: usize, entry: &Entry, cx: &Context<AppView>) -> A
 fn permission(
     view: &AppView,
     index: usize,
-    request: u64,
     title: &str,
     options: &[(String, String)],
     cx: &Context<AppView>,
@@ -239,12 +236,7 @@ fn permission(
         } else {
             title.to_string()
         });
-    // Outside the turn nobody is waiting for the answer.
-    let answer = view
-        .agent
-        .answer(index)
-        .or_else(|| (!view.agent.turn_active()).then_some(crate::agent::UNANSWERED));
-    if let Some(answer) = answer {
+    if let Some(answer) = view.agent.answer(index) {
         return card.child(
             div()
                 .text_size(px(11.))
@@ -265,7 +257,7 @@ fn permission(
                     label.clone(),
                     false,
                     cx,
-                    move |v, _, cx| v.answer_agent_permission(request, Some(option.clone()), cx),
+                    move |v, _, cx| v.answer_agent_permission(index, Some(option.clone()), cx),
                 )
                 .text_size(px(11.))
             }))
@@ -276,7 +268,7 @@ fn permission(
                     "Rechazar",
                     false,
                     cx,
-                    move |v, _, cx| v.answer_agent_permission(request, None, cx),
+                    move |v, _, cx| v.answer_agent_permission(index, None, cx),
                 )
                 .text_size(px(11.)),
             ),

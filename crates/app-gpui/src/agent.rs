@@ -306,37 +306,56 @@ impl AgentState {
         self.scroll.scroll_to_bottom();
     }
 
-    fn hear(&mut self, event: AgentEvent) {
+    /// Adds what the session reported. A permission asked when no turn
+    /// waits for it is shown already expired; its request comes back to be
+    /// refused on the session, so the agent is not left waiting.
+    pub(crate) fn hear(&mut self, event: AgentEvent) -> Option<u64> {
+        let late = match &event {
+            AgentEvent::Permission { request, .. } if !self.turn_active() || self.stopping => {
+                Some(*request)
+            }
+            _ => None,
+        };
         self.log.apply(self.kind, event);
+        if late.is_some() {
+            let index = self.log.entries().len() - 1;
+            self.answers.insert(index, UNANSWERED.to_string());
+        }
         self.scroll.scroll_to_bottom();
+        late
     }
 
-    /// Notes the answer to the latest unanswered permission `request`; its
-    /// card then shows it instead of the buttons.
-    fn record_answer(&mut self, request: u64, option_id: Option<&str>) {
-        let found = self
-            .log
-            .entries()
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, entry)| match entry {
-                Entry::Permission {
-                    request: asked,
-                    options,
-                    ..
-                } if *asked == request && !self.answers.contains_key(&index) => {
-                    Some((index, options))
-                }
-                _ => None,
-            });
-        let Some((index, options)) = found else {
-            return;
+    /// Notes the answer to the permission card at `index` of the log and
+    /// returns its session request. Only a card still open answers: every
+    /// card of an earlier turn or session was expired with it.
+    pub(crate) fn record_answer(&mut self, index: usize, option_id: Option<&str>) -> Option<u64> {
+        if !self.turn_active() || self.stopping || self.answers.contains_key(&index) {
+            return None;
+        }
+        let Some(Entry::Permission {
+            request, options, ..
+        }) = self.log.entries().get(index)
+        else {
+            return None;
         };
         let answer = option_id
             .and_then(|id| options.iter().find(|(option, _)| option == id))
             .map_or_else(|| REFUSED.to_string(), |(_, label)| label.clone());
+        let request = *request;
         self.answers.insert(index, answer);
+        Some(request)
+    }
+
+    pub(crate) fn begin_turn(&mut self, turn: Turn) {
+        self.turn = Some(turn);
+    }
+
+    /// Ends the turn in flight, if any; its open permissions expire with it.
+    pub(crate) fn end_turn(&mut self) -> Option<Turn> {
+        let turn = self.turn.take()?;
+        self.pending = None;
+        self.expire_permissions();
+        Some(turn)
     }
 
     /// Permissions still waiting when the turn ends were cancelled with it.
@@ -351,7 +370,9 @@ impl AgentState {
     }
 
     /// Ends the session; the next message starts a new one.
-    fn drop_session(&mut self) {
+    pub(crate) fn drop_session(&mut self) {
+        // The new session's request ids start over.
+        self.expire_permissions();
         self.session = None;
         self.pending = None;
         self.starting = false;
@@ -600,15 +621,17 @@ impl AppView {
         cx.notify();
     }
 
-    /// Answers the agent's `Permission` request with one of its option ids,
-    /// or `None` to refuse.
+    /// Answers the permission card at `index` of the log with one of its
+    /// option ids, or `None` to refuse. A card no longer open is ignored.
     pub(crate) fn answer_agent_permission(
         &mut self,
-        request: u64,
+        index: usize,
         option_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        self.agent.record_answer(request, option_id.as_deref());
+        let Some(request) = self.agent.record_answer(index, option_id.as_deref()) else {
+            return;
+        };
         if let Some(session) = &self.agent.session {
             session.handle.answer_permission(request, option_id);
         }
@@ -661,15 +684,14 @@ impl AppView {
         self.mark_drag = None;
         self.connection_drag = None;
         self.ghost = None;
-        self.agent.turn = Some(Turn::start(&mut self.document.editor));
+        self.agent
+            .begin_turn(Turn::start(&mut self.document.editor));
     }
 
     fn finish_turn(&mut self, cx: &mut Context<Self>) {
-        let Some(turn) = self.agent.turn.take() else {
+        let Some(turn) = self.agent.end_turn() else {
             return;
         };
-        self.agent.pending = None;
-        self.agent.expire_permissions();
         turn.finish(&mut self.document.editor);
         self.pending_slur = None;
         self.pending_hairpin = None;
@@ -896,13 +918,19 @@ impl AppView {
             }
             AgentEvent::Failed(raw) => {
                 self.agent.stopping = false;
-                self.agent.hear(AgentEvent::Failed(raw));
+                let _ = self.agent.hear(AgentEvent::Failed(raw));
                 if self.agent.turn_active() {
                     self.finish_turn(cx);
                     self.status = "El agente se detuvo por un error".into();
                 }
             }
-            event => self.agent.hear(event),
+            event => {
+                if let Some(request) = self.agent.hear(event)
+                    && let Some(session) = &self.agent.session
+                {
+                    session.handle.answer_permission(request, None);
+                }
+            }
         }
         cx.notify();
     }
