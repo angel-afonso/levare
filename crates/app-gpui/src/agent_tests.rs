@@ -1,5 +1,7 @@
 use crate::agent::{
-    AgentState, Entry, Log, Selected, Turn, UNANSWERED, follows_agent, refusal, user_may_run,
+    AgentState, Entry, FAILED, FINISHED, LOCKED, LOCKED_CLOSE, Log, NO_START, Reaction, STOPPED,
+    STOPPED_HARD, Selected, Sending, Turn, UNANSWERED, follows_agent, lock_message, refusal,
+    user_may_run,
 };
 use agent_host::{AgentEvent, AgentKind};
 use agent_tools::{EscribirArgs, Host, LeerArgs, Position, SeleccionarArgs, ToolCall, dispatch};
@@ -351,4 +353,239 @@ fn answering_by_index_marks_exactly_that_card() {
     // An index that is not a permission answers nothing.
     agent.hear(AgentEvent::Message("Hecho".into()));
     assert_eq!(agent.record_answer(2, None), None);
+}
+
+#[test]
+fn closing_during_a_turn_asks_to_stop_the_agent() {
+    assert_eq!(lock_message(id::QUIT), LOCKED_CLOSE);
+    assert_eq!(lock_message(id::CLOSE), LOCKED_CLOSE);
+    assert_eq!(lock_message(id::STACCATO), LOCKED);
+}
+
+/// The agent state and an editor for its turns. The view's part of each
+/// reaction is played here: finishing folds the turn on the editor.
+struct Panel {
+    agent: AgentState,
+    editor: Editor,
+}
+
+impl Panel {
+    fn new() -> Self {
+        Self {
+            agent: AgentState::default(),
+            editor: violin(),
+        }
+    }
+
+    fn send(&mut self, text: &str) -> Sending {
+        let turn = Turn::start(&mut self.editor);
+        self.agent.send(turn, text.into())
+    }
+
+    /// The session opened and took the waiting message.
+    fn open(&mut self) -> Option<String> {
+        self.agent.take_pending()
+    }
+
+    fn react(&mut self, reaction: Reaction) -> Reaction {
+        if reaction.finish_turn {
+            self.agent
+                .end_turn()
+                .expect("a turn to finish")
+                .finish(&mut self.editor);
+        }
+        reaction
+    }
+
+    fn stop(&mut self) -> Reaction {
+        let reaction = self.agent.stop();
+        self.react(reaction)
+    }
+}
+
+fn status(status: &'static str) -> Reaction {
+    Reaction {
+        status: Some(status),
+        ..Reaction::default()
+    }
+}
+
+fn finished(status: &'static str) -> Reaction {
+    Reaction {
+        finish_turn: true,
+        status: Some(status),
+        watch_stop: None,
+    }
+}
+
+#[test]
+fn turn_ends_and_the_next_message_goes() {
+    let mut panel = Panel::new();
+    assert_eq!(panel.send("hola"), Sending::Start);
+    assert!(!panel.agent.can_send());
+    assert_eq!(panel.open().as_deref(), Some("hola"));
+    let reaction = panel.agent.on_turn_ended();
+    assert_eq!(panel.react(reaction), finished(FINISHED));
+    assert!(panel.agent.can_send());
+}
+
+#[test]
+fn stop_then_turn_ended_lets_the_next_message_go() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    let stop = panel.stop();
+    assert!(stop.finish_turn);
+    assert_eq!(stop.status, Some(STOPPED));
+    assert!(stop.watch_stop.is_some());
+    // The score is back, but the agent has not ended the turn yet.
+    assert!(!panel.agent.turn_active());
+    assert!(panel.agent.stopping());
+    assert!(!panel.agent.can_send());
+    assert_eq!(panel.agent.on_turn_ended(), Reaction::default());
+    assert!(panel.agent.can_send());
+    // The timer that fires later leaves the panel alone.
+    assert_eq!(
+        panel.agent.stop_timeout(stop.watch_stop.unwrap()),
+        Reaction::default()
+    );
+    assert!(panel.agent.can_send());
+}
+
+#[test]
+fn stop_then_failure_lets_the_next_message_go() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    panel.stop();
+    let reaction = panel.agent.on_failed("se rompió".into());
+    assert_eq!(panel.react(reaction), Reaction::default());
+    assert!(panel.agent.can_send());
+    assert!(matches!(
+        panel.agent.log.entries().last(),
+        Some(Entry::Error(_))
+    ));
+}
+
+#[test]
+fn failure_mid_turn_finishes_it() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    let reaction = panel.agent.on_failed("se rompió".into());
+    assert_eq!(panel.react(reaction), finished(FAILED));
+    assert!(panel.agent.can_send());
+}
+
+#[test]
+fn closed_mid_turn_finishes_it_and_the_next_message_starts_anew() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    let reaction = panel.agent.on_closed();
+    assert!(panel.react(reaction).finish_turn);
+    assert!(panel.agent.can_send());
+    assert_eq!(panel.send("otra vez"), Sending::Start);
+    let entries = panel.agent.log.entries();
+    assert_eq!(
+        entries[entries.len() - 2],
+        Entry::Notice("Conversación nueva con Claude Code".into())
+    );
+    assert_eq!(entries[entries.len() - 1], Entry::User("otra vez".into()));
+}
+
+#[test]
+fn start_failure_unlocks_and_the_next_message_starts_again() {
+    let mut panel = Panel::new();
+    assert_eq!(panel.send("hola"), Sending::Start);
+    let reaction = panel.agent.fail_start("No se encontró `npx`.".into());
+    assert_eq!(panel.react(reaction), finished(NO_START));
+    assert!(panel.agent.can_send());
+    assert_eq!(panel.send("hola"), Sending::Start);
+}
+
+#[test]
+fn stop_during_startup_then_send_again() {
+    let mut panel = Panel::new();
+    assert_eq!(panel.send("hola"), Sending::Start);
+    // Nothing reached an agent: there is nothing to wait for.
+    assert_eq!(panel.stop(), finished(STOPPED));
+    assert!(!panel.agent.stopping());
+    assert!(panel.agent.can_send());
+    // The session still starting takes the new message, not the old one.
+    assert_eq!(panel.send("otra"), Sending::Wait);
+    assert_eq!(panel.open().as_deref(), Some("otra"));
+    let reaction = panel.agent.on_turn_ended();
+    assert_eq!(panel.react(reaction), finished(FINISHED));
+}
+
+#[test]
+fn second_stop_closes_the_agent() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    let first = panel.stop();
+    assert_eq!(panel.stop(), status(STOPPED_HARD));
+    assert!(!panel.agent.stopping());
+    assert!(panel.agent.can_send());
+    assert_eq!(
+        panel.agent.stop_timeout(first.watch_stop.unwrap()),
+        Reaction::default()
+    );
+    // A new session, marked in the log.
+    assert_eq!(panel.send("sigue"), Sending::Start);
+    assert!(
+        panel
+            .agent
+            .log
+            .entries()
+            .contains(&Entry::Notice("Conversación nueva con Claude Code".into()))
+    );
+}
+
+#[test]
+fn silent_agent_is_closed_after_the_wait() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    panel.open();
+    let watch = panel.stop().watch_stop.unwrap();
+    assert_eq!(panel.agent.stop_timeout(watch + 1), Reaction::default());
+    assert!(panel.agent.stopping());
+    assert_eq!(panel.agent.stop_timeout(watch), status(STOPPED_HARD));
+    assert!(panel.agent.can_send());
+}
+
+#[test]
+fn new_agent_marks_a_new_conversation() {
+    let mut panel = Panel::new();
+    panel.send("hola");
+    // The first conversation has no mark.
+    assert!(
+        !panel
+            .agent
+            .log
+            .entries()
+            .iter()
+            .any(|entry| matches!(entry, Entry::Notice(_)))
+    );
+    panel.open();
+    let reaction = panel.agent.on_turn_ended();
+    panel.react(reaction);
+    panel.agent.kind = AgentKind::Codex;
+    panel.agent.drop_session();
+    panel.send("y ahora tú");
+    assert!(
+        panel
+            .agent
+            .log
+            .entries()
+            .contains(&Entry::Notice("Conversación nueva con Codex".into()))
+    );
+}
+
+#[test]
+fn stop_without_a_turn_does_nothing() {
+    let mut panel = Panel::new();
+    assert_eq!(panel.stop(), Reaction::default());
+    assert!(panel.agent.can_send());
 }

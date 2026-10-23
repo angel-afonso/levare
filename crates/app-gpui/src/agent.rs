@@ -14,7 +14,7 @@ use agent_host::{
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::stream;
-use gpui::{Context, ScrollHandle, Task, Window};
+use gpui::{Context, ScrollHandle, Task, Timer, Window};
 use score_core::{Accidental, BarMarkRef, Duration, ElementId, MarkRef, Score};
 use score_edit::{Cursor, Editor, HistoryMark};
 use score_keymap::{Category, CommandId, Registry};
@@ -24,11 +24,19 @@ use crate::app_paths::data_path;
 
 /// What the user is told when a command waits for the agent.
 pub const LOCKED: &str = "El agente está trabajando: detenlo para editar la partitura.";
-const LOCKED_CLOSE: &str = "Detén al agente antes de cerrar la ventana.";
+pub const LOCKED_CLOSE: &str = "Detén al agente antes de cerrar la ventana.";
 const WORKING: &str =
     "El agente está trabajando · puedes reproducir, desplazarte y hacer zoom mientras tanto";
-const FINISHED: &str = "El agente terminó · ⌘Z deshace todo lo que hizo";
-const STOPPED: &str = "Agente detenido · ⌘Z deshace lo que llegó a hacer";
+pub const FINISHED: &str = "El agente terminó · ⌘Z deshace todo lo que hizo";
+pub const STOPPED: &str = "Agente detenido · ⌘Z deshace lo que llegó a hacer";
+/// The agent did not end its turn after Stop, so its process was closed.
+pub const STOPPED_HARD: &str =
+    "Se cerró el agente: no respondió a Detener · ⌘Z deshace lo que llegó a hacer";
+pub const FAILED: &str = "El agente se detuvo por un error";
+pub const NO_START: &str = "El agente no pudo empezar";
+/// How long a stopped turn may take to report its end before the agent's
+/// process is closed.
+const STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 const NO_TURN: &str = "El turno ya terminó: Levare no aplica más cambios hasta el próximo mensaje.";
 const BUSY: &str = "Levare está ocupado con un diálogo; vuelve a intentarlo en un momento.";
 const NO_FOLDER: &str = "No se encontró la carpeta de datos de Levare para el agente.";
@@ -40,6 +48,16 @@ const MODAL: &str = "Levare tiene abierta una ventana del usuario (preferencias 
 /// agent's turn only playback and the view do.
 pub fn user_may_run(category: Category, turn_active: bool) -> bool {
     !turn_active || matches!(category, Category::Playback | Category::View)
+}
+
+/// What the user is told when `command` waits for the agent: closing and
+/// quitting say so, like the window's close button.
+pub fn lock_message(command: CommandId) -> &'static str {
+    if [score_keymap::id::CLOSE, score_keymap::id::QUIT].contains(&command) {
+        LOCKED_CLOSE
+    } else {
+        LOCKED
+    }
 }
 
 /// Where the selection and the cursor are, to tell whether a tool call moved
@@ -121,6 +139,8 @@ pub enum Entry {
     },
     /// What Levare tells the user went wrong, already explained.
     Error(String),
+    /// A note from Levare between the turns, like a new session.
+    Notice(String),
 }
 
 /// The conversation as the panel shows it.
@@ -222,6 +242,28 @@ impl UserContext {
     }
 }
 
+/// What the view does once the agent state took in an event or a click.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Reaction {
+    /// End the turn in flight: fold its edits and give the score back.
+    pub finish_turn: bool,
+    /// What the status line says now.
+    pub status: Option<&'static str>,
+    /// A stop to watch: after `STOP_WAIT`, call `stop_timeout` with it.
+    pub watch_stop: Option<u64>,
+}
+
+/// Where a message went.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sending {
+    /// To the session.
+    Prompted,
+    /// It waits for a session: start one.
+    Start,
+    /// It waits for the session already starting.
+    Wait,
+}
+
 /// A running session and the MCP server it reaches Levare's tools through.
 /// Fields drop in order: the agent's process first, then the server.
 struct Session {
@@ -256,6 +298,11 @@ pub struct AgentState {
     probing: bool,
     /// Stop was pressed and the cancelled prompt has not reported its end.
     stopping: bool,
+    /// Counts the stops, so a late timer leaves a later stop alone.
+    stops: u64,
+    /// Whether this conversation already started a session, so the next
+    /// one is marked in the log.
+    started_one: bool,
     /// Bumped whenever the session is dropped, so the tasks of an earlier
     /// one leave the new one alone.
     generation: u64,
@@ -278,6 +325,8 @@ impl Default for AgentState {
             starting: false,
             probing: false,
             stopping: false,
+            stops: 0,
+            started_one: false,
             generation: 0,
             registry: Rc::new(Registry::builtin()),
         }
@@ -293,6 +342,11 @@ impl AgentState {
     /// one has reported its end.
     pub fn can_send(&self) -> bool {
         self.turn.is_none() && !self.stopping
+    }
+
+    /// Stop was pressed and the agent has not ended the turn yet.
+    pub fn stopping(&self) -> bool {
+        self.stopping
     }
 
     /// The answer the user gave to the permission at `index` of the log,
@@ -378,6 +432,129 @@ impl AgentState {
         self.starting = false;
         self.stopping = false;
         self.generation += 1;
+    }
+
+    /// Starts the turn of the user's message and sends it, or keeps it for
+    /// the session to start.
+    pub(crate) fn send(&mut self, turn: Turn, text: String) -> Sending {
+        let new_session = self.session.is_none() && !self.starting;
+        if new_session && self.started_one {
+            self.say(Entry::Notice(format!(
+                "Conversación nueva con {}",
+                self.kind.label()
+            )));
+        }
+        self.say(Entry::User(text.clone()));
+        self.begin_turn(turn);
+        if let Some(session) = &mut self.session {
+            prompt(session, text);
+            return Sending::Prompted;
+        }
+        self.pending = Some(text);
+        if !new_session {
+            return Sending::Wait;
+        }
+        self.starting = true;
+        self.started_one = true;
+        Sending::Start
+    }
+
+    /// The message a starting session sends once it is open.
+    pub(crate) fn take_pending(&mut self) -> Option<String> {
+        self.pending.take()
+    }
+
+    /// Stop: the first asks the agent to end the turn, which is finished at
+    /// once; a second, or the agent's silence, closes the agent.
+    pub(crate) fn stop(&mut self) -> Reaction {
+        if self.stopping {
+            self.drop_session();
+            return Reaction {
+                status: Some(STOPPED_HARD),
+                ..Reaction::default()
+            };
+        }
+        if !self.turn_active() {
+            return Reaction::default();
+        }
+        let stopped = Reaction {
+            finish_turn: true,
+            status: Some(STOPPED),
+            watch_stop: None,
+        };
+        // Still starting: the message never reached an agent.
+        if self.pending.is_some() {
+            return stopped;
+        }
+        if let Some(session) = &self.session {
+            session.handle.cancel();
+        }
+        self.stopping = true;
+        self.stops += 1;
+        Reaction {
+            watch_stop: Some(self.stops),
+            ..stopped
+        }
+    }
+
+    /// The wait after `stop` number `stop` is over.
+    pub(crate) fn stop_timeout(&mut self, stop: u64) -> Reaction {
+        if !self.stopping || stop != self.stops {
+            return Reaction::default();
+        }
+        self.drop_session();
+        Reaction {
+            status: Some(STOPPED_HARD),
+            ..Reaction::default()
+        }
+    }
+
+    /// The prompt in flight ended: the turn's, or that of a stopped one.
+    pub(crate) fn on_turn_ended(&mut self) -> Reaction {
+        if self.stopping {
+            self.stopping = false;
+            return Reaction::default();
+        }
+        Reaction {
+            finish_turn: self.turn_active(),
+            status: self.turn_active().then_some(FINISHED),
+            watch_stop: None,
+        }
+    }
+
+    /// The session failed, which ends the prompt in flight.
+    pub(crate) fn on_failed(&mut self, raw: String) -> Reaction {
+        self.stopping = false;
+        let _ = self.hear(AgentEvent::Failed(raw));
+        Reaction {
+            finish_turn: self.turn_active(),
+            status: self.turn_active().then_some(FAILED),
+            watch_stop: None,
+        }
+    }
+
+    /// The session's events ended: the session is gone.
+    pub(crate) fn on_closed(&mut self) -> Reaction {
+        if let Some(session) = self.session.take() {
+            // The listener is the task that reports this; it ends by itself.
+            session.listener.detach();
+        }
+        self.drop_session();
+        Reaction {
+            finish_turn: self.turn_active(),
+            ..Reaction::default()
+        }
+    }
+
+    /// The session could not start: says why and unlocks the score.
+    pub(crate) fn fail_start(&mut self, error: String) -> Reaction {
+        self.starting = false;
+        self.say(Entry::Error(error));
+        Reaction {
+            finish_turn: self.turn_active(),
+            status: Some(NO_START),
+            watch_stop: None,
+        }
     }
 }
 
@@ -558,6 +735,28 @@ impl AppView {
         self.agent.drop_session();
         self.agent.log.clear();
         self.agent.answers.clear();
+        self.agent.started_one = false;
+    }
+
+    /// Does what the agent state decided.
+    fn react(&mut self, reaction: Reaction, cx: &mut Context<Self>) {
+        if reaction.finish_turn {
+            self.finish_turn(cx);
+        }
+        if let Some(status) = reaction.status {
+            self.status = status.into();
+        }
+        if let Some(stop) = reaction.watch_stop {
+            cx.spawn(async move |view, cx| {
+                Timer::after(STOP_WAIT).await;
+                let _ = view.update(cx, |view, cx| {
+                    let reaction = view.agent.stop_timeout(stop);
+                    view.react(reaction, cx);
+                });
+            })
+            .detach();
+        }
+        cx.notify();
     }
 }
 
@@ -581,33 +780,20 @@ impl AppView {
         if self.instrument_picker.is_some() {
             self.close_instrument_picker(cx);
         }
-        self.start_turn();
-        self.agent.say(Entry::User(text.clone()));
-        if let Some(session) = &mut self.agent.session {
-            prompt(session, text);
-        } else {
-            self.agent.pending = Some(text);
-            if !self.agent.starting {
-                self.start_agent(window, cx);
-            }
+        let turn = self.start_turn();
+        if self.agent.send(turn, text) == Sending::Start {
+            self.start_agent(window, cx);
         }
         self.status = WORKING.into();
         cx.notify();
     }
 
     /// Stops the turn in flight. What the agent already did stays, as one
-    /// undo step.
+    /// undo step. Pressed again while the agent has not stopped, it closes
+    /// the agent.
     pub(crate) fn stop_agent(&mut self, cx: &mut Context<Self>) {
-        if !self.agent.turn_active() {
-            return;
-        }
-        if let Some(session) = &self.agent.session {
-            session.handle.cancel();
-            self.agent.stopping = true;
-        }
-        self.finish_turn(cx);
-        self.status = STOPPED.into();
-        cx.notify();
+        let reaction = self.agent.stop();
+        self.react(reaction, cx);
     }
 
     /// Chooses the agent for the next message; a different one starts a new
@@ -670,7 +856,7 @@ impl AppView {
 }
 
 impl AppView {
-    fn start_turn(&mut self) {
+    fn start_turn(&mut self) -> Turn {
         self.agent.user = Some(UserContext::save(self));
         // What the user had picked or half-drawn must not steer the agent's
         // commands.
@@ -684,8 +870,7 @@ impl AppView {
         self.mark_drag = None;
         self.connection_drag = None;
         self.ghost = None;
-        self.agent
-            .begin_turn(Turn::start(&mut self.document.editor));
+        Turn::start(&mut self.document.editor)
     }
 
     fn finish_turn(&mut self, cx: &mut Context<Self>) {
@@ -705,18 +890,14 @@ impl AppView {
 
     /// The turn could not start: says why and unlocks the score.
     fn fail_start(&mut self, error: String, cx: &mut Context<Self>) {
-        self.agent.starting = false;
-        self.agent.say(Entry::Error(error));
-        self.finish_turn(cx);
-        self.status = "El agente no pudo empezar".into();
-        cx.notify();
+        let reaction = self.agent.fail_start(error);
+        self.react(reaction, cx);
     }
 
     /// Finds the agent, starts the runtime, the MCP server and the session,
     /// then sends the pending message. Probing and the folder run off the
     /// UI thread.
     fn start_agent(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.agent.starting = true;
         let generation = self.agent.generation;
         let kind = self.agent.kind;
         let known = self.agent.tools.clone();
@@ -832,7 +1013,7 @@ impl AppView {
             instructed: false,
             listener,
         };
-        if let Some(text) = self.agent.pending.take() {
+        if let Some(text) = self.agent.take_pending() {
             prompt(&mut session, text);
         }
         self.agent.session = Some(session);
@@ -855,13 +1036,8 @@ impl AppView {
             Incoming::Tool(invocation) => self.answer_tool(invocation, window, cx),
             Incoming::Event(event) => self.agent_event(event, cx),
             Incoming::Closed => {
-                self.finish_turn(cx);
-                if let Some(session) = self.agent.session.take() {
-                    // The listener is the task running this; it ends by itself.
-                    session.listener.detach();
-                }
-                self.agent.drop_session();
-                cx.notify();
+                let reaction = self.agent.on_closed();
+                self.react(reaction, cx);
             }
         }
     }
@@ -906,33 +1082,28 @@ impl AppView {
     }
 
     fn agent_event(&mut self, event: AgentEvent, cx: &mut Context<Self>) {
-        match event {
-            // The prompt's end: the turn's, or that of a stopped one.
-            AgentEvent::TurnEnded => {
-                if self.agent.stopping {
-                    self.agent.stopping = false;
-                } else if self.agent.turn_active() {
-                    self.finish_turn(cx);
-                    self.status = FINISHED.into();
-                }
-            }
-            AgentEvent::Failed(raw) => {
-                self.agent.stopping = false;
-                let _ = self.agent.hear(AgentEvent::Failed(raw));
-                if self.agent.turn_active() {
-                    self.finish_turn(cx);
-                    self.status = "El agente se detuvo por un error".into();
-                }
-            }
+        let reaction = match event {
+            AgentEvent::TurnEnded => self.agent.on_turn_ended(),
+            AgentEvent::Failed(raw) => self.agent.on_failed(raw),
             event => {
-                if let Some(request) = self.agent.hear(event)
-                    && let Some(session) = &self.agent.session
-                {
-                    session.handle.answer_permission(request, None);
+                let asks = matches!(event, AgentEvent::Permission { .. });
+                match self.agent.hear(event) {
+                    Some(request) => {
+                        if let Some(session) = &self.agent.session {
+                            session.handle.answer_permission(request, None);
+                        }
+                    }
+                    // A card waits for the user: they must see it.
+                    None if asks && !self.ui.show_agent => {
+                        self.ui.show_agent = true;
+                        self.reveal_selection = true;
+                    }
+                    None => {}
                 }
+                Reaction::default()
             }
-        }
-        cx.notify();
+        };
+        self.react(reaction, cx);
     }
 }
 

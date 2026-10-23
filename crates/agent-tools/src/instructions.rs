@@ -60,9 +60,10 @@ de ensayo con su estilo (letras, números…) y selección actual. Úsalo primer
             "leer",
             concat!(
                 "Lee la música de un rango de compases, como mucho 32 por llamada, de todas las \
-partes o de las indicadas; lee solo las partes y compases que necesites. Primero da el compás de tiempo, la tonalidad y el tempo en vigor \
-y sus cambios, marcas de ensayo, repeticiones, casillas y saltos; luego, bajo cada parte, una línea por compás, pentagrama \
-y voz: «c3: …», con «p2» para el segundo pentagrama y «v2» para la segunda voz cuando la \
+partes o de las indicadas; lee solo las partes y compases que necesites. Primero da el \
+compás de tiempo, la tonalidad y el tempo en vigor y sus cambios, marcas de ensayo, \
+repeticiones, casillas y saltos; luego, bajo cada parte, una línea por compás, pentagrama y \
+voz: «c3: …», con «p2» para el segundo pentagrama y «v2» para la segunda voz cuando la \
 hay. «(vacío)» es un compás sin notas escritas. Una parte transpositora indica su armadura \
 escrita.",
                 notation!()

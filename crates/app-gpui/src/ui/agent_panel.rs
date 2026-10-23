@@ -6,6 +6,7 @@ use agent_host::AgentKind;
 use text_input::TextInput;
 
 const WORKING: &str = "Trabajando… La partitura está bloqueada. Pulsa Detener para editar.";
+const STOPPING: &str = "Deteniendo… Pulsa Detener otra vez para cerrar el agente.";
 const EMPTY: &str = "Pide lo que harías en el editor, como se lo dirías a un copista: \
                      «pon un trino en el tiempo 3 del compás 4». Todo lo que haga el agente \
                      se deshace con un solo ⌘Z.";
@@ -53,6 +54,7 @@ fn unavailable(view: &AppView, kind: AgentKind) -> Option<String> {
 
 pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
     let turn = view.agent.turn_active();
+    let stopping = view.agent.stopping();
     let entries = view.agent.log.entries();
     let none_available = view.agent.tools.is_some()
         && AgentKind::ALL
@@ -94,7 +96,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                         .map(|(index, entry)| line(view, index, entry, cx)),
                 ),
         )
-        .when(turn, |panel| {
+        .when(turn || stopping, |panel| {
             panel.child(
                 div()
                     .flex_shrink_0()
@@ -104,7 +106,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     .border_color(rgb(BORDER))
                     .text_size(px(11.))
                     .text_color(rgb(WARNING))
-                    .child(WORKING),
+                    .child(if stopping { STOPPING } else { WORKING }),
             )
         })
         .child(composer(view, cx))
@@ -164,9 +166,10 @@ fn picker(view: &AppView, cx: &Context<AppView>) -> Div {
                     .opacity(0.55)
                     .child(kind.label())
             };
+            // The chosen agent keeps the selected look of `button`.
             element
                 .text_size(px(11.))
-                .bg(rgb(PANEL))
+                .when(!chosen, |element| element.bg(rgb(PANEL)))
                 .tooltip(hover_hint(hint, None))
         }))
 }
@@ -201,6 +204,13 @@ fn line(view: &AppView, index: usize, entry: &Entry, cx: &Context<AppView>) -> A
         Entry::Permission { title, options, .. } => {
             permission(view, index, title, options, cx).into_any_element()
         }
+        Entry::Notice(text) => div()
+            .py_1()
+            .text_size(px(11.))
+            .text_color(rgb(MUTED))
+            .text_center()
+            .child(format!("— {text} —"))
+            .into_any_element(),
         Entry::Error(text) => div()
             .px_2()
             .py_1()
@@ -275,9 +285,10 @@ fn permission(
     )
 }
 
-/// The message field and Enviar, which is Detener during the turn.
+/// The message field and Enviar, which is Detener during the turn and
+/// until a stopped agent ends it.
 fn composer(view: &AppView, cx: &Context<AppView>) -> Div {
-    let turn = view.agent.turn_active();
+    let turn = view.agent.turn_active() || view.agent.stopping();
     let send = if turn {
         button(view, "agent-stop", "Detener", true, cx, |v, _, cx| {
             v.stop_agent(cx)

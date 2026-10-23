@@ -98,22 +98,35 @@ a un copista: «pon una ligadura en los tiempos 1 y 3 del compás 4 y un trino e
 siguiente».
 
 - **Agentes:** Claude Code, Codex o Gemini CLI, con tu propia suscripción; Levare no
-  usa claves de API. Claude Code y Codex necesitan además Node.js (`npx`). Un agente
+  usa claves de API. Claude Code y Codex necesitan además Node.js (`npx`); Codex usa
+  la versión que trae su adaptador, no la que tengas instalada. Un agente
   que no está instalado aparece desactivado y, al pasar el cursor, dice qué falta.
   La primera vez, inicia sesión en la terminal (`claude`, `codex login` o `gemini`);
   si no, el panel te lo recuerda.
 - **Conversación:** escribe en el campo inferior y pulsa **Enviar** o Enter; Esc
   vuelve a la partitura. Las respuestas y las herramientas que usa el agente
-  aparecen en orden. Si el agente pide permiso para algo, elige una de sus opciones
-  o **Rechazar**.
+  aparecen en orden. Las herramientas de Levare no piden permiso; si el agente pide
+  permiso para otra cosa, el panel se abre: elige una de sus opciones o **Rechazar**.
+  Al cambiar de agente o reiniciarse la sesión, el panel marca la conversación nueva.
 - **Mientras trabaja:** la partitura queda bloqueada para editar, deshacer y rehacer,
   pero puedes reproducir, desplazarte y hacer zoom. **Detener** lo para en cualquier
-  momento y conserva lo que ya hizo.
+  momento y conserva lo que ya hizo; si el agente no se detiene en unos segundos, o
+  pulsas **Detener** otra vez, Levare lo cierra.
 - **Deshacer:** todo lo que el agente hace en respuesta a un mensaje se deshace con
   un solo ⌘Z. Al terminar, el cursor y la selección vuelven a donde los dejaste.
 - Hay una conversación por documento: abrir otro o cerrar la ventana la termina, y
-  cambiar de agente empieza una nueva. El agente nunca guarda, abre ni cierra
-  archivos.
+  cambiar de agente empieza una nueva. Las herramientas de Levare nunca guardan,
+  abren ni cierran archivos; si el agente pide usar la terminal o archivos, puedes
+  rechazarlo.
+
+### Problemas conocidos
+
+- **Claude Code** necesita una sesión iniciada y válida: si ha caducado, el panel
+  pide iniciar sesión; ejecuta `claude` en una terminal y vuelve a intentarlo.
+- **Gemini CLI** con una cuenta personal responde ahora que este cliente ya no está
+  admitido (Google lo traslada a Antigravity); Levare muestra ese mensaje tal cual.
+- Si reproduces durante un turno, suena la partitura tal como estaba al empezar la
+  reproducción, sin los cambios que el agente haga después.
 
 ## Uso
 

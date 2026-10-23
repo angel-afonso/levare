@@ -1343,7 +1343,7 @@ impl AppView {
             return;
         }
         if !agent::user_may_run(spec.category, self.agent_locked()) {
-            self.status = agent::LOCKED.into();
+            self.status = agent::lock_message(command).into();
             cx.notify();
             return;
         }
