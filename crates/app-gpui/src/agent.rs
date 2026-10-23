@@ -300,8 +300,9 @@ pub struct AgentState {
     stopping: bool,
     /// Counts the stops, so a late timer leaves a later stop alone.
     stops: u64,
-    /// Whether this conversation already started a session, so the next
-    /// one is marked in the log.
+    /// Whether a session of this conversation already started (it reported
+    /// something other than a failure), so the next one is marked in the
+    /// log.
     started_one: bool,
     /// Bumped whenever the session is dropped, so the tasks of an earlier
     /// one leave the new one alone.
@@ -370,6 +371,10 @@ impl AgentState {
             }
             _ => None,
         };
+        // Only an open session reports anything but a failure.
+        if !matches!(event, AgentEvent::Failed(_)) {
+            self.started_one = true;
+        }
         self.log.apply(self.kind, event);
         if late.is_some() {
             let index = self.log.entries().len() - 1;
@@ -455,7 +460,6 @@ impl AgentState {
             return Sending::Wait;
         }
         self.starting = true;
-        self.started_one = true;
         Sending::Start
     }
 
@@ -511,6 +515,7 @@ impl AgentState {
 
     /// The prompt in flight ended: the turn's, or that of a stopped one.
     pub(crate) fn on_turn_ended(&mut self) -> Reaction {
+        self.started_one = true;
         if self.stopping {
             self.stopping = false;
             return Reaction::default();

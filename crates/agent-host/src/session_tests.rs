@@ -67,7 +67,7 @@ fn fake_agent(
                 };
                 let asked = match prompt.text.as_str() {
                     "permiso" => Some(("t2", Some("Escribir compases"))),
-                    "levare" => Some(("t3", Some("mcp.levare.escribir"))),
+                    "levare" => Some(("t3", Some("mcp__levare__escribir"))),
                     "sin título" => {
                         update(
                             &cx,
@@ -86,7 +86,12 @@ fn fake_agent(
                             if let Some(title) = title {
                                 fields = fields.title(title.to_string());
                             }
-                            let tool = ToolCallUpdate::new(id, fields);
+                            let mut tool = ToolCallUpdate::new(id, fields);
+                            // As Claude Code names its tools.
+                            if let Some(name) = title.filter(|title| title.starts_with("mcp__")) {
+                                let meta = serde_json::json!({"claudeCode": {"toolName": name}});
+                                tool = tool.meta(meta.as_object().cloned());
+                            }
                             let options = vec![
                                 PermissionOption::new(
                                     "si",

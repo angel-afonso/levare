@@ -482,6 +482,7 @@ fn closed_mid_turn_finishes_it_and_the_next_message_starts_anew() {
     let mut panel = Panel::new();
     panel.send("hola");
     panel.open();
+    panel.agent.hear(AgentEvent::Message("Voy.".into()));
     let reaction = panel.agent.on_closed();
     assert!(panel.react(reaction).finish_turn);
     assert!(panel.agent.can_send());
@@ -499,9 +500,22 @@ fn start_failure_unlocks_and_the_next_message_starts_again() {
     let mut panel = Panel::new();
     assert_eq!(panel.send("hola"), Sending::Start);
     let reaction = panel.agent.fail_start("No se encontró `npx`.".into());
+    // A session that fails before saying anything never started either.
+    panel
+        .agent
+        .on_failed("Authentication required (-32000)".into());
     assert_eq!(panel.react(reaction), finished(NO_START));
     assert!(panel.agent.can_send());
     assert_eq!(panel.send("hola"), Sending::Start);
+    // No session ever started, so nothing marks a new one.
+    assert!(
+        !panel
+            .agent
+            .log
+            .entries()
+            .iter()
+            .any(|entry| matches!(entry, Entry::Notice(_)))
+    );
 }
 
 #[test]
@@ -524,6 +538,7 @@ fn second_stop_closes_the_agent() {
     let mut panel = Panel::new();
     panel.send("hola");
     panel.open();
+    panel.agent.hear(tool("1", "mcp__levare__resumen", false));
     let first = panel.stop();
     assert_eq!(panel.stop(), status(STOPPED_HARD));
     assert!(!panel.agent.stopping());

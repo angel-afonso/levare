@@ -1,6 +1,6 @@
 //! Which of the agent's tool calls run Levare's own tools, told apart in the
 //! shapes each adapter reports them in. The user asked for the edits, so
-//! those calls need no permission card.
+//! those calls need no permission card; when in doubt, the card shows.
 use std::collections::{HashMap, HashSet};
 
 use agent_client_protocol::schema::v1::{
@@ -16,7 +16,6 @@ pub(crate) const SERVER: &str = "levare";
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Described<'a> {
     pub title: Option<&'a str>,
-    pub name: Option<&'a str>,
     pub raw_input: Option<&'a Value>,
     pub meta: Option<&'a Map<String, Value>>,
 }
@@ -25,7 +24,6 @@ impl<'a> Described<'a> {
     pub fn call(call: &'a ToolCall) -> Self {
         Self {
             title: Some(&call.title),
-            name: call.name.as_deref(),
             raw_input: call.raw_input.as_ref(),
             meta: call.meta.as_ref(),
         }
@@ -34,64 +32,49 @@ impl<'a> Described<'a> {
     pub fn update(update: &'a ToolCallUpdate) -> Self {
         Self {
             title: update.fields.title.as_deref(),
-            name: update.fields.name.as_deref(),
             raw_input: update.fields.raw_input.as_ref(),
             meta: update.meta.as_ref(),
         }
     }
 }
 
-/// Whether a title or a tool name names one of Levare's tools:
-/// - Claude Code: `mcp__levare__leer`, as title, `name` and
-///   `_meta.claudeCode.toolName`.
-/// - Codex: `mcp.levare.leer`.
-/// - Gemini CLI: `resumen (levare MCP Server)` without arguments,
-///   `leer(desde: 1, hasta: 3)` with them; the second form leaves the
-///   server out, so it counts on the Spanish names not clashing with the
-///   agent's own tools.
-fn names_levare_tool(text: &str) -> bool {
-    let is_tool = |name: &str| {
-        agent_tools::tool_descriptions()
-            .iter()
-            .any(|(tool, _)| *tool == name)
-    };
-    let text = text.trim();
-    if let Some(tool) = text
-        .strip_prefix("mcp__levare__")
-        .or_else(|| text.strip_prefix("mcp.levare."))
-        .or_else(|| text.strip_suffix(" (levare MCP Server)"))
-    {
-        return is_tool(tool);
-    }
-    text.split_once('(').is_some_and(|(tool, _)| is_tool(tool))
+fn is_tool(name: &str) -> bool {
+    agent_tools::tool_descriptions()
+        .iter()
+        .any(|(tool, _)| *tool == name)
 }
 
-/// Whether the call runs one of Levare's tools: by its title or name, by
-/// the MCP server Claude Code puts in `_meta`, or by the server Codex puts
-/// in the input of a tool call (`server`) or of an approval (`serverName`).
+/// Whether the call runs one of Levare's tools, told only from structured
+/// fields the adapter fills itself, never from a title, which may be a shell
+/// command, or from a tool's own arguments:
+/// - Claude Code: `_meta.claudeCode.toolName` is exactly
+///   `mcp__levare__<tool>` (claude-agent-acp `src/tool-calls/renderer.ts`
+///   `toolUseMeta`; `src/acp-agent.ts` puts it on permission requests).
+/// - Codex: a `tool_call` of an MCP call, flagged `_meta.is_mcp_tool_call`
+///   (codex-acp `src/tool-calls/AcpToolCallRenderer.ts` `mcpMeta`, set only
+///   by `McpToolReporter.started`), with `rawInput.server` `levare` and
+///   `rawInput.tool` one of the tools, and its title `mcp.levare.<tool>`
+///   (`McpToolReporter.ts`). The tool's arguments are under
+///   `rawInput.arguments`, so they cannot pose as the server.
+/// - Gemini CLI sends no such field, so its calls never count.
 pub(crate) fn is_levare_tool(call: Described) -> bool {
-    let claude = call
-        .meta
-        .and_then(|meta| meta.get("claudeCode"))
-        .and_then(Value::as_object);
-    let claude_tool = claude
+    let meta = |key: &str| call.meta.and_then(|meta| meta.get(key));
+    let claude = meta("claudeCode")
         .and_then(|claude| claude.get("toolName"))
-        .and_then(Value::as_str);
-    let claude_server = claude
-        .and_then(|claude| claude.get("mcpServer"))
-        .and_then(|server| server.get("name"))
-        .and_then(Value::as_str);
-    let input_server = call.raw_input.and_then(Value::as_object).and_then(|input| {
-        ["server", "serverName"]
-            .into_iter()
-            .find_map(|key| input.get(key).and_then(Value::as_str))
-    });
-    [call.title, call.name, claude_tool]
-        .into_iter()
-        .flatten()
-        .any(names_levare_tool)
-        || claude_server == Some(SERVER)
-        || input_server == Some(SERVER)
+        .and_then(Value::as_str)
+        .and_then(|name| name.strip_prefix("mcp__levare__"))
+        .is_some_and(is_tool);
+    let input = |key: &str| {
+        call.raw_input
+            .and_then(|input| input.get(key))
+            .and_then(Value::as_str)
+    };
+    let codex = meta("is_mcp_tool_call") == Some(&Value::Bool(true))
+        && input("server") == Some(SERVER)
+        && input("tool").is_some_and(|tool| {
+            is_tool(tool) && call.title == Some(format!("mcp.{SERVER}.{tool}").as_str())
+        });
+    claude || codex
 }
 
 /// Whether the call is Codex's automatic review of a Levare tool call
@@ -143,9 +126,7 @@ impl Calls {
     /// Whether call `id`, as described here or when it was reported, runs
     /// one of Levare's tools.
     pub fn is_levare(&self, id: &str, call: Described) -> bool {
-        self.levare.contains(id)
-            || is_levare_tool(call)
-            || self.title(id).is_some_and(names_levare_tool)
+        self.levare.contains(id) || is_levare_tool(call)
     }
 }
 

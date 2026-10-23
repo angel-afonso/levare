@@ -105,8 +105,9 @@ siguiente».
   si no, el panel te lo recuerda.
 - **Conversación:** escribe en el campo inferior y pulsa **Enviar** o Enter; Esc
   vuelve a la partitura. Las respuestas y las herramientas que usa el agente
-  aparecen en orden. Las herramientas de Levare no piden permiso; si el agente pide
-  permiso para otra cosa, el panel se abre: elige una de sus opciones o **Rechazar**.
+  aparecen en orden. Con Claude Code y Codex, las herramientas de Levare no piden
+  permiso; si el agente pide permiso para otra cosa, el panel se abre: elige una de
+  sus opciones o **Rechazar**.
   Al cambiar de agente o reiniciarse la sesión, el panel marca la conversación nueva.
 - **Mientras trabaja:** la partitura queda bloqueada para editar, deshacer y rehacer,
   pero puedes reproducir, desplazarte y hacer zoom. **Detener** lo para en cualquier
@@ -125,6 +126,8 @@ siguiente».
   pide iniciar sesión; ejecuta `claude` en una terminal y vuelve a intentarlo.
 - **Gemini CLI** con una cuenta personal responde ahora que este cliente ya no está
   admitido (Google lo traslada a Antigravity); Levare muestra ese mensaje tal cual.
+  Además, Gemini no dice de qué servidor es cada herramienta, así que cada llamada a
+  las herramientas de Levare muestra una tarjeta de permiso.
 - Si reproduces durante un turno, suena la partitura tal como estaba al empezar la
   reproducción, sin los cambios que el agente haga después.
 
