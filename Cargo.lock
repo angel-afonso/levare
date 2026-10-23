@@ -5149,6 +5149,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "score-text"
+version = "0.1.0"
+dependencies = [
+ "score-core",
+ "score-edit",
+]
+
+[[package]]
 name = "score-toolbar"
 version = "0.1.0"
 dependencies = [
