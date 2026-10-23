@@ -72,6 +72,9 @@ fn ambiguous_part_lists_candidates() {
         assert!(error.contains("1 Violín I"), "{error}");
         assert!(error.contains("2 Violín II"), "{error}");
         assert!(!error.contains("Viola"), "{error}");
+        // The user chooses, not the agent.
+        assert!(error.contains("Pregunta al usuario cuál quiere"), "{error}");
+        assert!(!error.contains("Indica el número"), "{error}");
     }
     // The exact name wins over longer names sharing the prefix.
     assert_eq!(resolve_part(&score, "violín II"), Ok(score.parts()[1].id()));

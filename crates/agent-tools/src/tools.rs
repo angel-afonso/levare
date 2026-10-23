@@ -107,6 +107,8 @@ pub enum ConnectionClass {
     OctavaAlta,
     OctavaBaja,
     Pedal,
+    Trino,
+    Glissando,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -158,7 +160,7 @@ pub enum AjustarArgs {
     #[schemars(description = "Quita una parte con toda su música.")]
     QuitarParte { parte: String },
     #[schemars(
-        description = "Une dos notas: ligadura (de expresión), union (ligadura de unión), crescendo, diminuendo, octava_alta, octava_baja o pedal."
+        description = "Une dos notas: ligadura (de expresión), union (ligadura de unión), crescendo, diminuendo, octava_alta, octava_baja, pedal, trino (sobre las notas de desde a hasta; la misma posición en ambas para una sola nota) o glissando."
     )]
     Conexion {
         clase: ConnectionClass,

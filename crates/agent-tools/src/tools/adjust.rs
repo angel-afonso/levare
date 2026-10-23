@@ -125,6 +125,8 @@ pub(super) fn adjust(editor: &mut Editor, args: AjustarArgs) -> Result<String, S
                     ConnectionClass::OctavaAlta => ConnectionKind::OttavaAlta,
                     ConnectionClass::OctavaBaja => ConnectionKind::OttavaBassa,
                     ConnectionClass::Pedal => ConnectionKind::Pedal,
+                    ConnectionClass::Trino => ConnectionKind::Trill,
+                    ConnectionClass::Glissando => ConnectionKind::Glissando,
                 },
             };
             let done = format!(

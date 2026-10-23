@@ -1,9 +1,9 @@
 use super::*;
 use score_core::{
-    Articulation, Connection, ConnectionKind, Duration, Event, Instrument, MarkKind, Pitch,
-    Pitches, Score, StaffId, Step, Voice,
+    Accidental, Articulation, Connection, ConnectionKind, Duration, Event, Instrument, MarkKind,
+    Pitch, Pitches, RehearsalStyle, Score, StaffId, Step, Voice,
 };
-use score_edit::{Command, Editor};
+use score_edit::{Command, Editor, FormEdit};
 use score_keymap::{CommandId, Registry, id};
 
 /// The app's dispatcher reduced to the ribbon's marks, enough to exercise
@@ -20,10 +20,16 @@ impl Host for FakeHost {
         &mut self.editor
     }
     fn run(&mut self, id: CommandId) -> Result<(), String> {
-        let kind = score_toolbar::marks::kind(id)
-            .ok_or_else(|| format!("«{id}» no está disponible en la prueba"))?;
+        let command = match id {
+            id::REHEARSAL_MARK => Command::ToggleRehearsalMark,
+            id::REHEARSAL_NUMBERS => Command::SetRehearsalStyle(RehearsalStyle::Numbers),
+            _ => Command::ToggleMark(
+                score_toolbar::marks::kind(id)
+                    .ok_or_else(|| format!("«{id}» no está disponible en la prueba"))?,
+            ),
+        };
         self.editor
-            .execute(Command::ToggleMark(kind))
+            .execute(command)
             .map(|_| ())
             .map_err(|error| error.0.to_string())
     }
@@ -504,4 +510,204 @@ fn instructions_cover_the_rules() {
         .find(|(name, _)| *name == "escribir")
         .unwrap();
     assert!(write.contains("armadura"), "{write}");
+    // Accidentals do not carry through the bar.
+    assert!(INSTRUCTIONS.contains("F#4 G4 F#4"), "{INSTRUCTIONS}");
+    assert!(write.contains("F#4 G4 F#4"), "{write}");
+    let (_, read) = tool_descriptions()
+        .into_iter()
+        .find(|(name, _)| *name == "leer")
+        .unwrap();
+    assert!(
+        read.contains("lee solo las partes y compases que necesites"),
+        "{read}"
+    );
+}
+
+#[test]
+fn each_note_keeps_its_own_accidental() {
+    let mut host = violin(1);
+    run(
+        &mut host,
+        ToolCall::Escribir(EscribirArgs {
+            parte: "1".into(),
+            pentagrama: None,
+            voz: None,
+            desde_compas: 1,
+            compases: vec!["F#4:4 G4:4 F#4:4 G4:4".into()],
+        }),
+    )
+    .unwrap();
+    let score = host.editor.score();
+    let part = score.parts()[0].id();
+    let bar = &score.parts()[0].staff(StaffId::Upper).unwrap().measures()[0];
+    let sharps = bar
+        .voice_iter(Voice::One)
+        .filter_map(|(_, event)| event.pitches.first())
+        .filter(|pitch| pitch.step == Step::F && pitch.accidental() == Some(Accidental::Sharp))
+        .count();
+    assert_eq!(sharps, 2);
+    assert_eq!(
+        score_text::format_voice(score, part, StaffId::Upper, 0, Voice::One),
+        "F#4:4 G4:4 F#4:4 G4:4"
+    );
+    let read = run(
+        &mut host,
+        ToolCall::Leer(LeerArgs {
+            partes: None,
+            desde: 1,
+            hasta: 1,
+        }),
+    )
+    .unwrap();
+    assert_eq!(read.matches("F#4").count(), 2, "{read}");
+}
+
+#[test]
+fn read_refuses_ranges_that_would_overflow() {
+    let mut host = violin(2);
+    let leer = |host: &mut FakeHost, desde, hasta| {
+        run(
+            host,
+            ToolCall::Leer(LeerArgs {
+                partes: None,
+                desde,
+                hasta,
+            }),
+        )
+    };
+    let error = leer(&mut host, 0, u32::MAX).unwrap_err();
+    assert!(error.contains("desde 1"), "{error}");
+    let error = leer(&mut host, 1, u32::MAX).unwrap_err();
+    assert!(error.contains("32 compases o menos"), "{error}");
+    let error = leer(&mut host, u32::MAX, 1).unwrap_err();
+    assert!(error.contains("al revés"), "{error}");
+}
+
+#[test]
+fn adjust_connection_trill_and_glissando() {
+    let mut host = violin(1);
+    for (clase, kind, hasta) in [
+        (ConnectionClass::Trino, ConnectionKind::Trill, 2.),
+        (ConnectionClass::Glissando, ConnectionKind::Glissando, 4.),
+    ] {
+        let reply = run(
+            &mut host,
+            ToolCall::Ajustar(AjustarArgs::Conexion {
+                clase,
+                desde: at("1", 1, 1.),
+                hasta: at("1", 1, hasta),
+            }),
+        )
+        .unwrap();
+        assert!(reply.contains(kind.label()), "{reply}");
+        assert_eq!(connections(&host, kind).len(), 1, "{reply}");
+    }
+    let call = ToolCall::parse(
+        "ajustar",
+        serde_json::json!({
+            "tipo": "conexion",
+            "clase": "trino",
+            "desde": {"parte": "1", "compas": 1, "tiempo": 3},
+            "hasta": {"parte": "1", "compas": 1, "tiempo": 3},
+        }),
+    )
+    .unwrap();
+    assert!(matches!(
+        call,
+        ToolCall::Ajustar(AjustarArgs::Conexion {
+            clase: ConnectionClass::Trino,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn rehearsal_marks_and_their_style_show_in_replies() {
+    let mut host = violin(3);
+    let summary = run(&mut host, ToolCall::Resumen).unwrap();
+    assert!(
+        summary.contains("Marcas de ensayo: ninguna (estilo: Letras)"),
+        "{summary}"
+    );
+    run(
+        &mut host,
+        ToolCall::Seleccionar(SeleccionarArgs {
+            desde: at("1", 2, 1.),
+            hasta: None,
+        }),
+    )
+    .unwrap();
+    let ejecutar = |host: &mut FakeHost, command: CommandId| {
+        run(
+            host,
+            ToolCall::Ejecutar(EjecutarArgs {
+                comando: command.as_str().into(),
+            }),
+        )
+        .unwrap()
+    };
+    let added = ejecutar(&mut host, id::REHEARSAL_MARK);
+    let (_, after) = added.split_once("después:").expect(&added);
+    assert!(after.contains("ensayo A"), "{added}");
+    let restyled = ejecutar(&mut host, id::REHEARSAL_NUMBERS);
+    let (before, after) = restyled.split_once("después:").expect(&restyled);
+    assert!(before.contains("ensayo A"), "{restyled}");
+    assert!(after.contains("ensayo 1"), "{restyled}");
+    assert!(
+        restyled.contains("Estilo de las marcas de ensayo: Números"),
+        "{restyled}"
+    );
+    let summary = run(&mut host, ToolCall::Resumen).unwrap();
+    assert!(
+        summary.contains("Marcas de ensayo (estilo: Números): 1 en el compás 2"),
+        "{summary}"
+    );
+    // A style change shows even where no mark is in view.
+    run(
+        &mut host,
+        ToolCall::Seleccionar(SeleccionarArgs {
+            desde: at("1", 3, 1.),
+            hasta: None,
+        }),
+    )
+    .unwrap();
+    host.editor
+        .execute(Command::SetRehearsalStyle(RehearsalStyle::Letters))
+        .unwrap();
+    let restyled = ejecutar(&mut host, id::REHEARSAL_NUMBERS);
+    assert!(
+        restyled.contains("Estilo de las marcas de ensayo: Números"),
+        "{restyled}"
+    );
+}
+
+#[test]
+fn bar_headers_show_the_form() {
+    let mut host = violin(3);
+    run(
+        &mut host,
+        ToolCall::Seleccionar(SeleccionarArgs {
+            desde: at("1", 2, 1.),
+            hasta: None,
+        }),
+    )
+    .unwrap();
+    for edit in [FormEdit::ToggleRepeatStart, FormEdit::ToggleSegno] {
+        host.editor.execute(Command::EditForm(edit)).unwrap();
+    }
+    let read = run(
+        &mut host,
+        ToolCall::Leer(LeerArgs {
+            partes: None,
+            desde: 1,
+            hasta: 3,
+        }),
+    )
+    .unwrap();
+    let header = read
+        .lines()
+        .find(|line| line.starts_with("Compás 2:"))
+        .expect(&read);
+    assert!(header.contains("inicio de repetición"), "{read}");
+    assert!(header.contains("segno"), "{read}");
 }

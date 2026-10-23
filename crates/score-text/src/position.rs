@@ -56,7 +56,7 @@ pub fn resolve_part(score: &Score, query: &str) -> Result<PartId, String> {
                 .map(|&i| format!("{} {}", i + 1, parts[i].1))
                 .collect();
             Err(format!(
-                "«{query}» puede ser varias partes: {}. Indica el número o el nombre completo.",
+                "«{query}» puede ser varias partes: {}. Pregunta al usuario cuál quiere: no elijas tú.",
                 candidates.join(", ")
             ))
         }

@@ -1,6 +1,6 @@
 //! Selecting a musical position and running a registry command on it. Each
 //! reply shows the selected bars, so the agent sees what a toggle did.
-use super::text::{bar_changes, part_header, place, staff_lines};
+use super::text::{bar_changes, part_header, place, score_settings, staff_lines};
 use super::{EjecutarArgs, SeleccionarArgs, resolve};
 use crate::catalog::alternative;
 use crate::{Host, allowed_commands};
@@ -131,12 +131,20 @@ pub(super) fn execute(
     }
     let shown_after = block(score, shown, &ids);
     let unchanged = shown_after == shown_before;
+    // What changed for the whole score, which no bar may show.
+    let settings: Vec<String> = score_settings(score)
+        .into_iter()
+        .zip(score_settings(&before))
+        .filter(|(now, then)| now != then)
+        .map(|((setting, value), _)| format!("{setting}: {value} (ajuste de toda la partitura)."))
+        .collect();
     lines.push(format!("{name} aplicado."));
+    lines.extend(settings.iter().cloned());
     lines.push("antes:".into());
     lines.extend(shown_before);
     lines.push("después:".into());
     lines.extend(shown_after);
-    if unchanged {
+    if unchanged && settings.is_empty() {
         lines.push(
             "(Estos compases no cambian: el cambio está en otro lugar de la partitura.)".into(),
         );

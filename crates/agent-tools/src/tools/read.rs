@@ -1,5 +1,8 @@
 //! The cheap overview, the bounded read and the command catalog.
-use super::text::{bar_changes, key_text, part_header, place, staff_lines, tempo_text, time_text};
+use super::text::{
+    REHEARSAL_STYLE, bar_changes, key_text, part_header, place, score_settings, staff_lines,
+    tempo_text, time_text,
+};
 use super::{ComandosArgs, LeerArgs, fold};
 use crate::allowed_commands;
 use score_core::{PartId, Score, StaffId};
@@ -59,9 +62,22 @@ pub(super) fn summary(editor: &Editor) -> String {
                 .map(|label| format!("{label} en el compás {}", measure + 1))
         })
         .collect();
-    if !rehearsals.is_empty() {
-        lines.push(format!("Marcas de ensayo: {}.", rehearsals.join(", ")));
-    }
+    // The style tells «ensayo-numeros» from the marks already there.
+    let style = score.rehearsal_style().label();
+    lines.push(if rehearsals.is_empty() {
+        format!("Marcas de ensayo: ninguna (estilo: {style}).")
+    } else {
+        format!(
+            "Marcas de ensayo (estilo: {style}): {}.",
+            rehearsals.join(", ")
+        )
+    });
+    lines.extend(
+        score_settings(score)
+            .into_iter()
+            .filter(|(name, _)| *name != REHEARSAL_STYLE)
+            .map(|(name, value)| format!("{name}: {value}.")),
+    );
     lines.push(selection_line(editor));
     lines.join("\n")
 }
@@ -89,13 +105,17 @@ fn selection_line(editor: &Editor) -> String {
 }
 
 pub(super) fn read(score: &Score, args: &LeerArgs) -> Result<String, String> {
+    if args.desde < 1 {
+        return Err("Los compases se cuentan desde 1.".into());
+    }
     if args.hasta < args.desde {
         return Err(format!(
             "El rango está al revés: «desde» ({}) debe ser menor o igual que «hasta» ({}).",
             args.desde, args.hasta
         ));
     }
-    let bars = args.hasta - args.desde + 1;
+    // Both checked above, so no overflow: `desde` is at least 1.
+    let bars = (args.hasta - args.desde).saturating_add(1);
     if bars > MAX_READ_BARS {
         return Err(format!(
             "Pide un rango de {MAX_READ_BARS} compases o menos: del {} al {} son {bars}. Lee por fragmentos.",

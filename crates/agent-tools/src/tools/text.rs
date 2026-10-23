@@ -2,8 +2,8 @@
 //! the compact notation, with `»` before the selected events.
 use super::part_number;
 use score_core::{
-    ElementId, KeySignature, PartId, Score, StaffId, TICKS_PER_WHOLE, TempoMark, TimeSignature,
-    Voice,
+    Barline, ElementId, KeySignature, PartId, Score, StaffId, TICKS_PER_WHOLE, TempoMark,
+    TimeSignature, Voice,
 };
 
 /// Ticks in one beat: a unit of the time signature's denominator.
@@ -79,8 +79,8 @@ pub(super) fn tempo_text(mark: &TempoMark) -> String {
 }
 
 /// One line per bar of `from..=to` that starts with something every part
-/// shares: the signatures and tempo in effect at `from`, then each change
-/// and each rehearsal mark.
+/// shares: the signatures and tempo in effect at `from`, then each change,
+/// each rehearsal mark and the bar's form (repeats, endings, jumps).
 pub(super) fn bar_changes(score: &Score, from: usize, to: usize) -> Vec<String> {
     (from..=to)
         .filter_map(|measure| {
@@ -105,9 +105,70 @@ pub(super) fn bar_changes(score: &Score, from: usize, to: usize) -> Vec<String> 
             if let Some(label) = score.rehearsal_label(measure) {
                 items.push(format!("ensayo {label}"));
             }
+            items.extend(form_items(score, measure));
             (!items.is_empty()).then(|| format!("Compás {}: {}.", measure + 1, items.join(" · ")))
         })
         .collect()
+}
+
+/// The marks of a bar's form, as the ribbon names them.
+fn form_items(score: &Score, measure: usize) -> Vec<String> {
+    let form = score.bar_form(measure);
+    let mut items = Vec::new();
+    if form.repeat_start {
+        items.push("inicio de repetición".to_owned());
+    }
+    if let Some(ending) = score.endings().find(|ending| ending.start == measure) {
+        let bars = if ending.end == ending.start {
+            String::new()
+        } else {
+            format!(" hasta el compás {}", ending.end + 1)
+        };
+        items.push(format!("casilla {}{bars}", ending.label()));
+    }
+    if form.segno {
+        items.push("segno".to_owned());
+    }
+    if form.coda {
+        items.push("coda".to_owned());
+    }
+    if form.to_coda {
+        items.push("To Coda".to_owned());
+    }
+    if form.fine {
+        items.push("Fine".to_owned());
+    }
+    if let Some(jump) = form.jump {
+        items.push(jump.label().to_owned());
+    }
+    match form.repeat_end {
+        Some(2) => items.push("fin de repetición".to_owned()),
+        Some(times) => items.push(format!("fin de repetición, {times} veces")),
+        None => {}
+    }
+    match form.barline {
+        Barline::Single => {}
+        Barline::Double => items.push("doble barra al final".to_owned()),
+        Barline::Final => items.push("barra final".to_owned()),
+    }
+    items
+}
+
+pub(super) const REHEARSAL_STYLE: &str = "Estilo de las marcas de ensayo";
+
+/// The settings of the whole score that no bar shows, `(name, value)`.
+pub(super) fn score_settings(score: &Score) -> Vec<(&'static str, String)> {
+    vec![
+        (REHEARSAL_STYLE, score.rehearsal_style().label().to_owned()),
+        (
+            "Cifrado americano",
+            if score.chords_sound() {
+                "se oye al reproducir".to_owned()
+            } else {
+                "solo escrito, no se oye".to_owned()
+            },
+        ),
+    ]
 }
 
 /// The part's number and name, and the key its players read when it is not

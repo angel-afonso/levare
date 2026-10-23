@@ -14,8 +14,9 @@ revisa el «después:» de la respuesta.
 - Si la parte que nombra el usuario es ambigua (por ejemplo «violín» con Violín I y \
 Violín II), pregúntale cuál quiere; no elijas tú.
 - Las alturas son escritas: las que lee el intérprete en su parte, no la altura real de los \
-instrumentos transpositores. Sin alteración, la nota sigue la armadura; escribe #, b o n \
-solo donde la partitura los muestra.
+instrumentos transpositores. Cada nota lleva su propia alteración respecto a la armadura: \
+las alteraciones no se arrastran por el compás, así que un fa sostenido repetido se escribe \
+las dos veces (F#4 G4 F#4). Sin alteración, la nota sigue la armadura.
 - No toques archivos ni uses la terminal: no guardes, abras ni exportes. La partitura solo \
 cambia con estas herramientas.
 - Responde breve y en el idioma del usuario.";
@@ -33,13 +34,18 @@ detrás, «.» para el puntillo y «t» para el tresillo: C4:4., D4:8t, E4:8.t.\
 G4:2~.\n\
 - {…} tras un evento enumera sus marcas (dinámica, articulación, ligaduras); es \
 informativo y se ignora al escribir.\n\
-Alturas escritas, como las lee el intérprete en su parte. Sin alteración, la nota sigue la \
-armadura; #, b y n se escriben explícitos solo donde la partitura los muestra.\n\
+Alturas escritas, como las lee el intérprete en su parte. Cada nota lleva su propia \
+alteración respecto a la armadura y no se arrastra por el compás: F#4 G4 F#4 son dos fa \
+sostenidos. Sin alteración, la nota sigue la armadura.\n\
 Compases contados desde 1 como los numera Levare (una anacrusa es el compás 1); tiempos \
 desde 1 en unidades del denominador (corcheas en 6/8), con decimales: 2.5 es la mitad del \
 tiempo 2."
     };
 }
+
+/// The tools that change neither the score nor anything else: selecting
+/// only moves the selection.
+pub const READ_ONLY_TOOLS: [&str; 4] = ["resumen", "leer", "seleccionar", "comandos"];
 
 /// Name and description of each tool, in the order the MCP server lists them.
 pub fn tool_descriptions() -> Vec<(&'static str, &'static str)> {
@@ -48,14 +54,14 @@ pub fn tool_descriptions() -> Vec<(&'static str, &'static str)> {
             "resumen",
             "Resumen breve de la partitura: título, partes numeradas con sus pentagramas, \
 número de compases, compás de tiempo, tonalidad y tempo iniciales y sus cambios, marcas \
-de ensayo y selección actual. Úsalo primero.",
+de ensayo con su estilo (letras, números…) y selección actual. Úsalo primero.",
         ),
         (
             "leer",
             concat!(
                 "Lee la música de un rango de compases, como mucho 32 por llamada, de todas las \
-partes o de las indicadas. Primero da el compás de tiempo, la tonalidad y el tempo en vigor \
-y sus cambios y marcas de ensayo; luego, bajo cada parte, una línea por compás, pentagrama \
+partes o de las indicadas; lee solo las partes y compases que necesites. Primero da el compás de tiempo, la tonalidad y el tempo en vigor \
+y sus cambios, marcas de ensayo, repeticiones, casillas y saltos; luego, bajo cada parte, una línea por compás, pentagrama \
 y voz: «c3: …», con «p2» para el segundo pentagrama y «v2» para la segunda voz cuando la \
 hay. «(vacío)» es un compás sin notas escritas. Una parte transpositora indica su armadura \
 escrita.",
@@ -80,7 +86,8 @@ Compases, Instrumentos, Navegación, Revisión y Reproducción.",
             "Ejecuta un comando del editor sobre la selección actual, como un atajo de teclado, \
 por su id («expresion.staccato») o su etiqueta exacta. Muchos son interruptores: si la \
 marca ya está, la quitan. La respuesta muestra los compases de la selección «antes:» y \
-«después:», o «sin cambios».",
+«después:», con las marcas de compás (ensayo, repeticiones…), o «sin cambios», y nombra \
+los ajustes de toda la partitura que cambien, como el estilo de las marcas de ensayo.",
         ),
         (
             "escribir",
@@ -98,7 +105,7 @@ compases al final.",
             "Un ajuste con valor por llamada, elegido con «tipo»: compas_tiempo, tonalidad \
 (de la obra, en altura real), tempo, clave, anadir_partes, quitar_parte, conexion entre dos \
 posiciones (con «clase»: ligadura para la de expresión, union para la de unión, crescendo, \
-diminuendo, octava_alta, octava_baja o pedal), texto (de expresión o de técnica en una \
+diminuendo, octava_alta, octava_baja, pedal, trino o glissando), texto (de expresión o de técnica en una \
 posición) y titulo. Al añadir o quitar partes cambian sus números: la respuesta los lista.",
         ),
     ]

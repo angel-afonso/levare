@@ -10,7 +10,7 @@ mod tools;
 mod tools_tests;
 
 pub use catalog::{EXCLUDED, allowed_commands};
-pub use instructions::{INSTRUCTIONS, tool_descriptions};
+pub use instructions::{INSTRUCTIONS, READ_ONLY_TOOLS, tool_descriptions};
 pub use tools::{
     AjustarArgs, ComandosArgs, ConnectionClass, EjecutarArgs, EscribirArgs, LeerArgs, Position,
     SeleccionarArgs, TextClass, ToolCall, dispatch,
