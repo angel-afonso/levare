@@ -159,3 +159,45 @@ fn pickup_bar_numbering() {
     assert!(error.contains("4 compases"), "{error}");
     assert!(bar_index(&score, 0).is_err());
 }
+
+#[test]
+fn fractional_onsets_round_trip() {
+    let mut editor = Editor::new(score_in(time(4, 4), 1)).unwrap();
+    let event = |duration| Event {
+        duration,
+        ..quarter()
+    };
+    let (mut ticks, mut at) = (Vec::new(), 0);
+    for (duration, count) in [
+        (Duration::Eighth.with_triplet(true), 3),
+        (Duration::Sixteenth.with_triplet(true), 6),
+        (Duration::ThirtySecond, 8),
+        (Duration::Quarter, 1),
+    ] {
+        for _ in 0..count {
+            ticks.push(at);
+            at += duration.ticks();
+            editor.execute(Command::Write(event(duration))).unwrap();
+        }
+    }
+    let part = editor.score().parts()[0].id();
+    let error = event_at(editor.score(), part, StaffId::Upper, Voice::One, 0, 1).unwrap_err();
+    let list = error.rsplit_once("Empiezan en ").unwrap().1;
+    let labels: Vec<f32> = list
+        .trim_end_matches('.')
+        .split(", ")
+        .map(|label| label.parse().unwrap())
+        .collect();
+    assert_eq!(labels.len(), ticks.len(), "{error}");
+    for (label, tick) in labels.into_iter().zip(ticks) {
+        assert_eq!(beat_tick(editor.score(), 0, label), Ok(tick), "{label}");
+    }
+}
+
+#[test]
+fn beat_between_two_ticks_is_rejected() {
+    let score = score_in(time(4, 4), 1);
+    assert!(beat_tick(&score, 0, 1.25).is_ok());
+    assert!(beat_tick(&score, 0, 1. + 0.5 / 48.).is_err());
+    assert!(beat_tick(&score, 0, 1.01).is_err());
+}

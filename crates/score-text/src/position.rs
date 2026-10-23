@@ -75,6 +75,10 @@ pub fn bar_index(score: &Score, bar: u32) -> Result<usize, String> {
     }
 }
 
+/// How far from a tick a beat may be, in beats: half a unit of the third decimal
+/// that `beat_label` prints, with slack for `f32` rounding.
+const BEAT_TOLERANCE: f32 = 0.001;
+
 /// Tick of a 1-based beat in a measure, counted in units of the time
 /// signature's denominator (eighth notes in 6/8).
 pub fn beat_tick(score: &Score, measure: usize, beat: f32) -> Result<u16, String> {
@@ -89,7 +93,8 @@ pub fn beat_tick(score: &Score, measure: usize, beat: f32) -> Result<u16, String
         ));
     }
     let ticks = (beat - 1.) * f32::from(unit);
-    if (ticks - ticks.round()).abs() > 0.01 {
+    // Onset labels carry three decimals of a beat, so accept what they round to.
+    if (ticks - ticks.round()).abs() > BEAT_TOLERANCE * f32::from(unit) {
         return Err(format!(
             "El tiempo {beat} no cae en una posición exacta del compás {}.",
             measure + 1
@@ -161,7 +166,7 @@ pub fn event_at(
 }
 
 fn beat_label(tick: u16, unit: u16) -> String {
-    let beat = format!("{:.2}", f32::from(tick) / f32::from(unit) + 1.);
+    let beat = format!("{:.3}", f32::from(tick) / f32::from(unit) + 1.);
     beat.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
