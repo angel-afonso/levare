@@ -754,8 +754,7 @@ fn triplet_numbers_stay_inside_the_slur_and_technique_lanes() {
 // the apex of a slur elsewhere in the bar.
 fn assert_text_clears_curve(bar: &PlacedMeasure, label: &TechniqueLabel, curve: &Curve) {
     let left = (bar.origin.x + label.position.x).max(curve.from.x);
-    let right =
-        (bar.origin.x + label.position.x + label.text.chars().count() as f32 * 7.).min(curve.to.x);
+    let right = (bar.origin.x + label.position.x + label.width()).min(curve.to.x);
     if left > right {
         return;
     }

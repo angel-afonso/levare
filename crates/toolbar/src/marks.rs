@@ -33,10 +33,21 @@ pub const fn command(kind: MarkKind) -> CommandId {
         MarkKind::Technique(T::Arco) => id::ARCO,
         MarkKind::Harmonic(score_core::Harmonic::Natural) => id::HARMONIC_NATURAL,
         MarkKind::Harmonic(score_core::Harmonic::Artificial) => id::HARMONIC_ARTIFICIAL,
+        MarkKind::Grace(score_core::GraceKind::Acciaccatura) => id::ACCIACCATURA,
+        MarkKind::Grace(score_core::GraceKind::Appoggiatura) => id::APPOGGIATURA,
+        MarkKind::Text(score_core::TextKind::Expression) => id::EXPRESSION_TEXT,
+        MarkKind::Text(score_core::TextKind::Technique) => id::TECHNIQUE_TEXT,
+        MarkKind::Lyric => id::LYRICS,
+        MarkKind::Chord => id::CHORD_SYMBOL,
         MarkKind::Connection(K::Tie) => id::TIE,
         MarkKind::Connection(K::Slur) => id::SLUR,
         MarkKind::Connection(K::Crescendo) => id::CRESCENDO,
         MarkKind::Connection(K::Diminuendo) => id::DIMINUENDO,
+        MarkKind::Connection(K::OttavaAlta) => id::OTTAVA_ALTA,
+        MarkKind::Connection(K::OttavaBassa) => id::OTTAVA_BASSA,
+        MarkKind::Connection(K::Pedal) => id::PEDAL,
+        MarkKind::Connection(K::Trill) => id::TRILL,
+        MarkKind::Connection(K::Glissando) => id::GLISSANDO,
     }
 }
 

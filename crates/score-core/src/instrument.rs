@@ -9,15 +9,17 @@ pub enum InstrumentFamily {
     Percussion,
     Keyboards,
     PluckedStrings,
+    Voices,
     Strings,
 }
 impl InstrumentFamily {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Woodwinds,
         Self::Brass,
         Self::Percussion,
         Self::Keyboards,
         Self::PluckedStrings,
+        Self::Voices,
         Self::Strings,
     ];
     pub fn label(self) -> &'static str {
@@ -27,6 +29,7 @@ impl InstrumentFamily {
             Self::Percussion => "PERCUSIÓN",
             Self::Keyboards => "TECLADOS",
             Self::PluckedStrings => "CUERDAS PULSADAS",
+            Self::Voices => "VOCES",
             Self::Strings => "CUERDAS",
         }
     }
@@ -90,10 +93,10 @@ macro_rules! catalog {
 catalog! {
     Piano, Keyboards, "Piano", 0, Treble, 44, 0, 0, None, true;
     Guitar, PluckedStrings, "Guitarra", 24, Treble, 48, -7, -12, None, false;
-    Violin, Strings, "Violín", 40, Treble, 50, 0, 0, None, false;
-    Viola, Strings, "Viola", 41, Alto, 51, 0, 0, None, false;
-    Cello, Strings, "Violoncello", 42, Bass, 52, 0, 0, None, false;
-    DoubleBass, Strings, "Contrabajo", 43, Bass, 53, -7, -12, None, false;
+    Violin, Strings, "Violín", 40, Treble, 55, 0, 0, None, false;
+    Viola, Strings, "Viola", 41, Alto, 56, 0, 0, None, false;
+    Cello, Strings, "Violoncello", 42, Bass, 57, 0, 0, None, false;
+    DoubleBass, Strings, "Contrabajo", 43, Bass, 58, -7, -12, None, false;
     Flute, Woodwinds, "Flauta", 73, Treble, 1, 0, 0, None, false;
     Oboe, Woodwinds, "Oboe", 68, Treble, 4, 0, 0, None, false;
     Clarinet, Woodwinds, "Clarinete en Do", 71, Treble, 10, 0, 0, None, false;
@@ -137,6 +140,12 @@ catalog! {
     Celesta, Keyboards, "Celesta", 8, Treble, 45, 7, 12, None, true;
     Organ, Keyboards, "Órgano", 19, Treble, 46, 0, 0, None, true;
     Harp, PluckedStrings, "Arpa", 46, Treble, 47, 0, 0, None, true;
+    // General MIDI voice oohs for a solo voice, choir aahs for the four parts.
+    Voice, Voices, "Voz", 53, Treble, 49, 0, 0, None, false;
+    Soprano, Voices, "Soprano", 52, Treble, 50, 0, 0, None, false;
+    Contralto, Voices, "Contralto", 52, Treble, 51, 0, 0, None, false;
+    Tenor, Voices, "Tenor", 52, Treble, 52, -7, -12, None, false;
+    BassVoice, Voices, "Bajo", 52, Bass, 53, 0, 0, None, false;
 }
 impl Instrument {
     /// Common symphonic desk configuration, with auxiliary winds and two violin sections.

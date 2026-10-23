@@ -60,6 +60,7 @@ fn levels(value: NoteValue) -> u8 {
     match value {
         NoteValue::Eighth => 1,
         NoteValue::Sixteenth => 2,
+        NoteValue::ThirtySecond => 3,
         _ => 0,
     }
 }
@@ -197,8 +198,11 @@ impl Plan {
             let slope = ((height(last) - height(first)) * 0.25 / (x2 - x1))
                 .clamp(-0.125, 0.125)
                 .clamp(-10. / (x2 - x1), 10. / (x2 - x1));
+            let deepest = notes.iter().map(|n| n.levels).max().unwrap_or(1);
+            // Each beam past the second lengthens the stems by its own spacing.
+            let length = 35. + SEPARATION * f32::from(deepest.saturating_sub(2));
             let candidates = notes.iter().map(|n| {
-                height(n) + if group.down { 35. } else { -35. } - slope * (stem_x(n) - x1)
+                height(n) + if group.down { length } else { -length } - slope * (stem_x(n) - x1)
             });
             let origin = if group.down {
                 candidates.fold(f32::NEG_INFINITY, f32::max)
@@ -228,40 +232,45 @@ impl Plan {
                 }
             };
             let mut segments = vec![segment(x1 - metrics.stem / 2., x2 + metrics.stem / 2., 1)];
-            let mut i = 0;
-            while i < notes.len() {
-                if notes[i].levels < 2 {
-                    i += 1;
-                    continue;
-                }
-                let start = i;
-                while i + 1 < notes.len() && notes[i + 1].levels == 2 {
-                    i += 1;
-                }
-                if i > start {
-                    segments.push(segment(
-                        stem_x(&notes[start]) - metrics.stem / 2.,
-                        stem_x(&notes[i]) + metrics.stem / 2.,
-                        2,
-                    ));
-                } else {
-                    let pair_ticks = if notes[i].triplet {
-                        score_core::TICKS_PER_QUARTER / 3
+            // Every inner level joins the runs of notes that short; a lone one
+            // gets a hook toward the note it pairs with in its metric unit.
+            for level in 2..=deepest {
+                let mut i = 0;
+                while i < notes.len() {
+                    if notes[i].levels < level {
+                        i += 1;
+                        continue;
+                    }
+                    let start = i;
+                    while i + 1 < notes.len() && notes[i + 1].levels >= level {
+                        i += 1;
+                    }
+                    if i > start {
+                        segments.push(segment(
+                            stem_x(&notes[start]) - metrics.stem / 2.,
+                            stem_x(&notes[i]) + metrics.stem / 2.,
+                            level,
+                        ));
                     } else {
-                        score_core::TICKS_PER_QUARTER / 2
-                    };
-                    let prefer_right = notes[i].tick.is_multiple_of(pair_ticks);
-                    let right = (prefer_right && i + 1 < notes.len()) || i == 0;
-                    let x = stem_x(&notes[i]);
-                    let neighbor = stem_x(&notes[if right { i + 1 } else { i - 1 }]);
-                    let hook = ((neighbor - x).abs() * 0.45).min(12.);
-                    segments.push(if right {
-                        segment(x - metrics.stem / 2., x + hook, 2)
-                    } else {
-                        segment(x - hook, x + metrics.stem / 2., 2)
-                    });
+                        let unit = if notes[i].triplet {
+                            score_core::TICKS_PER_QUARTER / 3
+                        } else {
+                            score_core::TICKS_PER_QUARTER / 2
+                        };
+                        let pair_ticks = unit >> (level - 2);
+                        let prefer_right = notes[i].tick.is_multiple_of(pair_ticks);
+                        let right = (prefer_right && i + 1 < notes.len()) || i == 0;
+                        let x = stem_x(&notes[i]);
+                        let neighbor = stem_x(&notes[if right { i + 1 } else { i - 1 }]);
+                        let hook = ((neighbor - x).abs() * 0.45).min(12.);
+                        segments.push(if right {
+                            segment(x - metrics.stem / 2., x + hook, level)
+                        } else {
+                            segment(x - hook, x + metrics.stem / 2., level)
+                        });
+                    }
+                    i += 1;
                 }
-                i += 1;
             }
             let stems: Vec<_> = notes
                 .iter()

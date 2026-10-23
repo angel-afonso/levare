@@ -36,6 +36,46 @@ pub(crate) fn accent_boost(articulation: Option<Articulation>) -> u8 {
 }
 
 /// Attack intensity on the MIDI velocity scale: dynamic level plus accent.
+/// A muted attack: about a quarter softer, which also picks darker layers.
+pub(crate) fn muted(level: u8) -> u8 {
+    (u16::from(level) * 3 / 4).max(1) as u8
+}
+
+/// The way of playing written in words: muted, bound, or back to ordinary.
+pub(crate) struct Manner {
+    /// State from each written indication on: (muted, legato).
+    states: std::collections::BTreeMap<u64, (bool, bool)>,
+}
+impl Manner {
+    pub(crate) fn new(
+        instructions: &std::collections::BTreeMap<u64, Vec<score_core::TextEffect>>,
+    ) -> Self {
+        use score_core::TextEffect;
+        let mut state = (false, false);
+        let states = instructions
+            .iter()
+            .map(|(&tick, effects)| {
+                for effect in effects {
+                    match *effect {
+                        TextEffect::Mute(on) => state.0 = on,
+                        TextEffect::Legato(on) => state.1 = on,
+                        TextEffect::Ordinary => state = (false, false),
+                        TextEffect::Swell(_) => {}
+                    }
+                }
+                (tick, state)
+            })
+            .collect();
+        Self { states }
+    }
+    pub(crate) fn at(&self, tick: u64) -> (bool, bool) {
+        self.states
+            .range(..=tick)
+            .next_back()
+            .map_or((false, false), |(_, state)| *state)
+    }
+}
+
 pub(crate) fn level(dynamic: u8, articulation: Option<Articulation>) -> u8 {
     dynamic
         .saturating_add(accent_boost(articulation))
@@ -262,6 +302,262 @@ pub(crate) fn shape(
     shorten_repeated_keys(sounds);
     for (sound, offset) in sounds.iter_mut().zip(offsets) {
         sound.level = (i16::from(sound.level) + offset).clamp(1, 127) as u8;
+    }
+}
+
+/// Grace notes take their time from the start of their note: an
+/// acciaccatura only a moment, an appoggiatura half of it. Call right after
+/// pushing the note's sound.
+pub(crate) fn graces(
+    sounds: &mut Vec<super::SoundSpan>,
+    pitches: &[score_core::Pitch],
+    kind: score_core::GraceKind,
+    rate: u32,
+) {
+    let Some(&principal) = sounds.last() else {
+        return;
+    };
+    let count = pitches.len() as u64;
+    let length = principal.written_end - principal.start;
+    let total = match kind {
+        score_core::GraceKind::Acciaccatura => {
+            (u64::from(rate) * 70 / 1000 * count).min(length / 3)
+        }
+        score_core::GraceKind::Appoggiatura => length / 2,
+    };
+    let each = total / count.max(1);
+    if each == 0 {
+        return;
+    }
+    let index = sounds.len() - 1;
+    for (offset, pitch) in pitches.iter().enumerate() {
+        let start = principal.start + each * offset as u64;
+        sounds.insert(
+            index + offset,
+            super::SoundSpan {
+                start,
+                end: start + each,
+                attack_duration: each,
+                written_end: start + each,
+                pitches: score_core::Pitches::single(Some(*pitch)),
+                arpeggio: None,
+                tremolo: None,
+                tremolo_repeat: false,
+                tremolo_attack: None,
+                grace: true,
+                articulation: None,
+                boost: 0,
+                legato: false,
+                slurred: false,
+                ..principal
+            },
+        );
+    }
+    let principal = &mut sounds[index + pitches.len()];
+    principal.start += each * count;
+    principal.attack_duration = principal.attack_duration.saturating_sub(each * count);
+}
+
+/// Trills alternate every single note they cover with the note above, about
+/// eleven notes a second. Chords and grace notes keep their written sound.
+pub(crate) fn trills(score: &Score, sounds: &mut Vec<super::SoundSpan>, from: usize, rate: u32) {
+    let trills: Vec<_> = score
+        .connections()
+        .iter()
+        .copied()
+        .filter(|c| c.kind == ConnectionKind::Trill)
+        .collect();
+    if trills.is_empty() {
+        return;
+    }
+    let covered = |element: score_core::ElementId| {
+        trills.iter().any(|c| {
+            score.voice_of(c.start) == score.voice_of(element)
+                && score.connection_contains(*c, element)
+        })
+    };
+    let period = (u64::from(rate) * 90 / 1000).max(1);
+    for sound in sounds.split_off(from) {
+        let upper = (!sound.grace && sound.pitches.len() == 1 && covered(sound.element))
+            .then(|| score.trill_upper(sound.element))
+            .flatten();
+        let Some(upper) = upper else {
+            sounds.push(sound);
+            continue;
+        };
+        let length = sound.written_end.saturating_sub(sound.start);
+        let count = (length / period).max(2);
+        let step = length / count;
+        for index in 0..count {
+            let start = sound.start + step * index;
+            let last = index + 1 == count;
+            sounds.push(super::SoundSpan {
+                start,
+                end: if last { sound.end } else { start + step },
+                attack_duration: step,
+                written_end: if last {
+                    sound.written_end
+                } else {
+                    start + step
+                },
+                pitches: if index % 2 == 0 {
+                    sound.pitches
+                } else {
+                    score_core::Pitches::single(Some(upper))
+                },
+                boost: if index == 0 { sound.boost } else { 0 },
+                articulation: if index == 0 { sound.articulation } else { None },
+                ..sound
+            });
+        }
+    }
+}
+
+/// A glissando fills its first note with a run up or down to the next one:
+/// chromatic, or on the white keys for harp and keyboards.
+pub(crate) fn glissandos(
+    score: &Score,
+    sounds: &mut Vec<super::SoundSpan>,
+    from: usize,
+    rate: u32,
+) {
+    let slides: Vec<_> = score
+        .connections()
+        .iter()
+        .copied()
+        .filter(|c| c.kind == ConnectionKind::Glissando)
+        .collect();
+    if slides.is_empty() {
+        return;
+    }
+    let shortest = (u64::from(rate) * 25 / 1000).max(1);
+    for sound in sounds.split_off(from) {
+        let target = slides
+            .iter()
+            .find(|c| c.start == sound.element)
+            .filter(|_| !sound.grace)
+            .and_then(|c| score.sounding_pitches(c.end).ok()?.iter().last());
+        let (Some(target), Some(top)) = (target, sound.pitches.iter().last()) else {
+            sounds.push(sound);
+            continue;
+        };
+        let (a, b) = (super::midi_key(top), super::midi_key(target));
+        let white = matches!(
+            sound.instrument.family(),
+            score_core::InstrumentFamily::Keyboards
+        ) || sound.instrument == score_core::Instrument::Harp;
+        let mut keys: Vec<u8> = if a < b {
+            (a..b).collect()
+        } else {
+            (b + 1..=a).rev().collect()
+        };
+        if white {
+            keys.retain(|key| *key == a || matches!(key % 12, 0 | 2 | 4 | 5 | 7 | 9 | 11));
+        }
+        let length = sound.written_end.saturating_sub(sound.start);
+        // Very fast slides skip notes rather than crowd the attacks.
+        let stride = keys
+            .len()
+            .div_ceil((length / shortest).max(1) as usize)
+            .max(1);
+        let keys: Vec<u8> = keys.into_iter().step_by(stride).collect();
+        if keys.len() < 2 {
+            sounds.push(sound);
+            continue;
+        }
+        let step = length / keys.len() as u64;
+        for (index, key) in keys.iter().enumerate() {
+            let start = sound.start + step * index as u64;
+            let last = index + 1 == keys.len();
+            sounds.push(super::SoundSpan {
+                start,
+                end: if last { sound.end } else { start + step },
+                attack_duration: step,
+                written_end: if last {
+                    sound.written_end
+                } else {
+                    start + step
+                },
+                pitches: if index == 0 {
+                    sound.pitches
+                } else {
+                    score_core::Pitches::single(Some(pitch_of_key(*key)))
+                },
+                boost: if index == 0 { sound.boost } else { 0 },
+                articulation: None,
+                ..sound
+            });
+        }
+    }
+}
+
+pub(crate) fn pitch_of_key(key: u8) -> score_core::Pitch {
+    use score_core::{Accidental, Step};
+    let (step, sharp) = [
+        (Step::C, false),
+        (Step::C, true),
+        (Step::D, false),
+        (Step::D, true),
+        (Step::E, false),
+        (Step::F, false),
+        (Step::F, true),
+        (Step::G, false),
+        (Step::G, true),
+        (Step::A, false),
+        (Step::A, true),
+        (Step::B, false),
+    ][usize::from(key % 12)];
+    score_core::Pitch::new(step, (key / 12).saturating_sub(1))
+        .expect("playable key")
+        .with_accidental(sharp.then_some(Accidental::Sharp))
+}
+
+/// The sustain pedal holds every note struck while it is down until it
+/// rises at the end of its last note. A key struck again is released first.
+pub(crate) fn pedal(score: &Score, part: PartId, sounds: &mut [super::SoundSpan]) {
+    let pedals: Vec<_> = score
+        .connections()
+        .iter()
+        .copied()
+        .filter(|c| c.kind == ConnectionKind::Pedal && c.start.part == part)
+        .collect();
+    if pedals.is_empty() {
+        return;
+    }
+    for c in pedals {
+        let (Some(from), Some(to)) = (score.event_tick(c.start), score.event_tick(c.end)) else {
+            continue;
+        };
+        // One release per performed pass through the pedal's last note.
+        let releases: Vec<u64> = sounds
+            .iter()
+            .filter(|sound| sound.element == c.end)
+            .map(|sound| sound.written_end)
+            .collect();
+        for sound in sounds
+            .iter_mut()
+            .filter(|sound| (from..=to).contains(&sound.written_range.0))
+        {
+            if let Some(release) = releases.iter().copied().filter(|r| *r > sound.start).min() {
+                sound.end = sound.end.max(release);
+            }
+        }
+    }
+    let mut order: Vec<usize> = (0..sounds.len()).collect();
+    order.sort_by_key(|index| sounds[*index].start);
+    let mut last: HashMap<(u8, u8), usize> = HashMap::new();
+    for index in order {
+        for pitch in sounds[index].pitches.iter() {
+            let key = (sounds[index].channel, super::midi_key(pitch));
+            if let Some(previous) = last.insert(key, index)
+                && sounds[previous].end > sounds[index].start
+            {
+                sounds[previous].end = sounds[index]
+                    .start
+                    .saturating_sub(1)
+                    .max(sounds[previous].start + 1);
+            }
+        }
     }
 }
 

@@ -37,6 +37,10 @@ fn check_timing(doc: &Document<'_>, score: &Score) {
                         cursor -= text(element, "duration").parse::<i32>().unwrap();
                         assert!(cursor >= 0);
                     }
+                    // Grace notes take no time of the bar.
+                    "note" if child(element, "grace").is_some() => {
+                        assert!(child(element, "duration").is_none());
+                    }
                     "note" => {
                         let duration: i32 = text(element, "duration").parse().unwrap();
                         assert!(duration > 0);
@@ -756,4 +760,141 @@ fn rehearsal_styles_and_custom_labels_round_trip() {
         .unwrap();
     let imported = decode(&encode(&score).unwrap()).unwrap();
     assert_eq!(imported.score.rehearsal_label(0), score.rehearsal_label(0));
+}
+
+#[test]
+fn thirty_seconds_with_dots_and_triplets_round_trip() {
+    let mut score = Score::default();
+    let durations = [
+        Duration::ThirtySecond,
+        Duration::ThirtySecond.with_dotted(true),
+        Duration::Sixteenth.with_dotted(true).with_dotted(false),
+        Duration::ThirtySecond.with_triplet(true),
+        Duration::ThirtySecond.with_triplet(true),
+        Duration::ThirtySecond.with_triplet(true),
+    ];
+    for (index, duration) in durations.into_iter().enumerate() {
+        score.insert(0, index, note(Step::C, 5, duration)).unwrap();
+    }
+    let text = xml(&score);
+    assert!(text.contains("<type>32nd</type>"));
+    let document = Document::parse(&text).unwrap();
+    check_timing(&document, &score);
+    let imported = decode(text.as_bytes()).unwrap().score;
+    let read: Vec<_> = imported.parts()[0].measures()[0]
+        .voice_iter(score_core::Voice::One)
+        .map(|(_, event)| event.duration)
+        .take(durations.len())
+        .collect();
+    assert_eq!(read, durations);
+}
+
+#[test]
+fn grace_notes_round_trip_before_their_note() {
+    let mut score = Score::default();
+    let d = score
+        .insert(0, 0, note(Step::D, 5, Duration::Quarter))
+        .unwrap();
+    let f = score
+        .insert(0, 1, note(Step::F, 5, Duration::Quarter))
+        .unwrap();
+    score.set_grace(d, Some(GraceKind::Acciaccatura)).unwrap();
+    score.transpose_grace_note(d, 0, -1).unwrap();
+    score.add_grace_note(f).unwrap();
+    score.add_grace_note(f).unwrap();
+    score.transpose_grace_note(f, 0, 1).unwrap();
+    score.transpose_grace_note(f, 1, 2).unwrap();
+    let text = xml(&score);
+    assert!(text.contains("<grace slash=\"yes\"/>"));
+    assert_eq!(text.matches("<grace").count(), 3);
+    check_timing(&Document::parse(&text).unwrap(), &score);
+    let imported = decode(text.as_bytes()).unwrap().score;
+    let graces = |s: &Score| -> Vec<_> {
+        s.parts()[0].measures()[0]
+            .voice_iter(score_core::Voice::One)
+            .map(|(_, event)| event.notation.grace)
+            .take(2)
+            .collect()
+    };
+    assert_eq!(graces(&imported), graces(&score));
+}
+
+#[test]
+fn octave_lines_pedal_trills_and_glissandi_round_trip() {
+    let mut score = Score::default();
+    score.append_measure().unwrap();
+    let steps = [
+        Step::C,
+        Step::D,
+        Step::E,
+        Step::F,
+        Step::G,
+        Step::A,
+        Step::B,
+        Step::C,
+    ];
+    let ids: Vec<_> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, step)| {
+            score
+                .insert(i / 4, i % 4, note(*step, 5, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    let lines = [
+        (0, 2, ConnectionKind::OttavaAlta),
+        (3, 5, ConnectionKind::OttavaBassa),
+        (0, 3, ConnectionKind::Pedal),
+        (5, 5, ConnectionKind::Pedal),
+        (1, 1, ConnectionKind::Trill),
+        (4, 6, ConnectionKind::Trill),
+        (6, 7, ConnectionKind::Glissando),
+    ];
+    for (start, end, kind) in lines {
+        score
+            .add_connection(Connection {
+                start: ids[start],
+                end: ids[end],
+                kind,
+            })
+            .unwrap();
+    }
+    let text = xml(&score);
+    for tag in [
+        "<octave-shift type=\"down\" size=\"8\"",
+        "<octave-shift type=\"up\" size=\"8\"",
+        "<pedal type=\"start\" line=\"yes\"/>",
+        "<trill-mark/>",
+        "<wavy-line type=\"stop\"",
+        "<glissando type=\"start\"",
+    ] {
+        assert!(text.contains(tag), "{tag}");
+    }
+    check_timing(&Document::parse(&text).unwrap(), &score);
+    let result = decode(text.as_bytes()).unwrap();
+    assert!(
+        result
+            .warnings
+            .iter()
+            .all(|w| !w.contains("línea") && !w.contains("ornaments")),
+        "{:?}",
+        result.warnings
+    );
+    let spans = |s: &Score| {
+        let mut spans: Vec<_> = s
+            .connections()
+            .iter()
+            .map(|c| {
+                (
+                    format!("{:?}", c.kind),
+                    s.event_tick(c.start).unwrap(),
+                    s.event_tick(c.end).unwrap(),
+                )
+            })
+            .collect();
+        spans.sort();
+        spans
+    };
+    assert_eq!(spans(&result.score), spans(&score));
 }

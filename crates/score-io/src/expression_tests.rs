@@ -245,7 +245,7 @@ fn schema_ten_round_trips_rhythms_and_legacy_values_keep_their_musical_meaning()
 }
 
 #[test]
-fn the_largest_supported_bar_can_save_and_restore_all_384_triplet_events() {
+fn the_largest_supported_bar_can_save_and_restore_all_768_shortest_events() {
     let mut file: serde_json::Value =
         serde_json::from_slice(&encode(&Score::default()).unwrap()).unwrap();
     file["score"]["time"] = serde_json::json!({"numerator":16,"denominator":1});
@@ -256,13 +256,13 @@ fn the_largest_supported_bar_can_save_and_restore_all_384_triplet_events() {
             i,
             Event {
                 pitches: Pitches::default(),
-                duration: Duration::Sixteenth.with_triplet(true),
+                duration: Duration::ThirtySecond.with_triplet(true),
                 notation: Default::default(),
             },
         )
         .unwrap();
     }
-    assert_eq!(s.measures()[0].len(), 384);
+    assert_eq!(s.measures()[0].len(), 768);
     assert_eq!(s.measures()[0].used_ticks(), s.time().capacity());
     assert_eq!(decode(&encode(&s).unwrap()).unwrap(), s);
 }

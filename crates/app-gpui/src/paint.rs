@@ -576,15 +576,52 @@ pub fn score_canvas(
                         }
                     }
                 }
-                for label in &measure.content.techniques {
+                for label in measure
+                    .content
+                    .techniques
+                    .iter()
+                    .chain(&measure.content.expressions)
+                {
+                    let at =
+                        offset + point(px(label.position.x * scale), px(label.position.y * scale));
+                    let color =
+                        if selected.contains(&label.element) || selected_mark == Some(label.mark) {
+                            0x3c70cf
+                        } else {
+                            0x202c27
+                        };
+                    // Chord symbols are upright, with their flats and sharps in Bravura.
+                    if matches!(label.mark, MarkRef::Chord(_)) {
+                        mixed_text_at(
+                            &music_font,
+                            label.text.as_str(),
+                            font("Times New Roman"),
+                            18. * scale,
+                            at,
+                            color,
+                            window,
+                            cx,
+                        );
+                    } else {
+                        text_at(
+                            label.text.as_str(),
+                            font("Times New Roman").italic(),
+                            16. * scale,
+                            at,
+                            color,
+                            window,
+                            cx,
+                        );
+                    }
+                }
+                for lyric in &measure.content.lyrics {
                     text_at(
-                        label.text,
-                        font("Times New Roman").italic(),
+                        lyric.syllable.text(),
+                        font("Times New Roman"),
                         16. * scale,
-                        offset + point(px(label.position.x * scale), px(label.position.y * scale)),
-                        if selected.contains(&label.element)
-                            || selected_mark == Some(MarkRef::Technique(label.element))
-                            || selected_mark == Some(MarkRef::Division(label.element))
+                        offset + point(px(lyric.position.x * scale), px(lyric.position.y * scale)),
+                        if selected.contains(&lyric.element)
+                            || selected_mark == Some(MarkRef::Lyric(lyric.element, lyric.verse))
                         {
                             0x3c70cf
                         } else {
@@ -638,6 +675,25 @@ pub fn score_canvas(
                         rgb(color).into(),
                         score_layout::MUSIC_SIZE * scale,
                         glyph.rotated,
+                        window,
+                    );
+                }
+                for cue in &measure.content.cue {
+                    let color = if selected_mark == Some(cue.mark) {
+                        crate::playhead::SELECTED
+                    } else {
+                        crate::playhead::note_color(cue.glyph.element, &selected, &playheads)
+                    };
+                    music_font.paint_oriented(
+                        &cue.glyph.text,
+                        offset
+                            + point(
+                                px(cue.glyph.position.x * scale),
+                                px(cue.glyph.position.y * scale),
+                            ),
+                        rgb(color).into(),
+                        score_layout::MUSIC_SIZE * score_layout::CUE * scale,
+                        false,
                         window,
                     );
                 }
@@ -703,6 +759,44 @@ pub fn score_canvas(
                     if let Ok(path) = path.build() {
                         window.paint_path(path, rgb(color));
                     }
+                }
+            }
+            for line in layout.lyric_lines.iter().filter(|l| shown(line_ink(l))) {
+                let mut path = PathBuilder::stroke(px(line.thickness * scale));
+                path.move_to(origin + point(px(line.from.x * scale), px(line.from.y * scale)));
+                path.line_to(origin + point(px(line.to.x * scale), px(line.to.y * scale)));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, rgb(0x202c27));
+                }
+            }
+            for line in layout.line_marks.iter().filter(|l| shown(l.ink())) {
+                let color = if selected.contains(&line.connection.start)
+                    || selected.contains(&line.connection.end)
+                    || connection_selected(line.connection)
+                {
+                    0x3c70cf
+                } else {
+                    0x202c27
+                };
+                for stroke in &line.strokes {
+                    let mut path = PathBuilder::stroke(px(stroke.thickness * scale));
+                    path.move_to(
+                        origin + point(px(stroke.from.x * scale), px(stroke.from.y * scale)),
+                    );
+                    path.line_to(origin + point(px(stroke.to.x * scale), px(stroke.to.y * scale)));
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, rgb(color));
+                    }
+                }
+                for glyph in &line.glyphs {
+                    music_font.paint_oriented(
+                        &glyph.text,
+                        origin + point(px(glyph.position.x * scale), px(glyph.position.y * scale)),
+                        rgb(color).into(),
+                        score_layout::MUSIC_SIZE * scale,
+                        false,
+                        window,
+                    );
                 }
             }
             for curve in layout.curves.iter().filter(|c| shown(curve_ink(c))) {
@@ -950,6 +1044,9 @@ fn paint_time_target(
             score_core::NoteValue::Eighth => Some(if stem.down { "\u{e241}" } else { "\u{e240}" }),
             score_core::NoteValue::Sixteenth => {
                 Some(if stem.down { "\u{e243}" } else { "\u{e242}" })
+            }
+            score_core::NoteValue::ThirtySecond => {
+                Some(if stem.down { "\u{e245}" } else { "\u{e244}" })
             }
             _ => None,
         };

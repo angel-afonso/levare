@@ -390,6 +390,21 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
         toggle(tile(id::SLUR, Visual::Slur, "Expresión")),
     ],
 };
+const GRACES: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Notas de adorno",
+    visual: Music("\u{e560}"),
+    priority: 5,
+    controls: &[
+        toggle(mark_tile(MarkKind::Grace(
+            score_core::GraceKind::Acciaccatura,
+        ))),
+        toggle(mark_tile(MarkKind::Grace(
+            score_core::GraceKind::Appoggiatura,
+        ))),
+        tile(id::GRACE_NOTE, Music("\u{e562}"), "Añadir otra"),
+    ],
+};
 const ARPEGGIOS: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Arpegios",
@@ -435,6 +450,19 @@ const HAIRPINS: GroupSpec = GroupSpec {
         )),
     ],
 };
+const LINES: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Líneas",
+    visual: Music("\u{e511}"),
+    priority: 4,
+    controls: &[
+        toggle(mark_small(MarkKind::Connection(K::OttavaAlta), "8va")),
+        toggle(mark_small(MarkKind::Connection(K::OttavaBassa), "8vb")),
+        toggle(mark_small(MarkKind::Connection(K::Pedal), "Pedal")),
+        toggle(mark_small(MarkKind::Connection(K::Trill), "Trino")),
+        toggle(mark_small(MarkKind::Connection(K::Glissando), "Glissando")),
+    ],
+};
 const TECHNIQUE: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Técnica de cuerda",
@@ -473,6 +501,28 @@ const TEMPO: GroupSpec = GroupSpec {
         large(id::TEMPO_TEXT, Text("Allegro"), "Tempo"),
         small(id::TEMPO_UP, Icon("tempo-up"), "Subir tempo"),
         small(id::TEMPO_DOWN, Icon("tempo-down"), "Bajar tempo"),
+    ],
+};
+/// Words at the selected note: an expression below, an instruction above.
+const STAFF_TEXT: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Textos",
+    visual: Text("dolce"),
+    priority: 5,
+    controls: &[
+        toggle(large(id::EXPRESSION_TEXT, Text("dolce"), "Expresión")),
+        toggle(large(id::TECHNIQUE_TEXT, Text("con sord."), "Técnica")),
+    ],
+};
+/// Sung words under the notes and chord symbols above them.
+const LYRICS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Letra y cifrado",
+    visual: Text("la-la"),
+    priority: 4,
+    controls: &[
+        toggle(large(id::LYRICS, Text("la-la"), "Letra")),
+        toggle(large(id::CHORD_SYMBOL, Text("C7"), "Cifrado")),
     ],
 };
 /// Write a mark, then choose how every mark of the score is numbered.
@@ -520,6 +570,7 @@ const INTERPRETATION: GroupSpec = GroupSpec {
         toggle(small(id::LOOP, Icon("loop"), "Bucle")),
         toggle(small(id::REPEATS, Icon("repeats"), "Repeticiones")),
         toggle(small(id::HALF_SPEED, Icon("half-speed"), "Media velocidad")),
+        toggle(small(id::CHORD_PLAYBACK, Text("C7"), "Cifrados")),
     ],
 };
 const VIEW_MODES: GroupSpec = GroupSpec {
@@ -662,6 +713,7 @@ pub const TABS: &[TabSpec] = &[
             DURATION,
             ACCIDENTALS,
             ARTICULATIONS,
+            GRACES,
             VOICES,
             CHORDS,
         ],
@@ -669,12 +721,13 @@ pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Notation,
         groups: &[
-            COMMON, DYNAMICS, HAIRPINS, ARPEGGIOS, TECHNIQUE, TREMOLOS, DIVISI, REPEATS, JUMPS,
+            COMMON, DYNAMICS, HAIRPINS, LINES, ARPEGGIOS, TECHNIQUE, TREMOLOS, DIVISI, REPEATS,
+            JUMPS,
         ],
     },
     TabSpec {
         id: TabId::Text,
-        groups: &[HEADER, TEMPO, REHEARSAL],
+        groups: &[HEADER, TEMPO, STAFF_TEXT, LYRICS, REHEARSAL],
     },
     TabSpec {
         id: TabId::Playback,
@@ -734,9 +787,11 @@ mod tests {
             ACCIDENTALS,
             CHORDS,
             ARTICULATIONS,
+            GRACES,
             ARPEGGIOS,
             DYNAMICS,
             HAIRPINS,
+            LINES,
             TECHNIQUE,
             TREMOLOS,
             DIVISI,

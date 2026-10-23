@@ -625,8 +625,9 @@ fn removing_a_midbar_boundary_after_rhythm_edits_never_resurrects_mirror_labels(
     )
     .unwrap();
     let before_cut = s.clone();
+    // Two ticks are shorter than any written value, even a triplet thirty-second.
     assert!(
-        s.set_divisi_span(p, DivisiPoint::new(0, 4), None, true)
+        s.set_divisi_span(p, DivisiPoint::new(0, 2), None, true)
             .is_err()
     );
     assert_eq!(s, before_cut);

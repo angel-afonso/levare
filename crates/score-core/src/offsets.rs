@@ -124,7 +124,10 @@ impl MarkRef {
                 | Self::Fermata(_)
                 | Self::Technique(_)
                 | Self::Harmonic(_)
-        ) || matches!(self, Self::Connection(connection) if connection.kind != crate::ConnectionKind::Tie)
+                | Self::Text(..)
+                | Self::Chord(_)
+        ) || matches!(self, Self::Connection(connection)
+            if connection.kind != crate::ConnectionKind::Tie && !connection.kind.is_line())
     }
 }
 
@@ -140,6 +143,12 @@ pub struct MarkOffsets {
     pub technique: Option<Offset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harmonic: Option<Offset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression_text: Option<Offset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub technique_text: Option<Offset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chord: Option<Offset>,
 }
 
 impl MarkOffsets {
@@ -149,6 +158,9 @@ impl MarkOffsets {
             && self.fermata.is_none()
             && self.technique.is_none()
             && self.harmonic.is_none()
+            && self.expression_text.is_none()
+            && self.technique_text.is_none()
+            && self.chord.is_none()
     }
 
     pub fn get(&self, family: MarkFamily) -> Option<Offset> {
@@ -158,6 +170,9 @@ impl MarkOffsets {
             MarkFamily::Fermata => self.fermata,
             MarkFamily::Technique => self.technique,
             MarkFamily::Harmonic => self.harmonic,
+            MarkFamily::ExpressionText => self.expression_text,
+            MarkFamily::TechniqueText => self.technique_text,
+            MarkFamily::Chord => self.chord,
             _ => None,
         }
     }
@@ -169,6 +184,9 @@ impl MarkOffsets {
             MarkFamily::Fermata => Some(&mut self.fermata),
             MarkFamily::Technique => Some(&mut self.technique),
             MarkFamily::Harmonic => Some(&mut self.harmonic),
+            MarkFamily::ExpressionText => Some(&mut self.expression_text),
+            MarkFamily::TechniqueText => Some(&mut self.technique_text),
+            MarkFamily::Chord => Some(&mut self.chord),
             _ => None,
         }
     }

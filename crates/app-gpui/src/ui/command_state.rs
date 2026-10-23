@@ -71,6 +71,19 @@ impl CommandStates for AppView {
                 ..CommandState::default()
             }
         };
+        let text = |kind: score_core::TextKind| CommandState {
+            checked: self.text_editor.as_ref().is_some_and(|e| e.kind == kind)
+                || editor
+                    .selection()
+                    .is_some_and(|id| editor.score().text(id, kind).is_some()),
+            enabled: editor.selection().is_some(),
+            ..CommandState::default()
+        };
+        let line = |kind: ConnectionKind| CommandState {
+            checked: selected_connection(self, kind),
+            enabled: editor.selection().is_some(),
+            ..CommandState::default()
+        };
         let enabled = |enabled: bool| CommandState {
             enabled,
             ..CommandState::default()
@@ -213,6 +226,7 @@ impl CommandStates for AppView {
             id::QUARTER => value(NoteValue::Quarter),
             id::EIGHTH => value(NoteValue::Eighth),
             id::SIXTEENTH => value(NoteValue::Sixteenth),
+            id::THIRTY_SECOND => value(NoteValue::ThirtySecond),
             id::DOT => CommandState::checked(duration.is_dotted()),
             id::TRIPLET => CommandState::checked(duration.is_triplet()),
 
@@ -231,12 +245,42 @@ impl CommandStates for AppView {
             },
             id::CRESCENDO => hairpin(ConnectionKind::Crescendo),
             id::DIMINUENDO => hairpin(ConnectionKind::Diminuendo),
+            id::EXPRESSION_TEXT => text(score_core::TextKind::Expression),
+            id::TECHNIQUE_TEXT => text(score_core::TextKind::Technique),
+            id::OTTAVA_ALTA => line(ConnectionKind::OttavaAlta),
+            id::OTTAVA_BASSA => line(ConnectionKind::OttavaBassa),
+            id::PEDAL => line(ConnectionKind::Pedal),
+            id::TRILL => line(ConnectionKind::Trill),
+            id::GLISSANDO => line(ConnectionKind::Glissando),
 
             id::CLEF => CommandState::checked(self.clef_picker),
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
             id::REPEATS => CommandState::checked(self.playback.follow_repeats),
             id::LOOP => CommandState::checked(self.playback.looping),
             id::HALF_SPEED => CommandState::checked(self.playback.half_speed),
+            id::CHORD_PLAYBACK => CommandState::checked(editor.score().chords_sound()),
+            id::LYRICS => CommandState {
+                checked: self.lyric_editor.is_some()
+                    || editor.selection().is_some_and(|id| {
+                        editor
+                            .score()
+                            .event(id)
+                            .is_some_and(|event| !event.notation.lyrics.is_empty())
+                    }),
+                enabled: editor.selection().is_some(),
+                ..CommandState::default()
+            },
+            id::CHORD_SYMBOL => CommandState {
+                checked: self.chord_editor.is_some()
+                    || editor.selection().is_some_and(|id| {
+                        editor
+                            .score()
+                            .event(id)
+                            .is_some_and(|event| event.notation.chord.is_some())
+                    }),
+                enabled: editor.selection().is_some(),
+                ..CommandState::default()
+            },
             id::GO_TO_BAR => CommandState::checked(self.go_to_bar.is_some()),
             id::TEMPO_TEXT => CommandState::checked(self.tempo_picker.is_some()),
             id::SCORE_INFO => CommandState::checked(self.header_editor.is_some()),

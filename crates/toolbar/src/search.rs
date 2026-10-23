@@ -169,15 +169,11 @@ mod tests {
 
     #[test]
     fn ready_commands_come_before_pending_ones() {
-        let results = run("texto");
-        assert!(
-            results
-                .iter()
-                .any(|r| r.item.command == id::EXPRESSION_TEXT)
-        );
+        let results = run("voz");
+        assert!(results.iter().any(|r| r.item.command == id::VOICE_1));
         let first_pending = results.iter().position(|r| r.item.pending).unwrap();
         assert!(results[first_pending..].iter().all(|r| r.item.pending));
-        assert!(first_pending > 0, "ready results exist for texto");
+        assert!(first_pending > 0, "ready results exist for voz");
     }
 
     #[test]

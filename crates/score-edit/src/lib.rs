@@ -7,6 +7,8 @@ pub mod clipboard;
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
+mod grace_tests;
+#[cfg(test)]
 mod instrument_tests;
 #[cfg(test)]
 mod move_tests;
@@ -15,6 +17,8 @@ mod navigation_tests;
 #[cfg(test)]
 mod range_tests;
 mod selection;
+#[cfg(test)]
+mod text_tests;
 #[cfg(test)]
 mod write_tests;
 
@@ -92,6 +96,17 @@ pub enum Command {
     /// The ribbon's point marks: write `kind` on the selection, replacing its
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
+    /// Write words at a note or rest, or remove them with `None`.
+    SetText(ElementId, score_core::TextKind, Option<String>),
+    /// Sing a syllable on a note in a verse (from 0), or clear it.
+    SetSyllable(ElementId, u8, Option<(String, score_core::Join)>),
+    SetChord(ElementId, Option<score_core::ChordSymbol>),
+    /// Whether chord symbols are heard in playback.
+    SetChordsSound(bool),
+    /// One more grace note before the selected note, or a first acciaccatura.
+    AddGraceNote,
+    /// Move one grace note of a note by diatonic steps.
+    TransposeGraceNote(ElementId, u8, i16),
     Delete,
     /// Clear pitches while keeping all event onsets unchanged.
     Erase,
@@ -715,6 +730,53 @@ impl Editor {
                 next.score
                     .set_point_mark(id, family, (current != Some(kind)).then_some(kind))?;
             }
+            Command::SetText(id, kind, ref text) => {
+                if next
+                    .score
+                    .text(id, kind)
+                    .map(|words| words.to_string())
+                    .as_deref()
+                    == text.as_deref().map(str::trim)
+                {
+                    return Ok(false);
+                }
+                next.score.set_text(id, kind, text.as_deref())?;
+            }
+            Command::SetSyllable(id, verse, ref syllable) => {
+                let syllable = syllable
+                    .as_ref()
+                    .map(|(text, join)| score_core::Syllable::new(text, *join))
+                    .transpose()?;
+                let current = next
+                    .score
+                    .event(id)
+                    .and_then(|event| event.notation.lyrics.verse(usize::from(verse)));
+                if current == syllable {
+                    return Ok(false);
+                }
+                next.score.set_syllable(id, usize::from(verse), syllable)?;
+            }
+            Command::SetChord(id, chord) => {
+                if next.score.event(id).map(|event| event.notation.chord) == Some(chord) {
+                    return Ok(false);
+                }
+                next.score.set_chord(id, chord)?;
+            }
+            Command::SetChordsSound(sound) => {
+                if !next.score.set_chords_sound(sound) {
+                    return Ok(false);
+                }
+            }
+            Command::AddGraceNote => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o acorde"))?;
+                next.score.add_grace_note(id)?;
+            }
+            Command::TransposeGraceNote(id, index, steps) => {
+                next.score
+                    .transpose_grace_note(id, usize::from(index), steps)?;
+            }
             Command::RemoveConnections(kind) => {
                 let id = next
                     .selection
@@ -1214,6 +1276,7 @@ impl Editor {
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
                 | Command::SetPlayers(_, _)
+                | Command::SetChordsSound(_)
                 | Command::ToggleRehearsalMark
                 | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
@@ -1227,6 +1290,8 @@ impl Editor {
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)
+                | Command::AddGraceNote
+                | Command::TransposeGraceNote(..)
                 | Command::SetBarMarkOffset(_, _)
                 | Command::ResetBarMarkOffset(_)
                 | Command::ResetMarkOffsets(_)

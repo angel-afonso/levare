@@ -202,6 +202,8 @@ impl Score {
         )[id.event];
         event.pitches = Pitches::default();
         event.notation.arpeggio = None;
+        event.notation.grace = None;
+        event.notation.lyrics = Lyrics::default();
         event.notation.harmonic = None;
         event.notation.articulation = None;
         event.notation.offsets.harmonic = None;

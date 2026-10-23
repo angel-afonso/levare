@@ -18,6 +18,7 @@ mod review;
 mod selection;
 mod shortcuts;
 mod sound_banks;
+mod staff_text;
 #[cfg(feature = "vsco")]
 mod store;
 mod ui;
@@ -86,6 +87,9 @@ struct AppView {
     header_editor: Option<ui::HeaderEditor>,
     range_editor: Option<ui::RangeEditor>,
     comment_editor: Option<ui::CommentEditor>,
+    text_editor: Option<ui::StaffTextEditor>,
+    lyric_editor: Option<ui::LyricEditor>,
+    chord_editor: Option<ui::ChordEditor>,
     comments: comments::CommentState,
     review: review::ReviewState,
     signature_from_start: bool,
@@ -273,6 +277,9 @@ impl AppView {
             header_editor: None,
             range_editor: None,
             comment_editor: None,
+            text_editor: None,
+            lyric_editor: None,
+            chord_editor: None,
             comments: comments::CommentState::default(),
             review: review::ReviewState::default(),
             signature_from_start: false,
@@ -337,6 +344,7 @@ impl AppView {
         match kind {
             MarkKind::Connection(ConnectionKind::Tie) => self.toggle_tie(cx),
             MarkKind::Connection(ConnectionKind::Slur) => self.toggle_slur(cx),
+            MarkKind::Connection(kind) if kind.is_line() => self.toggle_line(kind, cx),
             MarkKind::Connection(kind) => self.toggle_hairpin(kind, cx),
             kind => self.edit(Command::ToggleMark(kind), cx),
         }
@@ -354,6 +362,48 @@ impl AppView {
             .iter()
             .copied()
             .find(|c| c.kind == kind && c.end != id && editor.score().connection_contains(*c, id))
+    }
+    /// A line over the selected passage. A single note takes an octave line,
+    /// pedal or trill of its own, and a glissando to the next note; the same
+    /// command on a written line removes it.
+    fn toggle_line(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
+        if self.busy || self.confirming {
+            return;
+        }
+        if let Some(MarkRef::Connection(old)) = self.selected_mark()
+            && old.kind == kind
+        {
+            self.edit(Command::RemoveConnection(old), cx);
+            return;
+        }
+        let editor = &self.document.editor;
+        let score = editor.score();
+        let ids = editor.selected_ids();
+        let (Some(&start), Some(&last)) = (ids.first(), ids.last()) else {
+            self.status = format!("{}: selecciona primero sus notas", kind.label());
+            cx.notify();
+            return;
+        };
+        let end = if kind == ConnectionKind::Glissando && start == last {
+            score.next_event(start)
+        } else {
+            Some(last)
+        };
+        let written = score.connections().iter().copied().find(|c| {
+            c.kind == kind
+                && ((c.start == start && Some(c.end) == end)
+                    || (ids.len() == 1 && kind.is_range() && score.connection_contains(*c, start)))
+        });
+        match (written, end) {
+            (Some(connection), _) => self.edit(Command::RemoveConnection(connection), cx),
+            (None, Some(end)) => {
+                self.edit(Command::AddConnection(Connection { start, end, kind }), cx)
+            }
+            (None, None) => {
+                self.status = "Escribe primero la nota en la que acaba el glissando".into();
+                cx.notify();
+            }
+        }
     }
     fn toggle_tie(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.confirming {
@@ -970,6 +1020,71 @@ impl AppView {
             return;
         }
         if self
+            .lyric_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            let plain = !stroke.modifiers.modified();
+            let join = match stroke.key.as_str() {
+                "space" if plain => Some(score_core::Join::Word),
+                "-" if stroke.modifiers.shift => Some(score_core::Join::Melisma),
+                "-" if plain => Some(score_core::Join::Hyphen),
+                _ if stroke.key_char.as_deref() == Some("_") => Some(score_core::Join::Melisma),
+                _ => None,
+            };
+            if let Some(join) = join {
+                cx.stop_propagation();
+                self.apply_syllable(join, true, cx);
+            } else if stroke.key == "enter" && plain {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_syllable(score_core::Join::Word, false, cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.lyric_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
+            .chord_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "tab" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                self.apply_chord(true, cx);
+            } else if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_chord(false, cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.chord_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
+            .text_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_text(cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.text_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
             .tempo_picker
             .as_ref()
             .is_some_and(|editor| editor.focused(window, cx))
@@ -1163,6 +1278,18 @@ impl AppView {
                 .as_ref()
                 .is_some_and(|editor| editor.focused(window, cx))
             || self
+                .text_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .lyric_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .chord_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
                 .command_search
                 .as_ref()
                 .is_some_and(|search| search.focused(window, cx))
@@ -1234,6 +1361,12 @@ impl AppView {
             };
             cx.notify();
             return;
+        }
+        match score_toolbar::marks::kind(command) {
+            Some(MarkKind::Text(kind)) => return self.open_text_editor(kind, window, cx),
+            Some(MarkKind::Lyric) => return self.open_lyric_editor(window, cx),
+            Some(MarkKind::Chord) => return self.open_chord_editor(window, cx),
+            _ => {}
         }
         if let Some(kind) = score_toolbar::marks::kind(command) {
             self.apply_mark(kind, cx);
@@ -1402,6 +1535,7 @@ impl AppView {
             id::DOT => self.toggle_rhythm(false, cx),
             id::TRIPLET => self.toggle_rhythm(true, cx),
             id::SIXTEENTH => self.choose_duration(score_core::Duration::Sixteenth, cx),
+            id::THIRTY_SECOND => self.choose_duration(score_core::Duration::ThirtySecond, cx),
             id::EIGHTH => self.choose_duration(score_core::Duration::Eighth, cx),
             id::QUARTER => self.choose_duration(score_core::Duration::Quarter, cx),
             id::HALF => self.choose_duration(score_core::Duration::Half, cx),
@@ -1475,6 +1609,41 @@ impl AppView {
                 self.reveal_selection = true;
                 self.audition_selection();
             }
+            // A picked grace note moves alone, not the note it decorates.
+            id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
+                if matches!(self.selected_mark(), Some(MarkRef::Grace(..))) =>
+            {
+                let Some(MarkRef::Grace(id, index)) = self.selected_mark() else {
+                    unreachable!("checked grace mark");
+                };
+                let steps = match command {
+                    id::STEP_UP => 1,
+                    id::STEP_DOWN => -1,
+                    id::OCTAVE_UP => 7,
+                    _ => -7,
+                };
+                self.edit(Command::TransposeGraceNote(id, index, steps), cx);
+                self.clicked_mark = Some(MarkRef::Grace(id, index));
+            }
+            id::GRACE_NOTE => {
+                self.edit(Command::AddGraceNote, cx);
+                if let Some(id) = self.document.editor.selection()
+                    && let Some(grace) = self
+                        .document
+                        .editor
+                        .score()
+                        .event(id)
+                        .and_then(|event| event.notation.grace)
+                {
+                    // The new grace note is picked, so the arrows tune it at once.
+                    self.clicked_mark = Some(MarkRef::Grace(id, (grace.len() - 1) as u8));
+                    self.status = format!(
+                        "{} de {} notas · ↑/↓ cambian la altura de la nueva; Backspace la borra",
+                        grace.kind.label(),
+                        grace.len()
+                    );
+                }
+            }
             // A mark picked in the score must not move its note by surprise.
             id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
                 if self.selected_mark().is_some() || self.selected_bar_mark().is_some() =>
@@ -1499,6 +1668,16 @@ impl AppView {
             id::LOOP => self.toggle_loop(cx),
             id::REPLAY => self.replay(cx),
             id::HALF_SPEED => self.toggle_half_speed(cx),
+            id::CHORD_PLAYBACK => {
+                let sound = !self.document.editor.score().chords_sound();
+                self.edit(Command::SetChordsSound(sound), cx);
+                self.status = if sound {
+                    "Los cifrados suenan al reproducir"
+                } else {
+                    "Los cifrados solo se escriben"
+                }
+                .into();
+            }
             id::BAR_START | id::NEXT_BAR => self.move_by_bar(command == id::NEXT_BAR, cx),
             id::GO_TO_BAR => self.open_go_to_bar(window, cx),
             id::STOP => self.stop_playback(cx),
@@ -1676,6 +1855,13 @@ impl AppView {
             return;
         }
         if self.range_editor.take().is_some() {
+            cx.notify();
+            return;
+        }
+        if self.text_editor.take().is_some()
+            | self.lyric_editor.take().is_some()
+            | self.chord_editor.take().is_some()
+        {
             cx.notify();
             return;
         }
@@ -3181,6 +3367,11 @@ fn connection_words(kind: ConnectionKind) -> (&'static str, &'static str) {
         ConnectionKind::Tie => ("Unión", "a"),
         ConnectionKind::Crescendo => ("Crescendo", "o"),
         ConnectionKind::Diminuendo => ("Diminuendo", "o"),
+        ConnectionKind::OttavaAlta | ConnectionKind::OttavaBassa | ConnectionKind::Pedal => {
+            (kind.label(), "o")
+        }
+        ConnectionKind::Trill => ("Trino", "o"),
+        ConnectionKind::Glissando => ("Glissando", "o"),
     }
 }
 

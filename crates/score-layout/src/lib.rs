@@ -25,6 +25,11 @@ mod rhythm;
 pub use rhythm::TupletGroup;
 mod expression;
 pub use expression::{Curve, Hairpin, Hit, MarkBox, PianoArpeggioLayout};
+mod grace;
+pub use grace::{CUE, CueGlyph};
+mod lines;
+pub use lines::LineMark;
+mod lyrics;
 mod offsets;
 
 pub const STAFF_SPACE: f32 = 10.;
@@ -52,11 +57,52 @@ pub struct Glyph {
     pub position: Point,
     pub element: Option<ElementId>,
 }
+/// Italic words at a note: pizz. and arco, div. and unis., written texts.
 #[derive(Clone, Debug)]
 pub struct TechniqueLabel {
-    pub text: &'static str,
+    pub text: score_core::Words,
     pub position: Point,
     pub element: ElementId,
+    /// The mark the words write; it is selected and moved with them.
+    pub mark: MarkRef,
+}
+impl TechniqueLabel {
+    /// Conservative width of the italic words, in layout units.
+    pub fn width(&self) -> f32 {
+        let per = if matches!(self.mark, MarkRef::Chord(_)) {
+            9.
+        } else {
+            7.
+        };
+        self.text.as_str().chars().count() as f32 * per
+    }
+    /// Rows above the staff, inner to outer: techniques and instructions,
+    /// divisi, chord symbols.
+    pub(crate) fn lane(&self) -> u8 {
+        match self.mark {
+            MarkRef::Division(_) => 1,
+            MarkRef::Chord(_) => 2,
+            _ => 0,
+        }
+    }
+}
+/// One sung syllable, centred under its note on its verse's line.
+#[derive(Clone, Debug)]
+pub struct LyricLabel {
+    pub syllable: score_core::Syllable,
+    pub verse: u8,
+    /// Left end of the baseline.
+    pub position: Point,
+    pub element: ElementId,
+}
+impl LyricLabel {
+    pub fn width(&self) -> f32 {
+        self.syllable.text().chars().count() as f32 * 7.5
+    }
+}
+/// The words of a catalog label, which are always short.
+fn label_words(text: &'static str) -> score_core::Words {
+    score_core::Words::new(text).expect("catalog labels are short")
 }
 #[derive(Clone, Debug)]
 pub struct EventPosition {
@@ -73,6 +119,10 @@ pub struct MeasureLayout {
     pub lines: Vec<Line>,
     pub glyphs: Vec<Glyph>,
     pub techniques: Vec<TechniqueLabel>,
+    /// Written expressions below the staff, in the dynamics lane.
+    pub expressions: Vec<TechniqueLabel>,
+    /// Sung syllables; the row puts each verse on one line.
+    pub lyrics: Vec<LyricLabel>,
     /// Clickable area of each point mark (articulation, dynamic, technique).
     pub marks: Vec<MarkBox>,
     pub tuplets: Vec<TupletGroup>,
@@ -89,6 +139,8 @@ pub struct MeasureLayout {
     pub ink_bottom: f32,
     /// Note/rest, stem and beam ink, before expression marks.
     pub music_ink_bottom: f32,
+    /// Grace notes and their accidentals, drawn at `CUE` size.
+    pub cue: Vec<CueGlyph>,
 }
 
 impl MeasureLayout {
@@ -262,6 +314,9 @@ pub struct Layout {
     pub brackets: Vec<Bracket>,
     pub curves: Vec<Curve>,
     pub hairpins: Vec<Hairpin>,
+    pub line_marks: Vec<LineMark>,
+    /// Hyphens and extenders between sung syllables.
+    pub lyric_lines: Vec<Line>,
     pub piano_arpeggios: Vec<PianoArpeggioLayout>,
 }
 
@@ -571,6 +626,7 @@ impl Rhythm {
                             .or_insert(width);
                     }
                     let padding = accidental_padding(&signs[&id])
+                        + grace::width(event)
                         + if event.notation.arpeggio.is_some()
                             || piano_arpeggios.contains(&ElementId {
                                 part: part.id(),
@@ -768,6 +824,8 @@ struct Metrics {
     whole: f32,
     stem: f32,
     hairpin: f32,
+    octave: f32,
+    pedal: f32,
     glyph_bounds: HashMap<char, (f32, f32, f32, f32, f32)>,
     arpeggio_repeat: f32,
 }
@@ -794,7 +852,8 @@ impl Metrics {
         let scale = MUSIC_SIZE / f32::from(face.units_per_em());
         let glyph_bounds = (0xe000..=0xe5ff)
             .chain([
-                0xe614, 0xe883, 0xe634, 0xe635, 0xe63c, 0xeaa9, 0xeaaa, 0xeaad, 0xeaae,
+                0xe614, 0xe883, 0xe634, 0xe635, 0xe63c, 0xeaa9, 0xeaaa, 0xeaad, 0xeaae, 0xe650,
+                0xeaa4,
             ])
             .filter_map(|code| {
                 let character = char::from_u32(code)?;
@@ -824,12 +883,19 @@ impl Metrics {
             whole: width("noteheadWhole"),
             stem: value("stemThickness"),
             hairpin: value("hairpinThickness"),
+            octave: value("octaveLineThickness"),
+            pedal: value("pedalLineThickness"),
             glyph_bounds,
             arpeggio_repeat: data["glyphsWithAnchors"]["wiggleArpeggiatoUp"]["repeatOffset"][0]
                 .as_f64()
                 .expect("Bravura arpeggio repeat") as f32
                 * STAFF_SPACE,
         }
+    }
+    fn advance(&self, character: char) -> f32 {
+        self.glyph_bounds
+            .get(&character)
+            .map_or(20., |bounds| bounds.4)
     }
     fn bounds(&self, text: &str, rotated: bool) -> (f32, f32, f32, f32) {
         let (mut left, mut top, mut right, mut bottom) = (
@@ -932,7 +998,7 @@ impl LayoutEngine {
         let mut brackets = Vec::new();
         // Index connection lanes once; avoid scanning every link for every staff row.
         let mut curve_lanes = HashMap::<_, (bool, bool)>::new();
-        for c in score.connections().iter().filter(|c| !c.kind.is_hairpin()) {
+        for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
             let below = score.voice_of(c.start) == Some(Voice::Two);
             for index in c.start.measure..=c.end.measure {
                 let lanes = curve_lanes
@@ -958,6 +1024,19 @@ impl LayoutEngine {
                     .map(move |index| (c.start.part, c.start.staff, index))
             })
             .collect();
+        // Kinds of line over each bar; every kind takes a lane of its own.
+        let mut line_lanes = HashMap::<_, u16>::new();
+        for c in score
+            .connections()
+            .iter()
+            .filter(|c| lines::above(c.kind).is_some())
+        {
+            for index in c.start.measure..=c.end.measure {
+                *line_lanes
+                    .entry((c.start.part, c.start.staff, index))
+                    .or_default() |= 1 << c.kind as u16;
+            }
+        }
         let mut row_start = 0;
         let mut y = if compact { 20. } else { 40. };
         while row_start < score.measures().len() {
@@ -1229,9 +1308,12 @@ impl LayoutEngine {
                                 ink_top = ink_top.min(point.y);
                                 ink_bottom = ink_bottom.max(point.y);
                             }
-                            for text in &content.techniques {
+                            for text in content.techniques.iter().chain(&content.expressions) {
                                 ink_top = ink_top.min(text.position.y - 16.);
                                 ink_bottom = ink_bottom.max(text.position.y + 4.);
+                            }
+                            for lyric in &content.lyrics {
+                                ink_bottom = ink_bottom.max(lyric.position.y + 5.);
                             }
                             Arc::make_mut(&mut content).ink_top = ink_top;
                             Arc::make_mut(&mut content).ink_bottom = ink_bottom;
@@ -1330,6 +1412,11 @@ impl LayoutEngine {
                             &self.metrics,
                             above,
                         );
+                    if let Some(words) =
+                        lyrics::arrange(&mut placed[first_placed..], &self.metrics, below)
+                    {
+                        bottom = bottom.max(words);
+                    }
                     top = placed[first_placed..]
                         .iter()
                         .map(|bar| {
@@ -1365,6 +1452,34 @@ impl LayoutEngine {
                                 below,
                             ) + 6.,
                         );
+                    }
+                    let kinds = (row_start..row_start + columns.len())
+                        .take(if line_lanes.is_empty() { 0 } else { usize::MAX })
+                        .filter_map(|index| {
+                            line_lanes.get(&(part.id(), part.display_source(staff, index).0, index))
+                        })
+                        .fold(0, |a, b| a | b);
+                    let lanes = |side: bool| {
+                        (0..16)
+                            .filter(|bit| kinds & (1 << bit) != 0)
+                            .filter(|&bit| {
+                                score_core::ConnectionKind::LINES.iter().any(|kind| {
+                                    *kind as u16 == bit && lines::above(*kind) == Some(side)
+                                })
+                            })
+                            .count() as f32
+                    };
+                    if kinds != 0 {
+                        let row = &placed[first_placed..];
+                        let ink_top = row.iter().map(|m| m.content.ink_top).fold(0f32, f32::min);
+                        let ink_bottom = row
+                            .iter()
+                            .map(|m| m.content.ink_bottom)
+                            .fold(40f32, f32::max);
+                        top = top.min(
+                            ink_top - if above { 22. } else { 0. } - lines::LANE * lanes(true),
+                        );
+                        bottom = bottom.max(ink_bottom.max(bottom) + lines::LANE * lanes(false));
                     }
                     let origin_y = pinned
                         .and_then(|layout| {
@@ -1626,10 +1741,14 @@ impl LayoutEngine {
         let index = expression::PlacedIndex::new(&placed);
         let curves = expression::curves(score, &index, &self.metrics);
         let hairpins = expression::hairpins(score, &index, self.metrics.hairpin);
+        let line_marks = lines::lines(score, &index, &curves, &hairpins, &self.metrics);
+        let lyric_lines = lyrics::lines(&placed, self.metrics.staff * 1.2);
         let piano_arpeggios = expression::piano_arpeggios(score, &placed, &self.metrics);
         Layout {
             curves,
             hairpins,
+            line_marks,
+            lyric_lines,
             piano_arpeggios,
             scale: 1.,
             mode: ViewMode::Continuous,
@@ -1982,7 +2101,7 @@ struct PlacedAccidental {
 }
 
 fn written_pitches(
-    event: score_core::Event,
+    event: &score_core::Event,
     key: KeySignature,
 ) -> Vec<(score_core::Pitch, i8, bool, bool)> {
     event
@@ -2030,7 +2149,7 @@ fn measure_accidentals_with_resets(
     let mut alterations = HashMap::new();
     let mut conflicts = HashSet::new();
     for (_, tick, _, event) in &events {
-        for (pitch, alteration, _, _) in written_pitches(**event, key) {
+        for (pitch, alteration, _, _) in written_pitches(event, key) {
             let position = (*tick, pitch.diatonic());
             if alterations
                 .insert(position, alteration)
@@ -2053,7 +2172,7 @@ fn measure_accidentals_with_resets(
             let mut signs = Vec::<PlacedAccidental>::new();
             let mut columns = Vec::<i16>::new();
             for (pitch, alteration, touch, explicit) in
-                written_pitches(*event, key).into_iter().rev()
+                written_pitches(event, key).into_iter().rev()
             {
                 let position = pitch.diatonic() as usize;
                 let sign = (explicit
@@ -2164,10 +2283,10 @@ fn voice_offset(measure: &Measure, voice: Voice, tick: u16) -> f32 {
             0.
         }
         (Some((_, _, _, a)), Some((_, _, _, b)))
-            if written_pitches(*a, KeySignature::default())
+            if written_pitches(a, KeySignature::default())
                 .iter()
                 .any(|(a, _, _, _)| {
-                    written_pitches(*b, KeySignature::default())
+                    written_pitches(b, KeySignature::default())
                         .iter()
                         .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
                 }) =>
@@ -2202,6 +2321,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         lines: Vec::new(),
         glyphs: Vec::new(),
         techniques: Vec::new(),
+        expressions: Vec::new(),
+        lyrics: Vec::new(),
         marks: Vec::new(),
         tuplets: Vec::new(),
         beams: Vec::new(),
@@ -2220,6 +2341,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         ink_top: 0.,
         ink_bottom: 40.,
         music_ink_bottom: 40.,
+        cue: Vec::new(),
     };
     let mut line = |x1, y1, x2, y2, thickness| {
         result.lines.push(Line {
@@ -2377,6 +2499,14 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             measure: index,
             event: id,
         };
+        grace::engrave(
+            &mut result,
+            event,
+            element,
+            onset - accidental_padding(&signs[&id]).max(3.),
+            clef,
+            metrics,
+        );
         if event.pitches.len() > 1
             || event.notation.tremolo.is_some()
             || event.notation.harmonic == Some(score_core::Harmonic::Artificial)
@@ -2439,6 +2569,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Quarter => 0xe1d5 + down,
                 score_core::NoteValue::Eighth => 0xe1d7 + down,
                 score_core::NoteValue::Sixteenth => 0xe1d9 + down,
+                score_core::NoteValue::ThirtySecond => 0xe1db + down,
             }
         } else {
             match event.duration.value() {
@@ -2447,6 +2578,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Quarter => 0xe4e5,
                 score_core::NoteValue::Eighth => 0xe4e6,
                 score_core::NoteValue::Sixteenth => 0xe4e7,
+                score_core::NoteValue::ThirtySecond => 0xe4e8,
             }
         };
         let glyph_y = if event.pitches.first().is_none()
@@ -2781,7 +2913,13 @@ fn engrave_chord(
     }
     if !beamed && event.duration.value() != score_core::NoteValue::Whole {
         let stem_x = if down { onset } else { onset + metrics.head };
-        let end_y = if down { low + 35. } else { high - 35. };
+        // A third flag needs half a space more stem to clear the notehead.
+        let length = if event.duration.value() == score_core::NoteValue::ThirtySecond {
+            40.
+        } else {
+            35.
+        };
+        let end_y = if down { low + length } else { high - length };
         result.lines.push(Line {
             from: Point {
                 x: stem_x,
@@ -2797,6 +2935,7 @@ fn engrave_chord(
         let flag = match event.duration.value() {
             score_core::NoteValue::Eighth => Some(if down { 0xe241 } else { 0xe240 }),
             score_core::NoteValue::Sixteenth => Some(if down { 0xe243 } else { 0xe242 }),
+            score_core::NoteValue::ThirtySecond => Some(if down { 0xe245 } else { 0xe244 }),
             _ => None,
         };
         if let Some(flag) = flag {
@@ -3709,6 +3848,12 @@ mod tests {
 
 #[cfg(test)]
 mod expression_tests;
+#[cfg(test)]
+mod line_tests;
+#[cfg(test)]
+mod sung_tests;
+#[cfg(test)]
+mod text_tests;
 
 #[cfg(test)]
 mod offset_tests;

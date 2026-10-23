@@ -156,6 +156,8 @@ impl LayoutEngine {
         let index = expression::PlacedIndex::new(&layout.measures);
         let curves = expression::curves(score, &index, &self.metrics);
         let hairpins = expression::hairpins(score, &index, self.metrics.hairpin);
+        layout.line_marks = lines::lines(score, &index, &curves, &hairpins, &self.metrics);
+        layout.lyric_lines = lyrics::lines(&layout.measures, self.metrics.staff * 1.2);
         (layout.curves, layout.hairpins) = (curves, hairpins);
         offsets::apply(score, &mut layout);
         offsets::apply_bar_marks(score, &mut layout);

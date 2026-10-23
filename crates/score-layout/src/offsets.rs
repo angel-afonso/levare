@@ -119,13 +119,14 @@ impl Layout {
                     content.glyphs[glyph].position.y += dy;
                 }
             }
-            if let MarkRef::Technique(anchor) = mark {
-                for label in &mut content.techniques {
-                    if label.element == anchor && matches!(label.text, "arco" | "pizz.") {
-                        label.position.x += dx;
-                        label.position.y += dy;
-                    }
-                }
+            for label in content
+                .techniques
+                .iter_mut()
+                .chain(&mut content.expressions)
+                .filter(|label| label.mark == mark)
+            {
+                label.position.x += dx;
+                label.position.y += dy;
             }
         }
     }

@@ -79,7 +79,9 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥2` | Voz 2 |  |
 | `⌥3` | Voz 3 | Pendiente |
 | `⌥4` | Voz 4 | Pendiente |
-| `;` | Convertir en nota de adorno | Pendiente |
+| `;` | Añadir nota de adorno |  |
+| Sin atajo | Acciaccatura |  |
+| Sin atajo | Appoggiatura |  |
 | `⇧⌘F` | Entrada en tiempo real | Pendiente |
 | Sin atajo | Entrada paso a paso |  |
 | Sin atajo | Entrada con teclado MIDI | Pendiente |
@@ -88,7 +90,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 
 | Atajo | Comando | Estado |
 |---|---|---|
-| `1` | Fusa | Pendiente |
+| `1` | Fusa |  |
 | `2` | Semicorchea |  |
 | `3` | Corchea |  |
 | `4` | Negra |  |
@@ -145,11 +147,11 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | Sin atajo | Dinámica ff |  |
 | Sin atajo | Dinámica fff |  |
 | Sin atajo | Quitar dinámica |  |
-| `⌘E` | Texto de expresión | Pendiente |
-| `⌘T` | Texto de técnica | Pendiente |
+| `⌘E` | Texto de expresión… |  |
+| `⌘T` | Texto de técnica… |  |
 | `⌥⌘T` | Indicación de tempo… |  |
-| `⌘L` | Letra | Pendiente |
-| `⌘K` | Cifrado de acordes | Pendiente |
+| `⌘L` | Letra… |  |
+| `⌘K` | Cifrado de acordes… |  |
 | `⌘R` | Marca de ensayo |  |
 | Sin atajo | Marcas de ensayo con letras |  |
 | Sin atajo | Marcas de ensayo con números |  |
@@ -161,6 +163,11 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 |---|---|---|
 | Sin atajo | Indicación div. |  |
 | Sin atajo | Indicación unis. |  |
+| Sin atajo | Octava alta 8va |  |
+| Sin atajo | Octava baja 8vb |  |
+| Sin atajo | Pedal de resonancia |  |
+| Sin atajo | Trino |  |
+| Sin atajo | Glissando hasta la nota siguiente |  |
 | `K` | Tonalidad… |  |
 | `T` | Compás de tiempo… |  |
 | `Q` | Clave… |  |
@@ -240,6 +247,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥P` | Reproducción en bucle |  |
 | `⌥Espacio` | Repetir la última reproducción |  |
 | `⇧Espacio` | Reproducir a media velocidad |  |
+| Sin atajo | Hacer sonar los cifrados |  |
 | `M` | Mostrar el mezclador |  |
 | Sin atajo | Mostrar los sonidos |  |
 | Sin atajo | Audición al escribir |  |

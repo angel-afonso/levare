@@ -20,6 +20,14 @@ mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
 mod tremolo;
 pub use tremolo::Tremolo;
+mod grace;
+pub use grace::{Grace, GraceKind, MAX_GRACE_NOTES};
+mod text;
+pub use text::{MAX_TEXT_BYTES, Swell, TextEffect, TextKind, Words};
+mod lyrics;
+pub use lyrics::{Join, Lyrics, MAX_SYLLABLE_BYTES, MAX_VERSES, Syllable};
+mod chords;
+pub use chords::{ChordQuality, ChordRoot, ChordSymbol};
 mod harmonics;
 pub use harmonics::Harmonic;
 mod expression;
@@ -281,6 +289,14 @@ impl Default for Measure {
 
 impl PartialEq for Measure {
     fn eq(&self, other: &Self) -> bool {
+        // The same shared events in the same order: equal without comparing
+        // every note, as the layout cache does for each untouched bar.
+        if Arc::ptr_eq(&self.events, &other.events)
+            && self.order == other.order
+            && self.second_order == other.second_order
+        {
+            return true;
+        }
         Voice::ALL
             .into_iter()
             .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
@@ -475,6 +491,9 @@ pub struct Score {
     form: std::collections::BTreeMap<usize, BarForm>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     endings: Vector<Ending>,
+    /// Chord symbols are written only, not heard.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    silent_chords: bool,
 }
 
 impl Default for Score {
@@ -501,6 +520,7 @@ impl Default for Score {
             piano_arpeggios: Vector::new(),
             form: Default::default(),
             endings: Vector::new(),
+            silent_chords: false,
         }
     }
 }
@@ -754,23 +774,30 @@ impl Score {
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
             .pitches = pitches;
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
         if pitches.len() < 2 {
-            Arc::make_mut(
-                &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
-            )[id.event]
-                .notation
-                .arpeggio = None;
+            notation.arpeggio = None;
+        }
+        // A rest is not sung and takes no grace notes.
+        if pitches.is_empty() {
+            notation.lyrics = Lyrics::default();
+            notation.grace = None;
         }
         self.prune_connections();
         Ok(())
     }
+    /// Move a note or chord by diatonic `steps`; its grace notes follow.
     pub fn transpose(&mut self, id: ElementId, steps: i16) -> Result<(), ScoreError> {
-        let pitches = self
-            .event(id)
-            .ok_or(ScoreError("La nota no existe"))?
-            .pitches
-            .transposed(steps)?;
-        self.set_pitches(id, pitches)
+        let event = *self.event(id).ok_or(ScoreError("La nota no existe"))?;
+        let pitches = event.pitches.transposed(steps)?;
+        self.set_pitches(id, pitches)?;
+        for index in 0..event.notation.grace.map_or(0, |grace| grace.len()) {
+            self.transpose_grace_note(id, index, steps)?;
+        }
+        self.transpose_chord(id, steps)
     }
     pub fn add_pitch(&mut self, id: ElementId, pitch: Pitch) -> Result<(), ScoreError> {
         let event = self
@@ -944,6 +971,8 @@ impl Score {
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
                         }
+                        Self::validate_grace(event)?;
+                        Self::validate_lyrics(event)?;
                         ticks[usize::from(voice.number() - 1)] += u32::from(event.duration.ticks());
                     }
                     if ticks
@@ -1188,3 +1217,5 @@ mod tests {
 
 #[cfg(test)]
 mod arrangement_tests;
+#[cfg(test)]
+mod line_tests;

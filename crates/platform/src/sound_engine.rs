@@ -68,11 +68,7 @@ impl RoutingSignature {
                 .map(|part| {
                     (
                         part.instrument(),
-                        part.instrument().is_grand_staff()
-                            && score
-                                .connections()
-                                .iter()
-                                .any(|c| c.kind.is_hairpin() && c.start.part == part.id()),
+                        part.instrument().is_grand_staff() && score.shapes_level(part.id()),
                         score.players(part.id()),
                     )
                 })

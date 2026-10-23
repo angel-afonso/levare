@@ -446,9 +446,13 @@ impl AppView {
             } else {
                 ""
             };
-            self.status = format!(
-                "{label} seleccionado · Backspace lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
-            );
+            self.status = if matches!(mark, MarkRef::Grace(..)) {
+                "Nota de adorno seleccionada · ↑/↓ cambian su altura; Backspace la borra".into()
+            } else {
+                format!(
+                    "{label} seleccionado · Backspace lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
+                )
+            };
             cx.notify();
             return;
         }

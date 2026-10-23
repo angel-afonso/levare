@@ -1,12 +1,13 @@
 //! Deterministic musical timing, independent of audio devices and UI clocks.
 use score_core::{
     Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_STAVES, PartId, Pitch, Pitches,
-    PlayingTechnique, Score, ScoreError, StaffId, Step,
+    PlayingTechnique, Score, ScoreError, StaffId, Step, TextKind,
 };
 
 mod arpeggio;
 mod audition;
 mod dynamics;
+mod harmony;
 mod interpretation;
 mod timeline;
 pub use audition::{Audition, MAX_AUDITION_NOTES};
@@ -133,6 +134,10 @@ struct SoundSpan {
     tremolo: Option<score_core::Tremolo>,
     tremolo_repeat: bool,
     tremolo_attack: Option<TremoloAttack>,
+    /// A grace note sounding in the time of its note.
+    grace: bool,
+    /// A chord symbol's accompaniment, not a written note.
+    harmony: bool,
     written_ticks: u64,
     /// Original first fragment, so tied continuations never widen the roll.
     attack_duration: u64,
@@ -153,6 +158,8 @@ struct SoundSpan {
     channel: u8,
     pitches: Pitches,
     level: u8,
+    /// Under «con sord.»: softer and darker until it is taken off.
+    muted: bool,
 }
 #[derive(Debug)]
 struct KeySound {
@@ -262,11 +269,7 @@ impl PlaybackPlan {
             let channel = part_channel(part_index);
             let first_part_sound = sounds.len();
             let first_part_track = tracks.len();
-            let split_hands = part.instrument().is_grand_staff()
-                && score
-                    .connections()
-                    .iter()
-                    .any(|c| c.kind.is_hairpin() && c.start.part == part.id());
+            let split_hands = part.instrument().is_grand_staff() && score.shapes_level(part.id());
             for staff in part.staves() {
                 // A second internal synth bank isolates piano hands without exhausting MIDI channels.
                 let channel = channel
@@ -280,10 +283,11 @@ impl PlaybackPlan {
                     c.kind.is_hairpin()
                         && c.start.part == part.id()
                         && (c.start.staff == staff.id() || part.is_divisi())
-                });
+                }) || !score.swells(part.id(), staff.id()).is_empty();
                 let first_sound = sounds.len();
                 let mut dynamics = std::collections::BTreeMap::new();
                 let mut techniques = std::collections::BTreeMap::new();
+                let mut instructions = std::collections::BTreeMap::new();
                 for source in part.expression_staves(staff.id()) {
                     for (bar, measure) in source.measures().iter().enumerate() {
                         for (_, onset, _, event) in measure.timed_iter() {
@@ -294,9 +298,21 @@ impl PlaybackPlan {
                             if let Some(mark) = event.notation.technique {
                                 techniques.insert(tick, mark);
                             }
+                            for (kind, words) in [
+                                (TextKind::Expression, event.notation.expression_text),
+                                (TextKind::Technique, event.notation.technique_text),
+                            ] {
+                                if let Some(effect) = words.and_then(|words| words.effect(kind)) {
+                                    instructions
+                                        .entry(tick)
+                                        .or_insert_with(Vec::new)
+                                        .push(effect);
+                                }
+                            }
                         }
                     }
                 }
+                let manner = interpretation::Manner::new(&instructions);
                 let mut voice_ranges = Vec::new();
                 for voice in score_core::Voice::ALL {
                     if voice == score_core::Voice::Two
@@ -353,7 +369,9 @@ impl PlaybackPlan {
                                 .next_back()
                                 .map_or(score_core::Dynamic::Mf, |(_, mark)| *mark);
                             let articulation = event.notation.articulation;
-                            let slurred = slurs.continues(written_tick);
+                            let (muted, legato) = manner.at(written_tick);
+                            let slurred =
+                                slurs.continues(written_tick) || (legato && manner.at(tick).1);
                             if !pitches.is_empty() {
                                 if tie_start_of
                                     .get(&element)
@@ -396,6 +414,8 @@ impl PlaybackPlan {
                                         tremolo: event.notation.tremolo,
                                         tremolo_repeat: false,
                                         tremolo_attack: None,
+                                        grace: false,
+                                        harmony: false,
                                         written_ticks: u64::from(event.duration.ticks()),
                                         attack_duration: end - start,
                                         articulation: if tied
@@ -410,8 +430,9 @@ impl PlaybackPlan {
                                         technique,
                                         harmonic: event.notation.harmonic,
                                         instrument: part.instrument(),
-                                        legato: slurs.contains(written_tick),
+                                        legato: legato || slurs.contains(written_tick),
                                         slurred,
+                                        muted,
                                         start,
                                         end: if tied {
                                             end
@@ -433,11 +454,21 @@ impl PlaybackPlan {
                                             articulation,
                                         ),
                                     });
+                                    if let Some(grace) = event.notation.grace {
+                                        interpretation::graces(
+                                            &mut sounds,
+                                            &score.sounding_graces(element)?,
+                                            grace.kind,
+                                            sample_rate,
+                                        );
+                                    }
                                 }
                             }
                             last_element = Some(element);
                         }
                     }
+                    interpretation::trills(score, &mut sounds, first_voice_sound, sample_rate);
+                    interpretation::glissandos(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::expand_tremolos(&mut sounds, first_voice_sound, sample_rate);
                     connect_slurred(&mut sounds[first_voice_sound..], sample_rate);
                     voice_ranges.push((
@@ -477,12 +508,8 @@ impl PlaybackPlan {
                     });
                 }
             }
-            if part.is_divisi()
-                && score
-                    .connections()
-                    .iter()
-                    .any(|c| c.kind.is_hairpin() && c.start.part == part.id())
-            {
+            interpretation::pedal(score, part.id(), &mut sounds[first_part_sound..]);
+            if part.is_divisi() && score.shapes_level(part.id()) {
                 let first = expression.len();
                 let envelope =
                     score_core::DynamicEnvelope::new(score, part.id(), StaffId::Upper).unwrap();
@@ -508,9 +535,11 @@ impl PlaybackPlan {
         if style == Style::Natural {
             interpretation::shape(&mut sounds, score, &timeline, sample_rate, &tracks);
         }
+        harmony::sounds(score, &timeline, sample_rate, &mut sounds);
         let sound_indices: std::collections::HashMap<_, _> = sounds
             .iter()
             .enumerate()
+            .filter(|(_, span)| !span.harmony)
             .map(|(index, span)| ((span.element, span.start), index))
             .collect();
         let piano_arpeggios: std::collections::HashMap<_, _> = score
@@ -519,14 +548,20 @@ impl PlaybackPlan {
             .flat_map(|mark| [(mark.upper, mark), (mark.lower, mark)])
             .collect();
         for span in &sounds {
-            let group = piano_arpeggios.get(&span.element);
+            let group = piano_arpeggios.get(&span.element).filter(|_| !span.harmony);
             let mut keys = [None; MAX_AUDITION_NOTES];
             let mut count = 0;
             let mut gate = span.attack_duration.min(span.end - span.start);
             let members = group.map_or([Some(span.element), None], |mark| {
                 [Some(mark.upper), Some(mark.lower)]
             });
-            for id in members.into_iter().flatten() {
+            if span.harmony {
+                for pitch in span.pitches.iter() {
+                    keys[count] = Some(midi_key(pitch));
+                    count += 1;
+                }
+            }
+            for id in members.into_iter().flatten().filter(|_| !span.harmony) {
                 // A tied continuation has no new sound; preserve that sustain.
                 if let Some(index) = sound_indices.get(&(id, span.start)) {
                     let member = sounds[*index];
@@ -556,7 +591,11 @@ impl PlaybackPlan {
                     channel: span.channel,
                     message: Message::NoteOn(NoteEvent {
                         key,
-                        level: span.level,
+                        level: if span.muted {
+                            interpretation::muted(span.level)
+                        } else {
+                            span.level
+                        },
                         instrument: span.instrument,
                         technique: span.technique,
                         harmonic: span.harmonic,
@@ -1309,6 +1348,14 @@ mod orchestra_tests;
 #[cfg(test)]
 mod form_tests;
 
+#[cfg(test)]
+mod grace_tests;
+#[cfg(test)]
+mod harmony_tests;
+#[cfg(test)]
+mod line_tests;
+#[cfg(test)]
+mod text_tests;
 #[cfg(test)]
 mod tremolo_tests;
 

@@ -90,7 +90,15 @@ const HANDLE_REACH: f32 = 7.;
 pub(super) fn handles(layout: &Layout, connection: Connection) -> Option<((f32, f32), (f32, f32))> {
     let scale = layout.scale;
     let at = |p: score_layout::Point| (p.x * scale, p.y * scale);
-    if connection.kind.is_hairpin() {
+    if connection.kind.is_line() {
+        let mut segments = layout
+            .line_marks
+            .iter()
+            .filter(|line| line.connection == connection);
+        let first = segments.next()?;
+        let last = segments.next_back().unwrap_or(first);
+        Some((at(first.from), at(last.to)))
+    } else if connection.kind.is_hairpin() {
         let mut segments = layout
             .hairpins
             .iter()
@@ -237,9 +245,12 @@ impl ConnectionDrag {
         if let Some(original) = self.original {
             score.remove_connection(original);
         }
-        let ordered = self.base.event_tick(start) < self.base.event_tick(end);
+        // Octave lines, pedal and trills may cover a single note.
+        let ordered = self.base.event_tick(start) < self.base.event_tick(end)
+            || (self.kind.is_range() && start == end);
         let fits = ordered
             && (self.kind.is_hairpin()
+                || self.kind.is_line()
                 || (sounding(&self.base, start) && sounding(&self.base, end)));
         let result = if fits {
             score.add_connection(candidate).map_err(|error| error.0)

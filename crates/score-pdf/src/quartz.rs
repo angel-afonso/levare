@@ -517,13 +517,34 @@ impl Painter<'_> {
                     self.context.fill_path();
                 }
             }
-            for label in &measure.content.techniques {
+            for label in measure
+                .content
+                .techniques
+                .iter()
+                .chain(&measure.content.expressions)
+            {
+                let (font, size) = if matches!(label.mark, score_core::MarkRef::Chord(_)) {
+                    ("TimesNewRomanPSMT", 18.)
+                } else {
+                    ("TimesNewRomanPS-ItalicMT", 16.)
+                };
                 self.text(
-                    label.text,
-                    "TimesNewRomanPS-ItalicMT",
-                    16.,
+                    label.text.as_str(),
+                    font,
+                    size,
                     (label.position.x + offset.x).into(),
                     (label.position.y + offset.y).into(),
+                    Align::Left,
+                    None,
+                );
+            }
+            for lyric in &measure.content.lyrics {
+                self.text(
+                    lyric.syllable.text(),
+                    "TimesNewRomanPSMT",
+                    16.,
+                    (lyric.position.x + offset.x).into(),
+                    (lyric.position.y + offset.y).into(),
                     Align::Left,
                     None,
                 );
@@ -535,6 +556,15 @@ impl Painter<'_> {
                     offset.y + glyph.position.y,
                     score_layout::MUSIC_SIZE,
                     glyph.rotated,
+                );
+            }
+            for cue in &measure.content.cue {
+                self.glyph(
+                    &cue.glyph.text,
+                    offset.x + cue.glyph.position.x,
+                    offset.y + cue.glyph.position.y,
+                    score_layout::MUSIC_SIZE * score_layout::CUE,
+                    false,
                 );
             }
             self.text(
@@ -562,6 +592,27 @@ impl Painter<'_> {
             if on_page(hairpin.upper.from.y) {
                 self.line(&hairpin.upper, zero);
                 self.line(&hairpin.lower, zero);
+            }
+        }
+        for line in &layout.lyric_lines {
+            if on_page(line.from.y) {
+                self.line(line, zero);
+            }
+        }
+        for line in &layout.line_marks {
+            if on_page(line.from.y) {
+                for stroke in &line.strokes {
+                    self.line(stroke, zero);
+                }
+                for glyph in &line.glyphs {
+                    self.glyph(
+                        &glyph.text,
+                        glyph.position.x,
+                        glyph.position.y,
+                        score_layout::MUSIC_SIZE,
+                        false,
+                    );
+                }
             }
         }
         for curve in &layout.curves {

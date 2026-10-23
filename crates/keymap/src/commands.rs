@@ -265,9 +265,16 @@ pub mod id {
         DIMINUENDO = "expresion.diminuendo";
         REMOVE_CRESCENDO = "expresion.quitar-crescendo";
         REMOVE_DIMINUENDO = "expresion.quitar-diminuendo";
+        OTTAVA_ALTA = "notacion.8va";
+        OTTAVA_BASSA = "notacion.8vb";
+        PEDAL = "notacion.pedal";
+        TRILL = "notacion.trino";
+        GLISSANDO = "notacion.glissando";
         PIZZICATO = "expresion.pizzicato";
         ARCO = "expresion.arco";
         HARMONIC_NATURAL = "expresion.armonico-natural";
+        ACCIACCATURA = "notacion.acciaccatura";
+        APPOGGIATURA = "notacion.appoggiatura";
         HARMONIC_ARTIFICIAL = "expresion.armonico-artificial";
         CLEAR_TECHNIQUE = "expresion.sin-tecnica";
         CLEAR_ARTICULATION = "expresion.sin-articulacion";
@@ -370,6 +377,7 @@ pub mod id {
         LOOP = "reproduccion.bucle";
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
+        CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
         SOUNDS = "reproduccion.sonidos";
         AUDITION = "reproduccion.audicion";
@@ -487,12 +495,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::VOICE_2, C::NoteInput, "Voz 2", S, false, R),
     spec(id::VOICE_3, C::NoteInput, "Voz 3", S, false, P),
     spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, P),
-    spec(id::GRACE_NOTE, C::NoteInput, "Convertir en nota de adorno", S, false, P),
+    spec(id::GRACE_NOTE, C::NoteInput, "Añadir nota de adorno", S, false, R),
+    spec(id::ACCIACCATURA, C::NoteInput, "Acciaccatura", S, false, R),
+    spec(id::APPOGGIATURA, C::NoteInput, "Appoggiatura", S, false, R),
     spec(id::FLEXI_TIME, C::NoteInput, "Entrada en tiempo real", G, false, P),
     spec(id::STEP_TIME, C::NoteInput, "Entrada paso a paso", S, false, R),
     spec(id::MIDI_INPUT, C::NoteInput, "Entrada con teclado MIDI", G, false, P),
 
-    spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, P),
+    spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, R),
     spec(id::SIXTEENTH, C::Duration, "Semicorchea", S, false, R),
     spec(id::EIGHTH, C::Duration, "Corchea", S, false, R),
     spec(id::QUARTER, C::Duration, "Negra", S, false, R),
@@ -518,6 +528,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DIMINUENDO, C::Expression, "Diminuendo: inicio o fin", S, false, R),
     spec(id::REMOVE_CRESCENDO, C::Expression, "Quitar crescendo", S, false, R),
     spec(id::REMOVE_DIMINUENDO, C::Expression, "Quitar diminuendo", S, false, R),
+    spec(id::OTTAVA_ALTA, C::Notation, "Octava alta 8va", S, false, R),
+    spec(id::OTTAVA_BASSA, C::Notation, "Octava baja 8vb", S, false, R),
+    spec(id::PEDAL, C::Notation, "Pedal de resonancia", S, false, R),
+    spec(id::TRILL, C::Notation, "Trino", S, false, R),
+    spec(id::GLISSANDO, C::Notation, "Glissando hasta la nota siguiente", S, false, R),
     spec(id::PIZZICATO, C::Expression, "Pizzicato", S, false, R),
     spec(id::ARCO, C::Expression, "Arco", S, false, R),
     spec(id::HARMONIC_NATURAL, C::Expression, "Armónico natural", S, false, R),
@@ -541,11 +556,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DYNAMIC_FF, C::Expression, "Dinámica ff", S, false, R),
     spec(id::DYNAMIC_FFF, C::Expression, "Dinámica fff", S, false, R),
     spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
-    spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión", G, false, P),
-    spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica", G, false, P),
+    spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión…", S, false, R),
+    spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica…", S, false, R),
     spec(id::TEMPO_TEXT, C::Expression, "Indicación de tempo…", G, false, R),
-    spec(id::LYRICS, C::Expression, "Letra", G, false, P),
-    spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes", G, false, P),
+    spec(id::LYRICS, C::Expression, "Letra…", S, false, R),
+    spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes…", S, false, R),
     spec(id::REHEARSAL_MARK, C::Expression, "Marca de ensayo", G, false, R),
     spec(id::REHEARSAL_LETTERS, C::Expression, "Marcas de ensayo con letras", G, false, R),
     spec(id::REHEARSAL_NUMBERS, C::Expression, "Marcas de ensayo con números", G, false, R),
@@ -612,6 +627,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::LOOP, C::Playback, "Reproducción en bucle", S, false, R),
     spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, R),
     spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, R),
+    spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
     spec(id::MIXER, C::Playback, "Mostrar el mezclador", S, false, R),
     spec(id::SOUNDS, C::Playback, "Mostrar los sonidos", S, false, R),
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),

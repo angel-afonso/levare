@@ -521,7 +521,7 @@ mod tests {
         assert!(eighth.checked);
         assert_eq!(eighth.keys.as_deref(), Some("3"));
         assert_eq!(eighth.label, "Corchea");
-        assert!(find(&input, id::THIRTY_SECOND).pending);
+        assert!(!find(&input, id::THIRTY_SECOND).pending);
         assert!(!find(&input, id::QUARTER).checked);
         // Articulations and slurs sit beside the durations, as in MuseScore.
         let slur = find(&input, id::SLUR);

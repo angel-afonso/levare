@@ -18,6 +18,12 @@ pub enum MarkKind {
     Dynamic(Dynamic),
     Technique(PlayingTechnique),
     Harmonic(Harmonic),
+    Grace(GraceKind),
+    /// Words written at the note; the words themselves live in its notation.
+    Text(TextKind),
+    /// A sung syllable; its verse is in the reference.
+    Lyric,
+    Chord,
     Connection(ConnectionKind),
 }
 
@@ -33,9 +39,15 @@ pub enum MarkFamily {
     Dynamic,
     Technique,
     Harmonic,
+    Grace,
+    ExpressionText,
+    TechniqueText,
+    Lyric,
+    Chord,
     Tie,
     Slur,
     Hairpin,
+    Line,
 }
 
 /// Which side of the staff a mark is written on.
@@ -48,7 +60,7 @@ pub enum Placement {
 }
 
 impl MarkKind {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 40] = [
         Self::Division(Division::Divisi),
         Self::Division(Division::Unison),
         Self::Arpeggio(Arpeggio::Normal),
@@ -74,10 +86,21 @@ impl MarkKind {
         Self::Technique(PlayingTechnique::Arco),
         Self::Harmonic(Harmonic::Natural),
         Self::Harmonic(Harmonic::Artificial),
+        Self::Grace(GraceKind::Acciaccatura),
+        Self::Grace(GraceKind::Appoggiatura),
+        Self::Text(TextKind::Expression),
+        Self::Text(TextKind::Technique),
+        Self::Lyric,
+        Self::Chord,
         Self::Connection(ConnectionKind::Tie),
         Self::Connection(ConnectionKind::Slur),
         Self::Connection(ConnectionKind::Crescendo),
         Self::Connection(ConnectionKind::Diminuendo),
+        Self::Connection(ConnectionKind::OttavaAlta),
+        Self::Connection(ConnectionKind::OttavaBassa),
+        Self::Connection(ConnectionKind::Pedal),
+        Self::Connection(ConnectionKind::Trill),
+        Self::Connection(ConnectionKind::Glissando),
     ];
 
     pub const fn label(self) -> &'static str {
@@ -90,6 +113,10 @@ impl MarkKind {
             Self::Dynamic(mark) => mark.label(),
             Self::Technique(mark) => mark.label(),
             Self::Harmonic(mark) => mark.label(),
+            Self::Grace(kind) => kind.label(),
+            Self::Text(kind) => kind.label(),
+            Self::Lyric => "Letra",
+            Self::Chord => "Cifrado",
             Self::Connection(kind) => kind.label(),
         }
     }
@@ -117,6 +144,13 @@ impl MarkKind {
         match self {
             Self::Connection(ConnectionKind::Crescendo) => Some("\u{e53e}"),
             Self::Connection(ConnectionKind::Diminuendo) => Some("\u{e53f}"),
+            Self::Connection(ConnectionKind::OttavaAlta) => Some("\u{e511}"),
+            Self::Connection(ConnectionKind::OttavaBassa) => Some("\u{e51c}"),
+            Self::Connection(ConnectionKind::Pedal) => Some("\u{e650}"),
+            Self::Connection(ConnectionKind::Trill) => Some("\u{e566}"),
+            Self::Connection(ConnectionKind::Glissando) => Some("\u{e585}"),
+            Self::Grace(GraceKind::Acciaccatura) => Some("\u{e560}"),
+            Self::Grace(GraceKind::Appoggiatura) => Some("\u{e562}"),
             _ => self.glyph(),
         }
     }
@@ -130,8 +164,14 @@ impl MarkKind {
             Self::Dynamic(_) => MarkFamily::Dynamic,
             Self::Technique(_) => MarkFamily::Technique,
             Self::Harmonic(_) => MarkFamily::Harmonic,
+            Self::Grace(_) => MarkFamily::Grace,
+            Self::Text(TextKind::Expression) => MarkFamily::ExpressionText,
+            Self::Text(TextKind::Technique) => MarkFamily::TechniqueText,
+            Self::Lyric => MarkFamily::Lyric,
+            Self::Chord => MarkFamily::Chord,
             Self::Connection(ConnectionKind::Tie) => MarkFamily::Tie,
             Self::Connection(ConnectionKind::Slur) => MarkFamily::Slur,
+            Self::Connection(kind) if kind.is_line() => MarkFamily::Line,
             Self::Connection(_) => MarkFamily::Hairpin,
         }
     }
@@ -144,15 +184,27 @@ impl MarkKind {
             Self::Fermata => Some("\u{e4c0}"),
             Self::Tremolo(mark) => Some(mark.glyph()),
             Self::Dynamic(mark) => Some(mark.glyph()),
-            Self::Division(_) | Self::Technique(_) | Self::Connection(_) => None,
+            // Grace notes are engraved note by note; they have only a symbol.
+            Self::Division(_)
+            | Self::Technique(_)
+            | Self::Grace(_)
+            | Self::Text(_)
+            | Self::Lyric
+            | Self::Chord
+            | Self::Connection(_) => None,
         }
     }
     pub const fn placement(self) -> Placement {
         match self {
-            Self::Arpeggio(_) => Placement::Left,
+            Self::Arpeggio(_) | Self::Grace(_) => Placement::Left,
             Self::Tremolo(_) => Placement::Stem,
-            Self::Dynamic(_) | Self::Connection(ConnectionKind::Crescendo) => Placement::Below,
-            Self::Connection(ConnectionKind::Diminuendo) => Placement::Below,
+            Self::Dynamic(_)
+            | Self::Text(TextKind::Expression)
+            | Self::Lyric
+            | Self::Connection(ConnectionKind::Crescendo) => Placement::Below,
+            Self::Connection(
+                ConnectionKind::Diminuendo | ConnectionKind::OttavaBassa | ConnectionKind::Pedal,
+            ) => Placement::Below,
             _ => Placement::Above,
         }
     }
@@ -172,6 +224,7 @@ impl MarkKind {
                 | Self::Articulation(_)
                 | Self::Harmonic(_)
                 | Self::Tremolo(_)
+                | Self::Grace(_)
                 | Self::Connection(_)
         )
     }
@@ -188,9 +241,15 @@ impl MarkFamily {
             Self::Dynamic => "Dinámica",
             Self::Technique => "Técnica",
             Self::Harmonic => "Armónico",
+            Self::Grace => "Notas de adorno",
+            Self::ExpressionText => "Texto de expresión",
+            Self::TechniqueText => "Texto de técnica",
+            Self::Lyric => "Letra",
+            Self::Chord => "Cifrado",
             Self::Tie => "Ligadura de unión",
             Self::Slur => "Ligadura de expresión",
             Self::Hairpin => "Regulador",
+            Self::Line => "Líneas",
         }
     }
     pub fn kinds(self) -> impl Iterator<Item = MarkKind> {
@@ -211,6 +270,12 @@ pub enum MarkRef {
     Dynamic(ElementId),
     Technique(ElementId),
     Harmonic(ElementId),
+    /// One grace note of a note: its index in the group.
+    Grace(ElementId, u8),
+    Text(ElementId, TextKind),
+    /// The syllable of one verse (from 0) of a note.
+    Lyric(ElementId, u8),
+    Chord(ElementId),
     Connection(Connection),
 }
 
@@ -225,7 +290,11 @@ impl MarkRef {
             | Self::Tremolo(id)
             | Self::Dynamic(id)
             | Self::Technique(id)
-            | Self::Harmonic(id) => id,
+            | Self::Harmonic(id)
+            | Self::Grace(id, _)
+            | Self::Text(id, _)
+            | Self::Lyric(id, _)
+            | Self::Chord(id) => id,
             Self::Connection(connection) => connection.start,
         }
     }
@@ -234,7 +303,11 @@ impl MarkRef {
     pub fn follows_time(self) -> bool {
         matches!(
             self,
-            Self::Dynamic(_) | Self::Technique(_) | Self::Fermata(_)
+            Self::Dynamic(_)
+                | Self::Technique(_)
+                | Self::Fermata(_)
+                | Self::Text(..)
+                | Self::Chord(_)
         ) || matches!(self, Self::Connection(connection) if connection.kind.is_hairpin())
     }
     /// The point mark of `family` on `id`, whether or not it is written yet.
@@ -248,7 +321,14 @@ impl MarkRef {
             MarkFamily::Dynamic => Self::Dynamic(id),
             MarkFamily::Technique => Self::Technique(id),
             MarkFamily::Harmonic => Self::Harmonic(id),
-            MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin => return None,
+            MarkFamily::Grace => Self::Grace(id, 0),
+            MarkFamily::ExpressionText => Self::Text(id, TextKind::Expression),
+            MarkFamily::TechniqueText => Self::Text(id, TextKind::Technique),
+            MarkFamily::Lyric => Self::Lyric(id, 0),
+            MarkFamily::Chord => Self::Chord(id),
+            MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin | MarkFamily::Line => {
+                return None;
+            }
         })
     }
 }
@@ -279,6 +359,16 @@ impl Score {
             MarkRef::Dynamic(id) => notation(id)?.dynamic.map(MarkKind::Dynamic),
             MarkRef::Technique(id) => notation(id)?.technique.map(MarkKind::Technique),
             MarkRef::Harmonic(id) => notation(id)?.harmonic.map(MarkKind::Harmonic),
+            MarkRef::Grace(id, index) => notation(id)?
+                .grace
+                .filter(|grace| grace.note(usize::from(index)).is_some())
+                .map(|grace| MarkKind::Grace(grace.kind)),
+            MarkRef::Text(id, kind) => self.text(id, kind).map(|_| MarkKind::Text(kind)),
+            MarkRef::Lyric(id, verse) => notation(id)?
+                .lyrics
+                .verse(usize::from(verse))
+                .map(|_| MarkKind::Lyric),
+            MarkRef::Chord(id) => notation(id)?.chord.map(|_| MarkKind::Chord),
             MarkRef::Connection(connection) => self
                 .connections()
                 .contains(&connection)
@@ -295,6 +385,26 @@ impl Score {
     /// Name shown when the mark is selected ("Staccato", "Dinámica f"…).
     pub fn mark_label(&self, mark: MarkRef) -> Option<String> {
         let kind = self.mark_kind(mark)?;
+        match mark {
+            MarkRef::Text(id, text) => {
+                return Some(format!("{} «{}»", kind.label(), self.text(id, text)?));
+            }
+            MarkRef::Lyric(id, verse) => {
+                let syllable = self.event(id)?.notation.lyrics.verse(usize::from(verse))?;
+                return Some(format!(
+                    "Letra, estrofa {} «{}»",
+                    verse + 1,
+                    syllable.text()
+                ));
+            }
+            MarkRef::Chord(id) => {
+                return Some(format!(
+                    "Cifrado {}",
+                    self.event(id)?.notation.chord?.label()
+                ));
+            }
+            _ => {}
+        }
         Some(match kind.family() {
             MarkFamily::Dynamic | MarkFamily::Technique => {
                 format!("{} {}", kind.family().label(), kind.label())
@@ -343,7 +453,26 @@ impl Score {
                 self.set_harmonic(id, Some(mark))
             }
             (MarkFamily::Harmonic, _) => self.set_harmonic(id, None),
-            (MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin, _) => {
+            (MarkFamily::Grace, Some(MarkKind::Grace(kind))) => self.set_grace(id, Some(kind)),
+            (MarkFamily::Grace, _) => self.set_grace(id, None),
+            (
+                MarkFamily::ExpressionText | MarkFamily::TechniqueText,
+                Some(MarkKind::Text(kind)),
+            ) => {
+                if self.text(id, kind).is_some() {
+                    Ok(())
+                } else {
+                    Err(ScoreError("Escribe el texto de la indicación"))
+                }
+            }
+            (MarkFamily::Lyric | MarkFamily::Chord, Some(_)) => {
+                Err(ScoreError("Escribe la letra o el cifrado en su editor"))
+            }
+            (MarkFamily::Lyric, None) => self.set_syllable(id, 0, None),
+            (MarkFamily::Chord, None) => self.set_chord(id, None),
+            (MarkFamily::ExpressionText, _) => self.set_text(id, TextKind::Expression, None),
+            (MarkFamily::TechniqueText, _) => self.set_text(id, TextKind::Technique, None),
+            (MarkFamily::Tie | MarkFamily::Slur | MarkFamily::Hairpin | MarkFamily::Line, _) => {
                 Err(ScoreError("Las ligaduras y los reguladores unen dos notas"))
             }
         }
@@ -357,6 +486,8 @@ impl Score {
                 self.remove_connection(connection);
                 Ok(())
             }
+            MarkRef::Grace(id, index) => self.remove_grace_note(id, usize::from(index)),
+            MarkRef::Lyric(id, verse) => self.set_syllable(id, usize::from(verse), None),
             _ => self.set_point_mark(mark.anchor(), kind.family(), None),
         }
     }
@@ -387,6 +518,22 @@ impl Score {
                 }
                 (MarkRef::Connection(_), _) | (_, MarkRef::Connection(_)) => {
                     return Err(ScoreError("La marca no pertenece a esa familia"));
+                }
+                (MarkRef::Chord(_), MarkRef::Chord(_)) => {
+                    if self.event(target).and_then(|e| e.notation.chord).is_some() {
+                        return Err(ScoreError("Ahí ya hay un cifrado"));
+                    }
+                    let chord = self.event(source).and_then(|e| e.notation.chord);
+                    self.set_chord(source, None)?;
+                    self.set_chord(target, chord)?;
+                }
+                (MarkRef::Text(_, kind), MarkRef::Text(_, other)) if kind == other => {
+                    if self.text(target, kind).is_some() {
+                        return Err(ScoreError("Ahí ya hay un texto de ese tipo"));
+                    }
+                    let words = self.text(source, kind).expect("written text");
+                    self.set_text(source, kind, None)?;
+                    self.set_text(target, kind, Some(words.as_str()))?;
                 }
                 _ => {
                     let family = kind.family();
@@ -479,7 +626,16 @@ mod tests {
             assert_eq!(
                 kind.glyph().is_some(),
                 kind.is_point()
-                    && !matches!(kind.family(), MarkFamily::Technique | MarkFamily::Division)
+                    && !matches!(
+                        kind.family(),
+                        MarkFamily::Technique
+                            | MarkFamily::Division
+                            | MarkFamily::Grace
+                            | MarkFamily::ExpressionText
+                            | MarkFamily::TechniqueText
+                            | MarkFamily::Lyric
+                            | MarkFamily::Chord
+                    )
             );
             assert!(kind.family().kinds().any(|k| k == kind));
         }

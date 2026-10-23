@@ -132,6 +132,11 @@ mod playback_tests {
                 dynamic: Some(Dynamic::F),
                 articulation: Some(Articulation::Staccato),
                 fermata: false,
+                grace: None,
+                expression_text: None,
+                technique_text: None,
+                lyrics: Default::default(),
+                chord: None,
                 offsets: Default::default(),
             },
         };

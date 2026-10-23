@@ -12,6 +12,8 @@ mod icons;
 mod instrument_panel;
 mod mixer;
 mod music_text;
+mod staff_text;
+pub use staff_text::{ChordEditor, LyricEditor, StaffTextEditor};
 mod tempo_editor;
 pub mod text_input;
 pub use command_search::CommandSearch;

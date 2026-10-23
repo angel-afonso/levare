@@ -354,10 +354,16 @@ fn instrument(part: Node<'_, '_>, bars: &[Node<'_, '_>], warnings: &mut Warnings
             &["contrabassoon", "contrafagot"][..],
             Instrument::Contrabassoon,
         ),
-        (&["soprano sax"][..], Instrument::SopranoSax),
-        (&["alto sax"][..], Instrument::AltoSax),
-        (&["tenor sax"][..], Instrument::TenorSax),
-        (&["baritone sax"][..], Instrument::BaritoneSax),
+        (
+            &["soprano sax", "saxofón soprano"][..],
+            Instrument::SopranoSax,
+        ),
+        (&["alto sax", "saxofón alto"][..], Instrument::AltoSax),
+        (&["tenor sax", "saxofón tenor"][..], Instrument::TenorSax),
+        (
+            &["baritone sax", "saxofón barítono"][..],
+            Instrument::BaritoneSax,
+        ),
         (
             &["bass trombone", "trombón bajo"][..],
             Instrument::BassTrombone,
@@ -391,6 +397,18 @@ fn instrument(part: Node<'_, '_>, bars: &[Node<'_, '_>], warnings: &mut Warnings
         (&["trumpet", "trompeta"][..], Instrument::Trumpet),
         (&["trombone", "trombón"][..], Instrument::Trombone),
         (&["horn", "trompa", "corno"][..], Instrument::Horn),
+        // Voices last: «tenor» or «alto» also name instruments above.
+        (&["soprano", "tiple"][..], Instrument::Soprano),
+        (&["contralto", "mezzo", "alto"][..], Instrument::Contralto),
+        (&["tenor"][..], Instrument::Tenor),
+        (
+            &["baritone", "barítono", "basso", "bajo"][..],
+            Instrument::BassVoice,
+        ),
+        (
+            &["voice", "voz", "vocal", "canto", "cantante"][..],
+            Instrument::Voice,
+        ),
     ] {
         if names.iter().any(|s| name.contains(s)) {
             return match (instrument, chromatic) {
@@ -441,7 +459,8 @@ struct Bar {
     directions: Vec<Mark>,
     implicit: bool,
     staves: u8,
-    texts: Vec<(u16, String)>,
+    /// Free words, and whether their direction gave a placement.
+    texts: Vec<(Mark, bool)>,
     repeat_start: bool,
     repeat_end: Option<u8>,
     barline: Option<Barline>,
@@ -493,6 +512,11 @@ enum MarkType {
     Division(Division),
     Visibility(bool),
     Wedge(bool, ConnectionKind, String),
+    /// Words that are neither tempo nor a known technique.
+    Text(TextKind, String),
+    Chord(ChordSymbol),
+    /// An octave line or pedal: its stop names the family, not the kind.
+    Span(bool, ConnectionKind, String),
 }
 struct State {
     divisions: f64,
@@ -530,6 +554,8 @@ fn read_part(
         };
         let mut cursor = 0u16;
         let mut last_note = None;
+        // Grace notes wait for the next note of their voice and staff.
+        let mut graces: Vec<(String, usize, Pitch, bool)> = Vec::new();
         for n in measure.children().filter(Node::is_element) {
             match n.tag_name().name() {
                 "attributes" => attributes(n, &mut state, &mut bar, cursor, warnings)?,
@@ -547,6 +573,7 @@ fn read_part(
                     last_note = None;
                 }
                 "direction" => read_direction(n, cursor, &state, &mut bar, warnings)?,
+                "harmony" => read_harmony(n, cursor, &state, &mut bar, warnings)?,
                 "sound" => {
                     navigation_sound(n, &mut bar);
                     if let Some(technique) = sound_technique(n)? {
@@ -566,8 +593,35 @@ fn read_part(
                     }
                 }
                 "note" => {
-                    if child(n, "grace").is_some() {
-                        warnings.add("Las apoyaturas y notas de adorno no se importan");
+                    if let Some(grace) = child(n, "grace") {
+                        let pitch = child(n, "pitch");
+                        if child(n, "chord").is_some() || pitch.is_none() {
+                            warnings.add("Los acordes y las notas de adorno sin altura se importan solo con su primera nota");
+                            continue;
+                        }
+                        let staff = text(n, "staff").map_or(Ok(0), staff_index)?;
+                        let pitch = pitch_value(
+                            pitch.expect("checked pitch"),
+                            state.transpose[staff],
+                            state.intervals[staff],
+                            warnings,
+                        )?;
+                        // An accidental the key already implies is shown only if written.
+                        let implied = state.key.accidental(pitch.step);
+                        let redundant = pitch.accidental() == implied
+                            || (implied.is_none()
+                                && pitch.accidental() == Some(Accidental::Natural));
+                        let pitch = if redundant && child(n, "accidental").is_none() {
+                            pitch.with_accidental(None)
+                        } else {
+                            pitch
+                        };
+                        graces.push((
+                            text(n, "voice").unwrap_or("1").to_owned(),
+                            staff,
+                            pitch,
+                            grace.attribute("slash") == Some("yes"),
+                        ));
                         continue;
                     }
                     let chord_parent = if child(n, "chord").is_some() {
@@ -576,6 +630,29 @@ fn read_part(
                         None
                     };
                     let mut event = read_note(n, cursor, &state, warnings, chord_parent)?;
+                    if child(n, "chord").is_none() {
+                        let staff = usize::from(event.staff - 1);
+                        let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut graces)
+                            .into_iter()
+                            .partition(|(voice, at, _, _)| *voice == event.voice && *at == staff);
+                        graces = others;
+                        if !mine.is_empty() && !event.pitches.is_empty() {
+                            if mine.len() > MAX_GRACE_NOTES {
+                                warnings.add("Solo se importan las cuatro primeras notas de adorno de cada nota");
+                            }
+                            let notes: Vec<Pitch> = mine
+                                .iter()
+                                .take(MAX_GRACE_NOTES)
+                                .map(|(_, _, pitch, _)| *pitch)
+                                .collect();
+                            let kind = if mine.len() == 1 && mine[0].3 {
+                                GraceKind::Acciaccatura
+                            } else {
+                                GraceKind::Appoggiatura
+                            };
+                            event.notation.grace = Grace::from_notes(kind, &notes);
+                        }
+                    }
                     if child(n, "chord").is_some() {
                         let last: &mut RawEvent = last_note
                             .and_then(|i| bar.events.get_mut(i))
@@ -631,7 +708,6 @@ fn read_part(
                 }
                 "barline" => read_barline(n, &mut bar, index + 1 == measures.len(), warnings),
                 "print" => {}
-                "harmony" => warnings.add("Los cifrados de acordes no se importan"),
                 _ => warnings.add(format!(
                     "Elemento MusicXML «{}» no importado",
                     n.tag_name().name()
@@ -666,8 +742,12 @@ fn read_part(
                 state.intervals[0],
             ));
         }
-        for (tick, text) in &bar.texts {
-            if *tick == 0
+        // Unplaced words at the start of a bar with a tempo complete its
+        // indication, as Levare wrote them before staff texts.
+        for (mark, placed) in std::mem::take(&mut bar.texts) {
+            if let MarkType::Text(_, text) = &mark.kind
+                && mark.tick == 0
+                && !placed
                 && let Some(tempo) = &mut bar.tempo
             {
                 if !tempo.text.is_empty() {
@@ -675,7 +755,7 @@ fn read_part(
                 }
                 tempo.text.push_str(text);
             } else {
-                warnings.add("Los textos libres se omiten salvo las indicaciones de tempo, arco, pizz., div. y unis.");
+                bar.directions.push(mark);
             }
         }
         if let Some(t) = &mut bar.tempo
@@ -968,6 +1048,144 @@ fn pitch_value(
             _ => Accidental::Natural,
         })))
 }
+/// Sung syllables of a note, verse by verse; a rest takes none.
+fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings) {
+    let rest = child(n, "rest").is_some();
+    for (index, lyric) in n.children().filter(|c| c.has_tag_name("lyric")).enumerate() {
+        let verse = lyric
+            .attribute("number")
+            // «1», or the last number of a name such as «part1verse2».
+            .and_then(|number| {
+                number
+                    .split(|c: char| !c.is_ascii_digit())
+                    .rfind(|digits| !digits.is_empty())?
+                    .parse::<usize>()
+                    .ok()
+            })
+            .filter(|&number| number >= 1)
+            .map_or(index, |number| number - 1);
+        // An elision joins two syllables on one note.
+        let words: Vec<_> = lyric
+            .children()
+            .filter(|c| c.has_tag_name("text"))
+            .filter_map(|t| t.text())
+            .collect();
+        let mut text = words.join(" ").trim().to_owned();
+        if text.is_empty() {
+            continue;
+        }
+        if rest {
+            warnings.add("La letra sobre silencios no se importa");
+            continue;
+        }
+        if verse >= MAX_VERSES {
+            warnings.add("Solo se importan las cuatro primeras estrofas");
+            continue;
+        }
+        if text.len() > MAX_SYLLABLE_BYTES {
+            let mut end = MAX_SYLLABLE_BYTES;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            warnings.add("Las sílabas de más de 20 caracteres se recortan");
+        }
+        let join = if child(lyric, "extend").is_some() {
+            Join::Melisma
+        } else {
+            match self::text(lyric, "syllabic") {
+                Some("begin" | "middle") => Join::Hyphen,
+                _ => Join::Word,
+            }
+        };
+        match Syllable::new(&text, join) {
+            Ok(syllable) => {
+                notation.lyrics.set(verse, Some(syllable));
+            }
+            Err(_) => warnings.add("Una sílaba no pudo importarse"),
+        }
+    }
+}
+
+/// A chord symbol over the staff at its offset from the cursor.
+fn read_harmony(
+    n: Node<'_, '_>,
+    cursor: u16,
+    state: &State,
+    bar: &mut Bar,
+    warnings: &mut Warnings,
+) -> Result<(), FileError> {
+    let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(error))?;
+    let tickf = f64::from(cursor) + offset * f64::from(TICKS_PER_QUARTER) / state.divisions;
+    if !tickf.is_finite() || tickf < 0.0 || (tickf - tickf.round()).abs() > 1e-6 {
+        warnings.add("Un cifrado fuera de lugar no se importa");
+        return Ok(());
+    }
+    let staff = (staff_index(text(n, "staff").unwrap_or("1"))? + 1) as u8;
+    let read_root = |name: &str| -> Option<ChordRoot> {
+        let node = child(n, name)?;
+        let step = Step::from_letter(&text(node, &format!("{name}-step"))?.trim().to_lowercase())?;
+        let alteration = match text(node, &format!("{name}-alter")) {
+            Some(alter) => alter.trim().parse::<f64>().ok()?,
+            None => 0.,
+        };
+        ((-1. ..=1.).contains(&alteration) && alteration.fract() == 0.).then_some(ChordRoot {
+            step,
+            alteration: alteration as i8,
+        })
+    };
+    let Some(kind) = child(n, "kind") else {
+        warnings.add("Un cifrado sin tipo no se importa");
+        return Ok(());
+    };
+    let value = kind.text().unwrap_or("").trim();
+    if value == "none" {
+        warnings.add("Los cifrados «N.C.» no se importan");
+        return Ok(());
+    }
+    let degree = n
+        .children()
+        .filter(|c| c.has_tag_name("degree"))
+        .find(|d| text(*d, "degree-type") == Some("add"))
+        .and_then(|d| {
+            Some((
+                text(d, "degree-value")?.trim().parse::<u8>().ok()?,
+                text(d, "degree-alter").map_or(Some(0), |alter| alter.trim().parse::<i8>().ok())?,
+            ))
+        });
+    let printed = kind
+        .attribute("text")
+        .filter(|text| !text.trim().is_empty());
+    let (Some(root), Some(quality)) = (
+        read_root("root"),
+        ChordQuality::from_musicxml(value, degree, printed),
+    ) else {
+        warnings.add("Algunos cifrados no reconocidos no se importan");
+        return Ok(());
+    };
+    let bass = match child(n, "bass") {
+        Some(_) => match read_root("bass") {
+            Some(bass) => Some(bass),
+            None => {
+                warnings.add("Algunos bajos de cifrado no se importan");
+                None
+            }
+        },
+        None => None,
+    };
+    bar.directions.push(Mark {
+        tick: tickf.round() as u16,
+        staff,
+        voice: None,
+        kind: MarkType::Chord(ChordSymbol {
+            root,
+            quality,
+            bass,
+        }),
+    });
+    Ok(())
+}
+
 fn read_note(
     n: Node<'_, '_>,
     onset: u16,
@@ -1052,9 +1270,7 @@ fn read_note(
     if child(n, "cue").is_some() {
         warnings.add("Las notas guía se importan como notas normales");
     }
-    if child(n, "lyric").is_some() {
-        warnings.add("La letra cantada no se importa");
-    }
+    read_lyrics(n, &mut notation, warnings);
     let mut endpoints = Vec::new();
     for t in n.children().filter(|t| t.has_tag_name("tie")) {
         if let Some(stop) = match t.attribute("type") {
@@ -1112,8 +1328,44 @@ fn read_note(
                         }
                     }
                 }
+                "glissando" | "slide" => {
+                    if let Some(stop) = match m.attribute("type") {
+                        Some("start") => Some(false),
+                        Some("stop") => Some(true),
+                        _ => None,
+                    } {
+                        endpoints.push((
+                            ConnectionKind::Glissando,
+                            stop,
+                            m.attribute("number").unwrap_or("1").into(),
+                        ));
+                    }
+                }
                 "ornaments" => {
+                    let wavy = |typ: &str| {
+                        m.children()
+                            .find(|o| {
+                                o.has_tag_name("wavy-line") && o.attribute("type") == Some(typ)
+                            })
+                            .map(|o| o.attribute("number").unwrap_or("1").to_owned())
+                    };
+                    let (start, stop) = (wavy("start"), wavy("stop"));
+                    let mark = m.children().any(|o| o.has_tag_name("trill-mark"));
+                    if let Some(number) = start.clone().or_else(|| mark.then(|| "1".into())) {
+                        endpoints.push((ConnectionKind::Trill, false, number.clone()));
+                        // The sign alone trills this note only.
+                        if start.is_none() && stop.is_none() {
+                            endpoints.push((ConnectionKind::Trill, true, number));
+                        }
+                    }
+                    if let Some(number) = stop {
+                        endpoints.push((ConnectionKind::Trill, true, number));
+                    }
                     for ornament in m.children().filter(Node::is_element) {
+                        if ornament.has_tag_name("trill-mark") || ornament.has_tag_name("wavy-line")
+                        {
+                            continue;
+                        }
                         if ornament.has_tag_name("tremolo") {
                             match ornament.attribute("type") {
                                 None | Some("single") => {
@@ -1391,7 +1643,7 @@ fn read_direction(
                         Some(MarkType::Division(Division::Unison))
                     } else {
                         if !s.is_empty() {
-                            free_words.push(s.to_owned());
+                            free_words.push((s.to_owned(), text_kind(n, d, s)));
                         }
                         None
                     }
@@ -1419,6 +1671,42 @@ fn read_direction(
                     kind.map(|(stop, k)| {
                         MarkType::Wedge(stop, k, d.attribute("number").unwrap_or("1").into())
                     })
+                }
+                "octave-shift" => {
+                    let number = d.attribute("number").unwrap_or("1").to_owned();
+                    match (d.attribute("type"), d.attribute("size").unwrap_or("8")) {
+                        (Some("stop"), _) => {
+                            Some(MarkType::Span(true, ConnectionKind::OttavaAlta, number))
+                        }
+                        (Some("down"), "8") => {
+                            Some(MarkType::Span(false, ConnectionKind::OttavaAlta, number))
+                        }
+                        (Some("up"), "8") => {
+                            Some(MarkType::Span(false, ConnectionKind::OttavaBassa, number))
+                        }
+                        _ => {
+                            warnings.add("Solo se importan las líneas de una octava (8va y 8vb)");
+                            None
+                        }
+                    }
+                }
+                "pedal" => {
+                    let number = d.attribute("number").unwrap_or("1").to_owned();
+                    let span = |stop| MarkType::Span(stop, ConnectionKind::Pedal, number.clone());
+                    match d.attribute("type") {
+                        Some("start") => Some(span(false)),
+                        Some("stop") => Some(span(true)),
+                        Some("change") => {
+                            bar.directions.push(Mark {
+                                tick,
+                                staff,
+                                voice: voice.clone(),
+                                kind: span(true),
+                            });
+                            Some(span(false))
+                        }
+                        _ => None,
+                    }
                 }
                 "metronome" => {
                     let bpm = number(d, "per-minute")?;
@@ -1466,15 +1754,46 @@ fn read_direction(
     }
     if let Some(mut tempo) = tempo {
         if tick == 0 {
-            tempo.text = free_words.join(" ");
+            tempo.text = free_words
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>()
+                .join(" ");
             bar.tempo = Some(tempo);
         } else {
             warnings.add("Los cambios de tempo dentro del compás no se importan");
         }
     } else {
-        bar.texts.extend(free_words.into_iter().map(|s| (tick, s)));
+        let placed = n.attribute("placement").is_some();
+        bar.texts.extend(free_words.into_iter().map(|(text, kind)| {
+            (
+                Mark {
+                    tick,
+                    staff,
+                    voice: voice.clone(),
+                    kind: MarkType::Text(kind, text),
+                },
+                placed,
+            )
+        }));
     }
     Ok(())
+}
+
+/// Below the staff, or in italics without a placement, words are an
+/// expression; above, an instruction. «cresc.» and «dim.» are always expressions.
+fn text_kind(direction: Node<'_, '_>, words: Node<'_, '_>, text: &str) -> TextKind {
+    let swell = Words::new(text)
+        .ok()
+        .and_then(|words| words.effect(TextKind::Expression))
+        .is_some_and(|effect| matches!(effect, TextEffect::Swell(_)));
+    match direction.attribute("placement") {
+        _ if swell => TextKind::Expression,
+        Some("below") => TextKind::Expression,
+        Some("above") => TextKind::Technique,
+        _ if words.attribute("font-style") == Some("italic") => TextKind::Expression,
+        _ => TextKind::Technique,
+    }
 }
 
 fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
@@ -1484,6 +1803,7 @@ fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
         "quarter" => Duration::Quarter,
         "eighth" => Duration::Eighth,
         "16th" => Duration::Sixteenth,
+        "32nd" => Duration::ThirtySecond,
         _ => return None,
     };
     let dots = n.children().filter(|c| c.has_tag_name("dot")).count();

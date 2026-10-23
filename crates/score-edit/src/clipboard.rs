@@ -354,6 +354,14 @@ impl Editor {
                     notation.offsets.technique = None;
                     notation.division = None;
                     notation.arpeggio = None;
+                    notation.grace = None;
+                    notation.expression_text = None;
+                    notation.offsets.expression_text = None;
+                    notation.technique_text = None;
+                    notation.offsets.technique_text = None;
+                    notation.lyrics = Default::default();
+                    notation.chord = None;
+                    notation.offsets.chord = None;
                 }
                 // A split note keeps one fermata, over its final fragment.
                 if !is_last {
@@ -420,7 +428,12 @@ impl Editor {
             } else {
                 mapped[link.start].0
             };
-            let end = if link.kind == ConnectionKind::Tie || link.kind.is_hairpin() {
+            // Hairpins and glissandi reach the end note's onset; slurs and
+            // range lines hold through it.
+            let end = if link.kind == ConnectionKind::Tie
+                || link.kind.is_hairpin()
+                || link.kind == ConnectionKind::Glissando
+            {
                 mapped[link.end].0
             } else {
                 mapped[link.end].1

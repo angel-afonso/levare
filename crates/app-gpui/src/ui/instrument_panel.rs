@@ -115,6 +115,15 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .when(view.tempo_picker.is_some(), |list| {
                     list.child(tempo_editor::panel(view, cx))
                 })
+                .when(view.text_editor.is_some(), |list| {
+                    list.child(staff_text::panel(view, cx))
+                })
+                .when(view.lyric_editor.is_some(), |list| {
+                    list.child(staff_text::lyric_panel(view, cx))
+                })
+                .when(view.chord_editor.is_some(), |list| {
+                    list.child(staff_text::chord_panel(view, cx))
+                })
                 .when(view.header_editor.is_some(), |list| {
                     list.child(header_editor::panel(view, cx))
                 })
