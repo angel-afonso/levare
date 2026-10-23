@@ -1,31 +1,29 @@
-use std::any::Any;
 use std::fs::File;
 use std::io::{self, Read};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
-use agent_tools::{
-    AjustarArgs, ComandosArgs, EjecutarArgs, EscribirArgs, LeerArgs, SeleccionarArgs, ToolCall,
-};
+use agent_tools::ToolCall;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use futures::channel::{mpsc, oneshot};
-use rmcp::handler::server::common::{schema_for_empty_input, schema_for_type};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
+    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, RoleServer, ServerHandler};
-use schemars::JsonSchema;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+use crate::schema::input_schema;
+
 const UNAVAILABLE: &str = "Levare no está disponible.";
+const CANCELLED: &str = "La llamada se canceló.";
 
 /// One tool call for the UI thread to run, and where its answer goes.
 pub struct ToolInvocation {
@@ -124,12 +122,18 @@ struct LevareTools {
 }
 
 impl LevareTools {
-    async fn run(&self, call: ToolCall) -> Result<String, String> {
+    /// Sends the call to the UI thread and waits for its answer. If the
+    /// agent cancels the request first, the answer's receiver is dropped, so
+    /// the UI side sees `reply.is_canceled()` and can skip the call.
+    async fn run(&self, call: ToolCall, cancelled: &CancellationToken) -> Result<String, String> {
         let (reply, answer) = oneshot::channel();
         self.tools
             .unbounded_send(ToolInvocation { call, reply })
             .map_err(|_| UNAVAILABLE.to_string())?;
-        answer.await.unwrap_or_else(|_| Err(UNAVAILABLE.into()))
+        tokio::select! {
+            answer = answer => answer.unwrap_or_else(|_| Err(UNAVAILABLE.into())),
+            () = cancelled.cancelled() => Err(CANCELLED.into()),
+        }
     }
 }
 
@@ -154,11 +158,11 @@ impl ServerHandler for LevareTools {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let arguments = serde_json::Value::Object(request.arguments.unwrap_or_default());
         let reply = match ToolCall::parse(&request.name, arguments) {
-            Ok(call) => self.run(call).await,
+            Ok(call) => self.run(call, &context.ct).await,
             Err(error) => Err(error),
         };
         let result = match reply {
@@ -167,28 +171,4 @@ impl ServerHandler for LevareTools {
         };
         Ok(result.into())
     }
-}
-
-/// The JSON schema of a tool's arguments, as `ToolCall::parse` reads them.
-fn input_schema(name: &str) -> Arc<JsonObject> {
-    match name {
-        "resumen" => schema_for_empty_input(),
-        "leer" => object_schema::<LeerArgs>(),
-        "seleccionar" => object_schema::<SeleccionarArgs>(),
-        "comandos" => object_schema::<ComandosArgs>(),
-        "ejecutar" => object_schema::<EjecutarArgs>(),
-        "escribir" => object_schema::<EscribirArgs>(),
-        "ajustar" => object_schema::<AjustarArgs>(),
-        other => panic!("no input schema for tool {other:?}"),
-    }
-}
-
-/// MCP wants an object at the root; a tagged enum's schema is a bare
-/// `oneOf` of objects, so it gets the type added. The title is the Rust
-/// type's name, noise to the agent.
-fn object_schema<T: JsonSchema + Any>() -> Arc<JsonObject> {
-    let mut schema = schema_for_type::<T>().as_ref().clone();
-    schema.remove("title");
-    schema.entry("type").or_insert_with(|| "object".into());
-    Arc::new(schema)
 }

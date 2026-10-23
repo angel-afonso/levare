@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 agent-tools.workspace = true
 rmcp.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros"] }
 tokio-util.workspace = true
 futures.workspace = true
 axum.workspace = true
@@ -16,5 +16,4 @@ serde_json.workspace = true
 
 [dev-dependencies]
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
-tokio = { workspace = true, features = ["macros"] }
 reqwest.workspace = true

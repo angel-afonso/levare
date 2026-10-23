@@ -3,6 +3,7 @@
 //! through a channel for the UI thread to run.
 mod mcp;
 mod runtime;
+mod schema;
 
 pub use mcp::{McpServer, ToolInvocation};
 pub use runtime::Runtime;
