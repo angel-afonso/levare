@@ -11,9 +11,11 @@ const EMPTY: &str = "Pide lo que harías en el editor, como se lo dirías a un c
                      «pon un trino en el tiempo 3 del compás 4». Todo lo que haga el agente \
                      se deshace con un solo ⌘Z.";
 const NONE_AVAILABLE: &str =
-    "No se encontró ningún agente. Pasa el cursor por cada botón para ver qué falta.";
-const SEARCHING: &str = "Buscando los agentes instalados…";
+    "No se encontró ningún agente. Abre la lista junto al campo para ver qué falta.";
+const SEARCHING: &str = "Buscando…";
 const BUSY_PICKER: &str = "Detén al agente para cambiar de agente.";
+const NEW_CONVERSATION: &str = "Empieza una conversación nueva";
+const SWITCH_HEIGHT: f32 = 22.;
 pub const MAX_MESSAGE_CHARS: usize = 2000;
 
 /// The message field of the panel.
@@ -68,7 +70,6 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .border_color(rgb(BORDER))
         .flex()
         .flex_col()
-        .child(picker(view, cx))
         .child(
             div()
                 .id("agent-log")
@@ -112,66 +113,104 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(composer(view, cx))
 }
 
-/// The three agents; one that is not installed is shown off, with what is
-/// missing on hover.
-fn picker(view: &AppView, cx: &Context<AppView>) -> Div {
-    let turn = view.agent.turn_active();
-    let talking = !view.agent.log.entries().is_empty();
-    div()
-        .min_h(px(45.))
-        .flex_shrink_0()
+/// The chosen agent, quietly at the foot of the field; it opens the list of
+/// agents above itself. It stays shut while the agent works.
+fn agent_switch(view: &AppView, cx: &Context<AppView>) -> Div {
+    let turn = view.agent.turn_active() || view.agent.stopping();
+    let open = view.ui.agent_menu && !turn;
+    let trigger = div()
+        .id("agent-switch")
+        .h(px(SWITCH_HEIGHT))
+        .px_1()
         .flex()
-        .flex_wrap()
         .items_center()
         .gap_1()
-        .px_2()
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .children(AgentKind::ALL.into_iter().map(|kind| {
+        .rounded_md()
+        .text_size(px(11.))
+        .text_color(rgb(if turn { MUTED } else { SECONDARY }))
+        .child(view.agent.kind.label())
+        .child(div().text_color(rgb(MUTED)).child("▾"))
+        .when(open, |trigger| trigger.bg(rgb(HOVER)).text_color(rgb(TEXT)))
+        .map(|trigger| {
+            if turn {
+                trigger.tooltip(hover_hint(BUSY_PICKER, None))
+            } else {
+                trigger
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgb(HOVER)).text_color(rgb(TEXT)))
+                    .on_click(cx.listener(move |v, _, _, cx| {
+                        v.ui.agent_menu = !open;
+                        cx.notify();
+                    }))
+            }
+        });
+    div().child(trigger).when(open, |switch| {
+        switch.child(deferred(
+            // The field sits at the foot of the window: open upwards.
+            anchored()
+                .anchor(Corner::BottomLeft)
+                .offset(point(px(0.), px(-(SWITCH_HEIGHT + 4.))))
+                .snap_to_window()
+                .child(
+                    agent_menu(view, cx).on_mouse_down_out(cx.listener(|v, _, _, cx| {
+                        v.ui.agent_menu = false;
+                        cx.notify();
+                    })),
+                ),
+        ))
+    })
+}
+
+/// One row per agent: the chosen one ticked, and under each name what
+/// choosing it means, or what is missing for it.
+fn agent_menu(view: &AppView, cx: &Context<AppView>) -> Div {
+    let talking = !view.agent.log.entries().is_empty();
+    toolbar::popover(div().w(px(232.)).flex().flex_col().gap(px(1.)).children(
+        AgentKind::ALL.into_iter().map(|kind| {
             let chosen = view.agent.kind == kind;
             let missing = unavailable(view, kind);
-            let id = format!("agent-{}", kind.label());
-            let hint = if let Some(missing) = &missing {
-                missing.clone()
-            } else if view.agent.tools.is_none() {
-                SEARCHING.into()
-            } else if chosen {
-                format!("Conversas con {}", kind.label())
-            } else if turn {
-                BUSY_PICKER.into()
-            } else if talking {
-                format!("Cambiar a {} empieza una conversación nueva.", kind.label())
-            } else {
-                format!("Usar {}", kind.label())
+            let note = match &missing {
+                Some(missing) => Some(missing.clone()),
+                None if view.agent.tools.is_none() => Some(SEARCHING.into()),
+                None if talking && !chosen => Some(NEW_CONVERSATION.into()),
+                None => None,
             };
-            let enabled = missing.is_none() && (chosen || !turn);
-            let element = if enabled {
-                button(view, id, kind.label(), chosen, cx, move |v, _, cx| {
-                    v.select_agent(kind, cx)
-                })
+            let row = div()
+                .id(SharedString::from(format!("agent-{}", kind.label())))
+                .px_2()
+                .py(px(5.))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .rounded_md()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .text_size(px(12.))
+                        .text_color(rgb(if missing.is_some() { MUTED } else { TEXT }))
+                        .child(kind.label())
+                        .when(chosen, |name| {
+                            name.child(div().text_color(rgb(BLUE)).child("✓"))
+                        }),
+                )
+                .children(
+                    note.map(|note| div().text_size(px(10.5)).text_color(rgb(MUTED)).child(note)),
+                );
+            if missing.is_some() {
+                row
             } else {
-                div()
-                    .id(SharedString::from(id))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .flex_shrink_0()
-                    .px_2()
-                    .h(px(29.))
-                    .rounded_md()
-                    .border_1()
-                    .border_color(transparent_black())
-                    .bg(rgb(FIELD))
-                    .text_color(rgb(MUTED))
-                    .opacity(0.55)
-                    .child(kind.label())
-            };
-            // The chosen agent keeps the selected look of `button`.
-            element
-                .text_size(px(11.))
-                .when(!chosen, |element| element.bg(rgb(PANEL)))
-                .tooltip(hover_hint(hint, None))
-        }))
+                row.cursor_pointer()
+                    .hover(|style| style.bg(rgb(HOVER)))
+                    .on_click(cx.listener(move |v, _, _, cx| {
+                        v.ui.agent_menu = false;
+                        v.select_agent(kind, cx);
+                        cx.notify();
+                    }))
+            }
+        }),
+    ))
 }
 
 fn line(view: &AppView, index: usize, entry: &Entry, cx: &Context<AppView>) -> AnyElement {
@@ -318,8 +357,16 @@ fn composer(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .child(
             div()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child("Enter envía · Esc vuelve a la partitura"),
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .child(agent_switch(view, cx))
+                .child(
+                    div()
+                        .text_size(px(10.))
+                        .text_color(rgb(MUTED))
+                        .child("Enter envía · Esc vuelve"),
+                ),
         )
 }

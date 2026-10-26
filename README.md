@@ -99,8 +99,9 @@ siguiente».
 
 - **Agentes:** Claude Code, Codex o Gemini CLI, con tu propia suscripción; Levare no
   usa claves de API. Claude Code y Codex necesitan además Node.js (`npx`); Codex usa
-  la versión que trae su adaptador, no la que tengas instalada. Un agente
-  que no está instalado aparece desactivado y, al pasar el cursor, dice qué falta.
+  la versión que trae su adaptador, no la que tengas instalada. El agente se
+  elige bajo el campo de texto; en la lista, uno que no está instalado aparece
+  apagado y dice qué falta.
   La primera vez, inicia sesión en la terminal (`claude`, `codex login` o `gemini`);
   si no, el panel te lo recuerda.
 - **Conversación:** escribe en el campo inferior y pulsa **Enviar** o Enter; Esc

@@ -47,6 +47,8 @@ pub struct UiState {
     pub show_instruments: bool,
     pub show_inspector: bool,
     pub show_agent: bool,
+    /// The agent list above the agent panel's field.
+    pub agent_menu: bool,
     pub note_entry: bool,
     pub compact: bool,
     pub zoom: f32,
@@ -74,6 +76,7 @@ impl Default for UiState {
             show_instruments: true,
             show_inspector: true,
             show_agent: false,
+            agent_menu: false,
             note_entry: true,
             compact: false,
             zoom: 0.7,
