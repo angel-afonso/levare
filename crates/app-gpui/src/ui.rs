@@ -16,7 +16,9 @@ mod music_text;
 mod parts_view;
 #[cfg(test)]
 mod parts_view_tests;
+mod sound_panel;
 mod staff_text;
+mod status_bar;
 pub use staff_text::{ChordEditor, LyricEditor, StaffTextEditor};
 mod tempo_editor;
 pub mod text_input;
@@ -1078,18 +1080,10 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
 }
 /// ‹ «Página X de Y» › in the status bar, in Page view only; the hint
 /// gives the bars on the page.
-fn page_navigation(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
-    if view.ui.view_mode != score_layout::ViewMode::Page {
-        return None;
-    }
-    let pages = view.layout.pages.len();
-    let index = view
-        .viewport
-        .visible_page(&view.layout)
-        .min(pages.saturating_sub(1));
-    let step = |element: &'static str, glyph: &'static str, enabled: bool, target: usize| {
+fn page_navigation(pages: status_bar::Pages, cx: &Context<AppView>) -> Div {
+    let step = |element: &'static str, glyph: &'static str, target: Option<usize>| {
         toolbar::control(element, glyph, false, cx, move |v, _, cx| {
-            if enabled {
+            if let Some(target) = target {
                 v.pending_page = Some(target);
                 cx.notify();
             }
@@ -1097,42 +1091,26 @@ fn page_navigation(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
         .w(px(20.))
         .h(px(19.))
         .text_size(px(12.))
-        .when(!enabled, |button| button.opacity(0.35).cursor_default())
+        .when(target.is_none(), |button| {
+            button.opacity(0.35).cursor_default()
+        })
     };
-    let bars = view.layout.pages.get(index).map_or(String::new(), |page| {
-        format!(
-            "Compases {}–{}",
-            page.first_measure + 1,
-            page.last_measure + 1
+    div()
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            step("previous-page", "‹", pages.previous).tooltip(hover_hint("Página anterior", None)),
         )
-    });
-    Some(
-        div()
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .gap_1()
-            .child(
-                step("previous-page", "‹", index > 0, index.saturating_sub(1))
-                    .tooltip(hover_hint("Página anterior", None)),
-            )
-            .child(
-                div()
-                    .id("page-number")
-                    .text_color(rgb(SECONDARY))
-                    .child(format!("Página {} de {}", index + 1, pages))
-                    .tooltip(hover_hint(bars, None)),
-            )
-            .child(
-                step(
-                    "next-page",
-                    "›",
-                    index + 1 < pages,
-                    (index + 1).min(pages.saturating_sub(1)),
-                )
-                .tooltip(hover_hint("Página siguiente", None)),
-            ),
-    )
+        .child(
+            div()
+                .id("page-number")
+                .text_color(rgb(SECONDARY))
+                .child(pages.label)
+                .tooltip(hover_hint(pages.bars, None)),
+        )
+        .child(step("next-page", "›", pages.next).tooltip(hover_hint("Página siguiente", None)))
 }
 
 fn readout_value(value: impl IntoElement) -> Div {
@@ -1554,16 +1532,17 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 .when(view.ui.right == RightTab::Selection, |body| {
                     body.child(selection_panel::panel(view, cx))
                 })
-                // General output and reverb; each part's mix is in the left panel's Mezcla.
+                // Each part's own mix is in the left panel's Mezcla.
                 .when(view.ui.right == RightTab::Sound, |body| {
-                    body.child(mixer(view, cx)).child(sounds(view, cx))
+                    body.child(sound_panel::panel(view, cx))
                 })
                 .when(view.ui.right == RightTab::Review, |body| {
                     body.child(review::panel(view, cx))
                 }),
         )
 }
-fn section(label: &'static str) -> Div {
+/// A block of a right-hand tab, closed by a rule.
+fn panel_section() -> Div {
     div()
         .px_4()
         .py_4()
@@ -1572,7 +1551,26 @@ fn section(label: &'static str) -> Div {
         .gap_3()
         .border_b_1()
         .border_color(rgb(BORDER))
-        .child(caption(label))
+}
+fn section(label: &'static str) -> Div {
+    panel_section().child(group_title(label, None))
+}
+/// A section whose title carries the help text in its hover hint.
+fn section_hinted(label: &'static str, hint: &'static str) -> Div {
+    panel_section().child(group_title(label, Some(hint.into())))
+}
+/// A quiet name over a group of controls, in sentence case; a hover hint
+/// carries what used to be a help paragraph.
+fn group_title(label: &'static str, hint: Option<SharedString>) -> Stateful<Div> {
+    div()
+        .id(SharedString::from(format!("title-{label}")))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(rgb(MUTED))
+        .child(label)
+        .when_some(hint, |title, hint| {
+            title.tooltip(described_hint(label, None, hint))
+        })
 }
 fn active_duration(view: &AppView) -> Duration {
     let editor = &view.document.editor;
@@ -1594,143 +1592,7 @@ fn selected_connection(view: &AppView, kind: ConnectionKind) -> bool {
             .any(|c| c.kind == kind && view.document.editor.score().connection_contains(*c, id))
     })
 }
-fn mixer(view: &AppView, cx: &Context<AppView>) -> Div {
-    mixer::panel(view, cx)
-}
 
-fn sounds(view: &AppView, cx: &Context<AppView>) -> Div {
-    let editor = &view.document.editor;
-    let instrument = editor
-        .score()
-        .part(editor.cursor().part)
-        .unwrap()
-        .instrument();
-    section("SONIDO DEL INSTRUMENTO")
-        .child(caption("INTERPRETACIÓN"))
-        .child(button(view, "interpret-natural", "Natural", view.playback.style == score_playback::Style::Natural, cx, |v, _, cx| {
-            if v.playback.style != score_playback::Style::Natural {
-                v.playback.stop();
-                v.playback.style = score_playback::Style::Natural;
-                v.status = "Interpretación: natural".into();
-                cx.notify();
-            }
-        }).w_full())
-        .child(button(view, "interpret-literal", "Literal (exacta)", view.playback.style == score_playback::Style::Literal, cx, |v, _, cx| {
-            if v.playback.style != score_playback::Style::Literal {
-                v.playback.stop();
-                v.playback.style = score_playback::Style::Literal;
-                v.status = "Interpretación: literal".into();
-                cx.notify();
-            }
-        }).w_full())
-        .child(caption("FUENTE DE SONIDO"))
-        .child(button(view, "sound-generaluser", "GeneralUser GS", view.playback.selected_bank.is_none(), cx, |v, _, cx| v.choose_sound(None, cx)).w_full())
-        .children(view.playback.banks.iter().enumerate().map(|(index, bank)| {
-            button(view, format!("sound-{}", bank.id()), bank.name().to_owned(), view.playback.selected_bank == Some(index), cx,
-                move |v, _, cx| v.choose_sound(Some(index), cx)).w_full()
-        }))
-        .when(view.playback.selected_bank.and_then(|index| view.playback.banks.get(index))
-            .is_some_and(|bank| bank.id() == "sfz-combinadas"), |body| {
-            body.child(caption("PRIORIDAD"))
-                .children(view.playback.sound_priority.iter().enumerate().map(|(index, id)| {
-                    div().flex().items_center().gap_1()
-                        .child(div().flex_1().text_size(px(11.)).child(view.playback.sound_priority_name(id)))
-                        .when(index > 0, |row| row.child(button(view, format!("priority-up-{index}"), "↑", false, cx,
-                            move |v, _, cx| match v.playback.move_sound_priority(index, true) {
-                                Ok(bank) => v.choose_sound(Some(bank), cx),
-                                Err(error) => { v.playback.sound_error = Some(error.clone()); v.status = error; cx.notify(); }
-                            })))
-                        .when(index + 1 < view.playback.sound_priority.len(), |row| row.child(button(view, format!("priority-down-{index}"), "↓", false, cx,
-                            move |v, _, cx| match v.playback.move_sound_priority(index, false) {
-                                Ok(bank) => v.choose_sound(Some(bank), cx),
-                                Err(error) => { v.playback.sound_error = Some(error.clone()); v.status = error; cx.notify(); }
-                            })))
-                }))
-        })
-        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(format!(
-            "Instala bibliotecas SFZ en {}. Ver docs/sfz.md.",
-            crate::data_path("soundpacks").map_or_else(|| "la carpeta de datos".into(), |path| path.display().to_string())
-        )))
-        .children(view.playback.sound_discovery_errors.iter().map(|error| div().text_size(px(10.)).text_color(rgb(WARNING)).child(error.clone())))
-        .children(more_sounds(view, cx))
-        .when(!view.playback.banks.is_empty(), |body| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child("La primera carga puede tardar unos segundos. Puedes volver a GeneralUser cuando quieras.")))
-        .when_some(view.playback.sound_error.clone(), |body, error| body.child(div().text_size(px(11.)).text_color(rgb(WARNING)).child(error)))
-        .child(caption("INSTRUMENTO ACTUAL"))
-        .child(div().text_size(px(14.)).child(instrument.name()))
-        .child(
-            div()
-                .text_size(px(11.))
-                .text_color(rgb(MUTED))
-                .child(if let Some(harmonic) = editor.selection().and_then(|id| editor.score().event(id)).and_then(|event| event.notation.harmonic) {
-                    format!("{} · {}\nSíntesis de armónicos", harmonic.label(), editor.selection().and_then(|id| editor.score().technique_at(id)).unwrap_or_default().label())
-                } else { format!(
-                    "General MIDI {}\n{}",
-                    editor
-                        .selection()
-                        .and_then(|id| editor.score().technique_at(id))
-                        .unwrap_or_default()
-                        .program(instrument)
-                        + 1,
-                    view.playback.sound_name(),
-                ) }),
-        )
-        .when(instrument.family() == score_core::InstrumentFamily::Strings, |body| body.child(caption("Armónicos con timbre sintetizado: sostenidos al arco y resonantes en pizzicato.")))
-        .when_some(view.playback.sound_description(), |body, description| body.child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(description)))
-        .child(button(view,
-            "add-from-sounds",
-            "+ Añadir instrumento",
-            false,
-            cx,
-            |v, _, cx| {
-                v.ui.show_instruments = true;
-                v.open_instrument_picker(cx);
-                v.key_picker = false;
-                v.time_picker = false;
-                    v.clef_picker = false;
-                    v.tempo_picker = None;
-                cx.notify();
-            },
-        ))
-        .when(editor.score().parts().len() > 1, |body| {
-            body.child(button(view,
-                "remove-part",
-                "Quitar instrumento",
-                false,
-                cx,
-                |v, _, cx| v.edit(Command::RemovePart, cx),
-            ))
-        })
-        .when(view.playback.error.is_some(), |body| {
-            body.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(rgb(WARNING))
-                    .child(view.playback.error.clone().unwrap()),
-            )
-            .child(button(view,
-                "reconnect-audio",
-                "Reintentar audio",
-                false,
-                cx,
-                |v, _, cx| {
-                    v.playback.connect();
-                    cx.notify();
-                },
-            ))
-        })
-}
-/// The packs available on demand, when Levare is built with SFZ support.
-fn more_sounds(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
-    #[cfg(feature = "vsco")]
-    {
-        Some(sound_store::panel(view, cx))
-    }
-    #[cfg(not(feature = "vsco"))]
-    {
-        let _ = (view, cx);
-        None
-    }
-}
 fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();
     let position = view.position;
@@ -2037,20 +1899,35 @@ fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> 
 }
 
 fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
-    let score = view.document.editor.score();
-    let measure = view.position.measure;
-    let time = score.time_at(measure);
-    let recovery_ready = view
-        .quit_snapshot
-        .as_ref()
-        .is_some_and(|recovery| recovery.last_error().is_none());
-    let status = if view.busy {
-        "Procesando archivo…".to_owned()
-    } else if let Some(error) = &view.playback.error {
-        error.clone()
-    } else {
-        view.status.clone()
-    };
+    let page = (view.ui.view_mode == score_layout::ViewMode::Page).then(|| {
+        let count = view.layout.pages.len();
+        let index = view
+            .viewport
+            .visible_page(&view.layout)
+            .min(count.saturating_sub(1));
+        let (first_measure, last_measure) = view
+            .layout
+            .pages
+            .get(index)
+            .map_or((0, 0), |page| (page.first_measure, page.last_measure));
+        status_bar::PageFacts {
+            index,
+            count,
+            first_measure,
+            last_measure,
+        }
+    });
+    let bar = status_bar::status_bar(&status_bar::Facts {
+        busy: view.busy,
+        audio_error: view.playback.error.as_deref(),
+        status: &view.status,
+        page,
+        recovery_ready: view
+            .quit_snapshot
+            .as_ref()
+            .is_some_and(|recovery| recovery.last_error().is_none()),
+        dirty: view.document.is_dirty(),
+    });
     div()
         .h(px(25.))
         .flex_shrink_0()
@@ -2064,70 +1941,22 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
         .text_size(px(10.))
         .child(
             div()
-                .flex()
-                .gap_4()
                 .min_w_0()
-                .child(
-                    div()
-                        .text_color(rgb(ACCENT_TEXT))
-                        .child(if view.ui.note_entry {
-                            format!(
-                                "Entrada de notas · Voz {}",
-                                view.document.editor.cursor().voice.number()
-                            )
-                        } else {
-                            format!(
-                                "Selección · Voz {}",
-                                view.document.editor.cursor().voice.number()
-                            )
-                        }),
-                )
-                .child(div().text_color(rgb(MUTED)).child(inline_text(
-                    view.music_font.clone(),
-                    format!(
-                        "{} · {}/{} · {} instrumentos",
-                        score.key_signature_at(measure).label(),
-                        time.numerator,
-                        time.denominator,
-                        score.parts().len()
-                    ),
-                )))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(rgb(MUTED))
-                        .child(inline_text(view.music_font.clone(), status)),
-                ),
+                .truncate()
+                .text_color(rgb(MUTED))
+                .child(inline_text(view.music_font.clone(), bar.message)),
         )
-        .children(page_navigation(view, cx))
-        .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(format!(
-            "{} · {} %",
-            view.ui.view_mode.label(),
-            (view.ui.zoom * 100.).round() as u16
-        )))
+        .children(bar.pages.map(|pages| page_navigation(pages, cx)))
         .child(
             div()
                 .flex_shrink_0()
-                .text_color(rgb(if recovery_ready { MUTED } else { ERROR }))
-                .child(if recovery_ready {
-                    "Autoguardado activo"
-                } else {
-                    "Autoguardado no disponible"
-                }),
+                .text_color(rgb(if bar.autosave_ok { MUTED } else { ERROR }))
+                .child(bar.autosave),
         )
         .child(
             div()
                 .flex_shrink_0()
-                .text_color(rgb(if view.document.is_dirty() {
-                    BLUE
-                } else {
-                    MUTED
-                }))
-                .child(if view.document.is_dirty() {
-                    "Cambios sin guardar"
-                } else {
-                    "Guardado"
-                }),
+                .text_color(rgb(if bar.unsaved { BLUE } else { MUTED }))
+                .child(bar.document),
         )
 }

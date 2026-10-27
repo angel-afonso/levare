@@ -223,6 +223,13 @@ impl Playback {
             .entry(part)
             .or_insert_with(|| ChannelMix::seated(score, part))
     }
+    /// Forgets a part's override once it equals where the score seats it, so
+    /// the part keeps following its seat when the parts are rearranged.
+    pub fn settle_part_mix(&mut self, score: &Score, part: PartId) {
+        if self.part_mix.get(&part) == Some(&ChannelMix::seated(score, part)) {
+            self.part_mix.remove(&part);
+        }
+    }
     pub fn apply_mixer(&mut self, score: &Score, audition: PartId) {
         self.mix_channels.fill(ChannelMix::default());
         for (index, part) in score.parts().iter().enumerate() {
@@ -753,6 +760,27 @@ mod tests {
             playback.part_mix(&Score::default(), piano),
             ChannelMix::default()
         );
+    }
+    #[test]
+    fn a_part_back_at_its_seat_stops_being_an_override() {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let flute = score.add_part(Instrument::Flute).unwrap();
+        let mut playback = offline();
+        let seated = ChannelMix::seated(&score, flute);
+        playback.part_mix_mut(&score, flute).volume = 40;
+        playback.part_mix_mut(&score, flute).pan = 60;
+        playback.part_mix_mut(&score, piano).volume = 90;
+        // Only the volume goes back: the position still differs.
+        playback.part_mix_mut(&score, flute).volume = seated.volume;
+        playback.settle_part_mix(&score, flute);
+        assert!(playback.part_mix.contains_key(&flute));
+        playback.part_mix_mut(&score, flute).pan = seated.pan;
+        playback.settle_part_mix(&score, flute);
+        assert!(!playback.part_mix.contains_key(&flute));
+        assert!(playback.part_mix.contains_key(&piano));
+        // Rearranging the seats now moves the flute, as it does for any untouched part.
+        assert_eq!(playback.part_mix(&score, flute), seated);
     }
     #[test]
     fn repeat_mode_defaults_on_and_toggle_clears_the_previous_clock() {

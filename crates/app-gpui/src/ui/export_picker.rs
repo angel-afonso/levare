@@ -19,7 +19,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                 .child(div().text_size(px(20.)).font_weight(FontWeight::SEMIBOLD).child("Exportar partitura y partes"))
                 .child(div().text_size(px(12.)).text_color(rgb(MUTED)).child("Elige los documentos y formatos que quieres entregar.")))
             .child(div().p_4().flex().flex_col().gap_2()
-                .child(caption("FORMATOS"))
+                .child(caption("Formatos"))
                 .child(div().flex().gap_2()
                     .child(button(view, "export-pdf", check(selection.pdf, "PDF"), selection.pdf, cx, |v, _, cx| {
                         if let Some(p) = &mut v.export_picker { p.selection.pdf = !p.selection.pdf; p.error = None; } cx.notify();
@@ -28,7 +28,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                         if let Some(p) = &mut v.export_picker { p.selection.musicxml = !p.selection.musicxml; p.error = None; } cx.notify();
                     }).px_3()))
                 .child(div().mt_3().flex().items_center().justify_between()
-                    .child(caption("DOCUMENTOS"))
+                    .child(caption("Documentos"))
                     .child(div().flex().gap_2()
                         .child(button(view, "export-all", "Todo", false, cx, |v, _, cx| {
                             let parts = v.document.editor.score().parts().iter().map(|p| p.id()).collect();

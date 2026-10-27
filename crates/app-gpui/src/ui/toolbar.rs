@@ -856,7 +856,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                     .flex()
                                     .flex_col()
                                     .gap(px(1.))
-                                    .child(caption("RECIENTES").px_2().py_1())
+                                    .child(caption("Recientes").px_2().py_1())
                                     .when(files.is_empty(), |list| {
                                         list.child(
                                             div()

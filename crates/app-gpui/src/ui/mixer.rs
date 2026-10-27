@@ -229,22 +229,30 @@ fn reset(view: &mut AppView, target: Target, cx: &mut Context<AppView>) {
         return;
     }
     let score = view.document.editor.score();
-    match target {
+    let part = match target {
         Target::Volume(part) => {
             let seated = ChannelMix::seated(score, part).volume;
             view.playback.part_mix_mut(score, part).volume = seated;
+            part
         }
         Target::Pan(part) => {
             let seated = ChannelMix::seated(score, part).pan;
             view.playback.part_mix_mut(score, part).pan = seated;
+            part
         }
         _ => return,
-    }
+    };
+    view.playback.settle_part_mix(score, part);
     view.playback.apply_mixer(
         view.document.editor.score(),
         view.document.editor.cursor().part,
     );
     cx.notify();
+}
+
+/// Keeps a press on a control inside a Mezcla row from also selecting the row.
+fn stop_press(_: &MouseDownEvent, _: &mut Window, cx: &mut App) {
+    cx.stop_propagation();
 }
 
 /// A compact slider for a Mezcla row: the bar, then its value, which
@@ -262,20 +270,22 @@ fn mix_slider(
         .gap_2()
         .child(rail(id.clone(), target, fraction, 16., cx))
         .child(
-            toolbar::control(format!("{id}-reset"), shown, false, cx, move |v, _, cx| {
-                reset(v, target, cx)
-            })
-            .w(px(64.))
-            .h(px(20.))
-            .justify_end()
-            .px_1()
-            .text_size(px(11.))
-            .text_color(rgb(MUTED))
-            .tooltip(described_hint(
-                "Restablecer",
-                None,
-                "Ajuste de esta sesión: no modifica la partitura.",
-            )),
+            div().on_mouse_down(MouseButton::Left, stop_press).child(
+                toolbar::control(format!("{id}-reset"), shown, false, cx, move |v, _, cx| {
+                    reset(v, target, cx)
+                })
+                .w(px(64.))
+                .h(px(20.))
+                .justify_end()
+                .px_1()
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .tooltip(described_hint(
+                    "Restablecer",
+                    None,
+                    "Ajuste de esta sesión: no modifica la partitura.",
+                )),
+            ),
         )
 }
 
@@ -319,7 +329,7 @@ pub fn part_controls(
 /// Choosing the score's own default stores no choice in the document.
 fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {
     let current = view.document.editor.score().players(part);
-    div().w(px(150.)).child(toolbar::track(
+    div().w(px(150.)).on_mouse_down(MouseButton::Left, stop_press).child(toolbar::track(
         [Players::Section, Players::Solo].map(|players| {
             toolbar::control(
                 format!("players-{}-{}", part.0, players.label()),
@@ -344,7 +354,7 @@ fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {
 }
 
 pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
-    section("SALIDA GENERAL")
+    section("Salida")
         .child(slider(
             "master-volume".into(),
             "Volumen general",
@@ -366,7 +376,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                         .flex()
                         .items_center()
                         .justify_between()
-                        .child(caption("REVERBERACIÓN SUAVE"))
+                        .child(group_title("Reverberación suave", None))
                         .child(
                             button(
                                 view,

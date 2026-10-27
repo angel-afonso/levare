@@ -103,7 +103,7 @@ fn draft_form(view: &AppView, cx: &Context<AppView>) -> Div {
         })
         .unwrap_or_default();
     div().flex().flex_col().gap_2()
-        .child(caption(if draft.id.is_some() { "EDITAR COMENTARIO" } else { "NUEVO COMENTARIO" }))
+        .child(caption(if draft.id.is_some() { "Editar comentario" } else { "Nuevo comentario" }))
         .child(review::wrapped_text(view, anchor_label(&draft.source, &name, &draft.anchors)))
         .child(draft.field.clone())
         .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(format!("{} / {} caracteres · Enter guarda; Esc cancela", text.trim().chars().count(), score_core::MAX_COMMENT_CHARS)))
@@ -127,7 +127,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .iter()
         .filter(|comment| !comment.resolved)
         .count();
-    section("COMENTARIOS")
+    section_hinted("Comentarios", "Pulsa una observación para seleccionar su música. Los comentarios se guardan y admiten Deshacer.")
         .child(div().text_size(px(12.)).child(format!("{pending} pendientes · {} resueltos", score.comments().len() - pending)))
         .child(div().flex().flex_wrap().gap_1().children(CommentFilter::ALL.into_iter().map(|filter| button(view, format!("comment-filter-{filter:?}"), filter.label(), state.filter == filter, cx, move |v, _, cx| { v.comments.filter = filter; v.comments.page = 0; v.comments.refresh(v.document.editor.score()); cx.notify(); }))))
         .child(command_button("comments-new", "Comentar selección…", false, view, cx, id::NEW_COMMENT).w_full())
@@ -151,6 +151,5 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             .child(div().flex().gap_2()
                 .child(button(view, "comment-prev-page", "‹ Lista", false, cx, move |v, _, cx| { v.comments.page = page.saturating_sub(1); cx.notify(); }).flex_1())
                 .child(button(view, "comment-next-page", "Lista ›", false, cx, move |v, _, cx| { v.comments.page = (page + 1).min(pages - 1); cx.notify(); }).flex_1()))))
-        .child(caption("Pulsa una observación para seleccionar su música. Los comentarios se guardan y admiten Deshacer."))
         .child(button(view, "comments-hide", "Ocultar lista", false, cx, |v, _, cx| { v.comments.open = false; v.comment_editor = None; cx.notify(); }).w_full())
 }

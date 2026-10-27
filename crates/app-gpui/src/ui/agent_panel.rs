@@ -279,7 +279,7 @@ fn permission(
         .border_1()
         .border_color(rgb(SELECT_BORDER))
         .bg(rgb(CARD))
-        .child(caption("PERMISO"))
+        .child(caption("Permiso"))
         .child(if title.is_empty() {
             "El agente pide permiso para seguir.".to_string()
         } else {

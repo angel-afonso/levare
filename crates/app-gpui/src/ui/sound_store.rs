@@ -9,7 +9,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .gap_2()
-        .child(caption("MÁS SONIDOS"))
+        .child(group_title("Más sonidos", None))
         .children(store.catalog.packs.iter().map(|entry| {
             let id = entry.id.clone();
             let note = |text: String| div().text_size(px(10.)).text_color(rgb(MUTED)).child(text);

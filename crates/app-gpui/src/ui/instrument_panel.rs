@@ -77,7 +77,12 @@ impl AppView {
     }
 
     /// Enter in the field: the first part found becomes the current one.
+    /// With nothing typed it only gives the keys back to the score.
     pub(crate) fn choose_found_part(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ui.parts_query.trim().is_empty() {
+            window.focus(&self.focus);
+            return;
+        }
         let score = self.document.editor.score();
         let found = parts_view(
             score,
@@ -214,53 +219,66 @@ fn family_rows(view: &AppView, family: FamilyRows, cx: &Context<AppView>) -> Div
     let label = family.label;
     let open = !family.folded;
     let mix = view.ui.parts_mode == PartsMode::Mix;
+    // A search unfolds every family, so folding one meanwhile would change
+    // what the list shows once the search ends, out of sight.
+    let searching = !view.ui.parts_query.trim().is_empty();
+    let title = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .text_size(px(11.5))
+        .text_color(rgb(MUTED))
+        .child(icon_sized(
+            if open {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            },
+            MUTED,
+            12.,
+        ))
+        .child(div().flex_1().child(label))
+        .child(family.count.to_string());
+    let header = if searching {
+        div()
+            .w_full()
+            .px(px(6.))
+            .py(px(4.))
+            .child(title)
+            .into_any_element()
+    } else {
+        toolbar::control(
+            format!("family-{label}"),
+            title,
+            false,
+            cx,
+            move |v, _, cx| {
+                if !v.ui.folded_families.remove(label) {
+                    v.ui.folded_families.insert(label.to_owned());
+                }
+                cx.notify();
+            },
+        )
+        .w_full()
+        .justify_start()
+        .px(px(6.))
+        .py(px(4.))
+        .tooltip(hover_hint(
+            if open {
+                format!("Plegar {label}")
+            } else {
+                format!("Desplegar {label}")
+            },
+            None,
+        ))
+        .into_any_element()
+    };
     div()
         .flex()
         .flex_col()
         .mt(px(6.))
-        .child(
-            toolbar::control(
-                format!("family-{label}"),
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .text_size(px(11.5))
-                    .text_color(rgb(MUTED))
-                    .child(icon_sized(
-                        if open {
-                            Icon::ChevronDown
-                        } else {
-                            Icon::ChevronRight
-                        },
-                        MUTED,
-                        12.,
-                    ))
-                    .child(div().flex_1().child(label))
-                    .child(family.count.to_string()),
-                false,
-                cx,
-                move |v, _, cx| {
-                    if !v.ui.folded_families.remove(label) {
-                        v.ui.folded_families.insert(label.to_owned());
-                    }
-                    cx.notify();
-                },
-            )
-            .w_full()
-            .justify_start()
-            .px(px(6.))
-            .py(px(4.))
-            .tooltip(hover_hint(
-                if open {
-                    format!("Plegar {label}")
-                } else {
-                    format!("Desplegar {label}")
-                },
-                None,
-            )),
-        )
+        .child(header)
         .children(family.parts.into_iter().map(|row| {
             if mix {
                 mix_row(view, row, family.family, cx)
@@ -426,8 +444,8 @@ fn chosen_row(view: &AppView, row: PartRow, cx: &Context<AppView>) -> Stateful<D
         )
 }
 
-/// A row in Mezcla: the name, which makes it the current part, then its
-/// volume, position and players.
+/// A row in Mezcla: the whole row makes the part the current one; it holds
+/// the name, volume, position and players.
 fn mix_row(
     view: &AppView,
     row: PartRow,
@@ -453,16 +471,14 @@ fn mix_row(
         })
         .when(chosen, |row| row.bg(rgb(SELECT)))
         .when(!chosen, |row| row.hover(|s| s.bg(rgb(HOVER))))
-        .child(
-            div()
-                .id(("select-part", u64::from(id.0)))
-                .cursor_pointer()
-                .child(row_line(view, &row, chosen))
-                .on_click(cx.listener(move |v, _, window, cx| {
-                    v.focus.focus(window);
-                    v.select_part(id, cx);
-                })),
-        )
+        .cursor_pointer()
+        // The sliders and the players track stop the press, so only the rest
+        // of the row selects.
+        .on_click(cx.listener(move |v, _, window, cx| {
+            v.focus.focus(window);
+            v.select_part(id, cx);
+        }))
+        .child(row_line(view, &row, chosen))
         .child(mixer::part_controls(view, id, family, cx))
 }
 
