@@ -445,6 +445,9 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
                     .w(px(16.))
                     .rounded_r(px(6.))
                     .rounded_l_none()
+                    // Two click targets read as two: a line between them.
+                    .border_l_1()
+                    .border_color(rgb(BORDER))
                     .text_color(rgb(if lit { ACCENT_TEXT } else { MUTED })),
             )
     } else {
@@ -837,6 +840,40 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     .with_priority(1)
 }
 
+/// The tab row's measures, shared by `tabs` and its width estimate.
+const ROW_PADDING: f32 = 12.;
+const TAB_TEXT: f32 = 13.;
+const TAB_PADDING: f32 = 12.;
+const TAB_GAP: f32 = 2.;
+const PILL_TEXT: f32 = 12.5;
+const PILL_PADDING: f32 = 10.;
+const PILL_MARGIN: f32 = 12.;
+const PILL_DOT: f32 = 8.;
+
+/// Text width estimated per character like the ribbon's tiles:
+/// `Metrics::char_width` is measured on 11px text.
+fn estimate(text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * Metrics::default().char_width / 11. * size
+}
+
+/// What the tab row needs before the pill: its padding, Archivo and every
+/// tab. Tabs never shrink.
+fn tabs_width() -> f32 {
+    let tabs: f32 = TABS
+        .iter()
+        .map(|spec| estimate(spec.id.label(), TAB_TEXT) + 2. * TAB_PADDING)
+        .sum();
+    // Archivo ▾: 8px padding each side, a 4px gap and an 8px margin.
+    let file = estimate("Archivo▾", TAB_TEXT) + 4. + 2. * 8. + 8.;
+    ROW_PADDING + file + TABS.len() as f32 * TAB_GAP + tabs
+}
+
+/// The pill with `text`, its margin included.
+fn pill_width(text: &str) -> f32 {
+    // Its 1px border on each side, the dot and the gap after it.
+    2. * PILL_PADDING + 2. + 2. * PILL_DOT + estimate(text, PILL_TEXT) + PILL_MARGIN
+}
+
 /// The tab row: the Archivo dropdown, then one tab per `TabId`, the chosen
 /// one underlined.
 pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
@@ -855,9 +892,9 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .items_center()
                 .h_full()
-                .min_w_0()
-                .px(px(12.))
-                .gap(px(2.))
+                .flex_shrink_0()
+                .pl(px(ROW_PADDING))
+                .gap(px(TAB_GAP))
                 .child(
                     div()
                         .flex()
@@ -884,7 +921,7 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                             )
                             .h(px(26.))
                             .px_2()
-                            .text_size(px(13.))
+                            .text_size(px(TAB_TEXT))
                             .font_weight(FontWeight::SEMIBOLD)
                             .when(!open, |button| button.bg(transparent_black())),
                         )
@@ -900,8 +937,8 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                         .items_center()
                         .h_full()
                         .flex_shrink_0()
-                        .px_3()
-                        .text_size(px(13.))
+                        .px(px(TAB_PADDING))
+                        .text_size(px(TAB_TEXT))
                         .text_color(rgb(if selected { TEXT } else { MUTED }))
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(TEXT)))
@@ -937,38 +974,62 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(entry_pill(view, cx))
 }
 
-/// What typing a note does right now, or how to start writing.
-fn entry_text(
+/// What the pill reports: what typing a note does, or how to start writing.
+#[derive(Clone, Copy)]
+struct Entry<'a> {
     writing: bool,
-    duration: Option<&str>,
+    duration: Option<&'a str>,
     dotted: bool,
     triplet: bool,
     voice: u8,
     chord: bool,
-    key: Option<&str>,
-) -> String {
-    if !writing {
-        return match key {
-            Some(key) => format!("Seleccionando · {key} para escribir"),
-            None => "Seleccionando".to_string(),
-        };
-    }
-    let mut parts = vec!["Escribiendo".to_string()];
-    if let Some(duration) = duration {
-        let mut figure = duration.to_string();
-        if dotted {
-            figure.push_str(" con puntillo");
+    /// The key that starts writing, offered while selecting.
+    key: Option<&'a str>,
+}
+
+impl Entry<'_> {
+    fn text(&self) -> String {
+        if !self.writing {
+            return match self.key {
+                Some(key) => format!("Seleccionando · {key} para escribir"),
+                None => "Seleccionando".to_string(),
+            };
         }
-        if triplet {
-            figure.push_str(" en tresillo");
+        let mut parts = vec!["Escribiendo".to_string()];
+        if let Some(duration) = self.duration {
+            let mut figure = duration.to_string();
+            if self.dotted {
+                figure.push_str(" con puntillo");
+            }
+            if self.triplet {
+                figure.push_str(" en tresillo");
+            }
+            parts.push(figure);
         }
-        parts.push(figure);
+        parts.push(format!("Voz {}", self.voice));
+        if self.chord {
+            parts.push("Acorde".to_string());
+        }
+        parts.join(" · ")
     }
-    parts.push(format!("Voz {voice}"));
-    if chord {
-        parts.push("Acorde".to_string());
+
+    /// The text for a window `width` wide: all of it while the row has room,
+    /// otherwise without the modifiers (puntillo, tresillo, acorde, the key).
+    /// Narrower still, the pill truncates what is left.
+    fn fitted(&self, width: f32) -> String {
+        let text = self.text();
+        if tabs_width() + pill_width(&text) <= width {
+            return text;
+        }
+        Entry {
+            dotted: false,
+            triplet: false,
+            chord: false,
+            key: None,
+            ..*self
+        }
+        .text()
     }
-    parts.join(" · ")
 }
 
 /// The entry state, a dot ahead of it: blue while writing. Pressing it
@@ -988,54 +1049,60 @@ fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     .and_then(|command| view.shortcuts.registry.get(command.as_str()))
     .map(|spec| spec.label);
     let key = view.shortcuts.label(id::TOGGLE_NOTE_INPUT);
-    let text = entry_text(
+    let text = Entry {
         writing,
         duration,
-        view.state(id::DOT).checked,
-        view.state(id::TRIPLET).checked,
-        if view.state(id::VOICE_1).checked {
+        dotted: view.state(id::DOT).checked,
+        triplet: view.state(id::TRIPLET).checked,
+        voice: if view.state(id::VOICE_1).checked {
             1
         } else {
             2
         },
-        view.state(id::CHORD_MODE).checked,
-        key.as_deref(),
-    );
+        chord: view.state(id::CHORD_MODE).checked,
+        key: key.as_deref(),
+    }
+    .fitted(view.ui.width);
     action_with_hover(
         "entry-state",
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .min_w_0()
+            .gap(px(PILL_DOT))
             .child(
                 div()
-                    .size(px(8.))
+                    .size(px(PILL_DOT))
                     .flex_shrink_0()
                     .rounded_full()
                     .bg(rgb(if writing { BLUE } else { MUTED })),
             )
-            .child(text),
+            .child(div().min_w_0().truncate().child(text)),
         writing,
         move |s| if writing { s } else { s.bg(rgb(HOVER)) },
         cx,
         move |v, window, cx| v.run(id::TOGGLE_NOTE_INPUT, window, cx),
     )
     .tooltip(command_hint(view, id::TOGGLE_NOTE_INPUT))
-    .mr_3()
+    // Shrinks into the room the tabs leave, never over them.
+    .flex_shrink()
+    .min_w_0()
+    .overflow_hidden()
+    .mr(px(PILL_MARGIN))
     .h(px(24.))
-    .px(px(10.))
+    .px(px(PILL_PADDING))
     .rounded(px(6.))
     .when(!writing, |pill| {
         pill.bg(transparent_black()).text_color(rgb(SECONDARY))
     })
-    .text_size(px(12.5))
+    .text_size(px(PILL_TEXT))
 }
 
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the GPUI glob would shadow `#[test]` with `gpui::test`.
     use super::super::theme::{ACCENT_TEXT, MUTED, PENDING_OUTLINE, SELECT, SELECT_BORDER, TEXT};
-    use super::{Look, entry_text, look};
+    use super::{Entry, Look, look, pill_width, tabs_width};
     use score_keymap::id;
     use score_toolbar::{ControlSize, ControlView, Role, TABS, Visual};
 
@@ -1057,30 +1124,68 @@ mod tests {
         }
     }
 
+    fn entry<'a>(
+        writing: bool,
+        duration: Option<&'a str>,
+        dotted: bool,
+        triplet: bool,
+        voice: u8,
+        chord: bool,
+        key: Option<&'a str>,
+    ) -> Entry<'a> {
+        Entry {
+            writing,
+            duration,
+            dotted,
+            triplet,
+            voice,
+            chord,
+            key,
+        }
+    }
+
+    #[test]
+    fn the_tab_row_fits_the_narrowest_window() {
+        // `window_min_size` in main.rs.
+        const NARROWEST: f32 = 960.;
+        let busy = entry(true, Some("Blanca"), true, true, 2, true, Some("N"));
+        assert_eq!(busy.fitted(1440.), busy.text(), "wide: every modifier");
+        // Narrow: the modifiers go first, then the pill truncates into what
+        // the tabs leave. Its dot and first word always fit.
+        assert_eq!(busy.fitted(NARROWEST), "Escribiendo · Blanca · Voz 2");
+        assert!(tabs_width() + pill_width("Escribiendo") <= NARROWEST);
+        let idle = entry(false, None, false, false, 1, false, Some("N"));
+        assert_eq!(idle.fitted(NARROWEST), "Seleccionando");
+        // The modifiers stay while the row has room for them.
+        let width = tabs_width() + pill_width(&busy.text());
+        assert_eq!(busy.fitted(width), busy.text());
+        assert_eq!(busy.fitted(width - 1.), "Escribiendo · Blanca · Voz 2");
+    }
+
     #[test]
     fn entry_pill_text_names_every_active_modifier() {
         assert_eq!(
-            entry_text(true, Some("Negra"), true, false, 2, false, Some("N")),
+            entry(true, Some("Negra"), true, false, 2, false, Some("N")).text(),
             "Escribiendo · Negra con puntillo · Voz 2"
         );
         assert_eq!(
-            entry_text(true, Some("Corchea"), false, true, 1, true, Some("N")),
+            entry(true, Some("Corchea"), false, true, 1, true, Some("N")).text(),
             "Escribiendo · Corchea en tresillo · Voz 1 · Acorde"
         );
         assert_eq!(
-            entry_text(true, Some("Blanca"), true, true, 1, false, None),
+            entry(true, Some("Blanca"), true, true, 1, false, None).text(),
             "Escribiendo · Blanca con puntillo en tresillo · Voz 1"
         );
         assert_eq!(
-            entry_text(true, None, false, false, 1, false, None),
+            entry(true, None, false, false, 1, false, None).text(),
             "Escribiendo · Voz 1"
         );
         assert_eq!(
-            entry_text(false, Some("Negra"), true, false, 2, true, Some("N")),
+            entry(false, Some("Negra"), true, false, 2, true, Some("N")).text(),
             "Seleccionando · N para escribir"
         );
         assert_eq!(
-            entry_text(false, None, false, false, 1, false, None),
+            entry(false, None, false, false, 1, false, None).text(),
             "Seleccionando"
         );
     }
