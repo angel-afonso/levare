@@ -2470,8 +2470,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (None, Some(picker)) => match picker.await {
                     Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                    Ok(Err(error)) => Err(error.to_string()),
-                    Err(error) => Err(error.to_string()),
+                    Ok(Err(error)) => Err(file_dialogs::dialog_error(error)),
+                    Err(error) => Err(file_dialogs::dialog_error(error)),
                 },
                 (None, None) => Ok(None),
             };
@@ -2648,8 +2648,14 @@ impl AppView {
                         .await,
                 ),
                 Ok(Ok(None)) => None,
-                Ok(Err(error)) => Some(Err(error.to_string())),
-                Err(error) => Some(Err(error.to_string())),
+                Ok(Err(error)) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
+                Err(error) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
             };
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
@@ -2692,8 +2698,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (_, Some(picker)) => picker
                     .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|result| result.map_err(|e| e.to_string())),
+                    .map_err(file_dialogs::dialog_error)
+                    .and_then(|result| result.map_err(file_dialogs::dialog_error)),
                 _ => Ok(None),
             };
             let result = match path {
