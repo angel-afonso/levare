@@ -677,14 +677,16 @@ score-keymap          registro (etiquetas, pendientes) y mapa activo (teclas)
 AppView::run          punto único de ejecución · ui/command_state.rs implementa CommandStates
 ```
 
-- **Descripción** (`spec.rs`): pestañas (`TabId`), grupos y controles. Cada control es
-  un `CommandId` con tamaño (grande o casilla), un glifo, un nombre corto y una ayuda.
-  No contiene textos de estado ni teclas.
+- **Descripción** (`spec.rs`): ocho pestañas por tarea (`TabId`: Escribir,
+  Articulaciones, Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), sus
+  grupos y controles. Cada control es un `CommandId` con tamaño (grande o baldosa),
+  una función (`Role`: elección, interruptor o acción), un glifo, un nombre corto y
+  una ayuda. No contiene textos de estado ni teclas.
 - **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
   comando está activo, habilitado o con una etiqueta temporal («Terminar expresión»).
   La app la responde en `ui/command_state.rs`; los tests usan un falso.
 - **Proyección** (`project`): une descripción, registro, mapa y estado. Cada control es
-  una casilla: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
+  una baldosa: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
   (`Metrics`, anchos por carácter que cubren el texto más ancho de la cinta). Con
   sitio, un grupo se amplía y muestra los nombres; si falta, `fit` los quita (glifo y
   tecla) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
@@ -804,7 +806,7 @@ de una ligadura o regulador) para seleccionarla, borrarla (`Command::RemoveMark`
 cambiarla (`Command::ReplaceConnection`). `score-layout` genera un `MarkBox` por marca
 puntual, ajustado a las cajas de Bravura, y `Layout::hit` elige entre nota y marca.
 
-`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`mark_tile`), el
+`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`spec::mark`), el
 inspector, el menú **Expresión**, los símbolos de los menús, el estado resaltado y el
 despacho de la app (`apply_mark`) la recorren en lugar de repetir cada marca. Un test
 exige que cada marca tenga un comando propio, listo y con su nombre en la etiqueta.
