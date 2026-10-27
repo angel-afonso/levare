@@ -7,6 +7,10 @@ mod agents_tests;
 mod calls;
 #[cfg(test)]
 mod calls_tests;
+#[cfg(any(windows, test))]
+mod job;
+#[cfg(all(test, windows))]
+mod job_tests;
 mod mcp;
 mod runtime;
 mod schema;
