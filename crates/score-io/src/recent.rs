@@ -54,7 +54,7 @@ impl RecentFiles {
         temporary
             .write_all(&serde_json::to_vec_pretty(self).map_err(error)?)
             .map_err(error)?;
-        temporary.persist(path).map_err(error)?;
+        crate::persist(temporary, path).map_err(error)?;
         Ok(())
     }
 

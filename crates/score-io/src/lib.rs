@@ -10,8 +10,10 @@ pub mod musicxml;
 mod range_tests;
 mod recent;
 mod recovery;
+mod replace;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};
+pub use replace::persist;
 use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -343,7 +345,7 @@ pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
     let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
     temporary.write_all(&bytes).map_err(error)?;
     temporary.as_file().sync_all().map_err(error)?;
-    temporary.persist(path).map_err(error)?;
+    persist(temporary, path).map_err(error)?;
     Ok(())
 }
 

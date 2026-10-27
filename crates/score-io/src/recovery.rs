@@ -194,7 +194,7 @@ fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(error)?;
     temp.write_all(&bytes).map_err(error)?;
     temp.as_file().sync_all().map_err(error)?;
-    temp.persist(path).map_err(error)?;
+    crate::persist(temp, path).map_err(error)?;
     Ok(())
 }
 pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
