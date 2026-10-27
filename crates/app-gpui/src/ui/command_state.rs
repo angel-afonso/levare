@@ -294,9 +294,9 @@ impl CommandStates for AppView {
                 ..CommandState::default()
             },
             id::AUDITION => CommandState::checked(self.playback.audition),
-            id::MIXER => {
-                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
-            }
+            id::MIXER => CommandState::checked(
+                self.ui.show_instruments && self.ui.parts_mode == crate::panels::PartsMode::Mix,
+            ),
             id::SOUNDS => {
                 CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }

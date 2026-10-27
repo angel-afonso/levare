@@ -13,6 +13,9 @@ mod icons;
 mod instrument_panel;
 mod mixer;
 mod music_text;
+mod parts_view;
+#[cfg(test)]
+mod parts_view_tests;
 mod staff_text;
 pub use staff_text::{ChordEditor, LyricEditor, StaffTextEditor};
 mod tempo_editor;
@@ -37,7 +40,7 @@ mod theme;
 mod toolbar;
 use super::*;
 use icons::{Icon, icon};
-pub use instrument_panel::InstrumentPicker;
+pub use instrument_panel::{InstrumentPicker, search_field as parts_search_field};
 pub use preferences::{Preferences, PreferencesConflict};
 use score_core::Duration;
 use score_keymap::{CommandId, id};
@@ -66,7 +69,6 @@ pub struct UiState {
     /// Instrument families folded in the parts list, by name.
     pub folded_families: std::collections::BTreeSet<String>,
     /// The parts list filter; not remembered between sessions.
-    #[allow(dead_code)] // read by the parts panel once it is redrawn
     pub parts_query: String,
     /// Archivo dropdown and its "Abrir reciente" submenu.
     pub file_menu: bool,
@@ -378,7 +380,7 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
                 }),
         )
         .child(transport(view, cx))
-        .child(statusbar(view))
+        .child(statusbar(view, cx))
         .when(view.preferences.is_some(), |root| {
             root.child(preferences::overlay(view, cx))
         })
@@ -778,15 +780,6 @@ pub(super) fn instrument_name(score: &score_core::Score, id: PartId) -> String {
     score.part_name(id)
 }
 
-fn clef_name(clef: score_core::Clef) -> &'static str {
-    match clef {
-        score_core::Clef::Treble => "sol",
-        score_core::Clef::Alto => "do en tercera",
-        score_core::Clef::Tenor => "do en cuarta",
-        score_core::Clef::Bass => "fa",
-        score_core::Clef::Percussion => "percusión",
-    }
-}
 /// `button` in the ribbon's grammar, for the editors in the right panel.
 fn choice(
     view: &AppView,
@@ -1083,99 +1076,63 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
             ))
         })
 }
-fn page_navigation(view: &AppView, cx: &Context<AppView>) -> Div {
-    let paged = view.ui.view_mode == score_layout::ViewMode::Page;
+/// ‹ «Página X de Y» › in the status bar, in Page view only; the hint
+/// gives the bars on the page.
+fn page_navigation(view: &AppView, cx: &Context<AppView>) -> Option<Div> {
+    if view.ui.view_mode != score_layout::ViewMode::Page {
+        return None;
+    }
+    let pages = view.layout.pages.len();
     let index = view
         .viewport
         .visible_page(&view.layout)
-        .min(view.layout.pages.len().saturating_sub(1));
-    div()
-        .border_t_1()
-        .border_color(rgb(BORDER))
-        .px_3()
-        .py_3()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(caption(if paged { "PÁGINAS" } else { "VISTA" }))
-        .when(paged, |panel| {
-            panel
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            button(view, "previous-page", "‹", false, cx, move |v, _, cx| {
-                                v.pending_page = Some(index.saturating_sub(1));
-                                cx.notify();
-                            })
-                            .opacity(if index > 0 {
-                                1.
-                            } else {
-                                0.35
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_center()
-                                .text_size(px(12.))
-                                .child(format!(
-                                    "Página {} de {}",
-                                    index + 1,
-                                    view.layout.pages.len()
-                                )),
-                        )
-                        .child(
-                            button(view, "next-page", "›", false, cx, move |v, _, cx| {
-                                v.pending_page =
-                                    Some((index + 1).min(v.layout.pages.len().saturating_sub(1)));
-                                cx.notify();
-                            })
-                            .opacity(
-                                if index + 1 < view.layout.pages.len() {
-                                    1.
-                                } else {
-                                    0.35
-                                },
-                            ),
-                        ),
-                )
-                .when_some(view.layout.pages.get(index), |panel, page| {
-                    panel.child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(MUTED))
-                            .child(format!(
-                                "Compases {}–{}",
-                                page.first_measure + 1,
-                                page.last_measure + 1
-                            )),
-                    )
-                })
+        .min(pages.saturating_sub(1));
+    let step = |element: &'static str, glyph: &'static str, enabled: bool, target: usize| {
+        toolbar::control(element, glyph, false, cx, move |v, _, cx| {
+            if enabled {
+                v.pending_page = Some(target);
+                cx.notify();
+            }
         })
-        .when(!paged, |panel| {
-            panel
-                .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(
-                    if view.ui.view_mode == score_layout::ViewMode::Continuous {
-                        "Continua · Desplazamiento vertical"
-                    } else {
-                        "Pentagrama · Desplazamiento horizontal"
-                    },
-                ))
-                .child(
-                    button(
-                        view,
-                        "show-pages",
-                        "Mostrar páginas",
-                        false,
-                        cx,
-                        |v, _, cx| v.set_view_mode(score_layout::ViewMode::Page, cx),
-                    )
-                    .w_full(),
+        .w(px(20.))
+        .h(px(19.))
+        .text_size(px(12.))
+        .when(!enabled, |button| button.opacity(0.35).cursor_default())
+    };
+    let bars = view.layout.pages.get(index).map_or(String::new(), |page| {
+        format!(
+            "Compases {}–{}",
+            page.first_measure + 1,
+            page.last_measure + 1
+        )
+    });
+    Some(
+        div()
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(
+                step("previous-page", "‹", index > 0, index.saturating_sub(1))
+                    .tooltip(hover_hint("Página anterior", None)),
+            )
+            .child(
+                div()
+                    .id("page-number")
+                    .text_color(rgb(SECONDARY))
+                    .child(format!("Página {} de {}", index + 1, pages))
+                    .tooltip(hover_hint(bars, None)),
+            )
+            .child(
+                step(
+                    "next-page",
+                    "›",
+                    index + 1 < pages,
+                    (index + 1).min(pages.saturating_sub(1)),
                 )
-        })
+                .tooltip(hover_hint("Página siguiente", None)),
+            ),
+    )
 }
 
 fn readout_value(value: impl IntoElement) -> Div {
@@ -1597,7 +1554,7 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 .when(view.ui.right == RightTab::Selection, |body| {
                     body.child(selection_panel::panel(view, cx))
                 })
-                // The mixer stays here, above the sounds, until it moves to the left panel.
+                // General output and reverb; each part's mix is in the left panel's Mezcla.
                 .when(view.ui.right == RightTab::Sound, |body| {
                     body.child(mixer(view, cx)).child(sounds(view, cx))
                 })
@@ -2079,7 +2036,7 @@ fn timeline(score: &score_core::Score, progress: f32, cx: &Context<AppView>) -> 
         )
 }
 
-fn statusbar(view: &AppView) -> Div {
+fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
     let score = view.document.editor.score();
     let measure = view.position.measure;
     let time = score.time_at(measure);
@@ -2143,6 +2100,7 @@ fn statusbar(view: &AppView) -> Div {
                         .child(inline_text(view.music_font.clone(), status)),
                 ),
         )
+        .children(page_navigation(view, cx))
         .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(format!(
             "{} · {} %",
             view.ui.view_mode.label(),

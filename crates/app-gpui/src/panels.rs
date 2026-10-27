@@ -38,6 +38,17 @@ pub enum PartsMode {
     Mix,
 }
 
+impl PartsMode {
+    pub const ALL: [Self; 2] = [Self::List, Self::Mix];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::List => "Lista",
+            Self::Mix => "Mezcla",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PanelMemory {

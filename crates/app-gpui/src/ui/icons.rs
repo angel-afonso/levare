@@ -42,6 +42,10 @@ pub enum Icon {
     BarBefore,
     DeleteBar,
     RehearsalMark,
+    /// An unfolded group.
+    ChevronDown,
+    /// A folded group.
+    ChevronRight,
 }
 
 impl Icon {
@@ -392,6 +396,8 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     ]);
                     line(&[(13., 6.), (15., 9.), (13., 12.)]);
                 }
+                Icon::ChevronDown => line(&[(5., 7.), (9., 11.), (13., 7.)]),
+                Icon::ChevronRight => line(&[(7., 5.), (11., 9.), (7., 13.)]),
             }
             if let Ok(path) = path.build() {
                 window.paint_path(path, rgb(color));

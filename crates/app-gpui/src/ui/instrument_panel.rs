@@ -1,4 +1,8 @@
-//! Instrument rows and an ensemble picker whose draft never edits the score.
+//! The parts panel, by family, in Lista or Mezcla, and an ensemble picker
+//! whose draft never edits the score.
+use super::icons::icon_sized;
+use super::parts_view::{FamilyRows, PartRow, parts_view};
+use super::text_input::TextInput;
 use super::*;
 use score_core::{InstrumentFamily, MAX_PARTS};
 
@@ -49,8 +53,65 @@ fn change_count(view: &mut AppView, index: usize, delta: i8, cx: &mut Context<Ap
     }
 }
 
+/// The parts field: what it holds filters the list (`UiState::parts_query`).
+pub fn search_field(cx: &mut Context<AppView>) -> Entity<TextInput> {
+    let field = cx.new(|cx| {
+        TextInput::new("", cx)
+            .with_max_chars(40)
+            .with_placeholder("Buscar parte")
+    });
+    cx.observe(&field, |view, field, cx| {
+        let query = field.read(cx).value();
+        if view.ui.parts_query != query {
+            view.ui.parts_query = query.to_owned();
+            cx.notify();
+        }
+    })
+    .detach();
+    field
+}
+
+impl AppView {
+    pub(crate) fn parts_search_focused(&self, window: &Window, cx: &App) -> bool {
+        self.parts_search.focus_handle(cx).is_focused(window)
+    }
+
+    /// Enter in the field: the first part found becomes the current one.
+    pub(crate) fn choose_found_part(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let score = self.document.editor.score();
+        let found = parts_view(
+            score,
+            self.document.editor.cursor().measure,
+            &self.ui.parts_query,
+            &[],
+        )
+        .into_iter()
+        .find_map(|family| family.parts.into_iter().next());
+        if let Some(row) = found {
+            window.focus(&self.focus);
+            self.select_part(row.id, cx);
+        }
+    }
+
+    /// Esc in the field: the whole list again, and the keys back to the score.
+    pub(crate) fn clear_parts_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.parts_search
+            .update(cx, |field, cx| field.set_value("", cx));
+        self.ui.parts_query.clear();
+        window.focus(&self.focus);
+        cx.notify();
+    }
+}
+
 pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
-    let score = view.document.editor.score();
+    let editor = &view.document.editor;
+    let folded: Vec<String> = view.ui.folded_families.iter().cloned().collect();
+    let families = parts_view(
+        editor.score(),
+        editor.cursor().measure,
+        &view.ui.parts_query,
+        &folded,
+    );
     div()
         .w(px(LEFT_WIDTH))
         .flex_shrink_0()
@@ -59,195 +120,255 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .bg(rgb(PANEL))
         .border_r_1()
         .border_color(rgb(BORDER))
-        .child(
-            div()
-                .h(px(48.))
-                .px_3()
-                .flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(format!("Instrumentos  {}", score.parts().len())),
-                )
-                .child(
-                    button(
-                        view,
-                        "picker-add",
-                        "+",
-                        view.instrument_picker.is_some(),
-                        cx,
-                        |v, _, cx| v.open_instrument_picker(cx),
-                    )
-                    .tooltip(command_hint(view, id::ADD_INSTRUMENT)),
-                ),
-        )
+        .child(head(view, cx))
         .child(
             div()
                 .id("instrument-rows")
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px_2()
+                .px(px(6.))
+                .pt(px(2.))
                 .pb_3()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .children(
-                    InstrumentFamily::ALL
-                        .into_iter()
-                        .filter(|family| {
-                            score
-                                .parts()
-                                .iter()
-                                .any(|part| part.instrument().family() == *family)
-                        })
-                        .map(|family| {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .mb_2()
-                                .child(caption(family.label()).mt_3().mb_1().pl_2())
-                                .children(
-                                    score
-                                        .parts()
-                                        .iter()
-                                        .filter(move |part| part.instrument().family() == family)
-                                        .map(|part| part_row(view, part, cx)),
-                                )
-                        }),
-                )
-                .child(
-                    button(
-                        view,
-                        "add-instrument-bottom",
-                        "+ Añadir instrumentos",
-                        false,
-                        cx,
-                        |v, _, cx| v.open_instrument_picker(cx),
+                .when(families.is_empty(), |list| {
+                    list.child(
+                        div()
+                            .px_2()
+                            .py_3()
+                            .text_size(px(12.))
+                            .text_color(rgb(MUTED))
+                            .child("Ninguna parte se llama así."),
                     )
-                    .w_full()
-                    .mt_2()
-                    .h(px(34.))
-                    .border_color(rgb(STRONG_BORDER))
-                    .bg(rgb(PANEL))
-                    .tooltip(command_hint(view, id::ADD_INSTRUMENT)),
+                })
+                .children(
+                    families
+                        .into_iter()
+                        .map(|family| family_rows(view, family, cx)),
                 ),
         )
-        .child(
-            div()
-                .border_t_1()
-                .border_color(rgb(BORDER))
-                .px_3()
-                .py_2()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child("Orden automático por familias"),
-        )
-        .child(page_navigation(view, cx))
+        .child(footer(view))
 }
 
-fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> Stateful<Div> {
-    let id = part.id();
-    let divided = part.bar_has_divisi(view.document.editor.cursor().measure);
-    let selected = view.document.editor.cursor().part == id;
-    let cursor = view.document.editor.cursor();
-    let active_staff = part.displayed_staff(
-        cursor.staff,
-        cursor.voice,
-        cursor.measure,
-        view.document.editor.divisi_position().tick,
-    );
-    let can_remove = view.document.editor.score().parts().len() > 1;
-    let name = instrument_name(view.document.editor.score(), id);
-    let mut description = if divided {
-        format!(
-            "Divisi · dos pentagramas en clave de {}",
-            clef_name(part.clef_at(StaffId::Upper, cursor.measure))
-        )
-    } else if part.staves().len() == 2 {
-        format!(
-            "Claves {} / {}",
-            clef_name(part.clef_at(StaffId::Upper, cursor.measure)),
-            clef_name(part.clef_at(StaffId::Lower, cursor.measure))
-        )
-    } else {
-        format!(
-            "Clave de {}",
-            clef_name(part.clef_at(StaffId::Upper, cursor.measure))
-        )
-    };
-    if !part.transposition().is_concert() {
-        description.push_str(&format!(
-            " · Armadura: {}",
-            view.document
-                .editor
-                .score()
-                .written_key_at(id, cursor.measure)
-                .label()
-        ));
-    }
-    if part.transposition().is_concert() && !part.instrument().standard_transposition().is_concert()
-    {
-        description.push_str(" · Altura real");
-    }
+/// «Partes N» with its «+», Lista | Mezcla and the search field.
+fn head(view: &AppView, cx: &Context<AppView>) -> Div {
     div()
-        .id(("part-row", u64::from(id.0)))
+        .px_3()
+        .pt(px(10.))
+        .pb_2()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap_2()
+        .border_b_1()
+        .border_color(rgb(BORDER))
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap_1()
-                .rounded_md()
-                .border_1()
-                .border_color(if selected {
-                    rgb(SELECT_BORDER).into()
-                } else {
-                    transparent_black()
-                })
-                .bg(rgb(if selected { SELECT } else { PANEL }))
+                .gap_2()
                 .child(
-                    action(
-                        format!("select-part-{}", id.0),
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(inline_text(view.music_font.clone(), &name)),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(if selected { ACCENT_TEXT } else { MUTED }))
-                                    .child(inline_text(view.music_font.clone(), description)),
-                            ),
-                        false,
-                        cx,
-                        move |v, _, cx| v.select_part(id, cx),
-                    )
-                    .flex_1()
-                    .min_w_0()
-                    .px_2()
-                    .py_2()
-                    .border_0()
-                    .bg(transparent_black()),
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_baseline()
+                        .gap(px(6.))
+                        .text_size(px(13.))
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child("Partes"))
+                        .child(
+                            div()
+                                .text_color(rgb(MUTED))
+                                .child(view.document.editor.score().parts().len().to_string()),
+                        ),
                 )
                 .child(
-                    icon_button(
+                    toolbar::control(
+                        "picker-add",
+                        div().text_size(px(16.)).child("+"),
+                        view.instrument_picker.is_some(),
+                        cx,
+                        |v, _, cx| v.open_instrument_picker(cx),
+                    )
+                    .size(px(26.))
+                    .tooltip(command_hint(view, id::ADD_INSTRUMENT)),
+                ),
+        )
+        .child(toolbar::track(PartsMode::ALL.map(|mode| {
+            toolbar::control(
+                format!("parts-mode-{}", mode.label()),
+                mode.label(),
+                view.ui.parts_mode == mode,
+                cx,
+                move |v, _, cx| {
+                    v.ui.parts_mode = mode;
+                    cx.notify();
+                },
+            )
+            .h(px(24.))
+        })))
+        .child(view.parts_search.clone())
+}
+
+/// A family's header, which folds it, and its rows.
+fn family_rows(view: &AppView, family: FamilyRows, cx: &Context<AppView>) -> Div {
+    let label = family.label;
+    let open = !family.folded;
+    let mix = view.ui.parts_mode == PartsMode::Mix;
+    div()
+        .flex()
+        .flex_col()
+        .mt(px(6.))
+        .child(
+            toolbar::control(
+                format!("family-{label}"),
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .text_size(px(11.5))
+                    .text_color(rgb(MUTED))
+                    .child(icon_sized(
+                        if open {
+                            Icon::ChevronDown
+                        } else {
+                            Icon::ChevronRight
+                        },
+                        MUTED,
+                        12.,
+                    ))
+                    .child(div().flex_1().child(label))
+                    .child(family.count.to_string()),
+                false,
+                cx,
+                move |v, _, cx| {
+                    if !v.ui.folded_families.remove(label) {
+                        v.ui.folded_families.insert(label.to_owned());
+                    }
+                    cx.notify();
+                },
+            )
+            .w_full()
+            .justify_start()
+            .px(px(6.))
+            .py(px(4.))
+            .tooltip(hover_hint(
+                if open {
+                    format!("Plegar {label}")
+                } else {
+                    format!("Desplegar {label}")
+                },
+                None,
+            )),
+        )
+        .children(family.parts.into_iter().map(|row| {
+            if mix {
+                mix_row(view, row, family.family, cx)
+            } else {
+                list_row(view, row, cx)
+            }
+        }))
+}
+
+/// Name on the left, clefs and transposition on the right.
+fn row_line(view: &AppView, row: &PartRow, chosen: bool) -> Div {
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(12.))
+                .text_color(rgb(if chosen { ACCENT_TEXT } else { TEXT }))
+                .child(inline_text(view.music_font.clone(), &row.name)),
+        )
+        .when(!row.meta.is_empty(), |line| {
+            line.child(
+                div()
+                    .flex_shrink_0()
+                    .text_size(px(11.))
+                    .text_color(rgb(MUTED))
+                    .child(inline_text(view.music_font.clone(), &row.meta)),
+            )
+        })
+}
+
+fn list_row(view: &AppView, row: PartRow, cx: &Context<AppView>) -> Stateful<Div> {
+    let id = row.id;
+    if view.document.editor.cursor().part != id {
+        return toolbar::control(
+            format!("part-row-{}", id.0),
+            row_line(view, &row, false),
+            false,
+            cx,
+            move |v, _, cx| v.select_part(id, cx),
+        )
+        .w_full()
+        .h(px(28.))
+        .pl(px(22.))
+        .pr_2()
+        .justify_start();
+    }
+    chosen_row(view, row, cx)
+}
+
+/// The current part: the chosen look, its delete button and, with two
+/// staves in this bar, which one the cursor writes on.
+fn chosen_row(view: &AppView, row: PartRow, cx: &Context<AppView>) -> Stateful<Div> {
+    let id = row.id;
+    let editor = &view.document.editor;
+    let cursor = editor.cursor();
+    let can_remove = editor.score().parts().len() > 1;
+    let staves = editor.score().part(id).map(|part| {
+        let divided = part.bar_has_divisi(cursor.measure);
+        let two = part.display_staves(cursor.measure).count() == 2;
+        let active = part.displayed_staff(
+            cursor.staff,
+            cursor.voice,
+            cursor.measure,
+            editor.divisi_position().tick,
+        );
+        (divided, two, active)
+    });
+    div()
+        .id(("part-row", u64::from(id.0)))
+        .flex()
+        .flex_col()
+        .rounded(px(7.))
+        .border_1()
+        .border_color(rgb(SELECT_BORDER))
+        .bg(rgb(SELECT))
+        .child(
+            div()
+                .h(px(26.))
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .id(("select-part", u64::from(id.0)))
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .pl(px(21.))
+                        .pr_1()
+                        .flex()
+                        .items_center()
+                        .cursor_pointer()
+                        .child(row_line(view, &row, true))
+                        .on_click(cx.listener(move |v, _, window, cx| {
+                            v.focus.focus(window);
+                            v.select_part(id, cx);
+                        })),
+                )
+                .child(
+                    toolbar::control(
                         format!("remove-part-{}", id.0),
-                        Icon::Trash,
+                        icon_sized(Icon::Trash, ACCENT_TEXT, 14.),
                         false,
                         cx,
                         move |v, _, cx| {
@@ -256,12 +377,12 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                             }
                         },
                     )
-                    .mr_1()
-                    .bg(transparent_black())
-                    .when(!can_remove, |button| button.opacity(0.25).cursor_default())
+                    .size(px(24.))
+                    .mr(px(1.))
+                    .when(!can_remove, |button| button.opacity(0.4).cursor_default())
                     .tooltip(hover_hint(
                         if can_remove {
-                            format!("Eliminar {name}")
+                            format!("Eliminar {}", row.name)
                         } else {
                             "La partitura debe conservar un instrumento".into()
                         },
@@ -269,45 +390,120 @@ fn part_row(view: &AppView, part: &score_core::Part, cx: &Context<AppView>) -> S
                     )),
                 ),
         )
-        .when(
-            part.display_staves(view.document.editor.cursor().measure)
-                .count()
-                == 2,
-            |row| {
-                row.child(
-                    div()
-                        .pl_2()
-                        .flex()
-                        .gap_1()
-                        .child(
-                            button(
-                                view,
-                                format!("right-{}", id.0),
+        .when_some(
+            staves.filter(|(_, two, _)| *two),
+            |chosen, (divided, _, active)| {
+                chosen.child(
+                    div().pl(px(21.)).pr_2().pb(px(6.)).child(toolbar::track(
+                        [
+                            (
+                                StaffId::Upper,
                                 if divided { "Divisi I" } else { "M. derecha" },
-                                selected && active_staff == StaffId::Upper,
-                                cx,
-                                move |v, _, cx| v.select_hand(id, StaffId::Upper, cx),
-                            )
-                            .text_size(px(9.))
-                            .px_1()
-                            .h(px(23.)),
-                        )
-                        .child(
-                            button(
-                                view,
-                                format!("left-{}", id.0),
+                            ),
+                            (
+                                StaffId::Lower,
                                 if divided { "Divisi II" } else { "M. izquierda" },
-                                selected && active_staff == StaffId::Lower,
+                            ),
+                        ]
+                        .map(|(staff, label)| {
+                            let element = match staff {
+                                StaffId::Upper => format!("right-{}", id.0),
+                                StaffId::Lower => format!("left-{}", id.0),
+                            };
+                            toolbar::control(
+                                element,
+                                label,
+                                active == staff,
                                 cx,
-                                move |v, _, cx| v.select_hand(id, StaffId::Lower, cx),
+                                move |v, _, cx| v.select_hand(id, staff, cx),
                             )
-                            .text_size(px(9.))
-                            .px_1()
-                            .h(px(23.)),
-                        ),
+                            .h(px(22.))
+                            .text_size(px(11.))
+                        }),
+                    )),
                 )
             },
         )
+}
+
+/// A row in Mezcla: the name, which makes it the current part, then its
+/// volume, position and players.
+fn mix_row(
+    view: &AppView,
+    row: PartRow,
+    family: InstrumentFamily,
+    cx: &Context<AppView>,
+) -> Stateful<Div> {
+    let id = row.id;
+    let chosen = view.document.editor.cursor().part == id;
+    div()
+        .id(("part-row", u64::from(id.0)))
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .pl(px(21.))
+        .pr_2()
+        .py(px(6.))
+        .rounded(px(7.))
+        .border_1()
+        .border_color(if chosen {
+            Hsla::from(rgb(SELECT_BORDER))
+        } else {
+            transparent_black()
+        })
+        .when(chosen, |row| row.bg(rgb(SELECT)))
+        .when(!chosen, |row| row.hover(|s| s.bg(rgb(HOVER))))
+        .child(
+            div()
+                .id(("select-part", u64::from(id.0)))
+                .cursor_pointer()
+                .child(row_line(view, &row, chosen))
+                .on_click(cx.listener(move |v, _, window, cx| {
+                    v.focus.focus(window);
+                    v.select_part(id, cx);
+                })),
+        )
+        .child(mixer::part_controls(view, id, family, cx))
+}
+
+/// One quiet line: the current part and the keys that change it, or in
+/// Mezcla the general volume.
+fn footer(view: &AppView) -> Div {
+    let line = div()
+        .flex_shrink_0()
+        .border_t_1()
+        .border_color(rgb(BORDER))
+        .px_3()
+        .py_2()
+        .flex()
+        .justify_between()
+        .gap_2()
+        .text_size(px(11.5))
+        .text_color(rgb(MUTED));
+    if view.ui.parts_mode == PartsMode::Mix {
+        return line
+            .child("Volumen general")
+            .child(format!("{} %", view.playback.volume));
+    }
+    let editor = &view.document.editor;
+    let keys: Vec<String> = [id::UPPER_NOTE_OR_STAFF, id::LOWER_NOTE_OR_STAFF]
+        .into_iter()
+        .filter_map(|command| view.shortcuts.label(command))
+        .collect();
+    line.child(div().min_w_0().truncate().child(inline_text(
+        view.music_font.clone(),
+        format!(
+            "{} seleccionada",
+            editor.score().part_name(editor.cursor().part)
+        ),
+    )))
+    .when(!keys.is_empty(), |line| {
+        line.child(
+            div()
+                .flex_shrink_0()
+                .child(format!("{} cambian", keys.join(" "))),
+        )
+    })
 }
 
 pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {

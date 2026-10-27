@@ -146,6 +146,8 @@ struct AppView {
     agent: agent::AgentState,
     /// The agent panel's message field.
     agent_field: Entity<ui::text_input::TextInput>,
+    /// «Buscar parte» in the left panel.
+    parts_search: Entity<ui::text_input::TextInput>,
     /// Set while one of the agent's tool calls runs a command, which lets it
     /// past the lock that holds the user's input during the turn.
     agent_acting: bool,
@@ -339,6 +341,7 @@ impl AppView {
             panels_saved,
             agent: agent::AgentState::default(),
             agent_field: ui::agent_panel::field(cx),
+            parts_search: ui::parts_search_field(cx),
             agent_acting: false,
             _subscriptions: vec![interceptor, layout_change],
         }
@@ -1044,6 +1047,20 @@ impl AppView {
             }
             return;
         }
+        if self.parts_search_focused(window, cx) {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    self.choose_found_part(window, cx);
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.clear_parts_search(window, cx);
+                }
+                _ => {}
+            }
+            return;
+        }
         if self
             .go_to_bar
             .as_ref()
@@ -1337,6 +1354,7 @@ impl AppView {
                 .as_ref()
                 .is_some_and(|search| search.focused(window, cx))
             || self.agent_field_focused(window, cx)
+            || self.parts_search_focused(window, cx)
         {
             // TextInput owns writing/navigation/clipboard keys while it has focus;
             // the agent's commands are not keys, and the agent panel, which has
@@ -1742,10 +1760,15 @@ impl AppView {
             }
             id::TEMPO_UP => self.change_written_tempo(5, cx),
             id::TEMPO_DOWN => self.change_written_tempo(-5, cx),
+            // Each part's mix lives in the left panel's Mezcla; again goes back to Lista.
             id::MIXER => {
-                // Opens the mixer's current home; the left panel's Mezcla mode takes it over later.
-                self.ui.show_inspector = true;
-                self.ui.right = panels::RightTab::Sound;
+                if self.ui.show_instruments && self.ui.parts_mode == panels::PartsMode::Mix {
+                    self.ui.parts_mode = panels::PartsMode::List;
+                } else {
+                    self.reveal_selection |= !self.ui.show_instruments;
+                    self.ui.show_instruments = true;
+                    self.ui.parts_mode = panels::PartsMode::Mix;
+                }
             }
             id::SOUNDS => {
                 self.ui.show_inspector = true;

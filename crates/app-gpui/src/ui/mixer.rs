@@ -1,5 +1,6 @@
 use super::*;
 use score_core::{InstrumentFamily, Players};
+use score_platform::mixer::ChannelMix;
 
 #[derive(Clone, Copy)]
 enum Target {
@@ -92,6 +93,85 @@ pub fn end(view: &mut AppView, event: &MouseUpEvent, cx: &mut Context<AppView>) 
     }
 }
 
+fn pan_text(pan: i8) -> String {
+    match pan.cmp(&0) {
+        std::cmp::Ordering::Less => format!("{} % izq.", pan.unsigned_abs()),
+        std::cmp::Ordering::Greater => format!("{pan} % der."),
+        _ => "Centro".into(),
+    }
+}
+
+/// The bar a slider is dragged on, `height` tall with its track centred.
+fn rail(
+    id: String,
+    target: Target,
+    fraction: f32,
+    height: f32,
+    cx: &Context<AppView>,
+) -> Stateful<Div> {
+    let hit = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+    let measured = hit.clone();
+    let middle = height / 2.;
+    div()
+        .id(SharedString::from(id))
+        .flex_1()
+        .min_w(px(40.))
+        .h(px(height))
+        .cursor_pointer()
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |v, event: &MouseDownEvent, window, cx| {
+                if let Some(bounds) = *hit.borrow() {
+                    v.selection_drag = None;
+                    v.mixer_drag = Some(MixerDrag { target, bounds });
+                    v.focus.focus(window);
+                    set(v, target, position(bounds, event.position.x), cx);
+                    cx.stop_propagation();
+                }
+            }),
+        )
+        .child(
+            canvas(
+                move |bounds, _, _| {
+                    *measured.borrow_mut() = Some(bounds);
+                },
+                move |bounds, _, window, _| {
+                    let width = f32::from(bounds.size.width);
+                    let start = bounds.origin + point(px(5.), px(middle - 2.));
+                    window.paint_quad(quad(
+                        Bounds::new(start, size(px(width - 10.), px(4.))),
+                        px(2.),
+                        rgb(BORDER),
+                        px(0.),
+                        rgb(BORDER),
+                        Default::default(),
+                    ));
+                    let progress = (width - 10.) * fraction;
+                    window.paint_quad(quad(
+                        Bounds::new(start, size(px(progress), px(4.))),
+                        px(2.),
+                        rgb(BLUE),
+                        px(0.),
+                        rgb(BLUE),
+                        Default::default(),
+                    ));
+                    window.paint_quad(quad(
+                        Bounds::new(
+                            bounds.origin + point(px(progress), px(middle - 5.)),
+                            size(px(10.), px(10.)),
+                        ),
+                        px(5.),
+                        rgb(TEXT),
+                        px(0.),
+                        rgb(TEXT),
+                        Default::default(),
+                    ));
+                },
+            )
+            .size_full(),
+        )
+}
+
 fn slider(
     id: String,
     label: &'static str,
@@ -100,22 +180,6 @@ fn slider(
     cx: &Context<AppView>,
 ) -> Div {
     let current = value(view, target);
-    let display = if let Target::Pan(part) = target {
-        let pan = view
-            .playback
-            .part_mix(view.document.editor.score(), part)
-            .pan;
-        match pan.cmp(&0) {
-            std::cmp::Ordering::Less => format!("{} % izq.", pan.unsigned_abs()),
-            std::cmp::Ordering::Greater => format!("{pan} % der."),
-            _ => "Centro".into(),
-        }
-    } else {
-        format!("{current} %")
-    };
-    let hit = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
-    let measured = hit.clone();
-    let fraction = current as f32 / 100.;
     div()
         .flex()
         .flex_col()
@@ -127,7 +191,7 @@ fn slider(
                 .text_size(px(11.))
                 .text_color(rgb(MUTED))
                 .child(label)
-                .child(div().text_color(rgb(TEXT)).child(display)),
+                .child(div().text_color(rgb(TEXT)).child(format!("{current} %"))),
         )
         .child(
             div()
@@ -148,66 +212,7 @@ fn slider(
                     .w(px(25.))
                     .h(px(25.)),
                 )
-                .child(
-                    div()
-                        .id(SharedString::from(id.clone()))
-                        .flex_1()
-                        .min_w(px(40.))
-                        .h(px(26.))
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |v, event: &MouseDownEvent, window, cx| {
-                                if let Some(bounds) = *hit.borrow() {
-                                    v.selection_drag = None;
-                                    v.mixer_drag = Some(MixerDrag { target, bounds });
-                                    v.focus.focus(window);
-                                    set(v, target, position(bounds, event.position.x), cx);
-                                    cx.stop_propagation();
-                                }
-                            }),
-                        )
-                        .child(
-                            canvas(
-                                move |bounds, _, _| {
-                                    *measured.borrow_mut() = Some(bounds);
-                                },
-                                move |bounds, _, window, _| {
-                                    let width = f32::from(bounds.size.width);
-                                    let start = bounds.origin + point(px(5.), px(11.));
-                                    window.paint_quad(quad(
-                                        Bounds::new(start, size(px(width - 10.), px(4.))),
-                                        px(2.),
-                                        rgb(BORDER),
-                                        px(0.),
-                                        rgb(BORDER),
-                                        Default::default(),
-                                    ));
-                                    let progress = (width - 10.) * fraction;
-                                    window.paint_quad(quad(
-                                        Bounds::new(start, size(px(progress), px(4.))),
-                                        px(2.),
-                                        rgb(BLUE),
-                                        px(0.),
-                                        rgb(BLUE),
-                                        Default::default(),
-                                    ));
-                                    window.paint_quad(quad(
-                                        Bounds::new(
-                                            bounds.origin + point(px(progress), px(8.)),
-                                            size(px(10.), px(10.)),
-                                        ),
-                                        px(5.),
-                                        rgb(TEXT),
-                                        px(0.),
-                                        rgb(TEXT),
-                                        Default::default(),
-                                    ));
-                                },
-                            )
-                            .size_full(),
-                        ),
-                )
+                .child(rail(id.clone(), target, current as f32 / 100., 26., cx))
                 .child(
                     button(view, format!("{id}-up"), "+", false, cx, move |v, _, cx| {
                         set(v, target, value(v, target) + 5, cx);
@@ -218,76 +223,186 @@ fn slider(
         )
 }
 
+/// Puts a part's volume or position back where the score seats it.
+fn reset(view: &mut AppView, target: Target, cx: &mut Context<AppView>) {
+    if view.busy || view.confirming {
+        return;
+    }
+    let score = view.document.editor.score();
+    match target {
+        Target::Volume(part) => {
+            let seated = ChannelMix::seated(score, part).volume;
+            view.playback.part_mix_mut(score, part).volume = seated;
+        }
+        Target::Pan(part) => {
+            let seated = ChannelMix::seated(score, part).pan;
+            view.playback.part_mix_mut(score, part).pan = seated;
+        }
+        _ => return,
+    }
+    view.playback.apply_mixer(
+        view.document.editor.score(),
+        view.document.editor.cursor().part,
+    );
+    cx.notify();
+}
+
+/// A compact slider for a Mezcla row: the bar, then its value, which
+/// puts the default back when clicked.
+fn mix_slider(
+    id: String,
+    target: Target,
+    fraction: f32,
+    shown: String,
+    cx: &Context<AppView>,
+) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(rail(id.clone(), target, fraction, 16., cx))
+        .child(
+            toolbar::control(format!("{id}-reset"), shown, false, cx, move |v, _, cx| {
+                reset(v, target, cx)
+            })
+            .w(px(64.))
+            .h(px(20.))
+            .justify_end()
+            .px_1()
+            .text_size(px(11.))
+            .text_color(rgb(MUTED))
+            .tooltip(described_hint(
+                "Restablecer",
+                None,
+                "Ajuste de esta sesión: no modifica la partitura.",
+            )),
+        )
+}
+
+/// Volume, stereo position and, where a pack may have both, the players of
+/// one part, for its row in Mezcla.
+pub fn part_controls(
+    view: &AppView,
+    part: PartId,
+    family: InstrumentFamily,
+    cx: &Context<AppView>,
+) -> Div {
+    let mix = view.playback.part_mix(view.document.editor.score(), part);
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(mix_slider(
+            format!("part-volume-{}", part.0),
+            Target::Volume(part),
+            f32::from(mix.volume) / 100.,
+            format!("{} %", mix.volume),
+            cx,
+        ))
+        .child(mix_slider(
+            format!("part-pan-{}", part.0),
+            Target::Pan(part),
+            (f32::from(mix.pan) + 100.) / 200.,
+            pan_text(mix.pan),
+            cx,
+        ))
+        .when(
+            matches!(
+                family,
+                InstrumentFamily::Strings | InstrumentFamily::Woodwinds | InstrumentFamily::Brass
+            ),
+            |controls| controls.child(players(view, part, cx)),
+        )
+}
+
 /// Solo or section recordings, for instruments a pack may have both of.
 /// Choosing the score's own default stores no choice in the document.
 fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {
     let current = view.document.editor.score().players(part);
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .child(
-            div()
-                .text_size(px(11.))
-                .text_color(rgb(MUTED))
-                .child("Intérpretes"),
-        )
-        .child(
-            div()
-                .flex()
-                .gap_1()
-                .children([Players::Solo, Players::Section].map(|players| {
-                    button(
-                        view,
-                        format!("players-{}-{}", part.0, players.label()),
-                        players.label(),
-                        current == players,
-                        cx,
-                        move |v, _, cx| {
-                            let automatic = v.document.editor.score().default_players(part);
-                            let choice = (players != automatic).then_some(players);
-                            v.edit(Command::SetPlayers(part, choice), cx);
-                        },
-                    )
-                    .text_size(px(10.))
-                })),
-        )
+    div().w(px(150.)).child(toolbar::track(
+        [Players::Section, Players::Solo].map(|players| {
+            toolbar::control(
+                format!("players-{}-{}", part.0, players.label()),
+                players.label(),
+                current == players,
+                cx,
+                move |v, _, cx| {
+                    let automatic = v.document.editor.score().default_players(part);
+                    let choice = (players != automatic).then_some(players);
+                    v.edit(Command::SetPlayers(part, choice), cx);
+                },
+            )
+            .h(px(20.))
+            .text_size(px(11.))
+            .tooltip(described_hint(
+                players.label(),
+                None,
+                "Grabaciones de un intérprete o de la sección. Se guarda con la partitura y se puede deshacer.",
+            ))
+        }),
+    ))
 }
 
 pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
     section("SALIDA GENERAL")
-        .child(slider("master-volume".into(), "Volumen general", Target::Master, view, cx))
-        .child(div().mt_2().pt_3().border_t_1().border_color(rgb(BORDER)).flex().flex_col().gap_2()
-            .child(div().flex().items_center().justify_between()
-                .child(caption("REVERBERACIÓN SUAVE"))
-                .child(button(view, "reverb-enabled", if view.playback.reverb.enabled { "Activa" } else { "Apagada" }, view.playback.reverb.enabled, cx, |v, _, cx| {
-                    v.playback.reverb.enabled = !v.playback.reverb.enabled;
-                    v.playback.apply_mixer(v.document.editor.score(), v.document.editor.cursor().part);
-                    cx.notify();
-                }).text_size(px(10.))))
-            .child(slider("reverb-amount".into(), "Cantidad", Target::ReverbAmount, view, cx))
-            .child(slider("reverb-room".into(), "Tamaño de sala", Target::Room, view, cx)))
-        .child(caption("INSTRUMENTOS"))
-        .children(view.document.editor.score().parts().iter().map(|part| {
-            let id = part.id();
-            div().flex().flex_col().gap_2().pt_3().mt_1().border_t_1().border_color(rgb(BORDER))
-                .child(div().flex().items_center().justify_between()
-                    .child(div().text_size(px(12.)).child(instrument_name(view.document.editor.score(), id)))
-                    .child(button(view, format!("mix-reset-{}", id.0), "Restablecer", false, cx, move |v, _, cx| {
-                        v.playback.part_mix.remove(&id);
-                        v.playback.apply_mixer(v.document.editor.score(), v.document.editor.cursor().part);
-                        cx.notify();
-                    }).text_size(px(9.))))
-                .when(
-                    matches!(
-                        part.instrument().family(),
-                        InstrumentFamily::Strings | InstrumentFamily::Woodwinds | InstrumentFamily::Brass
-                    ),
-                    |row| row.child(players(view, id, cx)),
+        .child(slider(
+            "master-volume".into(),
+            "Volumen general",
+            Target::Master,
+            view,
+            cx,
+        ))
+        .child(
+            div()
+                .mt_2()
+                .pt_3()
+                .border_t_1()
+                .border_color(rgb(BORDER))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(caption("REVERBERACIÓN SUAVE"))
+                        .child(
+                            button(
+                                view,
+                                "reverb-enabled",
+                                if view.playback.reverb.enabled {
+                                    "Activa"
+                                } else {
+                                    "Apagada"
+                                },
+                                view.playback.reverb.enabled,
+                                cx,
+                                |v, _, cx| {
+                                    v.playback.reverb.enabled = !v.playback.reverb.enabled;
+                                    v.playback.apply_mixer(
+                                        v.document.editor.score(),
+                                        v.document.editor.cursor().part,
+                                    );
+                                    cx.notify();
+                                },
+                            )
+                            .text_size(px(10.)),
+                        ),
                 )
-                .child(slider(format!("part-volume-{}", id.0), "Volumen", Target::Volume(id), view, cx))
-                .child(slider(format!("part-pan-{}", id.0), "Posición estéreo", Target::Pan(id), view, cx))
-        }))
-        .child(div().mt_3().text_size(px(10.)).text_color(rgb(MUTED))
-            .child("Volumen y posición son ajustes de esta sesión y no modifican la partitura. Solista o Sección se guarda con ella y se puede deshacer."))
+                .child(slider(
+                    "reverb-amount".into(),
+                    "Cantidad",
+                    Target::ReverbAmount,
+                    view,
+                    cx,
+                ))
+                .child(slider(
+                    "reverb-room".into(),
+                    "Tamaño de sala",
+                    Target::Room,
+                    view,
+                    cx,
+                )),
+        )
 }

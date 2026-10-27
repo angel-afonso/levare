@@ -24,13 +24,13 @@ impl InstrumentFamily {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Woodwinds => "MADERAS",
-            Self::Brass => "METALES",
-            Self::Percussion => "PERCUSIÓN",
-            Self::Keyboards => "TECLADOS",
-            Self::PluckedStrings => "CUERDAS PULSADAS",
-            Self::Voices => "VOCES",
-            Self::Strings => "CUERDAS",
+            Self::Woodwinds => "Maderas",
+            Self::Brass => "Metales",
+            Self::Percussion => "Percusión",
+            Self::Keyboards => "Teclados",
+            Self::PluckedStrings => "Cuerda pulsada",
+            Self::Voices => "Voces",
+            Self::Strings => "Cuerda",
         }
     }
 }
@@ -212,6 +212,31 @@ impl crate::Score {
         } else {
             part.instrument().name().to_owned()
         }
+    }
+}
+
+impl crate::Score {
+    /// `part_name` for every part, in score order, in one pass.
+    pub fn part_names(&self) -> Vec<String> {
+        let mut totals = [0usize; Instrument::ALL.len()];
+        for part in self.parts() {
+            totals[part.instrument() as usize] += 1;
+        }
+        let mut seen = [0usize; Instrument::ALL.len()];
+        self.parts()
+            .iter()
+            .map(|part| {
+                let index = part.instrument() as usize;
+                seen[index] += 1;
+                if let Some(name) = &part.name {
+                    name.clone()
+                } else if totals[index] > 1 {
+                    format!("{} {}", part.instrument().name(), roman(seen[index]))
+                } else {
+                    part.instrument().name().to_owned()
+                }
+            })
+            .collect()
     }
 }
 

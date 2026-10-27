@@ -18,7 +18,6 @@ pub const BORDER: u32 = 0x2b2d35;
 pub const OUTLINE: u32 = 0x33353e;
 pub const MINOR_TICK: u32 = 0x393d47;
 pub const POPOVER_BORDER: u32 = 0x3a3d46;
-pub const STRONG_BORDER: u32 = 0x424652;
 pub const PENDING_OUTLINE: u32 = 0x4a4d58;
 pub const TICK: u32 = 0x606572;
 
