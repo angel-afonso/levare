@@ -45,10 +45,10 @@ jobs:
         run: cargo test --workspace --locked
 
 
-  # Levare only runs on macOS so far; this shows how far Linux and Windows
-  # are from compiling. It does not fail the run until the port is done.
+  # Levare is not ported to Linux and Windows yet; this shows how far each is
+  # from working. It does not fail the run until the port is done.
   portability:
-    name: Check and clippy (${{ matrix.os }})
+    name: Portability (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +80,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pkg-config libfontconfig-dev libfreetype-dev \
             libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev
+            libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev \
+            xvfb mesa-vulkan-drivers imagemagick
 
       - name: Toolchain
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
@@ -101,3 +102,56 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
         run: cargo clippy --workspace --all-targets --locked --keep-going -- -D warnings
+
+      - name: Tests
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        run: cargo test --workspace --locked --no-fail-fast
+
+      - name: Build app
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        run: cargo build -p levare --locked
+
+      # Nobody has a Linux or Windows machine to try Levare on, so open it
+      # here for 30 seconds: the log and a screenshot show whether the window
+      # comes up and what it looks like. Linux uses a virtual X server with
+      # Mesa's software Vulkan; Windows uses the runner's desktop.
+      - name: Launch app (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          mkdir -p smoke
+          xvfb-run --server-args="-screen 0 1600x1100x24" bash -c '
+            RUST_BACKTRACE=1 target/debug/levare > smoke/levare.log 2>&1 &
+            pid=$!
+            sleep 30
+            import -window root smoke/screen.png
+            if kill -0 $pid 2>/dev/null; then echo "still running" >> smoke/levare.log; kill $pid; else wait $pid; echo "exited with $?" >> smoke/levare.log; fi
+          '
+          cat smoke/levare.log
+
+      - name: Launch app (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process target\debug\levare.exe -PassThru `
+            -RedirectStandardOutput smoke\stdout.log -RedirectStandardError smoke\levare.log
+          Start-Sleep -Seconds 30
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+          [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+          $bitmap.Save("smoke\screen.png")
+          if ($app.HasExited) { "exited with $($app.ExitCode)" | Add-Content smoke\levare.log } else { "still running" | Add-Content smoke\levare.log; Stop-Process $app }
+          Get-Content smoke\stdout.log, smoke\levare.log
+          Copy-Item -Recurse smoke $env:GITHUB_WORKSPACE
+
+      - name: Upload launch results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-${{ runner.os }}
+          path: smoke/
