@@ -289,6 +289,8 @@ fn agent_without_http_mcp_fails() {
     assert_eq!(next(&rt, &mut events), None);
 }
 
+// The agents in these tests are `/bin/sh` scripts.
+#[cfg(unix)]
 #[test]
 fn process_exit_fails_with_its_stderr() {
     let rt = Runtime::new().unwrap();
@@ -318,6 +320,7 @@ fn process_exit_fails_with_its_stderr() {
 
 /// A shell agent that opens the session, then exits with `status` when the
 /// prompt arrives.
+#[cfg(unix)]
 fn exits_on_prompt(status: u8) -> LaunchCommand {
     let reply = |result: &str| {
         format!(
@@ -337,6 +340,7 @@ fn exits_on_prompt(status: u8) -> LaunchCommand {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn process_exit_during_a_turn_fails_once() {
     let rt = Runtime::new().unwrap();
@@ -353,6 +357,7 @@ fn process_exit_during_a_turn_fails_once() {
     assert_eq!(next(&rt, &mut events), None);
 }
 
+#[cfg(unix)]
 #[test]
 fn clean_process_exit_also_fails() {
     let rt = Runtime::new().unwrap();
@@ -369,6 +374,8 @@ fn clean_process_exit_also_fails() {
     assert_eq!(next(&rt, &mut events), None);
 }
 
+// `/bin/sleep` and `pgrep`.
+#[cfg(unix)]
 #[test]
 fn dropping_the_handle_ends_the_session_and_the_process() {
     let rt = Runtime::new().unwrap();
