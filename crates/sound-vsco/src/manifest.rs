@@ -271,26 +271,49 @@ pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSp
     })
 }
 
-/// The sfizz library shipped in the app bundle (`Contents/Frameworks`), or in
-/// development the one installed with VSCO next to an ancestor of the
-/// executable. `LEVARE_SFIZZ` overrides both.
+/// The sfizz library's file name on this system: `libsfizz.dylib`,
+/// `libsfizz.so` or `sfizz.dll`.
+pub fn engine_file_name() -> String {
+    format!(
+        "{}sfizz{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX
+    )
+}
+
+/// The sfizz library Levare ships: next to the executable on Windows and
+/// Linux, in the app bundle's `Contents/Frameworks` on macOS. In development,
+/// the one installed with VSCO next to an ancestor of the executable.
+/// `LEVARE_SFIZZ` overrides them all.
 pub fn bundled_engine() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("LEVARE_SFIZZ") {
         return Some(PathBuf::from(path));
     }
     let executable = std::env::current_exe().ok()?;
-    let frameworks = executable
-        .parent()?
-        .parent()
-        .map(|contents| contents.join("Frameworks/libsfizz.dylib"));
-    frameworks
+    engine_candidates(&executable)
         .into_iter()
-        .chain(
-            executable
-                .ancestors()
-                .map(|directory| directory.join("soundpacks/vsco-ce/libsfizz.dylib")),
-        )
         .find(|path| path.is_file())
+}
+
+/// Where [`bundled_engine`] looks, in order, for an executable at `executable`.
+pub(crate) fn engine_candidates(executable: &Path) -> Vec<PathBuf> {
+    let name = engine_file_name();
+    let directory = executable.parent();
+    let mut candidates: Vec<PathBuf> = directory.map(|dir| dir.join(&name)).into_iter().collect();
+    if cfg!(target_os = "macos") {
+        candidates.extend(
+            directory
+                .and_then(Path::parent)
+                .map(|contents| contents.join("Frameworks").join(&name)),
+        );
+    }
+    candidates.extend(
+        executable
+            .ancestors()
+            .skip(1)
+            .map(|dir| dir.join("soundpacks").join("vsco-ce").join(&name)),
+    );
+    candidates
 }
 
 pub fn fallback_family(instrument: Instrument) -> Option<Instrument> {

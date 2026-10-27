@@ -97,7 +97,9 @@ fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
                         Ok(entry) => {
                             let path = entry.path().join("manifest.json");
                             if path.is_file() {
-                                manifests.insert(path.canonicalize().unwrap_or(path));
+                                // Not `canonicalize`: Windows resolves no `..`
+                                // inside its `\\?\` paths, and SFZ samples use them.
+                                manifests.insert(dunce::canonicalize(&path).unwrap_or(path));
                             }
                         }
                         Err(cause) => errors.push(format!("{}: {cause}", root.display())),

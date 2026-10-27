@@ -5733,6 +5733,7 @@ name = "score-sound-vsco"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "dunce",
  "libloading",
  "score-core",
  "score-platform",
