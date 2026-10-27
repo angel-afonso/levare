@@ -1956,6 +1956,7 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
             .as_ref()
             .is_some_and(|recovery| recovery.last_error().is_none()),
         dirty: view.document.is_dirty(),
+        update: view.updates.status_item(),
     });
     div()
         .h(px(25.))
@@ -1976,6 +1977,24 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                 .child(inline_text(view.music_font.clone(), bar.message)),
         )
         .children(bar.pages.map(|pages| page_navigation(pages, cx)))
+        .children(bar.update.map(|text| {
+            if bar.update_ready {
+                toolbar::control("restart-to-update", text, false, cx, |v, _, cx| {
+                    v.restart_to_update(cx)
+                })
+                .flex_shrink_0()
+                .px_2()
+                .h(px(19.))
+                .text_color(rgb(BLUE))
+                .into_any_element()
+            } else {
+                div()
+                    .flex_shrink_0()
+                    .text_color(rgb(MUTED))
+                    .child(text)
+                    .into_any_element()
+            }
+        }))
         .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(bar.zoom))
         .child(
             div()

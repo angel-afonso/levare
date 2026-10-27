@@ -18,6 +18,8 @@ pub struct Facts<'a> {
     pub zoom_percent: u16,
     pub recovery_ready: bool,
     pub dirty: bool,
+    /// The update under way, and whether it is ready to restart into.
+    pub update: Option<(String, bool)>,
 }
 
 pub struct Pages {
@@ -30,7 +32,8 @@ pub struct Pages {
     pub next: Option<usize>,
 }
 
-/// The three things the bar keeps: the message, the pages and the saving.
+/// The things the bar keeps: the message, the pages, the saving and an
+/// update under way.
 pub struct StatusBar {
     pub message: String,
     pub pages: Option<Pages>,
@@ -40,6 +43,10 @@ pub struct StatusBar {
     pub autosave_ok: bool,
     pub document: &'static str,
     pub unsaved: bool,
+    /// «Reiniciar para actualizar a 0.3.0»; `None` with no update under way.
+    pub update: Option<String>,
+    /// Clicking the update item restarts into it.
+    pub update_ready: bool,
 }
 
 pub fn status_bar(facts: &Facts) -> StatusBar {
@@ -76,6 +83,8 @@ pub fn status_bar(facts: &Facts) -> StatusBar {
             "Guardado"
         },
         unsaved: facts.dirty,
+        update: facts.update.as_ref().map(|(text, _)| text.clone()),
+        update_ready: facts.update.as_ref().is_some_and(|(_, ready)| *ready),
     }
 }
 
@@ -92,6 +101,7 @@ mod tests {
             zoom_percent: 70,
             recovery_ready: true,
             dirty: false,
+            update: None,
         }
     }
 
@@ -107,6 +117,8 @@ mod tests {
             autosave_ok,
             document,
             unsaved,
+            update,
+            update_ready,
         } = status_bar(&facts());
         assert_eq!(message, "Listo");
         assert!(pages.is_none(), "page navigation only in Page view");
@@ -115,6 +127,7 @@ mod tests {
         assert!(autosave_ok);
         assert_eq!(document, "Guardado");
         assert!(!unsaved);
+        assert!(update.is_none() && !update_ready, "no update under way");
 
         let bar = status_bar(&Facts {
             dirty: true,
@@ -125,6 +138,24 @@ mod tests {
         assert!(!bar.autosave_ok);
         assert_eq!(bar.document, "Cambios sin guardar");
         assert!(bar.unsaved);
+    }
+
+    #[test]
+    fn an_update_under_way_shows_and_restarts_when_ready() {
+        let bar = status_bar(&Facts {
+            update: Some(("Reiniciar para actualizar a 0.3.0".into(), true)),
+            ..facts()
+        });
+        assert_eq!(
+            bar.update.as_deref(),
+            Some("Reiniciar para actualizar a 0.3.0")
+        );
+        assert!(bar.update_ready);
+        let bar = status_bar(&Facts {
+            update: Some(("Buscando actualizaciones…".into(), false)),
+            ..facts()
+        });
+        assert!(!bar.update_ready);
     }
 
     #[test]

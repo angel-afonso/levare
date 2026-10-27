@@ -35,6 +35,10 @@ pub const EXCLUDED: &[CommandId] = &[
     id::OPEN,
     id::CLOSE,
     id::QUIT,
+    // Restart Levare into an update, or change how it looks for one.
+    id::CHECK_FOR_UPDATES,
+    id::RESTART_TO_UPDATE,
+    id::AUTOMATIC_UPDATES,
     // Open a text field for the words; `ajustar texto` writes them.
     id::EXPRESSION_TEXT,
     id::TECHNIQUE_TEXT,

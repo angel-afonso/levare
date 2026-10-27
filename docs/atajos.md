@@ -24,6 +24,9 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | Sin atajo | Información de la partitura… |  |
 | `⌘,` | Preferencias de atajos… |  |
 | Sin atajo | Borrar la lista de recientes |  |
+| Sin atajo | Buscar actualizaciones… |  |
+| Sin atajo | Reiniciar para actualizar |  |
+| Sin atajo | Activar o desactivar la búsqueda automática de actualizaciones |  |
 | `Esc` | Cerrar el panel abierto |  |
 
 ## Edición
