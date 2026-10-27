@@ -96,6 +96,8 @@ jobs:
         # --keep-going reports every crate that fails, not only the first.
         run: cargo check --workspace --all-targets --locked --keep-going
 
+      # After a failed check too, so the lints of what does compile show.
       - name: Clippy
+        if: ${{ !cancelled() }}
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --keep-going -- -D warnings

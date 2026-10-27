@@ -340,6 +340,7 @@ pub fn uninstall(id: &str, root: &Path) -> Result<(), StoreError> {
     fs::remove_dir_all(&path).map_err(io)
 }
 
+#[cfg(unix)]
 fn free_space(path: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
@@ -349,7 +350,16 @@ fn free_space(path: &Path) -> Option<u64> {
     if unsafe { libc::statvfs(path.as_ptr(), &mut stats) } != 0 {
         return None;
     }
-    u64::from(stats.f_bavail).checked_mul(stats.f_frsize)
+    // `f_bavail` is u32 on macOS and already u64 on Linux.
+    #[allow(clippy::useless_conversion)]
+    let available = u64::from(stats.f_bavail);
+    available.checked_mul(stats.f_frsize)
+}
+
+/// Unknown elsewhere for now, so the install goes ahead without the check.
+#[cfg(not(unix))]
+fn free_space(_: &Path) -> Option<u64> {
+    None
 }
 
 /// "461 MB", "1,2 GB".

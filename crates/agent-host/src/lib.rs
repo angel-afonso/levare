@@ -2,7 +2,9 @@
 //! tokio runtime of its own. No dependency on the UI: tool calls leave
 //! through a channel for the UI thread to run.
 mod agents;
-#[cfg(test)]
+// They run login shells and build executables with Unix permissions, as
+// the lookup they test does.
+#[cfg(all(test, unix))]
 mod agents_tests;
 mod calls;
 #[cfg(test)]
