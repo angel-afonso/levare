@@ -260,7 +260,7 @@ impl AppView {
         let ghost_cleared = self.ghost.take().is_some();
         let hover_cleared = self.hover.take().is_some();
         let cleared = ghost_cleared || hover_cleared;
-        if !event.modifiers.platform && !event.modifiers.control {
+        if !event.modifiers.secondary() && !event.modifiers.control {
             if cleared {
                 cx.notify();
             }
@@ -576,8 +576,9 @@ impl AppView {
         cx.notify();
     }
 
-    /// A press on a handle of the picked line stretches it; ⌥ on a note draws
-    /// a slur from it, ⌥⌘ a crescendo and ⌥⇧⌘ a diminuendo.
+    /// A press on a handle of the picked line stretches it; Alt on a note draws
+    /// a slur from it, Alt with the secondary key (⌘ on macOS, Ctrl elsewhere)
+    /// a crescendo, and with Shift too a diminuendo.
     fn begin_line_drag(
         &mut self,
         event: &MouseDownEvent,
@@ -610,7 +611,7 @@ impl AppView {
         else {
             return false;
         };
-        let kind = match (event.modifiers.platform, event.modifiers.shift) {
+        let kind = match (event.modifiers.secondary(), event.modifiers.shift) {
             (false, _) => ConnectionKind::Slur,
             (true, false) => ConnectionKind::Crescendo,
             (true, true) => ConnectionKind::Diminuendo,
@@ -920,7 +921,7 @@ impl AppView {
                 return;
             }
             let starting = !drag.active;
-            let free = modifiers.platform;
+            let free = modifiers.secondary();
             let changed = drag.update(position, self.canvas_origin, modifiers.shift, free);
             if starting {
                 self.playback.stop();

@@ -214,16 +214,24 @@ fn arrows_nudge_two_tenths_and_cmd_one_space() {
     ] {
         assert_eq!(nudge(key, Modifiers::default()), Some(expected));
         assert_eq!(
-            nudge(
-                key,
-                Modifiers {
-                    platform: true,
-                    ..Default::default()
-                }
-            ),
+            nudge(key, Modifiers::secondary_key()),
             Some((expected.0 * 5, expected.1 * 5))
         );
     }
+    // The key that is not the secondary one: Ctrl on macOS, Windows or Super
+    // elsewhere.
+    let other = if cfg!(target_os = "macos") {
+        Modifiers {
+            control: true,
+            ..Default::default()
+        }
+    } else {
+        Modifiers {
+            platform: true,
+            ..Default::default()
+        }
+    };
+    assert_eq!(nudge("down", other), None);
     assert_eq!(nudge("tab", Modifiers::default()), None);
     assert_eq!(
         nudge(
@@ -240,16 +248,6 @@ fn arrows_nudge_two_tenths_and_cmd_one_space() {
             "up",
             Modifiers {
                 alt: true,
-                ..Default::default()
-            }
-        ),
-        None
-    );
-    assert_eq!(
-        nudge(
-            "down",
-            Modifiers {
-                control: true,
                 ..Default::default()
             }
         ),
