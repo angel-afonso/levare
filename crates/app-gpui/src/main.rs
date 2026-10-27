@@ -6,6 +6,7 @@ mod app_paths;
 mod clipboard;
 mod comments;
 mod connection_input;
+mod file_dialogs;
 mod follow;
 mod ghost;
 mod keyboard;
@@ -2631,12 +2632,7 @@ impl AppView {
         self.export_picker = None;
         self.confirming = false;
         self.busy = true;
-        let directory = self
-            .path
-            .as_ref()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_owned())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let directory = file_dialogs::start_folder(self.path.as_deref());
         let score = self.document.editor.score().clone();
         let suggested = score_export::folder_name(score.title());
         let picker = cx.prompt_for_new_path(&directory, Some(&suggested));
@@ -2686,12 +2682,7 @@ impl AppView {
         self.busy = true;
         let existing = if save_as { None } else { self.path.clone() };
         let picker = existing.is_none().then(|| {
-            let directory = self
-                .path
-                .as_ref()
-                .and_then(|path| path.parent())
-                .map(|p| p.to_owned())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let directory = file_dialogs::start_folder(self.path.as_deref());
             let name = score_io::file_name(self.document.editor.score().title(), 80);
             cx.prompt_for_new_path(&directory, Some(&format!("{name}.partitura")))
         });
