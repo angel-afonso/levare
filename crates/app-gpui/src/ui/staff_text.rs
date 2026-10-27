@@ -86,7 +86,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .gap(px(6.))
                 .child(
-                    choice(view, "apply-staff-text", "Aplicar", true, cx, |v, _, cx| {
+                    act(view, "apply-staff-text", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_text(cx)
                     })
                     .tooltip(described_hint(
@@ -99,7 +99,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .when(written, |panel| {
             panel.child(
-                choice(
+                act(
                     view,
                     "remove-staff-text",
                     "Quitar texto",
@@ -234,7 +234,7 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .gap_2()
                 .child(
-                    choice(view, "apply-lyric", "Aplicar", true, cx, |v, _, cx| {
+                    act(view, "apply-lyric", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_syllable(score_core::Join::Word, false, cx)
                     })
                     .tooltip(described_hint(
@@ -247,7 +247,7 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .when(written, |panel| {
             panel.child(
-                choice(view, "remove-lyric", "Quitar sílaba", false, cx, |v, _, cx| {
+                act(view, "remove-lyric", "Quitar sílaba", false, cx, |v, _, cx| {
                     if let Some(editor) = &v.lyric_editor {
                         let (target, verse) = (editor.target, editor.verse);
                         v.edit(Command::SetSyllable(target, verse, None), cx);
@@ -299,7 +299,7 @@ pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .gap_2()
                 .child(
-                    choice(view, "apply-chord", "Aplicar", true, cx, |v, _, cx| {
+                    act(view, "apply-chord", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_chord(false, cx)
                     })
                     .tooltip(described_hint(
@@ -312,7 +312,7 @@ pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
         )
         .when(written, |panel| {
             panel.child(
-                choice(view, "remove-chord", "Quitar cifrado", false, cx, |v, _, cx| {
+                act(view, "remove-chord", "Quitar cifrado", false, cx, |v, _, cx| {
                     if let Some(editor) = v.chord_editor.take() {
                         v.edit(Command::SetChord(editor.target, None), cx);
                     }

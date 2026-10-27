@@ -47,7 +47,13 @@ impl HeaderEditor {
         self.focused_index(window, cx).is_some()
     }
     pub fn focus_first(&self, window: &mut Window, cx: &App) {
-        self.fields[0].1.focus_handle(cx).focus(window);
+        self.focus_field(0, window, cx);
+    }
+    /// Title, subtitle, composer… in the order the editor shows them.
+    pub fn focus_field(&self, index: usize, window: &mut Window, cx: &App) {
+        if let Some((_, field)) = self.fields.get(index) {
+            field.focus_handle(cx).focus(window);
+        }
     }
     /// Tab and Shift-Tab walk the fields in order, wrapping around.
     pub fn focus_next(&self, back: bool, window: &mut Window, cx: &App) {
@@ -81,7 +87,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .gap(px(6.))
                 .mt_2()
                 .child(
-                    choice(view, "apply-header", "Aplicar", true, cx, |v, _, cx| {
+                    act(view, "apply-header", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_header(cx)
                     })
                     .tooltip(described_hint(

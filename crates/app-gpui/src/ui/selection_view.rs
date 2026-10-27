@@ -7,6 +7,7 @@ use score_core::{
     TICKS_PER_WHOLE, TextKind,
 };
 use score_edit::{Command, Editor};
+use std::collections::HashMap;
 
 /// The editors that take over the Selection tab while they are open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +65,10 @@ pub struct NoteSummary {
     pub marks: Vec<MarkRow>,
 }
 
+/// A passage lists at most this many marks; `PassageSummary::mark_count`
+/// still counts them all.
+pub const MAX_MARK_ROWS: usize = 40;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PassageSummary {
     pub parts: Vec<String>,
@@ -71,7 +76,9 @@ pub struct PassageSummary {
     pub first_bar: usize,
     pub last_bar: usize,
     pub notes: usize,
+    /// The first `MAX_MARK_ROWS` marks, in order.
     pub marks: Vec<MarkRow>,
+    pub mark_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -241,7 +248,7 @@ fn note_summary(score: &Score, editor: &Editor, id: ElementId) -> Option<NoteSum
         range_warning: pitch
             .and_then(|pitch| score.pitch_range_warning(id, pitch))
             .map(|range| format!("Fuera del registro habitual. Rango en altura real: {range}.")),
-        marks: marks_of(score, &[id]),
+        marks: marks_of(score, &[id], usize::MAX).0,
     })
 }
 
@@ -253,6 +260,7 @@ fn passage_summary(score: &Score, ids: &[ElementId]) -> PassageSummary {
             parts.push(name);
         }
     }
+    let (marks, mark_count) = marks_of(score, ids, MAX_MARK_ROWS);
     PassageSummary {
         parts,
         first_bar: ids.iter().map(|id| id.measure).min().unwrap_or(0) + 1,
@@ -261,7 +269,8 @@ fn passage_summary(score: &Score, ids: &[ElementId]) -> PassageSummary {
             .iter()
             .filter(|id| score.event(**id).is_some_and(|e| !e.pitches.is_empty()))
             .count(),
-        marks: marks_of(score, ids),
+        marks,
+        mark_count,
     }
 }
 
@@ -279,50 +288,82 @@ const POINT_FAMILIES: [MarkFamily; 8] = [
     MarkFamily::Division,
 ];
 
-/// Every mark on `ids`, note by note; a connection is listed once, under
-/// the first selected note it starts or ends on.
-fn marks_of(score: &Score, ids: &[ElementId]) -> Vec<MarkRow> {
-    let mut rows = Vec::new();
-    let mut listed: Vec<Connection> = Vec::new();
-    for &id in ids {
+/// The first `limit` marks on `ids`, note by note, and how many there are
+/// in all. A connection is listed once, under the first selected note it
+/// starts or ends on: one pass over the score's connections, and labels
+/// are only written for the rows that are shown.
+fn marks_of(score: &Score, ids: &[ElementId], limit: usize) -> (Vec<MarkRow>, usize) {
+    let order: HashMap<ElementId, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (*id, index))
+        .collect();
+    let mut touching: HashMap<usize, Vec<Connection>> = HashMap::new();
+    for connection in score.connections().iter() {
+        let first = [connection.start, connection.end]
+            .iter()
+            .filter_map(|end| order.get(end))
+            .min();
+        if let Some(&index) = first {
+            touching.entry(index).or_default().push(*connection);
+        }
+    }
+    let mut found: Vec<(ElementId, MarkRemoval)> = Vec::new();
+    for (index, &id) in ids.iter().enumerate() {
         let Some(event) = score.event(id) else {
             continue;
         };
-        let bar = id.measure + 1;
-        let point = |mark: MarkRef, rows: &mut Vec<MarkRow>| {
-            if let (Some(kind), Some(label)) = (score.mark_kind(mark), score.mark_label(mark)) {
-                rows.push(MarkRow {
-                    label,
-                    glyph: glyph(score, mark, kind),
-                    bar,
-                    remove: MarkRemoval::Mark(mark),
-                });
-            }
-        };
-        for family in POINT_FAMILIES {
-            if let Some(mark) = MarkRef::point(family, id) {
-                point(mark, &mut rows);
-            }
-        }
-        for connection in score.connections().iter() {
-            if (connection.start == id || connection.end == id) && !listed.contains(connection) {
-                listed.push(*connection);
-                rows.push(connection_row(*connection, id, bar));
-            }
-        }
         let graces = event.notation.grace.map_or(0, |grace| grace.len());
-        for index in 0..graces {
-            point(MarkRef::Grace(id, index as u8), &mut rows);
-        }
-        for kind in TextKind::ALL {
-            point(MarkRef::Text(id, kind), &mut rows);
-        }
-        for (verse, _) in event.notation.lyrics.verses() {
-            point(MarkRef::Lyric(id, verse as u8), &mut rows);
-        }
-        point(MarkRef::Chord(id), &mut rows);
+        let points = POINT_FAMILIES
+            .into_iter()
+            .filter_map(|family| MarkRef::point(family, id));
+        let after = (0..graces)
+            .map(|grace| MarkRef::Grace(id, grace as u8))
+            .chain(TextKind::ALL.map(|kind| MarkRef::Text(id, kind)))
+            .chain(
+                event
+                    .notation
+                    .lyrics
+                    .verses()
+                    .map(|(verse, _)| MarkRef::Lyric(id, verse as u8)),
+            )
+            .chain([MarkRef::Chord(id)]);
+        let written = |mark: &MarkRef| score.has_mark(*mark);
+        found.extend(
+            points
+                .filter(written)
+                .map(|mark| (id, MarkRemoval::Mark(mark))),
+        );
+        found.extend(
+            touching
+                .get(&index)
+                .into_iter()
+                .flatten()
+                .map(|connection| (id, MarkRemoval::Connection(*connection))),
+        );
+        found.extend(
+            after
+                .filter(written)
+                .map(|mark| (id, MarkRemoval::Mark(mark))),
+        );
     }
-    rows
+    let rows = found
+        .iter()
+        .take(limit)
+        .filter_map(|&(id, removal)| {
+            let bar = id.measure + 1;
+            match removal {
+                MarkRemoval::Connection(connection) => Some(connection_row(connection, id, bar)),
+                MarkRemoval::Mark(mark) => Some(MarkRow {
+                    label: score.mark_label(mark)?,
+                    glyph: glyph(score, mark, score.mark_kind(mark)?),
+                    bar,
+                    remove: removal,
+                }),
+            }
+        })
+        .collect();
+    (rows, found.len())
 }
 
 fn connection_row(connection: Connection, at: ElementId, bar: usize) -> MarkRow {

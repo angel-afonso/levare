@@ -20,6 +20,11 @@ impl AppView {
             .as_ref()
             .is_some_and(|editor| editor.kind == kind)
         {
+            if self.editor_hidden() {
+                self.reveal_editor_tab();
+                cx.notify();
+                return;
+            }
             self.text_editor = None;
             cx.notify();
             return;
@@ -76,7 +81,12 @@ impl AppView {
         if self.busy || self.confirming || self.agent_locked() {
             return;
         }
-        if self.lyric_editor.take().is_some() {
+        if self.lyric_editor.is_some() {
+            if self.editor_hidden() {
+                self.reveal_editor_tab();
+            } else {
+                self.lyric_editor = None;
+            }
             cx.notify();
             return;
         }
@@ -160,7 +170,12 @@ impl AppView {
         if self.busy || self.confirming || self.agent_locked() {
             return;
         }
-        if self.chord_editor.take().is_some() {
+        if self.chord_editor.is_some() {
+            if self.editor_hidden() {
+                self.reveal_editor_tab();
+            } else {
+                self.chord_editor = None;
+            }
             cx.notify();
             return;
         }
@@ -240,8 +255,7 @@ impl AppView {
         self.key_picker = false;
         self.time_picker = false;
         self.clef_picker = false;
-        self.ui.show_inspector = true;
-        self.ui.right = crate::panels::RightTab::Selection;
+        self.reveal_editor_tab();
     }
 }
 

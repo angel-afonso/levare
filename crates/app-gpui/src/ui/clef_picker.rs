@@ -61,7 +61,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex_wrap()
                 .gap(px(6.))
                 .when(part.clef_change_at(cursor.staff, bar).is_some(), |row| {
-                    row.child(choice(
+                    row.child(act(
                         view,
                         "remove-clef-change",
                         "Restablecer clave anterior",

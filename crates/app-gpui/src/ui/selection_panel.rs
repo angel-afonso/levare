@@ -4,7 +4,7 @@ use super::selection_view::{
     EditorKind, MarkGlyph, MarkRow, NoteSummary, PassageSummary, ScoreSummary, SelectionView,
     selection_view,
 };
-use super::toolbar::control;
+use super::toolbar::{self, control};
 use super::*;
 
 pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
@@ -119,7 +119,7 @@ fn command_control(
     command: CommandId,
     cx: &Context<AppView>,
 ) -> Stateful<Div> {
-    control(
+    toolbar::action_button(
         element,
         div()
             .flex()
@@ -142,6 +142,9 @@ fn command_control(
 }
 
 fn empty(text: &'static str) -> Div {
+    empty_owned(text.into())
+}
+fn empty_owned(text: String) -> Div {
     div()
         .px_2()
         .text_size(px(12.5))
@@ -150,23 +153,23 @@ fn empty(text: &'static str) -> Div {
 }
 
 fn score(body: Div, view: &AppView, summary: &ScoreSummary, cx: &Context<AppView>) -> Div {
-    let credit = |id, label, value: &str| {
+    let credit = |id, field: usize, label, value: &str| {
         fact_button(
             view,
             id,
             label,
             if value.is_empty() { "—" } else { value }.to_owned(),
             cx,
-            |v, window, cx| v.toggle_header_editor(window, cx),
+            move |v, window, cx| v.edit_header_field(field, window, cx),
         )
         .tooltip(command_hint(view, id::SCORE_INFO))
     };
     body.child(header("Partitura", "Nada seleccionado."))
         .child(
             group("Cabecera")
-                .child(credit("score-title", "Título", &summary.title))
-                .child(credit("score-subtitle", "Subtítulo", &summary.subtitle))
-                .child(credit("score-composer", "Compositor", &summary.composer)),
+                .child(credit("score-title", 0, "Título", &summary.title))
+                .child(credit("score-subtitle", 1, "Subtítulo", &summary.subtitle))
+                .child(credit("score-composer", 2, "Compositor", &summary.composer)),
         )
         .child(
             div()
@@ -307,6 +310,9 @@ fn note(body: Div, view: &AppView, summary: &NoteSummary, cx: &Context<AppView>)
                     .child(inline_text(font.clone(), warning)),
             )
         })
+        .when(view.ui.note_entry, |body| {
+            body.child(group("Próximas notas").child(entry_accidental(view, cx)))
+        })
         .child(
             group(if rest {
                 "Marcas en este silencio"
@@ -332,7 +338,9 @@ fn note(body: Div, view: &AppView, summary: &NoteSummary, cx: &Context<AppView>)
                     .flex()
                     .flex_wrap()
                     .gap(px(6.))
-                    .child(command_control(view, "note-lyric", "Letra", id::LYRICS, cx))
+                    .when(!rest, |row| {
+                        row.child(command_control(view, "note-lyric", "Letra", id::LYRICS, cx))
+                    })
                     .child(command_control(
                         view,
                         "note-chord",
@@ -367,7 +375,7 @@ fn passage(body: Div, view: &AppView, summary: &PassageSummary, cx: &Context<App
             .flex_col()
             .child(fact("Notas", summary.notes.to_string()))
             .child(fact("Partes", summary.parts.len().to_string()))
-            .child(fact("Marcas", summary.marks.len().to_string())),
+            .child(fact("Marcas", summary.mark_count.to_string())),
     )
     .child(
         group("Hacer con el pasaje").child(
@@ -388,13 +396,54 @@ fn passage(body: Div, view: &AppView, summary: &PassageSummary, cx: &Context<App
             ),
         ),
     )
-    .child(group("Marcas en el pasaje").child(marks(
-        view,
-        &summary.marks,
-        true,
-        "Sin marcas.",
-        cx,
-    )))
+    .child(
+        group("Marcas en el pasaje")
+            .child(marks(view, &summary.marks, true, "Sin marcas.", cx))
+            .when(summary.mark_count > summary.marks.len(), |list| {
+                list.child(empty_owned(format!(
+                    "y {} más",
+                    summary.mark_count - summary.marks.len()
+                )))
+            }),
+    )
+}
+
+/// The sign the next written notes take, while writing: the ribbon's
+/// accidentals act on the note just written instead.
+fn entry_accidental(view: &AppView, cx: &Context<AppView>) -> Div {
+    toolbar::track(
+        [
+            None,
+            Some(Accidental::Flat),
+            Some(Accidental::Natural),
+            Some(Accidental::Sharp),
+        ]
+        .map(|sign| {
+            control(
+                format!("entry-sign-{}", sign.map_or("key", Accidental::symbol)),
+                inline_text(
+                    view.music_font.clone(),
+                    sign.map_or("Armadura", Accidental::symbol),
+                ),
+                view.entry_accidental == sign,
+                cx,
+                move |v, _, cx| {
+                    if !v.busy && !v.confirming && !v.agent_locked() {
+                        v.entry_accidental = sign;
+                        cx.notify();
+                    }
+                },
+            )
+            .h(px(26.))
+            .tooltip(hover_hint(
+                format!(
+                    "Próximas notas: {}",
+                    sign.map_or("según la armadura", Accidental::label)
+                ),
+                None,
+            ))
+        }),
+    )
 }
 
 fn marks(

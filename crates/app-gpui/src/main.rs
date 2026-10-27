@@ -1920,31 +1920,11 @@ impl AppView {
             cx.notify();
             return;
         }
-        if self.text_editor.take().is_some()
-            | self.lyric_editor.take().is_some()
-            | self.chord_editor.take().is_some()
-        {
-            cx.notify();
-            return;
-        }
         if self.ui.context_menu.take().is_some() {
             cx.notify();
             return;
         }
-        if self.clef_picker || self.key_picker || self.time_picker {
-            self.clef_picker = false;
-            self.key_picker = false;
-            self.time_picker = false;
-            cx.notify();
-            return;
-        }
-        if self.tempo_picker.take().is_some() {
-            self.status = "Edición de tempo cancelada".into();
-            cx.notify();
-            return;
-        }
-        if self.header_editor.take().is_some() {
-            self.status = "Edición de la cabecera cancelada".into();
+        if self.cancel_editor() {
             cx.notify();
             return;
         }
@@ -2891,14 +2871,70 @@ impl AppView {
         self.text_editor = None;
         self.lyric_editor = None;
         self.chord_editor = None;
+        self.reveal_editor_tab();
+    }
+    fn reveal_editor_tab(&mut self) {
         self.ui.show_inspector = true;
         self.ui.right = panels::RightTab::Selection;
+    }
+    /// An open editor the user cannot see: asking for it again shows it
+    /// instead of closing it.
+    fn editor_hidden(&self) -> bool {
+        !self.ui.show_inspector || self.ui.right != panels::RightTab::Selection
+    }
+    /// Closes the open editor without writing, as Esc does. Returns whether
+    /// one was open.
+    fn cancel_editor(&mut self) -> bool {
+        if self.text_editor.take().is_some()
+            | self.lyric_editor.take().is_some()
+            | self.chord_editor.take().is_some()
+        {
+            return true;
+        }
+        if self.clef_picker || self.key_picker || self.time_picker {
+            self.clef_picker = false;
+            self.key_picker = false;
+            self.time_picker = false;
+            return true;
+        }
+        if self.tempo_picker.take().is_some() {
+            self.status = "Edición de tempo cancelada".into();
+            return true;
+        }
+        if self.header_editor.take().is_some() {
+            self.status = "Edición de la cabecera cancelada".into();
+            return true;
+        }
+        false
+    }
+    /// The editors' Cancelar button.
+    fn close_editors(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.cancel_editor() {
+            cx.notify();
+        }
+    }
+    /// Opens the header editor, if needed, on one of its fields.
+    fn edit_header_field(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.header_editor.is_none() {
+            self.toggle_header_editor(window, cx);
+        }
+        if let Some(editor) = &self.header_editor {
+            editor.focus_field(index, window, cx);
+        }
     }
     fn toggle_tempo_picker(&mut self, cx: &mut Context<Self>) {
         self.toggle_tempo_at(self.document.editor.cursor().measure, cx);
     }
     fn toggle_tempo_at(&mut self, measure: usize, cx: &mut Context<Self>) {
         if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.tempo_picker.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         if self.tempo_picker.is_some() {
@@ -2924,6 +2960,11 @@ impl AppView {
     }
     fn toggle_header_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.header_editor.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         if self.header_editor.take().is_none() {
@@ -3006,6 +3047,11 @@ impl AppView {
         if self.busy || self.confirming || self.agent_locked() {
             return;
         }
+        if self.clef_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
+            return;
+        }
         self.clef_picker = !self.clef_picker;
         self.time_picker = false;
         self.key_picker = false;
@@ -3044,6 +3090,11 @@ impl AppView {
         if self.busy || self.confirming || self.agent_locked() {
             return;
         }
+        if self.key_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
+            return;
+        }
         self.key_picker = !self.key_picker;
         self.time_picker = false;
         self.clef_picker = false;
@@ -3059,6 +3110,11 @@ impl AppView {
     }
     fn toggle_time_picker(&mut self, cx: &mut Context<Self>) {
         if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.time_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         self.time_picker = !self.time_picker;

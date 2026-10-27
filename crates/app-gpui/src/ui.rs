@@ -807,9 +807,29 @@ fn choice(
     .px_2()
     .h(px(29.))
 }
+/// A button that does something in a panel; the primary one is Aplicar.
+fn act(
+    view: &AppView,
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    primary: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    let label: SharedString = label.into();
+    toolbar::action_button(
+        id,
+        inline_text(view.music_font.clone(), label.as_ref()),
+        primary,
+        cx,
+        click,
+    )
+    .px(px(10.))
+    .h(px(30.))
+}
 /// Closes the open editor without writing anything more, as Esc does.
 fn close_editor(label: &'static str, cx: &Context<AppView>) -> Stateful<Div> {
-    toolbar::control(
+    toolbar::action_button(
         "close-editor",
         div()
             .flex()
@@ -819,17 +839,7 @@ fn close_editor(label: &'static str, cx: &Context<AppView>) -> Stateful<Div> {
             .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("Esc")),
         false,
         cx,
-        |v, _, cx| {
-            v.time_picker = false;
-            v.clef_picker = false;
-            v.tempo_picker = None;
-            v.key_picker = false;
-            v.header_editor = None;
-            v.text_editor = None;
-            v.lyric_editor = None;
-            v.chord_editor = None;
-            cx.notify();
-        },
+        |v, _, cx| v.close_editors(cx),
     )
     .px(px(10.))
     .h(px(30.))
@@ -888,7 +898,7 @@ fn key_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex_wrap()
                 .gap(px(6.))
                 .when(bar > 0 && score.key_change_at(bar).is_some(), |row| {
-                    row.child(choice(
+                    row.child(act(
                         view,
                         "remove-key-change",
                         "Quitar cambio de tonalidad",
@@ -988,7 +998,7 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(choice(
+                .child(act(
                     view,
                     "meter-numerator-minus",
                     "−",
@@ -1007,7 +1017,7 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                         .text_size(px(12.))
                         .child(format!("Numerador: {}", time.numerator)),
                 )
-                .child(choice(
+                .child(act(
                     view,
                     "meter-numerator-plus",
                     "+",
@@ -1046,7 +1056,7 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .gap(px(6.))
                 .mt_2()
                 .child(
-                    choice(
+                    act(
                         view,
                         "apply-meter",
                         format!("Aplicar {}/{}", time.numerator, time.denominator),
@@ -1063,7 +1073,7 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
                 .child(close_editor("Cancelar", cx)),
         )
         .when(bar > 0 && score.time_change_at(bar).is_some(), |picker| {
-            picker.child(choice(
+            picker.child(act(
                 view,
                 "remove-meter-change",
                 "Quitar cambio de métrica",

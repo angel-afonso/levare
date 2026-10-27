@@ -213,6 +213,36 @@ pub(super) fn control(
     )
 }
 
+/// A panel button that does something rather than choose: on a field at
+/// rest, a tone step on hover and pressed, never the chosen look. The
+/// primary one (Aplicar) is inverted.
+pub(super) fn action_button(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    primary: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    let (rest, hover, ink) = if primary {
+        (TEXT, SECONDARY, FIELD)
+    } else {
+        (FIELD, FIELD_HOVER, TEXT)
+    };
+    action_with_hover(
+        element,
+        content,
+        false,
+        move |s| s.bg(rgb(hover)),
+        cx,
+        click,
+    )
+    .active(move |s| s.bg(rgb(hover)))
+    .rounded(px(7.))
+    .bg(rgb(rest))
+    .text_color(rgb(ink))
+    .when(primary, |button| button.font_weight(FontWeight::SEMIBOLD))
+}
+
 /// Options that exclude each other on one track, as in the ribbon; each
 /// takes an equal share of the width.
 pub(super) fn track(options: impl IntoIterator<Item = Stateful<Div>>) -> Div {

@@ -58,11 +58,11 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             } cx.notify();
         }))))
         .child(div().flex().flex_wrap().gap(px(6.)).mt_2()
-            .child(choice(view, "apply-tempo", "Aplicar tempo", true, cx, |v, _, cx| v.apply_tempo(cx))
+            .child(act(view, "apply-tempo", "Aplicar tempo", true, cx, |v, _, cx| v.apply_tempo(cx))
                 .tooltip(described_hint("Aplicar tempo", Some("Enter".into()), "Se escribe sobre el pentagrama y rige hasta el siguiente cambio, en todos los instrumentos. Enter aplica; Esc cancela.")))
             .child(close_editor("Cancelar", cx)))
         .when(view.signature_measure() > 0 && view.document.editor.score().tempo_change_at(view.signature_measure()).is_some(), |panel| {
-            panel.child(choice(view, "remove-tempo-change", "Quitar cambio de tempo", false, cx, |v, _, cx| {
+            panel.child(act(view, "remove-tempo-change", "Quitar cambio de tempo", false, cx, |v, _, cx| {
                 v.edit(Command::RemoveTempoChange(v.signature_measure()), cx);
                 v.tempo_picker = None;
             }))
