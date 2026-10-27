@@ -248,8 +248,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌥Espacio` | Repetir la última reproducción |  |
 | `⇧Espacio` | Reproducir a media velocidad |  |
 | Sin atajo | Hacer sonar los cifrados |  |
-| `M` | Mostrar el mezclador |  |
-| Sin atajo | Mostrar los sonidos |  |
+| `M` | Mezcla de las partes |  |
+| Sin atajo | Mostrar el sonido |  |
 | Sin atajo | Audición al escribir |  |
 | Sin atajo | Subir el tempo |  |
 | Sin atajo | Bajar el tempo |  |
@@ -280,8 +280,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘1` | Tamaño real (100 %) |  |
 | `⌘0` | Ajustar a la página |  |
 | `⌘U` | Pantalla completa |  |
-| Sin atajo | Mostrar u ocultar instrumentos |  |
-| Sin atajo | Mostrar u ocultar propiedades |  |
+| Sin atajo | Mostrar u ocultar las partes |  |
+| Sin atajo | Mostrar u ocultar el panel derecho |  |
 | Sin atajo | Panel de agente |  |
 | Sin atajo | Vista de página |  |
 | Sin atajo | Vista continua |  |

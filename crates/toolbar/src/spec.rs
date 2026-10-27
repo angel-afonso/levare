@@ -191,8 +191,7 @@ const fn mark(kind: MarkKind, label: &'static str, hint: &'static str) -> Contro
     tile(crate::marks::command(kind), mark_visual(kind), label, hint)
 }
 
-/// Same sentence for every hairpin and slur: they are written in two clicks.
-// What the Propiedades panel used to explain in paragraphs, now in the tiles' hints.
+/// Same sentence for both hairpins: they are written in two clicks.
 const HAIRPIN_HINT: &str =
     "Selecciona un pasaje, o marca inicio y final con el mismo botón. Esc cancela.";
 const VOICE_HINT: &str = "Dos voces: plicas arriba para la voz 1 y abajo para la voz 2. Cada una conserva su propio ritmo.";
@@ -1096,13 +1095,13 @@ const SOUND: GroupSpec = GroupSpec {
         toggle(tile(
             id::MIXER,
             Icon("mixer"),
-            "Mezclador",
-            "Volumen y posición de cada instrumento.",
+            "Mezcla",
+            "Volumen, posición y Sección | Solista de cada parte.",
         )),
         toggle(tile(
             id::SOUNDS,
             Icon("sound-bank"),
-            "Sonidos",
+            "Sonido",
             "Elige el banco de sonidos e instala más.",
         )),
     ],

@@ -1770,9 +1770,15 @@ impl AppView {
                     self.ui.parts_mode = panels::PartsMode::Mix;
                 }
             }
+            // Like MIXER: again goes back to Selección.
             id::SOUNDS => {
-                self.ui.show_inspector = true;
-                self.ui.right = panels::RightTab::Sound;
+                if self.ui.show_inspector && self.ui.right == panels::RightTab::Sound {
+                    self.ui.right = panels::RightTab::Selection;
+                } else {
+                    self.reveal_selection |= !self.ui.show_inspector;
+                    self.ui.show_inspector = true;
+                    self.ui.right = panels::RightTab::Sound;
+                }
             }
 
             id::ZOOM_IN => self.set_zoom(self.ui.zoom + 0.1),
