@@ -386,7 +386,7 @@ fn passage(body: Div, view: &AppView, summary: &PassageSummary, cx: &Context<App
                     ("passage-octave-up", "Subir una octava", id::OCTAVE_UP),
                     ("passage-octave-down", "Bajar una octava", id::OCTAVE_DOWN),
                     ("passage-copy", "Copiar", id::COPY),
-                    ("passage-rests", "En silencios", id::DELETE),
+                    ("passage-rests", "Convertir en silencios", id::DELETE),
                     ("passage-check", "Comprobar", id::CHECK_SELECTION),
                 ]
                 .into_iter()

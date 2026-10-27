@@ -110,10 +110,10 @@ fn draft_form(view: &AppView, cx: &Context<AppView>) -> Div {
         .when(!text.is_empty(), |body| body.child(div().id("comment-draft-preview").max_h(px(128.)).overflow_y_scroll().text_size(px(12.)).child(review::wrapped_text(view, &text))))
         .when(draft.source != *score, |body| body.child(div().text_size(px(11.)).text_color(rgb(WARNING)).child("La partitura cambió. Actualiza el vínculo antes de guardar; el borrador conserva tu texto.")))
         .child(div().flex().gap_2()
-            .child(button(view, "save-comment", "Guardar", true, cx, |v, _, cx| v.apply_comment(cx)).flex_1())
-            .child(button(view, "cancel-comment", "Cancelar", false, cx, |v, _, cx| { v.comment_editor = None; cx.notify(); }).flex_1()))
-        .child(button(view, "comment-use-selection", "Usar selección actual", false, cx, |v, _, cx| v.update_comment_draft_target(true, cx)).w_full())
-        .when(draft.id.is_some_and(|id| score.comment(id).is_some()) && draft.source != *score, |body| body.child(button(view, "comment-update-link", "Actualizar vínculo existente", false, cx, |v, _, cx| v.update_comment_draft_target(false, cx)).w_full()))
+            .child(act(view, "save-comment", "Guardar", true, cx, |v, _, cx| v.apply_comment(cx)).flex_1())
+            .child(act(view, "cancel-comment", "Cancelar", false, cx, |v, _, cx| { v.comment_editor = None; cx.notify(); }).flex_1()))
+        .child(act(view, "comment-use-selection", "Usar selección actual", false, cx, |v, _, cx| v.update_comment_draft_target(true, cx)).w_full())
+        .when(draft.id.is_some_and(|id| score.comment(id).is_some()) && draft.source != *score, |body| body.child(act(view, "comment-update-link", "Actualizar vínculo existente", false, cx, |v, _, cx| v.update_comment_draft_target(false, cx)).w_full()))
 }
 
 pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
@@ -129,8 +129,8 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .count();
     section_hinted("Comentarios", "Pulsa una observación para seleccionar su música. Los comentarios se guardan y admiten Deshacer.")
         .child(div().text_size(px(12.)).child(format!("{pending} pendientes · {} resueltos", score.comments().len() - pending)))
-        .child(div().flex().flex_wrap().gap_1().children(CommentFilter::ALL.into_iter().map(|filter| button(view, format!("comment-filter-{filter:?}"), filter.label(), state.filter == filter, cx, move |v, _, cx| { v.comments.filter = filter; v.comments.page = 0; v.comments.refresh(v.document.editor.score()); cx.notify(); }))))
-        .child(command_button("comments-new", "Comentar selección…", false, view, cx, id::NEW_COMMENT).w_full())
+        .child(div().flex().flex_wrap().gap_1().children(CommentFilter::ALL.into_iter().map(|filter| choice(view, format!("comment-filter-{filter:?}"), filter.label(), state.filter == filter, cx, move |v, _, cx| { v.comments.filter = filter; v.comments.page = 0; v.comments.refresh(v.document.editor.score()); cx.notify(); }))))
+        .child(command_act(view, "comments-new", "Comentar selección…", cx, id::NEW_COMMENT).w_full())
         .when(view.comment_editor.is_some(), |body| body.child(draft_form(view, cx)))
         .when(ids.is_empty(), |body| body.child(caption("No hay comentarios en este filtro.")))
         .children(ids.iter().skip(page * crate::review::PAGE_SIZE).take(crate::review::PAGE_SIZE).map(|&id| {
@@ -142,14 +142,14 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     .child(div().text_size(px(11.)).text_color(rgb(BLUE)).child(review::wrapped_text(view, comment_label(score, comment))))
                     .child(div().text_size(px(12.)).child(review::wrapped_text(view, &comment.text))), state.active == Some(id), cx, move |v, _, cx| v.goto_comment(id, cx)).w_full().justify_start().px_2().py_2())
                 .child(div().flex().flex_wrap().gap_1()
-                    .child(button(view, format!("comment-resolve-{id:?}"), if resolved { "Reabrir" } else { "Resolver" }, false, cx, move |v, _, cx| v.set_comment_status(id, !resolved, cx)).text_size(px(10.)))
-                    .child(button(view, format!("comment-edit-{id:?}"), "Editar", false, cx, move |v, window, cx| v.open_comment_editor(Some(id), window, cx)).text_size(px(10.)))
-                    .child(button(view, format!("comment-delete-{id:?}"), "Eliminar", false, cx, move |v, _, cx| v.edit(Command::RemoveComment(id), cx)).text_size(px(10.))))
+                    .child(act(view, format!("comment-resolve-{id:?}"), if resolved { "Reabrir" } else { "Resolver" }, false, cx, move |v, _, cx| v.set_comment_status(id, !resolved, cx)).text_size(px(10.)))
+                    .child(act(view, format!("comment-edit-{id:?}"), "Editar", false, cx, move |v, window, cx| v.open_comment_editor(Some(id), window, cx)).text_size(px(10.)))
+                    .child(act(view, format!("comment-delete-{id:?}"), "Eliminar", false, cx, move |v, _, cx| v.edit(Command::RemoveComment(id), cx)).text_size(px(10.))))
         }))
         .when(pages > 1, |body| body.child(div().flex().flex_col().gap_1()
             .child(caption(format!("Página {} de {pages}", page + 1)))
             .child(div().flex().gap_2()
-                .child(button(view, "comment-prev-page", "‹ Lista", false, cx, move |v, _, cx| { v.comments.page = page.saturating_sub(1); cx.notify(); }).flex_1())
-                .child(button(view, "comment-next-page", "Lista ›", false, cx, move |v, _, cx| { v.comments.page = (page + 1).min(pages - 1); cx.notify(); }).flex_1()))))
-        .child(button(view, "comments-hide", "Ocultar lista", false, cx, |v, _, cx| { v.comments.open = false; v.comment_editor = None; cx.notify(); }).w_full())
+                .child(act(view, "comment-prev-page", "‹ Lista", false, cx, move |v, _, cx| { v.comments.page = page.saturating_sub(1); cx.notify(); }).flex_1())
+                .child(act(view, "comment-next-page", "Lista ›", false, cx, move |v, _, cx| { v.comments.page = (page + 1).min(pages - 1); cx.notify(); }).flex_1()))))
+        .child(act(view, "comments-hide", "Ocultar lista", false, cx, |v, _, cx| { v.comments.open = false; v.comment_editor = None; cx.notify(); }).w_full())
 }

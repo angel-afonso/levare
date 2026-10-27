@@ -822,6 +822,33 @@ fn act(
     .px(px(10.))
     .h(px(30.))
 }
+/// `act` that runs a command, with its name and key on hover.
+fn command_act(
+    view: &AppView,
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    cx: &Context<AppView>,
+    command: CommandId,
+) -> Stateful<Div> {
+    act(view, id, label, false, cx, move |v, window, cx| {
+        v.run(command, window, cx)
+    })
+    .tooltip(command_hint(view, command))
+}
+/// `choice` for a command that is on or off.
+fn command_choice(
+    view: &AppView,
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    chosen: bool,
+    cx: &Context<AppView>,
+    command: CommandId,
+) -> Stateful<Div> {
+    choice(view, id, label, chosen, cx, move |v, window, cx| {
+        v.run(command, window, cx)
+    })
+    .tooltip(command_hint(view, command))
+}
 /// Closes the open editor without writing anything more, as Esc does.
 fn close_editor(label: &'static str, cx: &Context<AppView>) -> Stateful<Div> {
     toolbar::action_button(

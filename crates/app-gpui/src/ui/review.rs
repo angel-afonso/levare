@@ -112,11 +112,11 @@ fn range_form(view: &AppView, cx: &Context<AppView>) -> Div {
             .child(div().flex_1().min_w_0().child(caption("Más grave")).child(editor.low.clone()))
             .child(div().flex_1().min_w_0().child(caption("Más aguda")).child(editor.high.clone())))
         .child(div().flex().gap_2()
-            .child(button(view, "apply-instrument-range", "Aplicar", true, cx, |v, _, cx| v.apply_range(cx))
+            .child(act(view, "apply-instrument-range", "Aplicar", true, cx, |v, _, cx| v.apply_range(cx))
                 .tooltip(described_hint("Aplicar", None, "Se guarda con esta parte y admite Deshacer. Tab cambia de campo; Enter aplica y Esc cancela."))
                 .flex_1())
-            .child(button(view, "cancel-instrument-range", "Cancelar", false, cx, |v, _, cx| { v.range_editor = None; cx.notify(); }).flex_1()))
-        .child(button(view, "reset-edited-range", "Usar rango habitual", false, cx, move |v, _, cx| {
+            .child(act(view, "cancel-instrument-range", "Cancelar", false, cx, |v, _, cx| { v.range_editor = None; cx.notify(); }).flex_1()))
+        .child(act(view, "reset-edited-range", "Usar rango habitual", false, cx, move |v, _, cx| {
             v.edit(Command::SetInstrumentRange(part, None), cx);
             v.range_editor = None;
             cx.notify();
@@ -167,22 +167,20 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 "Comprueba rangos, repeticiones y destinos de saltos. Los avisos son orientativos.",
             )
             .child(
-                command_button(
+                command_act(
+                    view,
                     "review-check-score",
                     "Toda la partitura",
-                    false,
-                    view,
                     cx,
                     id::CHECK_SCORE,
                 )
                 .w_full(),
             )
             .child(
-                command_button(
+                command_act(
+                    view,
                     "review-check-selection",
                     "Selección actual",
-                    false,
-                    view,
                     cx,
                     id::CHECK_SELECTION,
                 )
@@ -207,7 +205,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     "Todavía no se ha comprobado la partitura.".into()
                 }))
                 .child(
-                    button(
+                    choice(
                         view,
                         "review-filter",
                         format!(
@@ -240,7 +238,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                             .flex_col()
                             .gap_1()
                             .child(
-                                button(
+                                choice(
                                     view,
                                     "review-filter-all",
                                     "Todos los instrumentos",
@@ -255,7 +253,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                             )
                             .children(score.parts().iter().map(|part| {
                                 let id = part.id();
-                                button(
+                                choice(
                                     view,
                                     format!("review-filter-{}", id.0),
                                     instrument_name(score, id),
@@ -275,26 +273,12 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                         .flex()
                         .gap_2()
                         .child(
-                            command_button(
-                                "review-prev",
-                                "‹ Anterior",
-                                false,
-                                view,
-                                cx,
-                                id::REVIEW_PREVIOUS,
-                            )
-                            .flex_1(),
+                            command_act(view, "review-prev", "‹ Anterior", cx, id::REVIEW_PREVIOUS)
+                                .flex_1(),
                         )
                         .child(
-                            command_button(
-                                "review-next",
-                                "Siguiente ›",
-                                false,
-                                view,
-                                cx,
-                                id::REVIEW_NEXT,
-                            )
-                            .flex_1(),
+                            command_act(view, "review-next", "Siguiente ›", cx, id::REVIEW_NEXT)
+                                .flex_1(),
                         ),
                 )
                 .when(review.checked() && count == 0, |body| {
@@ -359,7 +343,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                     .flex()
                                     .gap_2()
                                     .child(
-                                        button(
+                                        act(
                                             view,
                                             "review-list-prev",
                                             "‹ Lista",
@@ -373,7 +357,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                         .flex_1(),
                                     )
                                     .child(
-                                        button(
+                                        act(
                                             view,
                                             "review-list-next",
                                             "Lista ›",
@@ -396,11 +380,11 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 "Ocultar el rojo no desactiva las comprobaciones. Estos colores no se exportan.",
             )
             .child(
-                command_button(
+                command_choice(
+                    view,
                     "review-show-ranges",
                     "Mostrar notas en rojo",
                     review.show_ranges,
-                    view,
                     cx,
                     id::SHOW_RANGES,
                 )
@@ -429,11 +413,11 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             )))
             .when(part.sounding_range().is_some(), |body| {
                 body.child(
-                    command_button(
+                    command_choice(
+                        view,
                         "review-edit-range",
                         "Editar rango de esta parte…",
                         view.range_editor.is_some(),
-                        view,
                         cx,
                         id::EDIT_RANGE,
                     )
@@ -441,11 +425,10 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 )
                 .when(part.range_override().is_some(), |body| {
                     body.child(
-                        command_button(
+                        command_act(
+                            view,
                             "review-reset-range",
                             "Restablecer rango habitual",
-                            false,
-                            view,
                             cx,
                             id::RESET_RANGE,
                         )

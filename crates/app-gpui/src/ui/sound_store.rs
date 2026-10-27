@@ -31,7 +31,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 )));
             let row = || div().flex().flex_wrap().gap_1();
             match store.state(entry) {
-                State::Available => card.child(button(
+                State::Available => card.child(act(
                     view,
                     format!("pack-install-{id}"),
                     "Instalar…",
@@ -51,7 +51,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     )))
                     .child(
                         row()
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-license-{id}"),
                                 "Ver licencia",
@@ -59,7 +59,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                 cx,
                                 move |_, _, cx| cx.open_url(&url),
                             ))
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-accept-{id}"),
                                 "Aceptar e instalar",
@@ -67,7 +67,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                 cx,
                                 move |v, _, cx| v.install_pack(&accept, cx),
                             ))
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-decline-{id}"),
                                 "Cancelar",
@@ -82,7 +82,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 }
                 State::Installing(progress) => card
                     .child(div().text_size(px(11.)).child(progress_label(progress)))
-                    .child(button(
+                    .child(act(
                         view,
                         format!("pack-cancel-{id}"),
                         "Cancelar",
@@ -106,7 +106,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                 )
                             })
                             .when(outdated, |row| {
-                                row.child(button(
+                                row.child(act(
                                     view,
                                     format!("pack-update-{id}"),
                                     "Actualizar",
@@ -115,7 +115,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                     move |v, _, cx| v.install_pack(&id, cx),
                                 ))
                             })
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-remove-{remove}"),
                                 "Quitar…",
@@ -136,7 +136,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                     )))
                     .child(
                         row()
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-confirm-remove-{id}"),
                                 "Quitar",
@@ -144,7 +144,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                                 cx,
                                 move |v, _, cx| v.uninstall_pack(&remove, cx),
                             ))
-                            .child(button(
+                            .child(act(
                                 view,
                                 format!("pack-keep-{id}"),
                                 "Conservar",

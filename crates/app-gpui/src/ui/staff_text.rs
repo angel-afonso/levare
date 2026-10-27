@@ -231,6 +231,12 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(editor.field.clone())
         .child(
             div()
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .child("Espacio: palabra nueva · -: sílaba · _: extensión"),
+        )
+        .child(
+            div()
                 .flex()
                 .gap_2()
                 .child(

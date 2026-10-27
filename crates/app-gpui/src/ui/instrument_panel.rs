@@ -479,7 +479,7 @@ fn mix_row(
             v.select_part(id, cx);
         }))
         .child(row_line(view, &row, chosen))
-        .child(mixer::part_controls(view, id, family, cx))
+        .child(mixer::part_controls(view, id, &row.name, family, cx))
 }
 
 /// One quiet line: the current part and the keys that change it, or in

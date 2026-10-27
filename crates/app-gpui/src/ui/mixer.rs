@@ -255,10 +255,11 @@ fn stop_press(_: &MouseDownEvent, _: &mut Window, cx: &mut App) {
     cx.stop_propagation();
 }
 
-/// A compact slider for a Mezcla row: the bar, then its value, which
-/// puts the default back when clicked.
+/// A compact slider for a Mezcla row: the bar, named on hover, then its
+/// value, which puts the default back when clicked.
 fn mix_slider(
     id: String,
+    name: String,
     target: Target,
     fraction: f32,
     shown: String,
@@ -268,7 +269,7 @@ fn mix_slider(
         .flex()
         .items_center()
         .gap_2()
-        .child(rail(id.clone(), target, fraction, 16., cx))
+        .child(rail(id.clone(), target, fraction, 16., cx).tooltip(hover_hint(name, None)))
         .child(
             div().on_mouse_down(MouseButton::Left, stop_press).child(
                 toolbar::control(format!("{id}-reset"), shown, false, cx, move |v, _, cx| {
@@ -294,6 +295,7 @@ fn mix_slider(
 pub fn part_controls(
     view: &AppView,
     part: PartId,
+    name: &str,
     family: InstrumentFamily,
     cx: &Context<AppView>,
 ) -> Div {
@@ -304,6 +306,7 @@ pub fn part_controls(
         .gap(px(4.))
         .child(mix_slider(
             format!("part-volume-{}", part.0),
+            format!("Volumen de {name}"),
             Target::Volume(part),
             f32::from(mix.volume) / 100.,
             format!("{} %", mix.volume),
@@ -311,6 +314,7 @@ pub fn part_controls(
         ))
         .child(mix_slider(
             format!("part-pan-{}", part.0),
+            format!("Posición estéreo de {name}"),
             Target::Pan(part),
             (f32::from(mix.pan) + 100.) / 200.,
             pan_text(mix.pan),

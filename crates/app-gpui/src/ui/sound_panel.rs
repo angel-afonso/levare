@@ -1,5 +1,5 @@
-//! The Sound tab: the general output, the sound of the chosen part and the
-//! packs on demand. Instruments are added and removed from the left panel.
+//! The Sound tab: the general output, the sound of the chosen part, the
+//! source and interpretation every part plays with, and the packs on demand. Instruments are added and removed from the left panel.
 use super::toolbar::{self, action_button, control};
 use super::*;
 
@@ -8,7 +8,8 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .child(mixer::panel(view, cx))
-        .child(part_sound(view, cx))
+        .child(part_sound(view))
+        .child(score_sound(view, cx))
         .children(more_sounds(view, cx))
 }
 
@@ -242,10 +243,16 @@ fn current(view: &AppView) -> Div {
         })
 }
 
-fn part_sound(view: &AppView, cx: &Context<AppView>) -> Div {
+fn part_sound(view: &AppView) -> Div {
     panel_section()
         .child(group_title("Sonido de la parte", None))
         .child(current(view))
+}
+
+/// What every part plays with: the interpretation and the sound source.
+fn score_sound(view: &AppView, cx: &Context<AppView>) -> Div {
+    panel_section()
+        .child(group_title("Sonido de la partitura", None))
         .child(interpretation(view, cx))
         .child(sources(view, cx))
         .when_some(view.playback.error.clone(), |body, error| {
