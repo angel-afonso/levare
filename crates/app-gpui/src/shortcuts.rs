@@ -114,6 +114,18 @@ impl Shortcuts {
         self.keymap.label(command)
     }
 
+    /// How a status message names the key of `command`: its label on this
+    /// platform, or the command's name in «» when the user removed its keys.
+    pub fn hint(&self, command: CommandId) -> String {
+        self.label(command).unwrap_or_else(|| {
+            format!(
+                "«{}»",
+                self.spec(command)
+                    .map_or(command.as_str(), |spec| spec.label)
+            )
+        })
+    }
+
     /// Persists the user's changes and re-resolves the keymap.
     pub fn save(&mut self) -> Result<(), String> {
         self.rebuild();

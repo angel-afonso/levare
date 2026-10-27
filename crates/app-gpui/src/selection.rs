@@ -1,5 +1,6 @@
 //! Pointer selection uses the existing continuous, single-staff passage model.
 use super::*;
+use score_keymap::Modifier;
 use score_layout::{Layout, Point as ScorePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -430,8 +431,9 @@ impl AppView {
                 Rc::clone(&self.layout),
             );
             self.status = format!(
-                "{} seleccionada · Arrastra para mover; ⇧⌘P restablece",
-                crate::mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+                "{} seleccionada · Arrastra para mover; {} restablece",
+                crate::mark_drag::DragTarget::Bar(mark).label(self.document.editor.score()),
+                self.shortcuts.hint(id::RESET_POSITION)
             );
             cx.notify();
             return;
@@ -457,15 +459,20 @@ impl AppView {
                 .mark_label(mark)
                 .unwrap_or_default();
             let step = if mark.follows_time() {
-                "; ⌥←/→ lo lleva a otra nota"
+                // ⌥← on macOS, Alt+← elsewhere: `mark_drag::step`.
+                let left = Key::parse("alt-left")
+                    .map(|key| key.label())
+                    .unwrap_or_default();
+                format!("; {left}/→ lo lleva a otra nota")
             } else {
-                ""
+                String::new()
             };
+            let delete = self.shortcuts.hint(id::DELETE);
             self.status = if matches!(mark, MarkRef::Grace(..)) {
-                "Nota de adorno seleccionada · ↑/↓ cambian su altura; Backspace la borra".into()
+                format!("Nota de adorno seleccionada · ↑/↓ cambian su altura; {delete} la borra")
             } else {
                 format!(
-                    "{label} seleccionado · Backspace lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
+                    "{label} seleccionado · {delete} lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
                 )
             };
             cx.notify();
@@ -669,9 +676,10 @@ impl AppView {
                 self.document.editor.select(mark.anchor());
                 self.clicked_mark = Some(mark);
                 self.status = format!(
-                    "{} hasta el compás {} · ⌘Z para deshacer",
+                    "{} hasta el compás {} · {} para deshacer",
                     line.kind.label(),
-                    line.end.measure + 1
+                    line.end.measure + 1,
+                    self.shortcuts.hint(id::UNDO)
                 );
             }
         } else if drag.active {
@@ -798,7 +806,9 @@ impl AppView {
                     }
                 }
                 self.status = format!(
-                    "{label} · Posición ajustada; ⇧⌘P la devuelve a su sitio · ⌘Z para deshacer"
+                    "{label} · Posición ajustada; {} la devuelve a su sitio · {} para deshacer",
+                    self.shortcuts.hint(id::RESET_POSITION),
+                    self.shortcuts.hint(id::UNDO)
                 );
                 cx.notify();
             } else if !drag.active
@@ -842,13 +852,14 @@ impl AppView {
                             let tick = self.document.editor.score().event_tick(id).unwrap();
                             self.seek_playback(tick, false, cx);
                             self.status = format!(
-                                "{} al compás {} · ⌘Z para deshacer",
+                                "{} al compás {} · {} para deshacer",
                                 if target.swap {
                                     "Figuras intercambiadas"
                                 } else {
                                     "Figura movida"
                                 },
-                                target.measure + 1
+                                target.measure + 1,
+                                self.shortcuts.hint(id::UNDO)
                             );
                             if let Err(error) =
                                 self.playback.preview(self.document.editor.score(), id)
@@ -869,7 +880,10 @@ impl AppView {
                         if let Some(tick) = tick {
                             self.seek_playback(tick, false, cx);
                         }
-                        self.status = format!("Nota cambiada a {pitch} · ⌘Z para deshacer");
+                        self.status = format!(
+                            "Nota cambiada a {pitch} · {} para deshacer",
+                            self.shortcuts.hint(id::UNDO)
+                        );
                         if let Err(error) =
                             self.playback.preview(self.document.editor.score(), drag.id)
                         {
@@ -918,12 +932,14 @@ impl AppView {
                     error.into()
                 } else if let Some((moved, _)) = drag.destination() {
                     format!(
-                        "{label} → {} · Suelta para aplicar; ⌘ mueve sin cambiar de nota; Esc cancela",
-                        crate::mark_drag::place_label(score, moved.anchor())
+                        "{label} → {} · Suelta para aplicar; {} mueve sin cambiar de nota; Esc cancela",
+                        crate::mark_drag::place_label(score, moved.anchor()),
+                        Modifier::Secondary.label()
                     )
                 } else if drag.follows_time() && !free {
                     format!(
-                        "{label} · Arrastra a los lados para cambiar de nota; ⌘ mueve sin cambiar de nota; Esc cancela"
+                        "{label} · Arrastra a los lados para cambiar de nota; {} mueve sin cambiar de nota; Esc cancela",
+                        Modifier::Secondary.label()
                     )
                 } else {
                     format!("{label} · Suelta para colocarla; Mayús fija la dirección; Esc cancela")
