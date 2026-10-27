@@ -193,7 +193,6 @@ const fn mark(kind: MarkKind, label: &'static str, hint: &'static str) -> Contro
 
 /// Same sentence for every hairpin and slur: they are written in two clicks.
 const TWO_CLICKS: &str = "Pulsa en la primera nota y otra vez en la última.";
-const TOGGLE_SIGN: &str = "Pulsa otra vez para quitarlo.";
 
 // Escribir
 
@@ -303,10 +302,20 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
             id::NATURAL,
             Music("\u{e261}"),
             "Becuadro",
-            TOGGLE_SIGN,
+            "Anula la alteración de la armadura. Pulsa otra vez para quitarlo.",
         )),
-        choice(tile(id::SHARP, Music("\u{e262}"), "Sostenido", TOGGLE_SIGN)),
-        choice(tile(id::FLAT, Music("\u{e260}"), "Bemol", TOGGLE_SIGN)),
+        choice(tile(
+            id::SHARP,
+            Music("\u{e262}"),
+            "Sostenido",
+            "Sube la nota un semitono. Pulsa otra vez para quitarlo.",
+        )),
+        choice(tile(
+            id::FLAT,
+            Music("\u{e260}"),
+            "Bemol",
+            "Baja la nota un semitono. Pulsa otra vez para quitarlo.",
+        )),
         choice(tile(
             id::FOLLOW_KEY,
             Label("arm."),
@@ -467,7 +476,8 @@ const GRACES: GroupSpec = GroupSpec {
         )),
         tile(
             id::GRACE_NOTE,
-            Music("\u{e562}"),
+            // Two appoggiaturas: one more grace note.
+            Music("\u{e562}\u{e562}"),
             "Añadir otra",
             "Añade otra nota al adorno de la nota seleccionada.",
         ),
@@ -496,7 +506,8 @@ const ARPEGGIOS: GroupSpec = GroupSpec {
         )),
         toggle(tile(
             id::ARPEGGIO_BOTH_HANDS,
-            Music("\u{e63c}"),
+            // The piano's brace: across both staves.
+            Music("\u{e000}"),
             "Ambas manos",
             "Extiende el arpegio a los dos pentagramas del piano.",
         )),
@@ -763,11 +774,11 @@ const LYRICS: GroupSpec = GroupSpec {
 const REHEARSAL: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Marca de ensayo",
-    visual: Label("A"),
+    visual: Icon("rehearsal-mark"),
     priority: 4,
     controls: &[toggle(tile(
         id::REHEARSAL_MARK,
-        Label("A"),
+        Icon("rehearsal-mark"),
         "Añadir",
         "Añade la siguiente marca en el compás seleccionado, o la quita.",
     ))],
@@ -814,10 +825,10 @@ const INSTRUMENTS: GroupSpec = GroupSpec {
             "Añadir…",
             "Elige instrumentos de la orquesta, por familias.",
         ),
-        tile(id::ADD_PIANO, Visual::Staff, "Piano", "Piano a dos manos."),
+        tile(id::ADD_PIANO, Icon("piano"), "Piano", "Piano a dos manos."),
         tile(
             id::OSSIA,
-            Visual::Staff,
+            Icon("ossia"),
             "Ossia",
             "Un pentagrama pequeño encima para una alternativa.",
         ),
@@ -831,19 +842,19 @@ const BARS: GroupSpec = GroupSpec {
     controls: &[
         tile(
             id::BAR_AT_END,
-            Visual::Bar,
+            Icon("bar-at-end"),
             "Al final",
             "Añade un compás al final de la obra.",
         ),
         tile(
             id::SINGLE_BAR,
-            Visual::Bar,
+            Icon("bar-before"),
             "Antes",
             "Inserta un compás antes del seleccionado.",
         ),
         tile(
             id::DELETE_BAR,
-            Visual::Bar,
+            Icon("delete-bar"),
             "Eliminar",
             "Elimina los compases seleccionados.",
         ),
@@ -1346,19 +1357,34 @@ mod tests {
     use score_keymap::Registry;
 
     /// Without their names (narrow windows) two tiles of a tab must still
-    /// look different. Comprobar's two tiles are one check on two ranges.
+    /// look different. A `ControlSize::Large` control keeps its name, so it
+    /// may share its glyph: Comprobar's two tiles are one check on two
+    /// ranges, the whole score (large) and the selection. A designed dropdown
+    /// lists its options by name and never draws them as tiles.
     #[test]
-    fn no_tab_draws_two_controls_with_the_same_icon() {
+    fn no_tab_draws_two_tiles_alike() {
         for tab in TABS {
-            let mut seen = std::collections::HashSet::new();
-            for control in tab.groups.iter().flat_map(|group| group.controls) {
-                if let Icon(name) = control.visual
-                    && name != "search"
+            let mut seen = Vec::new();
+            for group in tab.groups.iter().filter(|group| !group.dropdown) {
+                for control in group
+                    .controls
+                    .iter()
+                    .filter(|control| control.size != ControlSize::Large)
                 {
-                    assert!(seen.insert(name), "{:?}: {name}", tab.id);
+                    assert!(
+                        !seen.contains(&control.visual),
+                        "{:?} → {}: {:?}",
+                        tab.id,
+                        group.title,
+                        control.visual
+                    );
+                    seen.push(control.visual);
                 }
             }
         }
+        let checks = REVIEW_CHECKS.controls;
+        assert_eq!(checks[0].size, ControlSize::Large);
+        assert_eq!(checks[0].visual, checks[1].visual);
     }
 
     #[test]
@@ -1374,6 +1400,9 @@ mod tests {
             );
         }
     }
+
+    /// Outline drawings of notation itself, for the score's staves and bars.
+    const NOTATION_ICONS: [&str; 5] = ["piano", "ossia", "bar-at-end", "bar-before", "delete-bar"];
 
     #[test]
     fn notation_groups_never_fall_back_to_utility_icons() {
@@ -1417,7 +1446,7 @@ mod tests {
                             | Visual::Bar
                             | Visual::Text(_)
                             | Visual::Label(_)
-                    ),
+                    ) || matches!(visual, Icon(name) if NOTATION_ICONS.contains(&name)),
                     "{}: {visual:?}",
                     group.title
                 );

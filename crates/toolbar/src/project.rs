@@ -11,7 +11,8 @@ pub struct CommandState {
     pub enabled: bool,
     /// Active option, toggled mode or current value (selected duration…).
     pub checked: bool,
-    /// Replaces the label while the state lasts ("Terminar expresión").
+    /// Replaces the label while the state lasts («Terminar», «Pausar»). No
+    /// wider than the control's ribbon name: the tile keeps the name's width.
     pub label: Option<String>,
 }
 
@@ -43,6 +44,8 @@ pub trait CommandStates {
 /// fold decision does not need the toolkit's text system. The per-character
 /// widths were measured on the ribbon's own names and keys in the system font
 /// («Ambas manos», «⌘⌫» are the widest), so they never reach the tile's edge.
+/// Escribir is the tightest tab: fully named it needs 1416.2 of the 1420 a
+/// 1440 window leaves, so any wider text there drops a group's names.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
     /// Narrowest named tile of a `ControlSize::Large` control.
@@ -93,6 +96,9 @@ pub struct ControlView {
     pub role: Role,
     pub visual: Visual,
     pub symbol_only: bool,
+    /// The ribbon's name for the control; a named tile is measured on it.
+    pub name: &'static str,
+    /// What the tile says now: `name`, or a state label that replaces it.
     pub label: String,
     /// Full registry label, for tooltips and accessibility.
     pub description: &'static str,
@@ -105,7 +111,7 @@ pub struct ControlView {
 }
 
 /// One slot of a group, left to right. Every control is a tile: its glyph
-/// and, under it, its key.
+/// and, under it, its key; a `ControlSize::Large` one keeps its name too.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Tile(ControlView),
@@ -183,15 +189,15 @@ pub fn control_view(
     let spec = registry.get(control.command.as_str());
     let description = spec.map_or(control.command.as_str(), |spec| spec.label);
     let state = states.state(control.command);
+    let name = control.label.unwrap_or(description);
     ControlView {
         command: control.command,
         size: control.size,
         role: control.role,
         visual: control.visual,
         symbol_only: control.symbol_only,
-        label: state
-            .label
-            .unwrap_or_else(|| control.label.unwrap_or(description).to_owned()),
+        name,
+        label: state.label.unwrap_or_else(|| name.to_owned()),
         description,
         hint: control.hint,
         keys: keymap.label(control.command),
@@ -219,7 +225,10 @@ fn items(controls: &[ControlView], expanded: bool) -> Vec<Item> {
             }
             continue;
         }
-        items.push(if expanded && !control.symbol_only {
+        // A group's main control keeps its name at every size: unnamed, the
+        // note-input toggle would look like Corchea two tiles away.
+        let named = expanded || control.size == ControlSize::Large;
+        items.push(if named && !control.symbol_only {
             Item::LabeledTile(control.clone())
         } else {
             Item::Tile(control.clone())
@@ -229,7 +238,8 @@ fn items(controls: &[ControlView], expanded: bool) -> Vec<Item> {
 }
 
 /// Width of one tile: its glyph and, under it, the name when `named` and the
-/// key on a line of its own. A text glyph can be wider than both.
+/// key on a line of its own. A text glyph can be wider than both. A state
+/// label is measured with the name, so it never moves its neighbours.
 pub fn tile_width(control: &ControlView, named: bool, metrics: &Metrics) -> f32 {
     let key = control
         .keys
@@ -241,10 +251,9 @@ pub fn tile_width(control: &ControlView, named: bool, metrics: &Metrics) -> f32 
         } else {
             metrics.labeled_tile
         };
-        (
-            narrowest,
-            text_width(&control.label, metrics.caption_char_width).max(key),
-        )
+        let name = text_width(control.name, metrics.caption_char_width)
+            .max(text_width(&control.label, metrics.caption_char_width));
+        (narrowest, name.max(key))
     } else {
         (metrics.tile, key)
     };
@@ -507,7 +516,7 @@ mod tests {
             (
                 id::SLUR,
                 CommandState {
-                    label: Some("Terminar expresión".into()),
+                    label: Some("Terminar".into()),
                     ..CommandState::default()
                 },
             ),
@@ -527,12 +536,45 @@ mod tests {
         assert!(!find(&input, id::THIRTY_SECOND).pending);
         assert!(!find(&input, id::QUARTER).checked);
         let slur = find(&input, id::SLUR);
-        assert_eq!(slur.label, "Terminar expresión");
+        assert_eq!(slur.label, "Terminar");
+        assert_eq!(slur.name, "Expresión");
         assert_eq!(slur.keys.as_deref(), Some("S"));
         let articulations = view(TabId::Articulations, 2000., &states);
         assert_eq!(find(&articulations, id::STACCATO).keys, None);
         let score = view(TabId::Score, 2000., &states);
         assert_eq!(find(&score, id::ADD_INSTRUMENT).label, "Añadir…");
+    }
+
+    #[test]
+    fn a_state_label_never_reflows_the_row() {
+        // Pressing S mid-gesture must not move Ligadura or its neighbours.
+        let metrics = Metrics::default();
+        let row = |states: &Fake| {
+            view(TabId::Write, 1420., states)
+                .groups
+                .iter()
+                .map(|group| (group.mode, group.width_in(group.mode)))
+                .collect::<Vec<_>>()
+        };
+        let open = Fake(vec![(
+            id::SLUR,
+            CommandState {
+                checked: true,
+                label: Some("Terminar".into()),
+                ..CommandState::default()
+            },
+        )]);
+        assert_eq!(row(&open), row(&Fake(vec![])));
+        let slur = controls(&view(TabId::Write, 1420., &open))
+            .into_iter()
+            .find(|control| control.command == id::SLUR)
+            .cloned()
+            .unwrap();
+        assert_eq!(slur.label, "Terminar");
+        assert_eq!(
+            tile_width(&slur, true, &metrics),
+            text_width(slur.name, metrics.caption_char_width) + 2. * metrics.tile_padding
+        );
     }
 
     #[test]

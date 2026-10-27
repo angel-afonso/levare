@@ -683,13 +683,14 @@ AppView::run          punto único de ejecución · ui/command_state.rs implemen
   una función (`Role`: elección, interruptor o acción), un glifo, un nombre corto y
   una ayuda. No contiene textos de estado ni teclas.
 - **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
-  comando está activo, habilitado o con una etiqueta temporal («Terminar expresión»).
+  comando está activo, habilitado o con una etiqueta temporal («Terminar», «Pausar»),
+  nunca más ancha que el nombre del control: la baldosa mide su nombre y no se mueve.
   La app la responde en `ui/command_state.rs`; los tests usan un falso.
 - **Proyección** (`project`): une descripción, registro, mapa y estado. Cada control es
   una baldosa: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
   (`Metrics`, anchos por carácter que cubren el texto más ancho de la cinta). Con
   sitio, un grupo se amplía y muestra los nombres; si falta, `fit` los quita (glifo y
-  tecla) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
+  tecla; el control grande de un grupo conserva el suyo) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
   el de la derecha) hasta que la fila cabe. La cinta nunca hace scroll; un grupo
   plegado es un botón con desplegable.
 - **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del

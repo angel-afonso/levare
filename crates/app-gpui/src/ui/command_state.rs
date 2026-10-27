@@ -52,12 +52,14 @@ impl CommandStates for AppView {
         }
         let duration = active_duration(self);
         let value = |note: NoteValue| CommandState::checked(duration.value() == note);
-        let accidental = |sign: Accidental| {
+        // The selected note's own sign, or the next note's: `None` follows the
+        // key, so the Alteración track always shows one choice.
+        let accidental = |sign: Option<Accidental>| {
             CommandState::checked(
                 editor
                     .selected_pitch()
-                    .map_or(self.entry_accidental == Some(sign), |pitch| {
-                        pitch.accidental() == Some(sign)
+                    .map_or(self.entry_accidental == sign, |pitch| {
+                        pitch.accidental() == sign
                     }),
             )
         };
@@ -67,7 +69,8 @@ impl CommandStates for AppView {
                 .is_some_and(|(_, pending)| pending == kind);
             CommandState {
                 checked: open || selected_connection(self, kind),
-                label: open.then(|| format!("Terminar {}", kind.label().to_lowercase())),
+                // No wider than «Crescendo»; the hint keeps the full sentence.
+                label: open.then(|| "Terminar".to_owned()),
                 ..CommandState::default()
             }
         };
@@ -165,9 +168,9 @@ impl CommandStates for AppView {
                     enabled: comment.is_some(),
                     label: comment.map(|comment| {
                         if comment.resolved {
-                            "Reabrir comentario".into()
+                            "Reabrir".into()
                         } else {
-                            "Resolver comentario".into()
+                            "Resolver".into()
                         }
                     }),
                     ..Default::default()
@@ -230,17 +233,15 @@ impl CommandStates for AppView {
             id::DOT => CommandState::checked(duration.is_dotted()),
             id::TRIPLET => CommandState::checked(duration.is_triplet()),
 
-            id::NATURAL => accidental(Accidental::Natural),
-            id::SHARP => accidental(Accidental::Sharp),
-            id::FLAT => accidental(Accidental::Flat),
+            id::NATURAL => accidental(Some(Accidental::Natural)),
+            id::SHARP => accidental(Some(Accidental::Sharp)),
+            id::FLAT => accidental(Some(Accidental::Flat)),
+            id::FOLLOW_KEY => accidental(None),
 
             id::TIE => CommandState::checked(selected_connection(self, ConnectionKind::Tie)),
             id::SLUR => CommandState {
                 checked: self.pending_slur.is_some(),
-                label: self
-                    .pending_slur
-                    .is_some()
-                    .then(|| "Terminar expresión".to_owned()),
+                label: self.pending_slur.is_some().then(|| "Terminar".to_owned()),
                 ..CommandState::default()
             },
             id::CRESCENDO => hairpin(ConnectionKind::Crescendo),

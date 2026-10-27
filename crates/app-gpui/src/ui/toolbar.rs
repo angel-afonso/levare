@@ -1046,6 +1046,7 @@ mod tests {
             role,
             visual: Visual::Music("\u{e1e7}"),
             symbol_only: false,
+            name: "Puntillo",
             label: "Puntillo".into(),
             description: "Puntillo",
             hint: "",
