@@ -1,4 +1,6 @@
+# Pinned so CI and local builds use the same compiler and clippy lints; raise
+# it on purpose.
 [toolchain]
-channel = "stable"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

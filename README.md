@@ -1213,6 +1213,12 @@ La arquitectura, decisiones y siguientes entregas están en
 [docs/desarrollo.md](docs/desarrollo.md). El inventario de referencia continúa en
 [docs/herramientas.md](docs/herramientas.md).
 
+## Publicar
+
+Las versiones salen de los mensajes de commit (Conventional Commits, ver `AGENTS.md`) con
+release-plz, y el workflow Release publica la app universal firmada, su `.dmg` y lo que lee
+el actualizador de la app. Proceso y secretos: [`docs/publicar.md`](docs/publicar.md).
+
 ## Alcance actual
 
 Dos voces por pentagrama y divisi en uno o dos pentagramas, acordes de hasta ocho notas con sostenidos, bemoles y becuadros, seis duraciones (de la redonda a la fusa) con puntillos y tresillos,

@@ -28,6 +28,7 @@ mod staff_text;
 #[cfg(feature = "vsco")]
 mod store;
 mod ui;
+mod updates;
 
 use app_paths::data_path;
 use gpui::{prelude::*, *};
@@ -151,6 +152,7 @@ struct AppView {
     /// Set while one of the agent's tool calls runs a command, which lets it
     /// past the lock that holds the user's input during the turn.
     agent_acting: bool,
+    updates: updates::Updates,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -169,6 +171,7 @@ impl AppView {
         } else {
             Err("No se pudo abrir el autoguardado; puede haber otra sesión activa".to_owned())
         };
+        let nothing_recovered = matches!(recovered, Ok(None));
         let (mut document, path, status) = match recovered {
             Ok(Some(recovered)) => match Document::recover(recovered.score) {
                 Ok(document) => (
@@ -223,6 +226,16 @@ impl AppView {
             })
             .unwrap_or(true)
         });
+
+        let updates = updates::Updates::new();
+        updates::start(&updates, cx);
+        // After an update's restart: the saved score that was open. Unsaved
+        // work comes back through the autosave above instead.
+        if let Some(score) = updates::take_reopen().filter(|_| nothing_recovered) {
+            cx.defer_in(window, move |view, window, cx| {
+                view.open(Some(score), window, cx)
+            });
+        }
 
         cx.spawn(async move |view, cx| {
             loop {
@@ -343,6 +356,7 @@ impl AppView {
             agent_field: ui::agent_panel::field(cx),
             parts_search: ui::parts_search_field(cx),
             agent_acting: false,
+            updates,
             _subscriptions: vec![interceptor, layout_change],
         }
     }
@@ -1523,6 +1537,9 @@ impl AppView {
                 self.status = "Lista de recientes borrada".into();
             }
             id::CLOSE_PANEL => self.close_preferences(cx),
+            id::CHECK_FOR_UPDATES => self.check_for_updates(true, cx),
+            id::RESTART_TO_UPDATE => self.restart_to_update(cx),
+            id::AUTOMATIC_UPDATES => self.toggle_automatic_updates(cx),
 
             id::COPY => self.copy_music(false, cx),
             id::CUT => self.copy_music(true, cx),

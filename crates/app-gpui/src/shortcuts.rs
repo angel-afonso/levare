@@ -289,7 +289,15 @@ impl Shortcuts {
         vec![
             Menu {
                 name: "Levare".into(),
-                items: self.items(&[Some(id::PREFERENCES), None, Some(id::QUIT)]),
+                items: self.items(&[
+                    Some(id::CHECK_FOR_UPDATES),
+                    Some(id::RESTART_TO_UPDATE),
+                    Some(id::AUTOMATIC_UPDATES),
+                    None,
+                    Some(id::PREFERENCES),
+                    None,
+                    Some(id::QUIT),
+                ]),
             },
             Menu {
                 name: "Archivo".into(),
