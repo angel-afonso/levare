@@ -44,3 +44,57 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
 
+
+  # Levare only runs on macOS so far; this shows how far Linux and Windows
+  # are from compiling. It does not fail the run until the port is done.
+  portability:
+    name: Check and clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      # NTFS and Defender scanning make Windows builds slow; a trusted ReFS
+      # Dev Drive avoids both. The build runs in its copy of the checkout.
+      - name: Dev Drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@v4
+        with:
+          drive-size: 30GB
+          workspace-copy: true
+          trusted-dev-drive: true
+          env-mapping: |
+            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
+            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
+
+      # What gpui needs to link on Linux (X11, Wayland and fonts), and ALSA
+      # for audio and MIDI.
+      - name: System dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev
+
+      - name: Toolchain
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Clippy
+        working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
