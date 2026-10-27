@@ -58,8 +58,8 @@ eventos que no requiera cargar el motor de reproducción.
   layout, no recorriendo todos los compases. `Document` recuerda la última vista
   (partitura, anchura, modo y escala) y la comparte sin copiarla mientras no
   cambien: la reproducción y el puntero no vuelven a grabar la obra. La posición
-  de reproducción se calcula una vez por fotograma y la usan regla, transporte,
-  barra de estado y lienzo. El lienzo solo pinta lo que alcanza la
+  de reproducción se calcula una vez por fotograma y la usan regla, transporte
+  y lienzo. El lienzo solo pinta lo que alcanza la
   zona visible (compases, ligaduras, reguladores, etiquetas, llaves y conectores).
   Referencia: la orquesta de 32 partes y 84 compases dibuja a 60 fps también con
   `cargo run`, cuyo perfil optimiza ligeramente el workspace y del todo las
@@ -72,7 +72,7 @@ eventos que no requiera cargar el motor de reproducción.
   Sus glifos compuestos resuelven plicas y banderas iniciales. Cada glifo se tesela
   una vez por tamaño y orientación con el mismo lyon y opciones que GPUI; pintar una
   instancia solo traslada sus triángulos.
-  La cinta y el inspector comparten estos contornos para dinámicas, alteraciones,
+  La cinta y el panel derecho comparten estos contornos para dinámicas, alteraciones,
   articulaciones, figuras, puntillo, tresillo, calderón y reguladores. Los controles
   centran la caja de tinta real (incluidas las dinámicas compuestas), conservan los
   atajos en la fuente de interfaz y usan cursiva editorial para `pizz.` y `arco`.
@@ -139,7 +139,7 @@ Cada parte tiene pentagramas con identidad `Upper`/`Lower`; el piano conserva lo
 dos y los demás instrumentos solo `Upper`. Todos tienen la misma cantidad de
 compases. Los IDs de nota incluyen el pentagrama para distinguir claves locales
 idénticas en las dos manos. Añadir o quitar una parte es una edición transaccional,
-con cursor, selección e historial. La interfaz permite elegirla por el panel,
+con cursor, selección e historial. La interfaz permite elegirla por la lista de partes,
 por clic en sus notas/pentagrama y por ⌥↑/⌥↓ (pentagrama vecino). Al cambiar de parte se muestra su
 pentagrama. No se permite quitar la última parte.
 
@@ -167,7 +167,7 @@ duración restante; aún no reconstruye el punto previo de la envolvente del son
 Se resaltan simultáneamente las notas de todas las partes. El seguimiento muestra
 el conjunto si cabe verticalmente; en partituras altas sigue la parte desde la que
 se está trabajando y usa otra parte activa durante sus huecos. Antes de seguir
-un único pentagrama intenta mantener juntas las dos manos del piano activo. El panel y el clic
+un único pentagrama intenta mantener juntas las dos manos del piano activo. La lista de partes y el clic
 actualizan la parte que se sigue sin reiniciar el transporte.
 
 ## Acordes
@@ -236,7 +236,7 @@ dos armaduras de igual anchura. Los cambios intermedios reservan espacio para
 la nueva indicación y los becuadros de cancelación de la armadura anterior, incluso
 al coincidir con un salto de sistema. Se admiten sol, do y fa en altura real.
 
-La interfaz ofrece 15 tonalidades por modo, un selector en el panel y un menú
+La interfaz ofrece 15 tonalidades por modo, un editor en el panel derecho y un menú
 nativo. **Armadura** es la entrada sin alteración propia; **Seguir armadura** la
 restaura en la nota elegida. Los nombres de las notas seleccionadas muestran su
 altura efectiva. Ambos selectores permiten aplicar desde el inicio o desde el
@@ -501,7 +501,7 @@ se restaura CC11 de todas las rutas para evitar volumen residual de otra partitu
 El grabado produce dos trazos por segmento de regulador, con abertura continua
 entre sistemas, por debajo de notas, ligaduras y dinámicas. La reserva de espacio
 se calcula por fila sin invalidar el grabado local de compases. El seguimiento
-incluye el regulador de la nota activa y funciona con el zoom. Cinta, inspector,
+incluye el regulador de la nota activa y funciona con el zoom. Cinta,
 menús y los atajos H/Shift+H comparten comandos; se puede crear desde una selección
 de pasaje o marcando inicio/final en dos pasos.
 
@@ -587,7 +587,7 @@ sobre la partitura mientras Preferencias está abierto.
 ## Orden y agrupación del score
 
 `InstrumentFamily` y `Instrument::score_order` comparten el criterio de presentación
-entre editor, panel y grabador. `Score::arrange_parts` ordena partes completas de
+entre editor, lista de partes y grabador. `Score::arrange_parts` ordena partes completas de
 forma estable: conserva IDs, voces de ambas manos, eventos y conexiones. La sesión
 normaliza el orden al abrir y la edición lo aplica al añadir instrumentos. La
 instantánea guardada usa ese mismo orden para evitar un indicador de cambios falso.
@@ -599,7 +599,7 @@ dentro de esa familia; la barra inicial recorre el sistema. Las llaves de piano 
 mantienen separadas de los corchetes. Los contornos se pintan con coordenadas de
 presentación escaladas y las posiciones de las notas conservan su hit testing.
 
-Eliminar desde el panel ejecuta el mismo comando registrado que el menú nativo.
+Eliminar desde la lista de partes ejecuta el mismo comando registrado que el menú nativo.
 Se conserva al menos una parte y se selecciona la vecina al eliminar. El historial
 recupera la parte completa y sus ligaduras. La reproducción se detiene al editar
 y reconstruye su mapa de canales/timbres desde el nuevo orden.
@@ -607,14 +607,51 @@ y reconstruye su mapa de canales/timbres desde el nuevo orden.
 ## Interfaz de referencia
 
 `app-gpui::ui` concentra la presentación: paleta oscura, componentes comunes,
-cinta por pestañas, lista de instrumentos por familia, inspector, hoja y
-transporte. `ui::icons` dibuja los iconos como vectores nativos. El archivo
+cinta por pestañas, panel de partes (izquierda), panel Selección · Sonido · Revisión
+(derecha), tira de posición, hoja, transporte y barra de estado. `ui::icons` dibuja los iconos como vectores nativos. El archivo
 `main.rs` conserva las acciones, los diálogos, el estado del documento y sus
 salvaguardas. La apariencia toma la referencia proporcionada por el usuario;
-los controles sin función musical disponible se identifican con TODO.
+los controles sin función musical disponible se identifican como «Pendiente».
+Los colores de la interfaz están en `ui/theme.rs`, con el contraste comprobado.
+
+### Paneles laterales
+
+Diseño en `docs/superpowers/specs/2026-10-27-paneles-design.md`. Cada panel responde a una
+pregunta y ningún panel repite lo que ya muestra otro. Con la cinta sí hay repeticiones a
+propósito: las acciones del pasaje y de la nota en Selección ejecutan los mismos comandos que
+sus botones de la cinta, a mano junto a lo que se mira.
+
+- **Izquierda, «¿qué hay en la partitura?»** (`ui/instrument_panel.rs`, `ui/parts_view.rs`,
+  `ui/mixer.rs`). `parts_view` calcula sin GPUI las familias en orden de partitura, sus filas
+  (nombre y nota de claves y transposición) y el filtro de búsqueda, que no distingue
+  mayúsculas ni acentos y muestra las familias desplegadas. Lista y Mezcla comparten las
+  filas; Mezcla añade `mixer::part_controls` (volumen y posición, de sesión; Sección | Solista
+  como `Command::SetPlayers`, que se guarda y se deshace).
+- **Derecha, «¿qué tengo seleccionado y qué le cambio?»**. Pestañas `RightTab`: Selección
+  (`ui/selection_view.rs` calcula sin GPUI qué hay seleccionado a partir del editor: partitura,
+  nota, silencio, pasaje o editor abierto; `ui/selection_panel.rs` lo dibuja y aloja los editores
+  de clave, tonalidad, métrica, tempo, texto, letra, cifrado e información), Sonido
+  (`ui/sound_panel.rs` con `ui/mixer.rs` para la salida) y Revisión (`ui/review.rs` y
+  `ui/comments.rs`). Abrir un editor muestra el panel y la pestaña Selección. Un clic en la
+  partitura o una tecla de navegación cierra, por el mismo camino que `Esc`
+  (`cancel_editor`), los editores para los que `EditorKind::survives_selection_move` es falso;
+  el avance propio de letra y cifrado no pasa por ahí. Quitar una marca
+  desde su fila ✕ ejecuta el comando de la marca y se deshace como cualquier edición.
+- **Arriba** (`#score-readouts` en `ui.rs`): la única tira de posición (Compás, Tiempo, Tempo,
+  Métrica, Tonalidad, Parte · Voz y resumen de la selección). Tempo, Métrica y Tonalidad abren su
+  editor en el panel derecho.
+- **Abajo** (`ui/status_bar.rs`): `status_bar(&Facts)` devuelve solo lo que la barra dice
+  (mensaje de estado, navegación de páginas en vista Página, zoom, autoguardado y estado de
+  guardado); un test nombra todos los campos para que voz, tonalidad, métrica, instrumentos o modo
+  de vista no vuelvan a aparecer sin que se note.
+- **Memoria** (`panels.rs`): `paneles.json` en la carpeta de datos guarda los paneles abiertos
+  (`show_parts`, `show_right`), la pestaña derecha (`right`), Lista o Mezcla (`parts_mode`) y las
+  familias plegadas (`folded`). `panels::load` devuelve los valores por defecto si el archivo falta o
+  está dañado (los campos ausentes también los toman); `panels::save` escribe de forma atómica y
+  solo se invoca cuando algo recordado cambia respecto a la última escritura.
 
 Los atajos siguen el perfil de Sibelius descrito en **Motor de atajos**; las
-etiquetas de la cinta, del inspector y de los menús se leen del mapa activo.
+etiquetas de la cinta, de los paneles y de los menús se leen del mapa activo.
 
 El layout mantiene su geometría y caché en coordenadas musicales. `Layout.scale`
 se aplica al pintar, seleccionar, colocar el cursor y seguir la reproducción;
@@ -655,13 +692,13 @@ audio; la interfaz no consulta ni modifica el sintetizador para dibujarlo.
 
 ## Barra de herramientas
 
-El panel de instrumentos vive en `ui/instrument_panel.rs`. El diálogo mantiene un
+El panel de partes vive en `ui/instrument_panel.rs` (lo que lista, en `ui/parts_view.rs`) y el diálogo de alta, en el mismo archivo. El diálogo mantiene un
 borrador de cantidades por instrumento, limitado a las plazas disponibles de las
 48 partes; ni seleccionar ni cancelar modifica el documento. Confirmar ejecuta
 `Command::AddParts` como una transacción: si falla un alta, no se guarda ninguna,
 y Deshacer retira el conjunto completo. El contexto modal bloquea la entrada de
 notas y los comandos globales hasta confirmar o cancelar.
-Cada fila elimina por `PartId` mediante `RemovePartById`, conservando el pasaje y
+El botón de la parte elegida elimina por `PartId` mediante `RemovePartById`, conservando el pasaje y
 la nota elegidos cuando pertenecen a otra parte. Si se elimina la parte activa se
 elige su vecina; Deshacer recupera los pentagramas y conexiones originales.
 
@@ -676,22 +713,26 @@ score-keymap          registro (etiquetas, pendientes) y mapa activo (teclas)
 AppView::run          punto único de ejecución · ui/command_state.rs implementa CommandStates
 ```
 
-- **Descripción** (`spec.rs`): pestañas (`TabId`), grupos y controles. Cada control es
-  un `CommandId` con tamaño (grande, fila pequeña o casilla) y un glifo. No contiene
-  textos de estado ni teclas.
+- **Descripción** (`spec.rs`): ocho pestañas por tarea (`TabId`: Escribir,
+  Articulaciones, Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), sus
+  grupos y controles. Cada control es un `CommandId` con tamaño (grande o baldosa),
+  una función (`Role`: elección, interruptor o acción), un glifo, un nombre corto y
+  una ayuda. No contiene textos de estado ni teclas.
 - **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
-  comando está activo, habilitado o con una etiqueta temporal («Terminar expresión»).
+  comando está activo, habilitado o con una etiqueta temporal («Terminar», «Pausar»),
+  nunca más ancha que el nombre del control: la baldosa mide su nombre y no se mueve.
   La app la responde en `ui/command_state.rs`; los tests usan un falso.
-- **Proyección** (`project`): une descripción, registro, mapa y estado, apila las filas
-  pequeñas en columnas de tres y mide con valores fijos (`Metrics`). `fit` pliega
-  grupos por prioridad —el de menor prioridad y, a igualdad, el de la derecha—
-  hasta que la fila cabe. La cinta nunca hace scroll; un grupo plegado es un botón con
-  desplegable.
+- **Proyección** (`project`): une descripción, registro, mapa y estado. Cada control es
+  una baldosa: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
+  (`Metrics`, anchos por carácter que cubren el texto más ancho de la cinta). Con
+  sitio, un grupo se amplía y muestra los nombres; si falta, `fit` los quita (glifo y
+  tecla; el control grande de un grupo conserva el suyo) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
+  el de la derecha) hasta que la fila cabe. La cinta nunca hace scroll; un grupo
+  plegado es un botón con desplegable.
 - **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del
-  inspector muestran una ayuda breve con su nombre y la asignación activa después
-  de la espera de GPUI (500 ms). Las teclas no ocupan espacio en los botones ni
-  intervienen en sus medidas. Los desplegables y Preferencias conservan las teclas
-  como referencia; el inspector ya no repite la lista completa de atajos.
+  panel derecho muestran una ayuda breve con su nombre y la asignación activa después
+  de la espera de GPUI (500 ms). Los desplegables y Preferencias conservan las teclas
+  como referencia; los paneles ya no repiten la lista completa de atajos.
 - **Archivo** (`FILE_MENU`): una misma lista genera el desplegable de la ventana y el
   menú nativo de macOS, con el submenú «Abrir reciente».
 - **Recientes** (`score-io::RecentFiles`): `recientes.json` en la carpeta de datos,
@@ -730,7 +771,8 @@ panel de atajos, los menús y el README:
   (`~/Library/Application Support/Levare` en macOS) guarda, por comando, la
   lista completa que sustituye a la del perfil; una lista vacía lo deja sin atajo.
   Si existe la carpeta anterior `Partitura` y todavía no existe `Levare`, la app
-  sigue usando aquella para conservar atajos, recientes y recuperación.
+  sigue usando aquella para conservar atajos, recientes, paneles y recuperación.
+  En la misma carpeta, `paneles.json` recuerda los paneles (ver *Paneles laterales*).
   Escritura atómica y número de versión.
 - **Resolución** (`keymap.rs`). Perfil + cambios + distribución dan los atajos
   activos. Los del usuario ganan; los conflictos, IDs desconocidos y teclas que no
@@ -781,7 +823,7 @@ recuperación desde selección usa la intensidad de ese ataque efectivo, incluso
 si el evento original terminó antes de los unísonos posteriores. La pausa conserva
 el estado del sintetizador y no introduce asignaciones en el callback.
 
-La UI ofrece controles en cinta, inspector y menú nativo. ↩ alterna únicamente la
+La UI ofrece controles en cinta y menú nativo, y las quita desde la pestaña Selección. ↩ alterna únicamente la
 unión saliente; S marca inicio/fin de frase y Esc cancela. El estado provisional
 se limpia al editar, deshacer, rehacer, crear o abrir otro documento. Las cuatro
 articulaciones no tienen tecla por defecto (como en Sibelius portátil) y se pueden
@@ -802,8 +844,8 @@ de una ligadura o regulador) para seleccionarla, borrarla (`Command::RemoveMark`
 cambiarla (`Command::ReplaceConnection`). `score-layout` genera un `MarkBox` por marca
 puntual, ajustado a las cajas de Bravura, y `Layout::hit` elige entre nota y marca.
 
-`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`mark_tile`), el
-inspector, el menú **Expresión**, los símbolos de los menús, el estado resaltado y el
+`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`spec::mark`), la
+pestaña Selección, el menú **Expresión**, los símbolos de los menús, el estado resaltado y el
 despacho de la app (`apply_mark`) la recorren en lugar de repetir cada marca. Un test
 exige que cada marca tenga un comando propio, listo y con su nombre en la etiqueta.
 
@@ -870,7 +912,7 @@ flauta y violonchelo en la salida real a 44 100 Hz, con selección, pausa y cont
 
 La interfaz de referencia se comprobó en una aplicación temporal independiente,
 con `examples/cuarteto-en-sol.partitura`: cinco pentagramas visibles, nombres de
-instrumentos repetidos, paneles, inspector, cinta y transporte. La entrada con
+instrumentos repetidos, paneles, cinta y transporte. La entrada con
 N desactivada no añadió notas; al activarla, 5 produjo un acorde de semicorchea
 y 4 un silencio de corchea. El diálogo nativo guardó estos datos, incluido un
 bemol individual. Tras corregir la interpretación del carácter de teclado,

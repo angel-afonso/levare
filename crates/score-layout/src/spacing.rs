@@ -112,16 +112,16 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                         .techniques
                         .iter()
                         .enumerate()
-                        .map(move |(i, t)| (matches!(t.text, "div." | "unis."), m, i))
+                        .map(move |(i, t)| (t.lane(), m, i))
                 })
                 .collect();
             labels.sort_by_key(|&(division, m, i)| (division, m, i));
             let mut occupied: Vec<(f32, f32, f32)> = Vec::new();
-            for (division, m, i) in labels {
+            for (_, m, i) in labels {
                 let bar = &layout.measures[m];
                 let label = &bar.content.techniques[i];
                 let left = bar.origin.x + label.position.x;
-                let right = left + label.text.chars().count() as f32 * 7.;
+                let right = left + label.width();
                 let mut y = local_top(layout, &rows, left - GAP, right + GAP, metrics) - GAP - 4.;
                 while let Some(&(_, _, other_y)) = occupied.iter().find(|&&(l, r, other_y)| {
                     overlaps(l - GAP, r + GAP, left, right) && (y - other_y).abs() < 20. + GAP
@@ -132,11 +132,7 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                 let content = Arc::make_mut(&mut layout.measures[m].content);
                 let label = &mut content.techniques[i];
                 let shift = y - origin_y - label.position.y;
-                let mark = if division {
-                    MarkRef::Division(label.element)
-                } else {
-                    MarkRef::Technique(label.element)
-                };
+                let mark = label.mark;
                 label.position.y += shift;
                 for hit in content.marks.iter_mut().filter(|hit| hit.mark == mark) {
                     hit.center.y += shift;
@@ -168,12 +164,7 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                 let bar = &layout.measures[m];
                 for label in &bar.content.techniques {
                     let x = bar.origin.x + label.position.x;
-                    if overlaps(
-                        x,
-                        x + label.text.chars().count() as f32 * 7.,
-                        left - GAP,
-                        right + GAP,
-                    ) {
+                    if overlaps(x, x + label.width(), left - GAP, right + GAP) {
                         top = top.min(bar.origin.y + label.position.y - 16.);
                     }
                 }
@@ -235,12 +226,7 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                 let bar = &layout.measures[m];
                 for text in &bar.content.techniques {
                     let x = bar.origin.x + text.position.x;
-                    if overlaps(
-                        x,
-                        x + text.text.chars().count() as f32 * 7.,
-                        left - GAP,
-                        right + GAP,
-                    ) {
+                    if overlaps(x, x + text.width(), left - GAP, right + GAP) {
                         top = top.min(bar.origin.y + text.position.y - 16.);
                     }
                 }
@@ -298,10 +284,21 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
             {
                 include(bar.origin.y + p.y, bar.origin.y + p.y);
             }
-            for label in &bar.content.techniques {
+            for label in bar
+                .content
+                .techniques
+                .iter()
+                .chain(&bar.content.expressions)
+            {
                 include(
                     bar.origin.y + label.position.y - 16.,
                     bar.origin.y + label.position.y + 4.,
+                );
+            }
+            for lyric in &bar.content.lyrics {
+                include(
+                    bar.origin.y + lyric.position.y - 14.,
+                    bar.origin.y + lyric.position.y + 5.,
                 );
             }
         }
@@ -331,6 +328,15 @@ pub(super) fn compact(layout: &mut Layout, metrics: &Metrics) {
                     line.from.y.max(line.to.y) + line.thickness / 2.,
                 );
             }
+        }
+        for line in layout.line_marks.iter().filter(|l| {
+            rows.iter().any(|&m| {
+                layout.measures[m].origin.y == l.staff_origin
+                    && layout.measures[m].part == l.connection.start.part
+            })
+        }) {
+            let (_, top, _, bottom) = line.ink();
+            include(top, bottom);
         }
         for arpeggio in layout.piano_arpeggios.iter().filter(|a| {
             (system.first_measure..=system.last_measure).contains(&a.other_hand.measure)

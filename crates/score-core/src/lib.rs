@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod breaks;
 mod rehearsal;
+pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;
 pub use rehearsal::{RehearsalMark, RehearsalStyle, letter_label};
 mod tempo;
@@ -18,6 +20,14 @@ mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
 mod tremolo;
 pub use tremolo::Tremolo;
+mod grace;
+pub use grace::{Grace, GraceKind, MAX_GRACE_NOTES};
+mod text;
+pub use text::{MAX_TEXT_BYTES, Swell, TextEffect, TextKind, Words};
+mod lyrics;
+pub use lyrics::{Join, Lyrics, MAX_SYLLABLE_BYTES, MAX_VERSES, Syllable};
+mod chords;
+pub use chords::{ChordQuality, ChordRoot, ChordSymbol};
 mod harmonics;
 pub use harmonics::Harmonic;
 mod expression;
@@ -38,6 +48,8 @@ mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod instrument_range;
 pub use instrument_range::InstrumentRange;
+mod players;
+pub use players::Players;
 mod review;
 pub use review::{ReviewIssue, ReviewKind, ReviewTarget};
 mod comments;
@@ -277,6 +289,14 @@ impl Default for Measure {
 
 impl PartialEq for Measure {
     fn eq(&self, other: &Self) -> bool {
+        // The same shared events in the same order: equal without comparing
+        // every note, as the layout cache does for each untouched bar.
+        if Arc::ptr_eq(&self.events, &other.events)
+            && self.order == other.order
+            && self.second_order == other.second_order
+        {
+            return true;
+        }
         Voice::ALL
             .into_iter()
             .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
@@ -343,6 +363,8 @@ pub struct Part {
     transposition: Transposition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     instrument_range: Option<InstrumentRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    players: Option<Players>,
     /// Keeps the section's identity when extracted from an orchestral score.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -368,6 +390,7 @@ impl Part {
             instrument,
             transposition: instrument.standard_transposition(),
             instrument_range: None,
+            players: None,
             name: None,
             clefs: Default::default(),
             divided: false,
@@ -445,6 +468,8 @@ pub struct Score {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     rehearsals: std::collections::BTreeMap<usize, RehearsalMark>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    breaks: std::collections::BTreeMap<usize, LayoutBreak>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     bar_offsets: std::collections::BTreeMap<usize, BarOffsets>,
     #[serde(default, skip_serializing_if = "rehearsal_style_is_default")]
     rehearsal_style: RehearsalStyle,
@@ -466,6 +491,9 @@ pub struct Score {
     form: std::collections::BTreeMap<usize, BarForm>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     endings: Vector<Ending>,
+    /// Chord symbols are written only, not heard.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    silent_chords: bool,
 }
 
 impl Default for Score {
@@ -479,6 +507,7 @@ impl Default for Score {
             tempo: Default::default(),
             tempo_changes: Default::default(),
             rehearsals: Default::default(),
+            breaks: Default::default(),
             bar_offsets: Default::default(),
             rehearsal_style: Default::default(),
             key_signature: KeySignature::default(),
@@ -491,6 +520,7 @@ impl Default for Score {
             piano_arpeggios: Vector::new(),
             form: Default::default(),
             endings: Vector::new(),
+            silent_chords: false,
         }
     }
 }
@@ -744,23 +774,30 @@ impl Score {
             &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
         )[id.event]
             .pitches = pitches;
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
         if pitches.len() < 2 {
-            Arc::make_mut(
-                &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
-            )[id.event]
-                .notation
-                .arpeggio = None;
+            notation.arpeggio = None;
+        }
+        // A rest is not sung and takes no grace notes.
+        if pitches.is_empty() {
+            notation.lyrics = Lyrics::default();
+            notation.grace = None;
         }
         self.prune_connections();
         Ok(())
     }
+    /// Move a note or chord by diatonic `steps`; its grace notes follow.
     pub fn transpose(&mut self, id: ElementId, steps: i16) -> Result<(), ScoreError> {
-        let pitches = self
-            .event(id)
-            .ok_or(ScoreError("La nota no existe"))?
-            .pitches
-            .transposed(steps)?;
-        self.set_pitches(id, pitches)
+        let event = *self.event(id).ok_or(ScoreError("La nota no existe"))?;
+        let pitches = event.pitches.transposed(steps)?;
+        self.set_pitches(id, pitches)?;
+        for index in 0..event.notation.grace.map_or(0, |grace| grace.len()) {
+            self.transpose_grace_note(id, index, steps)?;
+        }
+        self.transpose_chord(id, steps)
     }
     pub fn add_pitch(&mut self, id: ElementId, pitch: Pitch) -> Result<(), ScoreError> {
         let event = self
@@ -877,6 +914,7 @@ impl Score {
         }
         self.validate_form()?;
         self.validate_rehearsals()?;
+        self.validate_breaks()?;
         self.validate_offsets()?;
         self.validate_bar_offsets()?;
         if self.title.len() > 1024 {
@@ -933,6 +971,8 @@ impl Score {
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
                         }
+                        Self::validate_grace(event)?;
+                        Self::validate_lyrics(event)?;
                         ticks[usize::from(voice.number() - 1)] += u32::from(event.duration.ticks());
                     }
                     if ticks
@@ -1141,6 +1181,33 @@ mod tests {
     }
 
     #[test]
+    fn part_names_match_part_name_for_every_part() {
+        let mut score = Score::new(
+            String::new(),
+            &[
+                Instrument::Flute,
+                Instrument::Violin,
+                Instrument::Violin,
+                Instrument::Viola,
+                Instrument::Violin,
+                Instrument::Cello,
+            ],
+            1,
+        )
+        .unwrap();
+        let viola = score.parts()[3].id();
+        score.part_mut(viola).unwrap().name = Some("Viola solista".into());
+        let one_by_one: Vec<_> = score
+            .parts()
+            .iter()
+            .map(|part| score.part_name(part.id()))
+            .collect();
+        assert_eq!(score.part_names(), one_by_one);
+        assert_eq!(one_by_one[4], format!("{} III", Instrument::Violin.name()));
+        assert_eq!(one_by_one[3], "Viola solista");
+    }
+
+    #[test]
     fn capacity_and_stable_ids_survive_removal() {
         let mut score = Score::default();
         let first = score.insert(0, 0, note()).unwrap();
@@ -1177,3 +1244,5 @@ mod tests {
 
 #[cfg(test)]
 mod arrangement_tests;
+#[cfg(test)]
+mod line_tests;

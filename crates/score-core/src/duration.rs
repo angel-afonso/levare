@@ -11,6 +11,7 @@ pub enum NoteValue {
     Quarter,
     Eighth,
     Sixteenth,
+    ThirtySecond,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Duration {
@@ -20,18 +21,21 @@ pub struct Duration {
 }
 #[allow(non_upper_case_globals)]
 impl Duration {
-    pub const MIN_TICKS: u16 = 8;
+    /// A thirty-second note in a triplet.
+    pub const MIN_TICKS: u16 = 4;
     pub const Whole: Self = Self::plain(NoteValue::Whole);
     pub const Half: Self = Self::plain(NoteValue::Half);
     pub const Quarter: Self = Self::plain(NoteValue::Quarter);
     pub const Eighth: Self = Self::plain(NoteValue::Eighth);
     pub const Sixteenth: Self = Self::plain(NoteValue::Sixteenth);
-    pub const ALL: [Self; 5] = [
+    pub const ThirtySecond: Self = Self::plain(NoteValue::ThirtySecond);
+    pub const ALL: [Self; 6] = [
         Self::Whole,
         Self::Half,
         Self::Quarter,
         Self::Eighth,
         Self::Sixteenth,
+        Self::ThirtySecond,
     ];
     const fn plain(value: NoteValue) -> Self {
         Self {
@@ -65,6 +69,7 @@ impl Duration {
             NoteValue::Quarter => 48,
             NoteValue::Eighth => 24,
             NoteValue::Sixteenth => 12,
+            NoteValue::ThirtySecond => 6,
         };
         if self.dotted {
             ticks = ticks * 3 / 2;
@@ -81,6 +86,7 @@ impl Duration {
             NoteValue::Quarter => "Negra",
             NoteValue::Eighth => "Corchea",
             NoteValue::Sixteenth => "Semicorchea",
+            NoteValue::ThirtySecond => "Fusa",
         };
         format!(
             "{base}{}{}",

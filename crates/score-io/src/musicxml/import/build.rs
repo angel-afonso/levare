@@ -489,7 +489,10 @@ pub(super) fn score(
                 if m.tick >= score.time_at(bar).capacity() {
                     continue;
                 }
-                if matches!(m.kind, MarkType::Visibility(_) | MarkType::Wedge(..)) {
+                if matches!(
+                    m.kind,
+                    MarkType::Visibility(_) | MarkType::Wedge(..) | MarkType::Span(..)
+                ) {
                     continue;
                 }
                 let lane = if matches!(m.kind, MarkType::Division(_)) {
@@ -559,6 +562,8 @@ pub(super) fn score(
                                 n.dynamic = None;
                                 n.technique = None;
                                 n.division = None;
+                                n.grace = None;
+                                n.lyrics = Lyrics::default();
                             }
                             if at + duration.ticks() != end {
                                 n.fermata = false;
@@ -653,23 +658,32 @@ pub(super) fn score(
                     (std::cmp::Reverse(*stop), format!("{k:?}"), num.clone())
                 });
                 endpoints.dedup();
-                for (kind, stop, number) in endpoints {
-                    let key = (lane, kind, number);
+                let mut alone = std::collections::HashSet::new();
+                for (kind, stop, number) in &endpoints {
+                    let (kind, stop) = (*kind, *stop);
+                    let key = (lane, kind, number.clone());
+                    // A trill holds through its last note; the others end at its onset.
+                    let end = if kind.is_range() { last } else { first };
                     if stop {
                         if let Some(start) = starts.remove(&key) {
+                            links.push(Connection { start, end, kind });
+                        } else if kind.is_range()
+                            && endpoints.contains(&(kind, false, number.clone()))
+                        {
                             links.push(Connection {
-                                start,
-                                end: first,
+                                start: first,
+                                end,
                                 kind,
                             });
+                            alone.insert(key);
                         } else {
                             warnings
                                 .add("Algunas ligaduras tienen extremos ausentes y no se importan");
                         }
-                    } else {
+                    } else if !alone.contains(&key) {
                         starts.insert(
                             key,
-                            if kind == ConnectionKind::Tie {
+                            if matches!(kind, ConnectionKind::Tie | ConnectionKind::Glissando) {
                                 last
                             } else {
                                 first
@@ -716,7 +730,10 @@ pub(super) fn score(
             for m in &b.directions {
                 if matches!(
                     m.kind,
-                    MarkType::Division(_) | MarkType::Visibility(_) | MarkType::Wedge(..)
+                    MarkType::Division(_)
+                        | MarkType::Visibility(_)
+                        | MarkType::Wedge(..)
+                        | MarkType::Span(..)
                 ) {
                     continue;
                 }
@@ -728,6 +745,28 @@ pub(super) fn score(
                 if let Some(&id) = anchors.get(&(bar, lane, m.tick)) {
                     match m.kind {
                         MarkType::Dynamic(d) => score.set_dynamic(id, Some(d)).map_err(error)?,
+                        MarkType::Chord(chord) => {
+                            score.set_chord(id, Some(chord)).map_err(error)?
+                        }
+                        MarkType::Text(kind, ref text) => {
+                            let mut end = text.len().min(MAX_TEXT_BYTES);
+                            while !text.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            if end < text.len() {
+                                warnings.add("Los textos de más de 40 caracteres se recortan");
+                            }
+                            // A second text of one kind on the same note joins the first.
+                            let joined = match score.text(id, kind) {
+                                Some(first) => format!("{first} {}", &text[..end]),
+                                None => text[..end].to_owned(),
+                            };
+                            if score.set_text(id, kind, Some(&joined)).is_err()
+                                && score.set_text(id, kind, Some(&text[..end])).is_err()
+                            {
+                                warnings.add("Un texto no pudo importarse");
+                            }
+                        }
                         MarkType::Technique(t) => {
                             if data.instrument.family() == InstrumentFamily::Strings {
                                 score.set_technique(id, Some(t)).map_err(error)?;
@@ -787,6 +826,50 @@ pub(super) fn score(
         }
         if !wedges.is_empty() {
             warnings.add("Un regulador sin final no pudo importarse");
+        }
+        // Octave lines and pedal: a start takes the note it stands at, a stop
+        // the note that has just ended.
+        let mut spans: HashMap<(u8, bool, String), (ElementId, ConnectionKind)> = HashMap::new();
+        for (bar, b) in data.bars.iter().enumerate() {
+            for m in &b.directions {
+                let MarkType::Span(stop, kind, number) = &m.kind else {
+                    continue;
+                };
+                let lane = lanes.lane(m.staff, m.voice.as_deref())?;
+                let id = if *stop {
+                    anchors
+                        .range(..(bar, lane, m.tick))
+                        .rev()
+                        .find(|((_, l, _), _)| *l == lane)
+                        .map(|(_, id)| *id)
+                } else {
+                    anchors
+                        .range((bar, lane, m.tick)..)
+                        .find(|((_, l, _), _)| *l == lane)
+                        .map(|(_, id)| *id)
+                };
+                let Some(id) = id else {
+                    warnings.add("Una línea de octava o pedal sin nota no pudo importarse");
+                    continue;
+                };
+                let key = (lane, *kind == ConnectionKind::Pedal, number.clone());
+                if *stop {
+                    if let Some((start, kind)) = spans.remove(&key) {
+                        links.push(Connection {
+                            start,
+                            end: id,
+                            kind,
+                        });
+                    } else {
+                        warnings.add("Una línea de octava o pedal sin inicio no pudo importarse");
+                    }
+                } else {
+                    spans.insert(key, (id, *kind));
+                }
+            }
+        }
+        if !spans.is_empty() {
+            warnings.add("Una línea de octava o pedal sin final no pudo importarse");
         }
         for link in links {
             if score.add_connection(link).is_err() {

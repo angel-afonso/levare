@@ -168,6 +168,19 @@ pub struct Notation {
     /// Hold the note or rest; written over it, independent of articulation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fermata: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grace: Option<Grace>,
+    /// Italic words below the staff («dolce», «cresc.»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression_text: Option<Words>,
+    /// Playing instruction above the staff («con sord.»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub technique_text: Option<Words>,
+    #[serde(default, skip_serializing_if = "Lyrics::is_empty")]
+    pub lyrics: Lyrics,
+    /// Chord symbol above the staff from this note or rest on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chord: Option<ChordSymbol>,
     #[serde(default, skip_serializing_if = "MarkOffsets::is_empty")]
     pub offsets: MarkOffsets,
 }
@@ -177,10 +190,51 @@ pub enum ConnectionKind {
     Slur,
     Crescendo,
     Diminuendo,
+    /// 8va: the notes sound an octave above where they are written.
+    OttavaAlta,
+    /// 8vb: an octave below.
+    OttavaBassa,
+    /// Sustain pedal held from the first note to the end of the last.
+    Pedal,
+    /// Trill with the note above, over every note it spans.
+    Trill,
+    /// A slide from one note to the next.
+    Glissando,
 }
 impl ConnectionKind {
-    pub fn is_hairpin(self) -> bool {
+    pub const LINES: [Self; 5] = [
+        Self::OttavaAlta,
+        Self::OttavaBassa,
+        Self::Pedal,
+        Self::Trill,
+        Self::Glissando,
+    ];
+
+    /// Ties and slurs, the connections engraved as curves.
+    pub const fn is_curve(self) -> bool {
+        matches!(self, Self::Tie | Self::Slur)
+    }
+
+    pub const fn is_hairpin(self) -> bool {
         matches!(self, Self::Crescendo | Self::Diminuendo)
+    }
+
+    /// Octave lines, pedal and trill: they act on every note between their
+    /// ends, both included, and may begin and end on the same note.
+    pub const fn is_range(self) -> bool {
+        matches!(
+            self,
+            Self::OttavaAlta | Self::OttavaBassa | Self::Pedal | Self::Trill
+        )
+    }
+
+    pub const fn is_ottava(self) -> bool {
+        matches!(self, Self::OttavaAlta | Self::OttavaBassa)
+    }
+
+    /// The lines added after slurs and hairpins, engraved as straight lines.
+    pub const fn is_line(self) -> bool {
+        self.is_range() || matches!(self, Self::Glissando)
     }
 
     pub const fn label(self) -> &'static str {
@@ -189,6 +243,11 @@ impl ConnectionKind {
             Self::Slur => "Ligadura de expresión",
             Self::Crescendo => "Crescendo",
             Self::Diminuendo => "Diminuendo",
+            Self::OttavaAlta => "8va",
+            Self::OttavaBassa => "8vb",
+            Self::Pedal => "Pedal",
+            Self::Trill => "Trino",
+            Self::Glissando => "Glissando",
         }
     }
 }
@@ -332,6 +391,66 @@ impl Score {
         }
         None
     }
+    pub fn previous_event(&self, id: ElementId) -> Option<ElementId> {
+        let staff = self.part(id.part)?.staff(id.staff)?;
+        let voice = self.voice_of(id)?;
+        let index = staff
+            .measures()
+            .get(id.measure)?
+            .voice_index_of(voice, id.event)?;
+        if let Some(index) = index.checked_sub(1) {
+            let event = staff.measures()[id.measure].voice_id_at(voice, index)?;
+            return Some(ElementId { event, ..id });
+        }
+        (0..id.measure).rev().find_map(|measure| {
+            let bar = &staff.measures()[measure];
+            let last = bar.voice_len(voice).checked_sub(1)?;
+            bar.voice_id_at(voice, last).map(|event| ElementId {
+                event,
+                measure,
+                ..id
+            })
+        })
+    }
+    /// `connection` starting at `start` instead, lasting as long as the onsets
+    /// of that voice allow. A slur still ends on a note.
+    pub fn shifted_connection(
+        &self,
+        connection: Connection,
+        start: ElementId,
+    ) -> Option<Connection> {
+        let length = self.event_tick(connection.end)? - self.event_tick(connection.start)?;
+        let from = self.event_tick(start)?;
+        let voice = self.voice_of(start)?;
+        let staff = self.part(start.part)?.staff(start.staff)?;
+        let end = staff
+            .measures()
+            .iter()
+            .enumerate()
+            .flat_map(|(measure, bar)| {
+                let offset = self.measure_start_tick(measure);
+                bar.timed_iter()
+                    .filter(move |(v, _, _, event)| {
+                        *v == voice && (connection.kind.is_hairpin() || !event.pitches.is_empty())
+                    })
+                    .map(move |(_, onset, event, _)| {
+                        let id = ElementId {
+                            measure,
+                            event,
+                            ..start
+                        };
+                        (id, offset + u64::from(onset))
+                    })
+            })
+            .filter(|(_, tick)| *tick > from)
+            .min_by_key(|(_, tick)| tick.abs_diff(from + length))?
+            .0;
+        Some(Connection {
+            start,
+            end,
+            kind: connection.kind,
+        })
+    }
     fn valid_connection(&self, c: Connection) -> bool {
         let (Some(a), Some(b), Some(start), Some(end)) = (
             self.event(c.start),
@@ -341,12 +460,17 @@ impl Score {
         ) else {
             return false;
         };
+        // Octave lines and pedal may also cover rests; a range line may begin
+        // and end on its only note.
+        let rests_allowed =
+            c.kind.is_hairpin() || c.kind.is_ottava() || c.kind == ConnectionKind::Pedal;
         c.start.part == c.end.part
             && self.voice_of(c.start) == self.voice_of(c.end)
             && c.start.staff == c.end.staff
-            && start < end
-            && (c.kind.is_hairpin() || (!a.pitches.is_empty() && !b.pitches.is_empty()))
+            && (start < end || (c.kind.is_range() && c.start == c.end))
+            && (rests_allowed || (!a.pitches.is_empty() && !b.pitches.is_empty()))
             && (c.kind.is_hairpin()
+                || c.kind.is_line()
                 || c.kind == ConnectionKind::Slur
                 || (end == start + u64::from(a.duration.ticks())
                     && self.next_event(c.start) == Some(c.end)
@@ -382,6 +506,27 @@ impl Score {
                 "Este extremo ya tiene una ligadura del mismo tipo",
             ));
         }
+        if c.kind.is_range() {
+            let start = self.event_tick(c.start).unwrap();
+            let end = self.event_tick(c.end).unwrap();
+            let same = |other: &Connection| match c.kind {
+                ConnectionKind::Pedal => other.kind == c.kind,
+                ConnectionKind::Trill => {
+                    other.kind == c.kind
+                        && other.start.staff == c.start.staff
+                        && self.voice_of(other.start) == self.voice_of(c.start)
+                }
+                _ => other.kind.is_ottava() && other.start.staff == c.start.staff,
+            };
+            if self.connections.iter().any(|other| {
+                same(other)
+                    && other.start.part == c.start.part
+                    && self.event_tick(other.start).unwrap() <= end
+                    && self.event_tick(other.end).unwrap() >= start
+            }) {
+                return Err(ScoreError("Esta línea se solapa con otra del mismo tipo"));
+            }
+        }
         if c.kind == ConnectionKind::Slur || c.kind.is_hairpin() {
             let start = self.event_tick(c.start).unwrap();
             let end = self.event_tick(c.end).unwrap();
@@ -406,7 +551,7 @@ impl Score {
         Ok(())
     }
     pub fn connection_contains(&self, c: Connection, id: ElementId) -> bool {
-        if !c.kind.is_hairpin() {
+        if !c.kind.is_hairpin() && !c.kind.is_range() {
             return c.start == id || c.end == id;
         }
         id.part == c.start.part

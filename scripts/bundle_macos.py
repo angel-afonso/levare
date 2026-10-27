@@ -79,8 +79,24 @@ def main():
     staging.replace(executable)
     shutil.copy2(ROOT / "packaging" / "macos" / "Info.plist", contents / "Info.plist")
     shutil.copy2(icon, resources / icon.name)
+    bundle_sfizz(contents, resources)
     subprocess.run(["plutil", "-lint", str(contents / "Info.plist")], check=True)
     print(bundle)
+
+
+def bundle_sfizz(contents, resources):
+    # Installed sound packs bring samples only; the SFZ engine ships with the app.
+    sfizz = ROOT / "soundpacks" / "vsco-ce" / "libsfizz.dylib"
+    if not sfizz.is_file():
+        print(f"Aviso: falta {sfizz.relative_to(ROOT)}; la app no podrá usar paquetes SFZ.",
+              file=sys.stderr)
+        return
+    frameworks = contents / "Frameworks"
+    frameworks.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sfizz, frameworks / "libsfizz.dylib")
+    licenses = resources / "licenses"
+    licenses.mkdir(exist_ok=True)
+    shutil.copy2(sfizz.parent / "licenses" / "sfizz.txt", licenses / "sfizz.txt")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod installed_tests;
 mod manifest;
+pub use manifest::bundled_engine;
 #[cfg(test)]
 mod manifest_tests;
 #[cfg(test)]
@@ -38,7 +39,15 @@ pub type VscoPack = SfzPack;
 
 impl SfzPack {
     pub fn load(path: &Path) -> Result<Self, AudioError> {
-        let spec = manifest::load_manifest(path)?;
+        Self::from_spec(manifest::load_manifest(path)?)
+    }
+
+    /// Like `load`, with `engine` for a manifest that names none.
+    pub fn load_with_engine(path: &Path, engine: &Path) -> Result<Self, AudioError> {
+        Self::from_spec(manifest::load_manifest_with(path, Some(engine.into()))?)
+    }
+
+    fn from_spec(spec: manifest::PackSpec) -> Result<Self, AudioError> {
         Ok(Self {
             root: spec.root.clone(),
             library: spec.engine.clone(),
@@ -83,6 +92,8 @@ fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
             Ok(entries) => {
                 for entry in entries {
                     match entry {
+                        // Hidden folders hold installs in progress or replaced versions.
+                        Ok(entry) if entry.file_name().to_string_lossy().starts_with('.') => {}
                         Ok(entry) => {
                             let path = entry.path().join("manifest.json");
                             if path.is_file() {
@@ -127,10 +138,35 @@ impl CombinedPack {
 pub(crate) fn first_pack_with(
     packs: &[SfzPack],
     instrument: Instrument,
+    seat: manifest::Seat,
 ) -> Option<(&SfzPack, &manifest::PatchSpec)> {
-    packs
+    packs.iter().find_map(|pack| {
+        manifest::patch_for(&pack.spec, instrument, seat).map(|patch| (pack, patch))
+    })
+}
+
+/// The seat of every part: its players, and whether an earlier part plays
+/// the same instrument family with the same players.
+pub(crate) fn seats(score: &Score) -> Vec<(score_core::PartId, manifest::Seat)> {
+    let family = |instrument| manifest::fallback_family(instrument).unwrap_or(instrument);
+    let mut seen = Vec::new();
+    score
+        .parts()
         .iter()
-        .find_map(|pack| manifest::patch_for(&pack.spec, instrument).map(|patch| (pack, patch)))
+        .map(|part| {
+            let players = score.players(part.id());
+            let key = (family(part.instrument()), players);
+            let count = seen.iter().filter(|seen| **seen == key).count();
+            seen.push(key);
+            (
+                part.id(),
+                manifest::Seat {
+                    players,
+                    second: count % 2 == 1,
+                },
+            )
+        })
+        .collect()
 }
 
 impl SoundBank for CombinedPack {

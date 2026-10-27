@@ -398,6 +398,7 @@ impl Shortcuts {
                     Some(id::FULL_SCREEN),
                     Some(id::TOGGLE_INSTRUMENTS_PANEL),
                     Some(id::TOGGLE_INSPECTOR),
+                    Some(id::TOGGLE_AGENT_PANEL),
                 ]),
             },
         ]
@@ -416,7 +417,6 @@ impl Shortcuts {
         list
     }
 
-    /// The keys of `command` once `keys` is taken away from it.
     pub fn without_keys(&self, command: CommandId, keys: &KeySequence) -> Vec<KeySequence> {
         self.keymap
             .keys_for(command)
@@ -478,6 +478,58 @@ mod tests {
                 }
                 gpui::KeyBindingContextPredicate::parse(binding.scope.predicate()).unwrap();
             }
+        }
+    }
+
+    #[test]
+    fn commands_that_left_the_ribbon_stay_in_the_native_menus() {
+        // The clipboard and the panels left the ribbon (score-toolbar's
+        // `nothing_leaves_the_app` lists them); Edición and Vista keep them.
+        let shortcuts = Shortcuts {
+            registry: Registry::builtin(),
+            keymap: Keymap::resolve(
+                &Registry::builtin(),
+                Profile::sibelius_laptop(),
+                &UserKeymap::new(),
+                &UsLayout,
+            )
+            .0,
+            user: UserKeymap::new(),
+            layout: SystemLayout::current(),
+            path: None,
+            problems: Vec::new(),
+            recent: Vec::new(),
+        };
+        fn commands(items: &[MenuItem], found: &mut Vec<CommandId>) {
+            for item in items {
+                match item {
+                    MenuItem::Action { action, .. } => found.extend(
+                        action
+                            .as_any()
+                            .downcast_ref::<Run>()
+                            .map(|run| run.0)
+                            .or_else(|| action.as_any().downcast_ref::<MenuRun>().map(|run| run.0)),
+                    ),
+                    MenuItem::Submenu(menu) => commands(&menu.items, found),
+                    _ => {}
+                }
+            }
+        }
+        let mut found = Vec::new();
+        for menu in shortcuts.menus() {
+            commands(&menu.items, &mut found);
+        }
+        for command in [
+            id::PASTE,
+            id::COPY,
+            id::CUT,
+            id::REPEAT,
+            id::SELECT_ALL,
+            id::TOGGLE_INSTRUMENTS_PANEL,
+            id::TOGGLE_INSPECTOR,
+            id::FULL_SCREEN,
+        ] {
+            assert!(found.contains(&command), "{command}");
         }
     }
 

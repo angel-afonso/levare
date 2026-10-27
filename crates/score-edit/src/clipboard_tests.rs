@@ -131,6 +131,11 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
         dynamic: Some(Dynamic::Ff),
         articulation: Some(Articulation::Staccato),
         fermata: false,
+        grace: None,
+        expression_text: None,
+        technique_text: None,
+        lyrics: Default::default(),
+        chord: None,
         offsets: Default::default(),
     };
     source.execute(Command::Insert(event)).unwrap();

@@ -1,5 +1,5 @@
 use super::*;
-use score_core::{Connection, ConnectionKind, MarkRef};
+use score_core::{Connection, ConnectionKind, MarkRef, TextKind};
 
 /// Where a point mark can be clicked, in measure coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -26,9 +26,9 @@ pub enum Hit {
 }
 
 /// Pointer tolerance around curves and hairpin strokes, in layout units.
-const STROKE_REACH: f32 = 5.;
+pub(super) const STROKE_REACH: f32 = 5.;
 
-fn segment_distance(p: Point, a: Point, b: Point) -> f32 {
+pub(super) fn segment_distance(p: Point, a: Point, b: Point) -> f32 {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let length = dx * dx + dy * dy;
     let t = if length == 0. {
@@ -130,6 +130,16 @@ impl Layout {
             .map(|(mark, _)| mark);
         if let Some(mark) = point_mark {
             return Some(Hit::Mark(mark));
+        }
+        // Lines stand clear of the heads, often within a note's reach.
+        let line = self
+            .line_marks
+            .iter()
+            .map(|line| (line.connection, line.distance(p)))
+            .filter(|(_, distance)| *distance <= STROKE_REACH)
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((connection, _)) = line {
+            return Some(Hit::Mark(MarkRef::Connection(connection)));
         }
         if let Some((id, pitch)) = note {
             return Some(Hit::Note(id, pitch));
@@ -475,9 +485,10 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             half: (width / 2. + 3., 9.),
         });
         result.techniques.push(TechniqueLabel {
-            text: mark.label(),
+            text: label_words(mark.label()),
             position: Point { x: x - 5., y },
             element: id,
+            mark: MarkRef::Division(id),
         });
         result.top = result.top.min(y - 16.);
     }
@@ -505,18 +516,72 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             half: (width / 2. + 3., 9.),
         });
         result.techniques.push(TechniqueLabel {
-            text: mark.label(),
+            text: label_words(mark.label()),
             position: Point { x: x - 5., y },
             element: id,
+            mark: MarkRef::Technique(id),
         });
         result.top = result.top.min(y - 16.);
     }
+    // Written instructions share the technique lane; the row arranges them.
+    if let Some(words) = event.notation.technique_text {
+        let y = (-18f32).min(if poly { staff_top } else { top } - 20.)
+            - if event.notation.articulation.is_some() {
+                20.
+            } else {
+                0.
+            };
+        let y = if event.notation.fermata {
+            y.min(fermata_y - 22.)
+        } else {
+            y
+        };
+        let label = TechniqueLabel {
+            text: words,
+            position: Point { x: x - 5., y },
+            element: id,
+            mark: MarkRef::Text(id, TextKind::Technique),
+        };
+        result.marks.push(MarkBox {
+            mark: label.mark,
+            glyph: None,
+            center: Point {
+                x: x - 5. + label.width() / 2.,
+                y: y - 5.,
+            },
+            half: (label.width() / 2. + 3., 9.),
+        });
+        result.techniques.push(label);
+        result.top = result.top.min(y - 16.);
+    }
+    // A chord symbol starts above the note; the row gives it the outer lane.
+    if let Some(chord) = event.notation.chord {
+        let y = (-18f32).min(if poly { staff_top } else { top } - 20.);
+        let label = TechniqueLabel {
+            text: score_core::Words::new(&chord.label()).expect("chord symbols are short"),
+            position: Point { x: x - 6., y },
+            element: id,
+            mark: MarkRef::Chord(id),
+        };
+        result.marks.push(MarkBox {
+            mark: label.mark,
+            glyph: None,
+            center: Point {
+                x: x - 6. + label.width() / 2.,
+                y: y - 6.,
+            },
+            half: (label.width() / 2. + 3., 10.),
+        });
+        result.techniques.push(label);
+        result.top = result.top.min(y - 18.);
+    }
+    let dynamic_lane = 40f32
+        .max(bottom)
+        .max(if poly { staff_bottom } else { bottom })
+        + 40.;
     if let Some(mark) = event.notation.dynamic {
         // Keep forte ascenders below the entire lower tie lane.
-        let y = 40f32
-            .max(bottom)
-            .max(if poly { staff_bottom } else { bottom })
-            + 40.;
+        let y = dynamic_lane;
         // Bravura's dynamic letters are up to 1.8 spaces wide; f rises 1.8
         // spaces and p descends 0.6 below the baseline.
         let width = mark.label().chars().count() as f32 * 14.;
@@ -536,6 +601,63 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             element: Some(id),
         });
         result.bottom = result.bottom.max(y + 12.);
+    }
+    // An expression follows the dynamic on its baseline: «p dolce».
+    if let Some(words) = event.notation.expression_text {
+        let after = event
+            .notation
+            .dynamic
+            .map_or(0., |mark| mark.label().chars().count() as f32 * 14. + 6.);
+        let label = TechniqueLabel {
+            text: words,
+            position: Point {
+                x: x - 6. + after,
+                y: dynamic_lane,
+            },
+            element: id,
+            mark: MarkRef::Text(id, TextKind::Expression),
+        };
+        result.marks.push(MarkBox {
+            mark: label.mark,
+            glyph: None,
+            center: Point {
+                x: label.position.x + label.width() / 2.,
+                y: dynamic_lane - 5.,
+            },
+            half: (label.width() / 2. + 3., 9.),
+        });
+        result.expressions.push(label);
+        result.bottom = result.bottom.max(dynamic_lane + 12.);
+    }
+    // Syllables wait for the row to put each verse on one line.
+    for (verse, syllable) in event.notation.lyrics.verses() {
+        let mut label = LyricLabel {
+            syllable,
+            verse: verse as u8,
+            position: Point { x: 0., y: 0. },
+            element: id,
+        };
+        let width = label.width();
+        // A held syllable starts at its note; the others centre on it.
+        let left = if syllable.join == score_core::Join::Melisma {
+            x - 6.
+        } else {
+            x - width / 2.
+        };
+        label.position = Point {
+            x: left,
+            y: lyrics::FIRST + verse as f32 * lyrics::LINE,
+        };
+        result.marks.push(MarkBox {
+            mark: MarkRef::Lyric(id, verse as u8),
+            glyph: None,
+            center: Point {
+                x: left + width / 2.,
+                y: label.position.y - 5.,
+            },
+            half: (width / 2. + 2., 9.),
+        });
+        result.lyrics.push(label);
     }
 }
 
@@ -559,14 +681,14 @@ impl<'a> PlacedIndex<'a> {
         }
         Self { events, staves }
     }
-    fn measure_of(&self, id: ElementId) -> Option<&'a PlacedMeasure> {
+    pub(super) fn measure_of(&self, id: ElementId) -> Option<&'a PlacedMeasure> {
         self.events.get(&id).copied()
     }
 }
 
 pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> Vec<Curve> {
     let mut result = Vec::new();
-    for c in score.connections().iter().filter(|c| !c.kind.is_hairpin()) {
+    for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
         let Some(start) = index.measure_of(c.start) else {
             continue;
         };
@@ -750,7 +872,12 @@ pub(super) fn notation_bounds(content: &MeasureLayout, metrics: &Metrics) -> (f3
     for mark in &content.marks {
         if !matches!(
             mark.mark,
-            MarkRef::Dynamic(_) | MarkRef::Technique(_) | MarkRef::Division(_)
+            MarkRef::Dynamic(_)
+                | MarkRef::Technique(_)
+                | MarkRef::Division(_)
+                | MarkRef::Text(..)
+                | MarkRef::Chord(_)
+                | MarkRef::Lyric(..)
         ) {
             top = top.min(mark.center.y - mark.half.1);
             bottom = bottom.max(mark.center.y + mark.half.1);
@@ -776,12 +903,14 @@ pub(super) fn arrange_indications(
         .collect();
     let top = bounds.iter().map(|b| b.0).fold(0f32, f32::min);
     let bottom = bounds.iter().map(|b| b.1).fold(40f32, f32::max);
-    let division = |text: &str| matches!(text, "div." | "unis.");
-    let has_technique = measures
-        .iter()
-        .any(|bar| bar.content.techniques.iter().any(|t| !division(t.text)));
+    let has = |lane: u8| {
+        measures
+            .iter()
+            .any(|bar| bar.content.techniques.iter().any(|t| t.lane() == lane))
+    };
     let technique_y = top - if above_slur { 22. } else { 0. } - 14.;
-    let division_y = technique_y - if has_technique { 30. } else { 0. };
+    let division_y = technique_y - if has(0) { 30. } else { 0. };
+    let chord_y = division_y - if has(1) { 30. } else { 0. };
     let mut labels: Vec<_> = measures
         .iter()
         .enumerate()
@@ -790,36 +919,26 @@ pub(super) fn arrange_indications(
                 .techniques
                 .iter()
                 .enumerate()
-                .map(move |(i, label)| {
-                    (division(label.text), bar.origin.x + label.position.x, m, i)
-                })
+                .map(move |(i, label)| (label.lane(), bar.origin.x + label.position.x, m, i))
         })
         .collect();
     labels.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));
     let mut occupied: Vec<(f32, f32, f32)> = Vec::new();
-    for (is_division, x, m, i) in labels {
+    for (lane, x, m, i) in labels {
         let content = Arc::make_mut(&mut measures[m].content);
         let label = &mut content.techniques[i];
-        let width = label.text.chars().count() as f32 * 7.;
-        let mut y = if is_division { division_y } else { technique_y };
+        let width = label.width();
+        let mut y = [technique_y, division_y, chord_y][usize::from(lane)];
         while let Some(&(_, _, other_y)) = occupied.iter().find(|&&(left, right, other_y)| {
             x < right + 10. && x + width + 10. > left && (y - other_y).abs() < 30.
         }) {
             y = other_y - 30.;
         }
         let shift = y - label.position.y;
-        let anchor = label.element;
+        let owner = label.mark;
         label.position.y = y;
-        for mark in &mut content.marks {
-            if mark.mark
-                == if is_division {
-                    MarkRef::Division(anchor)
-                } else {
-                    MarkRef::Technique(anchor)
-                }
-            {
-                mark.center.y += shift;
-            }
+        for mark in content.marks.iter_mut().filter(|mark| mark.mark == owner) {
+            mark.center.y += shift;
         }
         occupied.push((x, x + width, y));
     }
@@ -859,8 +978,13 @@ pub(super) fn hairpin_y<'a>(
             floor = floor.max(content.ink_bottom);
         }
         for mark in &content.marks {
-            if matches!(mark.mark, MarkRef::Dynamic(_)) {
+            if matches!(
+                mark.mark,
+                MarkRef::Dynamic(_) | MarkRef::Text(_, TextKind::Expression)
+            ) {
                 dynamic = dynamic.max(mark.center.y);
+            } else if matches!(mark.mark, MarkRef::Text(_, TextKind::Technique)) {
+                // Above the staff: no floor for the lane below.
             } else {
                 floor = floor.max(mark.center.y + mark.half.1);
             }
@@ -912,7 +1036,11 @@ pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Ve
                 .iter()
                 .flat_map(|m| {
                     m.content.marks.iter().filter_map(move |mark| {
-                        matches!(mark.mark, MarkRef::Dynamic(_)).then_some((
+                        matches!(
+                            mark.mark,
+                            MarkRef::Dynamic(_) | MarkRef::Text(_, TextKind::Expression)
+                        )
+                        .then_some((
                             m.origin.x + mark.center.x - mark.half.0,
                             m.origin.x + mark.center.x + mark.half.0,
                             m.origin.y + mark.center.y,
@@ -941,7 +1069,7 @@ pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Ve
                 }
             }
             let below_curve = score.connections().iter().any(|connection| {
-                !connection.kind.is_hairpin()
+                connection.kind.is_curve()
                     && connection.start.part == first.part
                     && connection.start.staff == first.source_staff
                     && (connection.kind == ConnectionKind::Tie
@@ -1012,20 +1140,20 @@ pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Ve
     result
 }
 
-struct ConnectionRow<'a> {
-    measures: Vec<&'a PlacedMeasure>,
-    start: u64,
-    end: u64,
+pub(super) struct ConnectionRow<'a> {
+    pub(super) measures: Vec<&'a PlacedMeasure>,
+    pub(super) start: u64,
+    pub(super) end: u64,
 }
 impl ConnectionRow<'_> {
-    fn start_x(&self) -> f32 {
+    pub(super) fn start_x(&self) -> f32 {
         let first = self.measures[0];
         let local = self.start - first.start_tick;
         // Use this placed bar's actual timing grid. A voice returning to the
         // upper staff within a system does not repeat its clef/signature.
         first.origin.x + first.content.x_at_tick(local as f64) - 4.
     }
-    fn end_x(&self, score: &Score) -> f32 {
+    pub(super) fn end_x(&self, score: &Score) -> f32 {
         let last = self.measures[self.measures.len() - 1];
         let local = self.end - last.start_tick;
         last.origin.x
@@ -1036,7 +1164,7 @@ impl ConnectionRow<'_> {
             }
     }
 }
-fn connection_rows<'a>(
+pub(super) fn connection_rows<'a>(
     score: &Score,
     c: Connection,
     index: &PlacedIndex<'a>,

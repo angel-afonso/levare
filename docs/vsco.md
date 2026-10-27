@@ -12,24 +12,25 @@ un motor de reproducción intercambiable desde la aplicación.
 
 El adaptador está en el paquete independiente `score-sound-vsco`. La característica
 `vsco` de `levare` está activa por defecto, así que `cargo run` y `cargo build`
-lo incluyen. Instalar las muestras sigue siendo opcional: sin ellas, **Sonidos** solo
+lo incluyen. Instalar las muestras sigue siendo opcional: sin ellas, la pestaña **Sonido** solo
 ofrece GeneralUser. Para compilar sin el adaptador:
 `cargo run --no-default-features --features runtime-shaders`.
 
-1. Abre **Sonidos** en el inspector, o pulsa el nombre del sonido junto al transporte.
+1. Abre la pestaña **Sonido** del panel derecho, o pulsa el nombre del sonido junto al transporte.
 2. Elige **VSCO CE · experimental**. Se cargan los instrumentos de la partitura y
    el de la audición al escribir. La primera carga puede tardar unos segundos.
 3. Reproduce, pausa o cambia la posición en la regla como de costumbre.
 4. Elige **GeneralUser GS** para comparar. Cambiar el paquete detiene el transporte;
    no modifica la partitura. La elección es de sesión; al abrir la app se usa GeneralUser.
 
-En **Mezclador**, ambos bancos comparten una reverberación estéreo suave (14 % por
-defecto), con cantidad, tamaño de sala y apagado para comparar en seco. Cada parte
-tiene volumen (0–100 %) y posición estéreo (izquierda/centro/derecha), además de
-Restablecer. Con varias partes, cada una parte de su sitio habitual en el escenario
+En la pestaña **Sonido**, ambos bancos comparten una reverberación estéreo suave (14 % por
+defecto), con cantidad, tamaño de sala y apagado para comparar en seco. En **Mezcla**, a la
+izquierda, cada fila de parte tiene volumen (0–100 %) y posición estéreo
+(izquierda/centro/derecha); pulsar el valor de un deslizador lo devuelve al habitual. Con
+varias partes, cada una parte de su sitio habitual en el escenario
 (violines a la izquierda, violas y graves a la derecha, maderas y metales repartidos
 detrás); un instrumento repetido, como un segundo violín, se coloca un 20 % más a la
-derecha. Una parte sola queda centrada. Restablecer vuelve a esa posición. Los controles funcionan durante la reproducción, también para pizzicato,
+derecha. Una parte sola queda centrada. Pulsar el valor de la posición vuelve a ese sitio. Los controles funcionan durante la reproducción, también para pizzicato,
 las dos manos del piano y las notas de GeneralUser usadas como respaldo.
 Los ajustes se conservan al cambiar de banco o reconectar audio; los de cada parte
 se restablecen al abrir o crear una partitura y no se guardan en el documento.
@@ -42,8 +43,11 @@ incluido el proyecto cuando se abre `target/Levare.app`.
 
 ## Cobertura de esta primera integración
 
-- Piano vertical; violín solista; secciones de viola, violoncello y contrabajo;
-  flauta, oboe, clarinete, fagot, trompeta, corno y trombón.
+- Piano vertical; violín solista y sección de violines (según **Sección | Solista** en
+  Mezcla); secciones de viola y violoncello; contrabajo solista; flauta, oboe, clarinete,
+  fagot, trompeta, corno y trombón.
+- Los trémolos de tres barras en la cuerda usan las grabaciones de trémolo de VSCO
+  (violín solista y sección, viola, violoncello y contrabajo).
 - El cambio **pizzicato / arco** usa grabaciones distintas de cada instrumento de
   cuerda. Se conservan las capas de intensidad y las variaciones que contiene el SFZ.
 - Los reguladores modifican la expresión de cada canal, también en notas sostenidas.

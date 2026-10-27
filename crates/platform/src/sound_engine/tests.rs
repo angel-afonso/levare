@@ -297,6 +297,7 @@ fn releasing_one_timbre_does_not_cut_a_same_pitch_normal_or_harmonic_voice() {
             harmonic: None,
             articulation: None,
             legato: false,
+            tremolo: None,
         };
         let harmonic = NoteEvent {
             harmonic: Some(Harmonic::Natural),

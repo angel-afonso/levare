@@ -19,10 +19,35 @@ struct PartIndex {
     endpoints: HashMap<ElementId, Vec<(ConnectionKind, bool)>>,
     pizzicato: HashSet<ElementId>,
     shared_arpeggios: HashMap<ElementId, (Arpeggio, u8)>,
+    /// Syllables that continue a word begun before them, by verse.
+    continued: HashSet<(ElementId, u8)>,
 }
 impl PartIndex {
     fn new(score: &Score, part: &Part) -> Self {
         let mut index = Self::default();
+        for staff in part.staves() {
+            for voice in Voice::ALL {
+                let mut hyphen = [false; MAX_VERSES];
+                for (bar, measure) in staff.measures().iter().enumerate() {
+                    for (event, written) in measure.voice_iter(voice) {
+                        for (verse, syllable) in written.notation.lyrics.verses() {
+                            if hyphen[verse] {
+                                index.continued.insert((
+                                    ElementId {
+                                        part: part.id(),
+                                        staff: staff.id(),
+                                        measure: bar,
+                                        event,
+                                    },
+                                    verse as u8,
+                                ));
+                            }
+                            hyphen[verse] = syllable.join == Join::Hyphen;
+                        }
+                    }
+                }
+            }
+        }
         for c in score
             .connections()
             .iter()
@@ -107,6 +132,7 @@ fn value(d: Duration) -> &'static str {
         NoteValue::Quarter => "quarter",
         NoteValue::Eighth => "eighth",
         NoteValue::Sixteenth => "16th",
+        NoteValue::ThirtySecond => "32nd",
     }
 }
 fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
@@ -131,6 +157,46 @@ fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
         voice,
         staff,
         "",
+    );
+}
+/// A chord symbol: root, kind with its printed suffix, and bass.
+fn harmony(xml: &mut String, chord: ChordSymbol, tick: u16, staff: u8) {
+    let root = |name: &str, root: ChordRoot| {
+        format!(
+            "<{name}><{name}-step>{:?}</{name}-step><{name}-alter>{}</{name}-alter></{name}>",
+            root.step, root.alteration
+        )
+    };
+    let (kind, degree) = chord.quality.musicxml();
+    let text = chord.quality.suffix().replace('♭', "b").replace('♯', "#");
+    let degree = degree
+        .map(|(value, alter)| {
+            format!(
+                "<degree><degree-value>{value}</degree-value><degree-alter>{alter}</degree-alter><degree-type>add</degree-type></degree>"
+            )
+        })
+        .unwrap_or_default();
+    let bass = chord
+        .bass
+        .map(|bass| root("bass", bass))
+        .unwrap_or_default();
+    let _ = writeln!(
+        xml,
+        "<harmony>{}<kind text=\"{}\">{kind}</kind>{bass}{degree}<offset>{tick}</offset><staff>{staff}</staff></harmony>",
+        root("root", chord.root),
+        escape(&text)
+    );
+}
+/// Written words: an expression in italics below, an instruction above.
+fn staff_text(xml: &mut String, words: Words, kind: TextKind, tick: u16, voice: u8, staff: u8) {
+    let (placement, style) = match kind {
+        TextKind::Expression => ("below", " font-style=\"italic\""),
+        TextKind::Technique => ("above", ""),
+    };
+    let _ = writeln!(
+        xml,
+        "<direction placement=\"{placement}\"><direction-type><words{style}>{}</words></direction-type><offset sound=\"yes\">{tick}</offset><voice>{voice}</voice><staff>{staff}</staff></direction>",
+        escape(words.as_str())
     );
 }
 fn ending_numbers(ending: &Ending) -> String {
@@ -588,6 +654,17 @@ fn directions(
             if let Some(technique) = event.notation.technique {
                 words(xml, technique.label(), tick, number, staff);
             }
+            for (kind, text) in [
+                (TextKind::Technique, event.notation.technique_text),
+                (TextKind::Expression, event.notation.expression_text),
+            ] {
+                if let Some(text) = text {
+                    staff_text(xml, text, kind, tick, number, staff);
+                }
+            }
+            if let Some(chord) = event.notation.chord {
+                harmony(xml, chord, tick, staff);
+            }
             if let Some(mark) = event.notation.division
                 && !part.has_passage_divisi()
             {
@@ -617,7 +694,79 @@ fn directions(
                     );
                 }
             }
+            // Octave lines and pedal stop once their last note has ended.
+            for &(kind, stop) in index
+                .endpoints(id)
+                .iter()
+                .filter(|(kind, _)| kind.is_ottava() || *kind == ConnectionKind::Pedal)
+            {
+                let body = match (kind, stop) {
+                    (ConnectionKind::Pedal, stop) => format!(
+                        "<pedal type=\"{}\" line=\"yes\"/>",
+                        if stop { "stop" } else { "start" }
+                    ),
+                    (_, true) => {
+                        format!("<octave-shift type=\"stop\" size=\"8\" number=\"{number}\"/>")
+                    }
+                    // Written an octave below where it sounds, so shifted down.
+                    (kind, false) => format!(
+                        "<octave-shift type=\"{}\" size=\"8\" number=\"{number}\"/>",
+                        if kind == ConnectionKind::OttavaAlta {
+                            "down"
+                        } else {
+                            "up"
+                        }
+                    ),
+                };
+                let at = if stop {
+                    tick + event.duration.ticks()
+                } else {
+                    tick
+                };
+                direction(xml, &body, at, number, staff, "");
+            }
         }
+    }
+}
+
+/// Grace notes before their note: a slashed eighth for an acciaccatura,
+/// beamed sixteenths for a group.
+fn graces(xml: &mut String, grace: Grace, key: KeySignature, voice: u8, staff: u8) {
+    let count = grace.len();
+    for (index, p) in grace.notes().enumerate() {
+        let slash = if grace.kind == GraceKind::Acciaccatura && index == 0 {
+            " slash=\"yes\""
+        } else {
+            ""
+        };
+        let _ = write!(xml, "<note><grace{slash}/>");
+        pitch(xml, p, p.in_key(key).alteration());
+        let _ = write!(
+            xml,
+            "<voice>{voice}</voice><type>{}</type>",
+            if count == 1 { "eighth" } else { "16th" }
+        );
+        if let Some(sign) = p.accidental() {
+            let sign = match sign {
+                Accidental::Flat => "flat",
+                Accidental::Natural => "natural",
+                Accidental::Sharp => "sharp",
+            };
+            let _ = write!(xml, "<accidental>{sign}</accidental>");
+        }
+        let _ = write!(xml, "<stem>up</stem><staff>{staff}</staff>");
+        if count > 1 {
+            let state = match index {
+                0 => "begin",
+                last if last + 1 == count => "end",
+                _ => "continue",
+            };
+            let _ = write!(
+                xml,
+                "<beam number=\"1\">{state}</beam><beam number=\"2\">{state}</beam>"
+            );
+        }
+        xml.push_str("</note>");
     }
 }
 
@@ -653,6 +802,11 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                 .contains(&(ConnectionKind::Tie, false)));
     let number = voice_number(f.id.staff, f.voice);
     let pizz = index.pizzicato.contains(&f.id);
+    if f.first
+        && let Some(grace) = f.event.notation.grace
+    {
+        graces(xml, grace, key, number, f.staff);
+    }
     for tone in 0..count {
         let _ = write!(
             xml,
@@ -750,14 +904,40 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                 };
                 let _ = write!(xml, "<articulations><{tag}/></articulations>");
             }
+            let ends = index.endpoints(f.id);
+            if f.last && ends.contains(&(ConnectionKind::Glissando, false)) {
+                let _ = write!(
+                    xml,
+                    "<glissando type=\"start\" number=\"{number}\" line-type=\"solid\"/>"
+                );
+            }
+            if f.first && ends.contains(&(ConnectionKind::Glissando, true)) {
+                let _ = write!(xml, "<glissando type=\"stop\" number=\"{number}\"/>");
+            }
+            let mut ornaments = String::new();
+            // A trill over one note is the sign alone; a longer one has a wavy line.
+            let single = ends.contains(&(ConnectionKind::Trill, false))
+                && ends.contains(&(ConnectionKind::Trill, true));
+            if f.first && ends.contains(&(ConnectionKind::Trill, false)) {
+                ornaments.push_str("<trill-mark/>");
+                if !single {
+                    let _ = write!(ornaments, "<wavy-line type=\"start\" number=\"{number}\"/>");
+                }
+            }
+            if f.last && !single && ends.contains(&(ConnectionKind::Trill, true)) {
+                let _ = write!(ornaments, "<wavy-line type=\"stop\" number=\"{number}\"/>");
+            }
             if f.first
                 && let Some(tremolo) = f.event.notation.tremolo
             {
                 let _ = write!(
-                    xml,
-                    "<ornaments><tremolo type=\"single\">{}</tremolo></ornaments>",
+                    ornaments,
+                    "<tremolo type=\"single\">{}</tremolo>",
                     tremolo.strokes()
                 );
+            }
+            if !ornaments.is_empty() {
+                let _ = write!(xml, "<ornaments>{ornaments}</ornaments>");
             }
             if f.last && f.event.notation.fermata {
                 xml.push_str("<fermata/>");
@@ -795,7 +975,30 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             };
             let _ = write!(xml, "<arpeggiate number=\"{arpeggio_number}\"{arrow}/>");
         }
-        xml.push_str("</notations></note>\n");
+        xml.push_str("</notations>");
+        if tone == 0 && f.first {
+            for (verse, syllable) in f.event.notation.lyrics.verses() {
+                let continued = index.continued.contains(&(f.id, verse as u8));
+                let syllabic = match (continued, syllable.join == Join::Hyphen) {
+                    (false, false) => "single",
+                    (false, true) => "begin",
+                    (true, true) => "middle",
+                    (true, false) => "end",
+                };
+                let extend = if syllable.join == Join::Melisma {
+                    "<extend/>"
+                } else {
+                    ""
+                };
+                let _ = write!(
+                    xml,
+                    "<lyric number=\"{}\"><syllabic>{syllabic}</syllabic><text>{}</text>{extend}</lyric>",
+                    verse + 1,
+                    escape(syllable.text())
+                );
+            }
+        }
+        xml.push_str("</note>\n");
     }
 }
 

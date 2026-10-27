@@ -1,0 +1,473 @@
+<title>Paneles de Levare</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Music&display=swap">
+<style>
+/* Layout: one Levare window. Left answers "what is in the score", right answers "what is selected and
+   what can I change", the strip over the score is the one place for position and context. */
+:root {
+  color-scheme: dark;
+  --page: #0e0f11;
+  --bg: #131417;
+  --panel: #18191d;
+  --popover: #1d1e23;
+  --card: #1f2026;
+  --field: #222329;
+  --hover: #2c2e36;
+  --border: #2b2d35;
+  --outline: #33353e;
+  --text: #e8e9ee;
+  --secondary: #bfc3ce;
+  --muted: #969ba7;
+  --blue: #79a4ff;
+  --accent-text: #b8ceff;
+  --select: #22314d;
+  --select-border: #3c5d94;
+  --warn: #f2b282;
+  --warn-bg: #3a2a1f;
+  --paper: #f6f4ef;
+  --ink: #242323;
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --music: "Noto Music", "Bravura Text", "Apple Symbols", "Segoe UI Symbol", serif;
+  --score: "Times New Roman", Georgia, serif;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--page); color: var(--text); }
+body { font-family: var(--ui); font-size: 13px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 40px; }
+button, input, select { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.intro { max-width: 1400px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: end; justify-content: space-between; }
+.intro h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+.intro p { margin: 0; color: var(--secondary); max-width: 70ch; line-height: 1.5; font-size: 14px; }
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--field); border-radius: 8px; }
+.seg button { padding: 5px 12px; border-radius: 6px; color: var(--secondary); border: 1px solid transparent; }
+.seg button:hover { background: var(--hover); color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--select); border-color: var(--select-border); color: var(--accent-text); }
+.seg.small button { padding: 3px 10px; font-size: 12px; }
+.switch-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+
+.frame-wrap { max-width: 1400px; margin: 0 auto; overflow-x: auto; border-radius: 12px; }
+.window { min-width: 1180px; height: 820px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+
+.titlebar { height: 44px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.lights { display: flex; gap: 8px; margin-right: 6px; } .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .lights i:nth-child(2){background:#febc2e} .lights i:nth-child(3){background:#28c840}
+.app { font-weight: 600; display: flex; gap: 6px; align-items: center; } .app .mark { font-family: var(--music); font-size: 18px; }
+.doc { padding: 3px 10px; border-radius: 6px; background: var(--field); color: var(--secondary); }
+.spacer { flex: 1; }
+.iconbtn { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--secondary); }
+.iconbtn:hover { background: var(--hover); color: var(--text); }
+.iconbtn[aria-pressed="true"] { background: var(--select); color: var(--accent-text); }
+.export { height: 28px; padding: 0 12px; border-radius: 6px; background: var(--text); color: #131417; font-weight: 600; }
+.tabbar { height: 36px; flex: none; display: flex; align-items: stretch; gap: 2px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.tabbar .t { padding: 0 12px; color: var(--muted); display: grid; place-items: center; position: relative; }
+.tabbar .t.on { color: var(--text); } .tabbar .t.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--blue); border-radius: 2px; }
+.pill { margin-left: auto; align-self: center; display: flex; gap: 8px; align-items: center; padding: 4px 10px; border-radius: 6px; background: var(--select); color: var(--accent-text); font-size: 12px; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); }
+.ribbon { height: 92px; flex: none; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; gap: 20px; padding: 8px 12px; color: var(--secondary); overflow: hidden; }
+.ribbon .g { display: flex; flex-direction: column; justify-content: space-between; }
+.ribbon .r { display: flex; gap: 2px; }
+.ribbon .tile { width: 52px; height: 62px; border-radius: 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; gap: 1px; }
+.ribbon .tile b { font-family: var(--music); font-weight: 400; font-size: 22px; color: var(--text); height: 26px; display: grid; place-items: center; }
+.ribbon .tile em { font-style: normal; color: var(--muted); font-size: 9.5px; }
+.ribbon .tile.on { background: var(--select); border: 1px solid var(--select-border); color: var(--accent-text); }
+.ribbon .track { display: flex; gap: 2px; padding: 2px; background: var(--field); border-radius: 9px; }
+.ribbon .cap { font-size: 11px; color: var(--muted); padding-left: 4px; }
+
+.body { flex: 1; min-height: 0; display: flex; }
+.left { width: 248px; flex: none; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.right { width: 300px; flex: none; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* Left: parts */
+.lhead { padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); }
+.lhead .row { display: flex; align-items: center; gap: 8px; }
+.lhead h2 { font-size: 13px; font-weight: 600; margin: 0; flex: 1; }
+.lhead h2 span { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.add { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--secondary); font-size: 16px; }
+.add:hover { background: var(--hover); color: var(--text); }
+.search { height: 28px; border-radius: 6px; background: var(--field); border: 1px solid transparent; padding: 0 8px; width: 100%; color: var(--text); }
+.search::placeholder { color: var(--muted); }
+.parts { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 6px 12px; }
+.fam { margin-top: 6px; }
+.fam > button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 4px 6px; color: var(--muted); font-size: 11.5px; border-radius: 6px; }
+.fam > button:hover { color: var(--text); background: var(--hover); }
+.fam > button .chev { width: 10px; transition: transform .12s; }
+.fam.closed > button .chev { transform: rotate(-90deg); }
+.fam.closed .rows { display: none; }
+.part { width: 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; min-height: 28px; padding: 4px 8px 4px 22px; border-radius: 6px; text-align: left; border: 1px solid transparent; }
+.part:hover { background: var(--hover); }
+.part.sel { background: var(--select); border-color: var(--select-border); }
+.part .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.part .meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.part.mix { grid-template-columns: 1fr; gap: 4px; padding-block: 6px; }
+.mixrow { display: grid; grid-template-columns: 1fr 64px; gap: 8px; align-items: center; }
+.mixrow input[type=range] { width: 100%; accent-color: var(--blue); height: 14px; }
+.mixrow .v { color: var(--muted); font-size: 11px; text-align: right; }
+.players { display: flex; gap: 4px; }
+.players button { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--field); color: var(--secondary); }
+.players button[aria-pressed="true"] { background: var(--select); color: var(--accent-text); }
+.lfoot { border-top: 1px solid var(--border); padding: 8px 12px; color: var(--muted); font-size: 11.5px; display: flex; justify-content: space-between; }
+
+/* Context strip */
+.strip { height: 48px; flex: none; display: flex; align-items: stretch; background: var(--bg); border-bottom: 1px solid var(--border); padding: 0 6px; gap: 2px; overflow-x: auto; }
+.cell { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 12px; border-radius: 6px; margin-block: 4px; text-align: left; white-space: nowrap; }
+.cell small { color: var(--muted); font-size: 11px; }
+.cell span { font-weight: 600; font-size: 13.5px; }
+button.cell:hover { background: var(--hover); }
+button.cell.open { background: var(--select); }
+.strip .sep { width: 1px; background: var(--border); margin-block: 12px; }
+.strip .selinfo { margin-left: auto; align-self: center; color: var(--secondary); padding-right: 8px; font-size: 12.5px; }
+
+/* Score */
+.canvas { flex: 1; min-height: 0; background: #24252a; overflow: auto; padding: 22px 0; display: flex; justify-content: center; }
+.sheet { width: 640px; background: var(--paper); color: var(--ink); padding: 22px 26px 30px; cursor: default; }
+.sheet h3 { font-family: var(--score); font-weight: 400; text-align: center; font-size: 21px; margin: 0; }
+.sheet .sub { font-family: var(--score); text-align: center; font-size: 13px; margin: 2px 0 14px; }
+.sheet svg { display: block; width: 100%; height: auto; }
+.note { cursor: pointer; }
+.note:hover ellipse { fill: #3f6fd8; }
+.note.sel ellipse, .note.sel line { fill: #2f62d6; stroke: #2f62d6; }
+.note.inpass ellipse { fill: #2f62d6; } .note.inpass line { stroke: #2f62d6; }
+
+/* Right panel */
+.rtabs { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.rtabs .seg { width: 100%; } .rtabs .seg button { flex: 1; }
+.rbody { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 16px; }
+.rh { display: flex; flex-direction: column; gap: 2px; }
+.rh h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.rh p { margin: 0; color: var(--secondary); font-size: 12.5px; }
+.sec { display: flex; flex-direction: column; gap: 6px; }
+.sec h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; min-height: 28px; padding: 0 8px; border-radius: 6px; }
+.kv span:first-child { color: var(--secondary); }
+.kv b { font-weight: 500; }
+button.kv { width: 100%; text-align: left; } button.kv:hover { background: var(--hover); }
+button.kv b::after { content: " ›"; color: var(--muted); }
+.field { height: 30px; border-radius: 6px; background: var(--field); border: 1px solid transparent; padding: 0 8px; width: 100%; color: var(--text); }
+.big { display: flex; align-items: baseline; gap: 10px; padding: 0 8px; }
+.big .p { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.big .s { color: var(--secondary); }
+.marks { display: flex; flex-direction: column; gap: 2px; }
+.mark { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 8px; min-height: 30px; padding: 0 4px 0 8px; border-radius: 6px; background: var(--card); }
+.mark .gl { font-family: var(--music); font-size: 17px; text-align: center; }
+.mark .gl.sc { font-family: var(--score); font-style: italic; font-weight: 700; font-size: 14px; }
+.mark small { color: var(--muted); }
+.x { width: 26px; height: 26px; border-radius: 6px; color: var(--muted); display: grid; place-items: center; }
+.x:hover { background: var(--hover); color: var(--text); }
+.linkbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { height: 30px; padding: 0 10px; border-radius: 6px; background: var(--field); color: var(--text); display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; }
+.btn:hover { background: var(--hover); }
+.btn .k { color: var(--muted); font-size: 11px; }
+.btn.primary { background: var(--text); color: #131417; font-weight: 600; }
+.warnbox { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; line-height: 1.4; }
+.empty { color: var(--muted); font-size: 12.5px; padding: 0 8px; }
+.keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.keys button { height: 30px; border-radius: 6px; background: var(--field); border: 1px solid transparent; }
+.keys button:hover { background: var(--hover); }
+.keys button[aria-pressed="true"] { background: var(--select); border-color: var(--select-border); color: var(--accent-text); }
+.list { display: flex; flex-direction: column; gap: 2px; }
+.item { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; border-radius: 6px; text-align: left; width: 100%; }
+.item:hover { background: var(--hover); }
+.item small { grid-column: 1 / -1; color: var(--muted); }
+.item .tag { color: var(--warn); font-size: 11.5px; }
+.toggle { display: flex; justify-content: space-between; align-items: center; min-height: 30px; padding: 0 8px; }
+.sw { width: 30px; height: 18px; border-radius: 9px; background: var(--outline); position: relative; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text); transition: left .12s; }
+.sw[aria-checked="true"] { background: var(--blue); } .sw[aria-checked="true"]::after { left: 14px; }
+.pack { background: var(--card); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.pack small { color: var(--muted); }
+
+.transport { height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-top: 1px solid var(--border); }
+.play { width: 34px; height: 34px; border-radius: 50%; background: var(--text); color: #131417; display: grid; place-items: center; }
+.timeline { flex: 1; height: 26px; background: var(--field); border-radius: 6px; position: relative; }
+.timeline i { position: absolute; left: 17%; top: 3px; bottom: 3px; width: 2px; background: var(--warn); }
+.status { height: 24px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: var(--bg); border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; }
+.status .ok { margin-left: auto; }
+
+.before { display: block; width: 100%; height: auto; }
+.notes { max-width: 1400px; margin: 20px auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px 28px; }
+.notes h3 { font-size: 14px; margin: 0 0 6px; }
+.notes p { margin: 0; color: var(--secondary); line-height: 1.5; }
+.hint { max-width: 1400px; margin: 10px auto 0; color: var(--muted); font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="intro">
+  <div>
+    <h1>Propuesta de paneles para Levare</h1>
+    <p>Pulsa una nota de la partitura, otra con ⇧ para marcar un pasaje, el papel en blanco para no seleccionar nada, o una casilla de la tira superior (tempo, métrica, tonalidad) para editarla. A la izquierda, cambia entre Lista y Mezcla y pliega las familias.</p>
+  </div>
+  <div><span class="switch-label">Versión</span>
+    <div class="seg" role="group" aria-label="Versión">
+      <button id="v-new" aria-pressed="true">Propuesta</button>
+      <button id="v-old" aria-pressed="false">Antes</button>
+    </div></div>
+</header>
+
+<div class="frame-wrap">
+  <img class="before" id="before" hidden alt="Levare hoy: panel de instrumentos a la izquierda y Propiedades a la derecha" src="{{BEFORE}}">
+  <div class="window" id="win">
+    <div class="titlebar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="app"><span class="mark">𝅘𝅥𝅮</span>Levare</div>
+      <span class="doc">Sinfonía en re</span>
+      <span class="spacer"></span>
+      <button class="iconbtn" id="tg-left" aria-pressed="true" title="Partes" aria-label="Mostrar u ocultar partes"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/></svg></button>
+      <button class="iconbtn" id="tg-right" aria-pressed="true" title="Selección, sonido y revisión" aria-label="Mostrar u ocultar el panel derecho"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/></svg></button>
+      <button class="export">Exportar…</button>
+    </div>
+    <div class="tabbar"><span class="t on">Escribir</span><span class="t">Articulaciones</span><span class="t">Dinámicas</span><span class="t">Texto</span><span class="t">Partitura</span><span class="t">Reproducción</span><span class="t">Revisión</span><span class="t">Vista</span><span class="pill"><i></i>Escribiendo · Negra · Voz 1</span></div>
+    <div class="ribbon" aria-hidden="true">
+      <div class="g"><div class="r"><span class="tile on"><b>𝅘𝅥𝅮</b>Escribir<em>N</em></span></div><span class="cap">Entrada</span></div>
+      <div class="g"><div class="r track"><span class="tile"><b>𝅝</b>Redonda<em>6</em></span><span class="tile"><b>𝅗𝅥</b>Blanca<em>5</em></span><span class="tile on"><b>𝅘𝅥</b>Negra<em>4</em></span><span class="tile"><b>𝅘𝅥𝅮</b>Corchea<em>3</em></span><span class="tile"><b>𝅘𝅥𝅯</b>Semic.<em>2</em></span></div><span class="cap">Duración</span></div>
+      <div class="g"><div class="r track"><span class="tile"><b>♮</b>Becuadro<em>7</em></span><span class="tile"><b>♯</b>Sostenido<em>8</em></span><span class="tile"><b>♭</b>Bemol<em>9</em></span></div><span class="cap">Alteración</span></div>
+      <div class="g"><div class="r track"><span class="tile on"><b style="font-family:var(--ui);font-size:15px">1</b>Voz 1<em>⌥1</em></span><span class="tile"><b style="font-family:var(--ui);font-size:15px">2</b>Voz 2<em>⌥2</em></span></div><span class="cap">Voz</span></div>
+    </div>
+    <div class="body">
+      <aside class="left" id="left" aria-label="Partes">
+        <div class="lhead">
+          <div class="row"><h2>Partes<span id="pcount"></span></h2><button class="add" title="Añadir instrumentos (I)" aria-label="Añadir instrumentos">+</button></div>
+          <div class="seg small" role="group" aria-label="Vista de las partes"><button id="m-list" aria-pressed="true">Lista</button><button id="m-mix" aria-pressed="false">Mezcla</button></div>
+          <input class="search" id="q" type="search" placeholder="Buscar parte" aria-label="Buscar parte">
+        </div>
+        <div class="parts" id="parts"></div>
+        <div class="lfoot" id="lfoot"></div>
+      </aside>
+      <main class="center">
+        <div class="strip" id="strip"></div>
+        <div class="canvas" id="canvas"><div class="sheet" id="sheet"></div></div>
+        <div class="transport"><button class="play" aria-label="Reproducir"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M4 2.5v9l7.5-4.5z" fill="currentColor"/></svg></button><span class="num" style="font-weight:600">012 : 3</span><span style="color:var(--muted)">0:21</span><div class="timeline"><i></i></div></div>
+        <div class="status"><span id="statusmsg">Listo para escribir.</span><span class="ok">Guardado</span></div>
+      </main>
+      <aside class="right" id="right" aria-label="Selección, sonido y revisión">
+        <div class="rtabs"><div class="seg" role="tablist" aria-label="Panel derecho"><button id="rt-sel" aria-pressed="true">Selección</button><button id="rt-sound" aria-pressed="false">Sonido</button><button id="rt-review" aria-pressed="false">Revisión</button></div></div>
+        <div class="rbody" id="rbody"></div>
+      </aside>
+    </div>
+  </div>
+</div>
+<p class="hint" id="hint">Ahora: nada seleccionado. El panel derecho muestra los datos de la partitura.</p>
+
+<section class="notes" aria-label="Qué cambia">
+  <div><h3>Izquierda: qué hay en la partitura</h3><p>Las partes en filas compactas, agrupadas por familia y plegables, con buscador. «Mezcla» pone volumen y posición en cada fila, así 32 partes caben sin desplazar dos pantallas. Ningún editor la empuja hacia abajo.</p></div>
+  <div><h3>Derecha: qué tienes seleccionado</h3><p>Cambia con la selección: la partitura, una nota con sus marcas (cada una con ✕ para quitarla), un pasaje con lo que puedes hacerle, o el editor de tempo, métrica o tonalidad. Sin párrafos de ayuda ni botones que ya están en la cinta.</p></div>
+  <div><h3>Arriba: dónde estás</h3><p>La tira sobre la partitura es el único sitio de compás, tiempo, tempo, métrica, tonalidad y parte. Cada casilla editable se abre en el panel derecho. La barra inferior solo da avisos y si está guardado.</p></div>
+</section>
+
+<script>
+(() => {
+  const PARTS = [
+    { fam: 'Maderas', items: [['fl', 'Flauta', 'Sol'], ['ob', 'Oboe', 'Sol'], ['cl', 'Clarinete en Si♭', 'Si♭ · Sol'], ['fg', 'Fagot', 'Fa']] },
+    { fam: 'Metales', items: [['hn1', 'Trompa 1 en Fa', 'Fa · Sol'], ['hn2', 'Trompa 2 en Fa', 'Fa · Sol'], ['tp', 'Trompeta en Si♭', 'Si♭ · Sol']] },
+    { fam: 'Percusión', items: [['ti', 'Timbales', 'Fa']] },
+    { fam: 'Cuerda', items: [['v1', 'Violín I', 'Sol'], ['v2', 'Violín II', 'Sol'], ['va', 'Viola', 'Do 3.ª'], ['vc', 'Violonchelo', 'Fa'], ['cb', 'Contrabajo', 'Fa · 8vb']] },
+  ];
+  const STRINGS = new Set(['v1', 'v2', 'va', 'vc', 'cb', 'fl', 'ob', 'cl', 'fg', 'hn1', 'hn2', 'tp']);
+  const NAME = Object.fromEntries(PARTS.flatMap(f => f.items.map(([id, n]) => [id, n])));
+  const mix = Object.fromEntries(PARTS.flatMap(f => f.items.map(([id], i) => [id, { vol: 80, pan: [-40, -15, 15, 40, -30][i % 5], solo: false }])));
+
+  // Two systems of the score: Violín I and Clarinete, bars 12–14.
+  const NOTES = [
+    { id: 'n1', part: 'v1', bar: 12, beat: 1, pitch: 'Re 5', dur: 'Negra', y: 24, x: 90, marks: [['mf', 'Dinámica mf', 'sc']] },
+    { id: 'n2', part: 'v1', bar: 12, beat: 2, pitch: 'Mi 5', dur: 'Negra', y: 20, x: 130, marks: [] },
+    { id: 'n3', part: 'v1', bar: 12, beat: 3, pitch: 'Fa♯ 5', dur: 'Negra', y: 15, x: 170, marks: [['·', 'Staccato', 'svg'], ['⁀', 'Ligadura de expresión hasta el c. 13', 'svg']] },
+    { id: 'n4', part: 'v1', bar: 12, beat: 4, pitch: 'Sol 5', dur: 'Negra', y: 10, x: 210, marks: [['·', 'Staccato', 'svg']] },
+    { id: 'n5', part: 'v1', bar: 13, beat: 1, pitch: 'La 5', dur: 'Blanca', y: 5, x: 270, marks: [['tr', 'Trino', 'sc']] },
+    { id: 'n6', part: 'v1', bar: 13, beat: 3, pitch: 'Sol 5', dur: 'Blanca', y: 10, x: 330, marks: [] },
+    { id: 'n7', part: 'v1', bar: 14, beat: 1, pitch: 'Fa♯ 5', dur: 'Redonda', y: 15, x: 420, marks: [['𝄐', 'Calderón', 'mu']] },
+    { id: 'c1', part: 'cl', bar: 12, beat: 1, pitch: 'Mi 4', sounding: 'Re 4', dur: 'Blanca', y: 75, x: 100, marks: [['p', 'Dinámica p', 'sc']] },
+    { id: 'c2', part: 'cl', bar: 12, beat: 3, pitch: 'Fa♯ 4', sounding: 'Mi 4', dur: 'Blanca', y: 70, x: 180, marks: [] },
+    { id: 'c3', part: 'cl', bar: 13, beat: 1, pitch: 'Mi 6', sounding: 'Re 6', dur: 'Redonda', y: 34, x: 300, marks: [], warn: 'Fuera del registro cómodo del clarinete (hasta Do 6 escrito).' },
+  ];
+
+  const state = { sel: null, pass: null, editor: null, tab: 'sel', mode: 'list', closed: new Set(), q: '', part: 'v1' };
+  try { const s = JSON.parse(localStorage.getItem('levare-paneles') || '{}'); if (s.mode) state.mode = s.mode; if (s.tab) state.tab = s.tab; (s.closed || []).forEach(f => state.closed.add(f)); } catch (e) {}
+  const save = () => { try { localStorage.setItem('levare-paneles', JSON.stringify({ mode: state.mode, tab: state.tab, closed: [...state.closed] })); } catch (e) {} };
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderParts() {
+    const q = state.q.trim().toLowerCase();
+    $('pcount').textContent = PARTS.reduce((n, f) => n + f.items.length, 0);
+    $('parts').innerHTML = PARTS.map(f => {
+      const items = f.items.filter(([, n]) => !q || n.toLowerCase().includes(q));
+      if (!items.length) return '';
+      const closed = state.closed.has(f.fam) && !q;
+      return `<div class="fam${closed ? ' closed' : ''}"><button data-fam="${f.fam}" aria-expanded="${!closed}"><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>${f.fam} <span style="margin-left:auto">${items.length}</span></button><div class="rows">${items.map(([id, n, meta]) => partRow(id, n, meta)).join('')}</div></div>`;
+    }).join('') || '<p class="empty">Ninguna parte se llama así.</p>';
+    $('lfoot').innerHTML = state.mode === 'mix' ? '<span>Volumen general</span><span class="num">90 %</span>' : `<span>${NAME[state.part]} seleccionada</span><span>⌥↑ ⌥↓ cambian</span>`;
+    $('parts').querySelectorAll('[data-fam]').forEach(b => b.onclick = () => { const f = b.dataset.fam; state.closed.has(f) ? state.closed.delete(f) : state.closed.add(f); save(); renderParts(); });
+    $('parts').querySelectorAll('[data-part]').forEach(b => b.onclick = e => { if (e.target.closest('input, .players')) return; state.part = b.dataset.part; render(); });
+    $('parts').querySelectorAll('input[data-vol]').forEach(r => r.oninput = () => { mix[r.dataset.vol].vol = +r.value; r.closest('.mixrow').querySelector('.v').textContent = r.value + ' %'; });
+    $('parts').querySelectorAll('input[data-pan]').forEach(r => r.oninput = () => { mix[r.dataset.pan].pan = +r.value; r.closest('.mixrow').querySelector('.v').textContent = panText(+r.value); });
+    $('parts').querySelectorAll('[data-solo]').forEach(b => b.onclick = () => { const m = mix[b.dataset.solo]; m.solo = b.dataset.v === 'solo'; renderParts(); });
+  }
+  const panText = p => p === 0 ? 'Centro' : (p < 0 ? Math.abs(p) + ' % izq.' : p + ' % der.');
+  function partRow(id, n, meta) {
+    const sel = state.part === id ? ' sel' : '';
+    if (state.mode === 'list') return `<div class="part${sel}" role="button" tabindex="0" data-part="${id}"><span class="nm">${esc(n)}</span><span class="meta">${esc(meta)}</span></div>`;
+    const m = mix[id];
+    return `<div class="part mix${sel}" role="button" tabindex="0" data-part="${id}"><span class="nm">${esc(n)}</span>
+      <div class="mixrow"><input type="range" min="0" max="100" value="${m.vol}" data-vol="${id}" aria-label="Volumen de ${esc(n)}"><span class="v num">${m.vol} %</span></div>
+      <div class="mixrow"><input type="range" min="-100" max="100" step="5" value="${m.pan}" data-pan="${id}" aria-label="Posición estéreo de ${esc(n)}"><span class="v num">${panText(m.pan)}</span></div>
+      ${STRINGS.has(id) ? `<div class="players"><button data-solo="${id}" data-v="section" aria-pressed="${!m.solo}">Sección</button><button data-solo="${id}" data-v="solo" aria-pressed="${m.solo}">Solista</button></div>` : ''}</div>`;
+  }
+
+  function renderStrip() {
+    const n = state.sel ? NOTES.find(x => x.id === state.sel) : null;
+    const bar = n ? n.bar : 12, beat = n ? n.beat : 1;
+    const cell = (k, label, value, editable) => editable
+      ? `<button class="cell${state.editor === k ? ' open' : ''}" data-ed="${k}"><small>${label}</small><span class="num">${value}</span></button>`
+      : `<div class="cell"><small>${label}</small><span class="num">${value}</span></div>`;
+    let selinfo = 'Nada seleccionado';
+    if (n) selinfo = '1 nota';
+    if (state.pass) selinfo = `${state.pass.length} notas · Copiar ⌘C`;
+    $('strip').innerHTML = cell('bar', 'Compás', `${bar} de 64`) + cell('beat', 'Tiempo', beat) + '<span class="sep"></span>' +
+      cell('tempo', 'Tempo', '♩ = 120 Allegro', true) + cell('time', 'Métrica', '4/4', true) + cell('key', 'Tonalidad', 'Re mayor', true) + '<span class="sep"></span>' +
+      cell('part', 'Parte', `${NAME[n ? n.part : state.part]} · Voz 1`) + `<span class="selinfo">${selinfo}</span>`;
+    $('strip').querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { state.editor = state.editor === b.dataset.ed ? null : b.dataset.ed; state.tab = 'sel'; render(); });
+  }
+
+  function staffSVG() {
+    const staff = (y0) => [0, 1, 2, 3, 4].map(i => `<line x1="0" y1="${y0 + i * 8}" x2="560" y2="${y0 + i * 8}" stroke="#242323" stroke-width=".8"/>`).join('') +
+      [0, 240, 390, 559].map(x => `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y0 + 32}" stroke="#242323" stroke-width="${x === 559 ? 1.6 : .9}"/>`).join('');
+    const note = n => {
+      const cls = 'note' + (state.sel === n.id ? ' sel' : '') + (state.pass && state.pass.includes(n.id) ? ' inpass' : '');
+      const hollow = n.dur !== 'Negra';
+      const stem = n.dur === 'Redonda' ? '' : `<line x1="${n.x + 5.5}" y1="${n.y + 2}" x2="${n.x + 5.5}" y2="${n.y - 24}" stroke="#242323" stroke-width="1"/>`;
+      return `<g class="${cls}" data-note="${n.id}" role="button" tabindex="0" aria-label="${esc(NAME[n.part])}, ${n.pitch}, compás ${n.bar}"><rect x="${n.x - 8}" y="${n.y - 28}" width="22" height="40" fill="transparent"/><ellipse cx="${n.x}" cy="${n.y + 3}" rx="6" ry="4.2" transform="rotate(-20 ${n.x} ${n.y + 3})" fill="${hollow ? '#f6f4ef' : '#242323'}" stroke="#242323" stroke-width="1.4"/>${stem}</g>`;
+    };
+    return `<svg viewBox="-70 -36 640 168" aria-label="Compases 12 a 14">
+      <text x="-66" y="10" font-size="11" font-family="Times New Roman" fill="#242323">Violín I</text>
+      <text x="-66" y="78" font-size="11" font-family="Times New Roman" fill="#242323">Cl. (Si♭)</text>
+      <text x="2" y="-12" font-size="9" fill="#555" font-family="Times New Roman">12</text>
+      ${staff(-8)}${staff(54)}
+      <text x="4" y="22" font-family="Noto Music, serif" font-size="34" fill="#242323" data-ed-clef="1">𝄞</text>
+      <text x="4" y="84" font-family="Noto Music, serif" font-size="34" fill="#242323">𝄞</text>
+      <text x="32" y="0" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text><text x="40" y="8" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text>
+      <text x="32" y="66" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text><text x="40" y="74" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text><text x="48" y="62" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text><text x="56" y="70" font-family="Noto Music, serif" font-size="15" fill="#242323">♯</text>
+      ${NOTES.map(note).join('')}
+      <path d="M170 -12 Q 220 -30 268 -18" fill="none" stroke="#242323" stroke-width="1.2"/>
+      <text x="80" y="48" font-family="Times New Roman" font-style="italic" font-weight="700" font-size="12" fill="#242323">mf</text>
+      <text x="92" y="114" font-family="Times New Roman" font-style="italic" font-weight="700" font-size="12" fill="#242323">p</text>
+      <text x="264" y="-22" font-family="Times New Roman" font-style="italic" font-weight="700" font-size="12" fill="#242323">tr</text>
+    </svg>`;
+  }
+  function renderSheet() {
+    $('sheet').innerHTML = `<h3>Sinfonía en re</h3><p class="sub">I. Allegro</p>${staffSVG()}`;
+    $('sheet').onclick = e => {
+      const g = e.target.closest('[data-note]');
+      if (!g) { state.sel = null; state.pass = null; state.editor = null; render(); return; }
+      const id = g.dataset.note;
+      if (e.shiftKey && state.sel) {
+        const a = NOTES.findIndex(n => n.id === state.sel), b = NOTES.findIndex(n => n.id === id);
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        state.pass = NOTES.slice(lo, hi + 1).map(n => n.id);
+      } else { state.sel = id; state.pass = null; state.part = NOTES.find(n => n.id === id).part; }
+      state.editor = null; state.tab = 'sel'; render();
+    };
+    $('sheet').querySelectorAll('[data-note]').forEach(g => g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); g.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: e.shiftKey })); } });
+  }
+
+  const KEYS = ['Do mayor', 'Sol mayor', 'Re mayor', 'La mayor', 'Mi mayor', 'Si mayor', 'Fa mayor', 'Si♭ mayor', 'Mi♭ mayor', 'La menor', 'Mi menor', 'Si menor'];
+  function selectionView() {
+    const n = state.sel ? NOTES.find(x => x.id === state.sel) : null;
+    if (state.editor === 'key') return `<div class="rh"><h2>Tonalidad</h2><p>Desde el compás 12, en todos los instrumentos.</p></div>
+      <div class="seg small" role="group" aria-label="Desde"><button aria-pressed="false">Inicio de la pieza</button><button aria-pressed="true">Compás 12</button></div>
+      <div class="keys">${KEYS.map(k => `<button aria-pressed="${k === 'Re mayor'}">${k}</button>`).join('')}</div>
+      <div class="linkbtns"><button class="btn primary" data-close>Aplicar</button><button class="btn" data-close>Cancelar <span class="k">Esc</span></button></div>`;
+    if (state.editor === 'tempo') return `<div class="rh"><h2>Tempo</h2><p>Desde el compás 12 hasta el siguiente cambio.</p></div>
+      <div class="sec"><h4>Texto</h4><input class="field" id="tempo-text" value="Allegro"></div>
+      <div class="sec"><h4>Metrónomo</h4><div class="linkbtns"><button class="btn">−</button><input class="field num" id="tempo-bpm" value="120" style="width:72px;text-align:center"><button class="btn">+</button><span class="empty">negras por minuto</span></div></div>
+      <div class="linkbtns"><button class="btn primary" data-close>Aplicar</button><button class="btn" data-close>Cancelar <span class="k">Esc</span></button></div>`;
+    if (state.editor === 'time') return `<div class="rh"><h2>Métrica</h2><p>Desde el compás 12 hasta el siguiente cambio.</p></div>
+      <div class="keys">${['2/4', '3/4', '4/4', '3/8', '6/8', '12/8'].map(k => `<button aria-pressed="${k === '4/4'}">${k}</button>`).join('')}</div>
+      <div class="linkbtns"><button class="btn primary" data-close>Aplicar</button><button class="btn" data-close>Cancelar <span class="k">Esc</span></button></div>`;
+    if (state.pass) {
+      const ns = state.pass.map(id => NOTES.find(x => x.id === id));
+      const parts = [...new Set(ns.map(x => NAME[x.part]))];
+      const bars = ns.map(x => x.bar);
+      return `<div class="rh"><h2>Pasaje</h2><p>${parts.join(' y ')} · compases ${Math.min(...bars)}–${Math.max(...bars)}</p></div>
+        <div class="sec"><div class="kv"><span>Notas</span><b class="num">${ns.length}</b></div><div class="kv"><span>Partes</span><b class="num">${parts.length}</b></div><div class="kv"><span>Marcas</span><b class="num">${ns.reduce((s, x) => s + x.marks.length, 0)}</b></div></div>
+        <div class="sec"><h4>Hacer con el pasaje</h4><div class="linkbtns"><button class="btn">Transponer…</button><button class="btn">Copiar <span class="k">⌘C</span></button><button class="btn">En silencios <span class="k">⌫</span></button><button class="btn">Comprobar</button></div></div>
+        <div class="sec"><h4>Marcas en el pasaje</h4><div class="marks">${ns.flatMap(x => x.marks.map(m => markRow(m, x))).join('') || '<p class="empty">Sin marcas.</p>'}</div></div>`;
+    }
+    if (n) {
+      const transposing = !!n.sounding;
+      return `<div class="rh"><h2>${esc(NAME[n.part])}</h2><p>Compás ${n.bar}, tiempo ${n.beat} · voz 1</p></div>
+        <div class="big"><span class="p">${n.pitch}</span><span class="s">${n.dur.toLowerCase()}</span></div>
+        ${transposing ? `<div class="kv"><span>Suena</span><b>${n.sounding}</b></div>` : ''}
+        ${n.warn ? `<div class="warnbox">${n.warn}</div>` : ''}
+        <div class="sec"><h4>Marcas en esta nota</h4><div class="marks">${n.marks.map(m => markRow(m, n)).join('') || '<p class="empty">Ninguna. Añádelas desde Articulaciones o Dinámicas.</p>'}</div></div>
+        <div class="sec"><h4>Texto en esta nota</h4><div class="linkbtns"><button class="btn">Letra <span class="k">⌘L</span></button><button class="btn">Cifrado <span class="k">⌘K</span></button><button class="btn">Comentario</button></div></div>`;
+    }
+    return `<div class="rh"><h2>Partitura</h2><p>Nada seleccionado.</p></div>
+      <div class="sec"><h4>Título</h4><input class="field" id="title" value="Sinfonía en re"><h4>Subtítulo</h4><input class="field" id="subtitle" value="I. Allegro"><h4>Compositor</h4><input class="field" id="composer" placeholder="Nombre del compositor"></div>
+      <div class="sec">
+        <button class="kv" data-ed="key"><span>Tonalidad</span><b>Re mayor</b></button>
+        <button class="kv" data-ed="time"><span>Métrica</span><b>4/4</b></button>
+        <button class="kv" data-ed="tempo"><span>Tempo inicial</span><b>♩ = 120 Allegro</b></button>
+        <div class="kv"><span>Compases</span><b class="num">64</b></div>
+        <div class="kv"><span>Partes</span><b class="num">13</b></div>
+        <div class="kv"><span>Duración</span><b class="num">2:08</b></div>
+      </div>`;
+  }
+  function markRow([gl, label, kind], n) {
+    const glyph = kind === 'svg' ? (gl === '·' ? '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>' : '<svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 10C5 2 13 2 17 10" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>') : esc(gl);
+    return `<div class="mark"><span class="gl${kind === 'sc' ? ' sc' : ''}">${glyph}</span><span>${esc(label)}${state.pass ? ` <small>c. ${n.bar}</small>` : ''}</span><button class="x" aria-label="Quitar ${esc(label)}" title="Quitar">✕</button></div>`;
+  }
+  function soundView() {
+    const id = state.part;
+    return `<div class="rh"><h2>${esc(NAME[id])}</h2><p>Sonido de la parte seleccionada.</p></div>
+      <div class="sec"><button class="kv"><span>Banco</span><b>VSCO Orquesta</b></button><button class="kv"><span>Sonido</span><b>${id.startsWith('v') || id === 'va' || id === 'vc' || id === 'cb' ? 'Cuerda en sección' : 'Solista'}</b></button>
+        <div class="toggle"><span>Interpretación literal</span><span class="sw" role="switch" aria-checked="false" tabindex="0"></span></div></div>
+      <div class="sec"><h4>Salida</h4><div class="kv"><span>Volumen general</span><b class="num">90 %</b></div><div class="toggle"><span>Reverberación de sala</span><span class="sw" role="switch" aria-checked="true" tabindex="0"></span></div></div>
+      <div class="sec"><h4>Más sonidos</h4><div class="pack"><b>Cuerdas Sonatina</b><small>412 MB · CC BY-SA</small><div class="linkbtns"><button class="btn">Instalar…</button><button class="btn">Ver licencia</button></div></div></div>`;
+  }
+  function reviewView() {
+    return `<div class="rh"><h2>Revisión</h2><p>3 avisos · 2 comentarios sin resolver</p></div>
+      <div class="linkbtns"><button class="btn primary">Comprobar partitura</button><button class="btn">Solo la selección</button></div>
+      <div class="sec"><h4>Avisos</h4><div class="list">
+        <button class="item" data-go="c3"><span>Clarinete en Si♭</span><span class="tag">Registro</span><small>Compás 13 · Mi 6 por encima del registro cómodo</small></button>
+        <button class="item"><span>Toda la obra</span><span class="tag">Repetición</span><small>Compás 32 · fin de repetición sin inicio</small></button>
+        <button class="item"><span>Trompa 2 en Fa</span><span class="tag">Compás</span><small>Compás 40 · faltan 2 tiempos</small></button></div></div>
+      <div class="sec"><h4>Comentarios</h4><div class="list">
+        <button class="item" data-go="n5"><span>¿Trino con nota de llegada?</span><span style="color:var(--muted);font-size:11.5px">Violín I · c. 13</span></button>
+        <button class="item"><span>Revisar dinámicas de la cuerda</span><span style="color:var(--muted);font-size:11.5px">c. 20–24</span></button></div></div>
+      <div class="toggle"><span>Notas fuera de registro en rojo</span><span class="sw" role="switch" aria-checked="true" tabindex="0"></span></div>`;
+  }
+  function renderRight() {
+    ['sel', 'sound', 'review'].forEach(t => $('rt-' + t).setAttribute('aria-pressed', String(state.tab === t)));
+    $('rbody').innerHTML = state.tab === 'sel' ? selectionView() : state.tab === 'sound' ? soundView() : reviewView();
+    $('rbody').querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { state.editor = b.dataset.ed; render(); });
+    $('rbody').querySelectorAll('[data-close]').forEach(b => b.onclick = () => { state.editor = null; render(); });
+    $('rbody').querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const n = NOTES.find(x => x.id === b.dataset.go); state.sel = n.id; state.part = n.part; state.pass = null; state.tab = 'sel'; render(); });
+    $('rbody').querySelectorAll('.sw').forEach(s => { const flip = () => s.setAttribute('aria-checked', String(s.getAttribute('aria-checked') !== 'true')); s.onclick = flip; s.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } }; });
+    $('rbody').querySelectorAll('.x').forEach(b => b.onclick = () => { const row = b.closest('.mark'); row.style.opacity = '.4'; b.disabled = true; $('statusmsg').textContent = 'Marca quitada. ⌘Z la recupera.'; });
+  }
+  function hint() {
+    let t = 'Ahora: nada seleccionado. El panel derecho muestra los datos de la partitura.';
+    if (state.editor) t = 'Ahora: editando desde la tira superior. Aplica o pulsa Esc.';
+    else if (state.pass) t = 'Ahora: un pasaje. El panel muestra qué abarca y qué puedes hacerle.';
+    else if (state.sel) t = 'Ahora: una nota. Sus marcas tienen ✕ para quitarlas. Pulsa otra con ⇧ para marcar un pasaje.';
+    $('hint').textContent = t;
+  }
+  function render() { renderParts(); renderStrip(); renderSheet(); renderRight(); hint(); save();
+    $('m-list').setAttribute('aria-pressed', String(state.mode === 'list')); $('m-mix').setAttribute('aria-pressed', String(state.mode === 'mix')); }
+
+  $('m-list').onclick = () => { state.mode = 'list'; render(); };
+  $('m-mix').onclick = () => { state.mode = 'mix'; render(); };
+  $('q').oninput = e => { state.q = e.target.value; renderParts(); };
+  ['sel', 'sound', 'review'].forEach(t => $('rt-' + t).onclick = () => { state.tab = t; renderRight(); save(); });
+  const toggle = (btn, el) => $(btn).onclick = () => { const on = $(btn).getAttribute('aria-pressed') !== 'true'; $(btn).setAttribute('aria-pressed', String(on)); $(el).hidden = !on; };
+  toggle('tg-left', 'left'); toggle('tg-right', 'right');
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (state.editor) state.editor = null; else { state.sel = null; state.pass = null; } render(); } });
+  $('v-old').onclick = () => { $('v-old').setAttribute('aria-pressed', 'true'); $('v-new').setAttribute('aria-pressed', 'false'); $('before').hidden = false; $('win').hidden = true; $('hint').textContent = 'Así es hoy Levare, capturado de la app.'; };
+  $('v-new').onclick = () => { $('v-new').setAttribute('aria-pressed', 'true'); $('v-old').setAttribute('aria-pressed', 'false'); $('before').hidden = true; $('win').hidden = false; hint(); };
+  render();
+})();
+</script>

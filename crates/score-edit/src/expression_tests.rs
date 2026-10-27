@@ -1,5 +1,7 @@
 use super::*;
-use score_core::{Articulation, Connection, ConnectionKind, Dynamic, Notation, Pitches, Step};
+use score_core::{
+    Articulation, Connection, ConnectionKind, Dynamic, MarkRef, Notation, Pitches, Step,
+};
 #[test]
 fn expression_edits_undo_and_invalid_edits_never_enter_history() {
     let mut editor = Editor::default();
@@ -392,4 +394,91 @@ fn toggling_a_catalog_mark_writes_replaces_and_removes_it() {
     assert_eq!(editor.score(), &before);
     editor.undo();
     assert_eq!(notation(&editor).dynamic, None);
+}
+
+fn quarter_notes(editor: &mut Editor, count: usize) -> Vec<ElementId> {
+    let event = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    (0..count)
+        .map(|_| {
+            editor.execute(Command::Insert(event)).unwrap();
+            editor.selection().unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn stretching_a_slur_keeps_its_manual_offset() {
+    let mut editor = Editor::default();
+    let notes = quarter_notes(&mut editor, 3);
+    let short = Connection {
+        start: notes[0],
+        end: notes[1],
+        kind: ConnectionKind::Slur,
+    };
+    editor.execute(Command::AddConnection(short)).unwrap();
+    let offset = score_core::Offset { dx: 0, dy: -12 };
+    editor
+        .execute(Command::SetMarkOffset(MarkRef::Connection(short), offset))
+        .unwrap();
+    let long = Connection {
+        end: notes[2],
+        ..short
+    };
+    editor
+        .execute(Command::ReplaceConnection(short, long))
+        .unwrap();
+    assert_eq!(editor.score().connections().len(), 1);
+    assert_eq!(
+        editor.score().mark_offset(MarkRef::Connection(long)),
+        offset
+    );
+    editor.undo();
+    assert_eq!(
+        editor.score().mark_offset(MarkRef::Connection(short)),
+        offset
+    );
+}
+
+#[test]
+fn a_joined_edit_undoes_together_with_the_previous_one() {
+    let mut editor = Editor::default();
+    let notes = quarter_notes(&mut editor, 2);
+    let before_second = {
+        let mut probe = Editor::default();
+        quarter_notes(&mut probe, 1);
+        probe.score().clone()
+    };
+    let slur = Connection {
+        start: notes[0],
+        end: notes[1],
+        kind: ConnectionKind::Slur,
+    };
+    assert!(editor.execute_joined(Command::AddConnection(slur)).unwrap());
+    assert!(editor.undo());
+    assert_eq!(
+        editor.score(),
+        &before_second,
+        "note and slur go back at once"
+    );
+    assert!(editor.redo());
+    assert_eq!(editor.score().connections().len(), 1);
+}
+
+#[test]
+fn a_joined_edit_that_changes_nothing_keeps_the_history() {
+    let mut editor = Editor::default();
+    let notes = quarter_notes(&mut editor, 2);
+    let slur = Connection {
+        start: notes[0],
+        end: notes[1],
+        kind: ConnectionKind::Slur,
+    };
+    editor.execute(Command::AddConnection(slur)).unwrap();
+    assert!(!editor.execute_joined(Command::AddConnection(slur)).unwrap());
+    assert!(editor.undo());
+    assert!(editor.score().connections().is_empty());
 }

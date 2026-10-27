@@ -51,9 +51,10 @@ pub(super) fn finish(
             let x = rhythm.x(tick) - 5.;
             let width = if mark == Division::Divisi { 28. } else { 35. };
             content.techniques.push(TechniqueLabel {
-                text: mark.label(),
+                text: label_words(mark.label()),
                 position: Point { x, y },
                 element: id,
+                mark: MarkRef::Division(id),
             });
             content.marks.push(MarkBox {
                 mark: MarkRef::Division(id),

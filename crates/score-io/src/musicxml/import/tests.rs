@@ -257,7 +257,7 @@ fn unsupported_content_warns_and_unrepresentable_music_is_rejected() {
     let xml = wrap(
         "Violin",
         &format!(
-            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes><direction><direction-type><words>molto espressivo</words></direction-type></direction>{}<barline><repeat direction=\"backward\"/></barline></measure>",
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes><direction><direction-type><bracket type=\"start\" line-end=\"down\"/></direction-type></direction>{}<barline><repeat direction=\"backward\"/></barline></measure>",
             n("C", 4, 1, 1)
         ),
     );
@@ -279,7 +279,7 @@ fn unsupported_content_warns_and_unrepresentable_music_is_rejected() {
             .to_string()
             .contains("dos voces")
     );
-    assert!(decode(wrap("Violin","<measure><attributes><divisions>8</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>32nd</type></note></measure>").as_bytes()).is_err());
+    assert!(decode(wrap("Violin","<measure><attributes><divisions>16</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>64th</type></note></measure>").as_bytes()).is_err());
     assert!(decode(b"<score-partwise>broken").is_err());
 }
 

@@ -105,22 +105,22 @@ fn parse_pitch(value: &str) -> Result<u8, ScoreError> {
 fn range_form(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = view.range_editor.as_ref().unwrap();
     let part = editor.part;
-    section("EDITAR RANGO")
+    section("Editar rango")
         .child(div().text_size(px(12.)).child(instrument_name(view.document.editor.score(), part)))
-        .child(caption("ALTURA REAL · C4 = DO CENTRAL"))
+        .child(group_title("Altura real · C4 = Do central", Some("Ejemplos: C4, Do4, F♯3, Si♭5. El rango personalizado incluye los sonidos armónicos.".into())))
         .child(div().flex().gap_2()
-            .child(div().flex_1().min_w_0().child(caption("MÁS GRAVE")).child(editor.low.clone()))
-            .child(div().flex_1().min_w_0().child(caption("MÁS AGUDA")).child(editor.high.clone())))
-        .child(caption("Ejemplos: C4, Do4, F♯3, Si♭5. El rango personalizado incluye los sonidos armónicos."))
+            .child(div().flex_1().min_w_0().child(caption("Más grave")).child(editor.low.clone()))
+            .child(div().flex_1().min_w_0().child(caption("Más aguda")).child(editor.high.clone())))
         .child(div().flex().gap_2()
-            .child(button(view, "apply-instrument-range", "Aplicar", true, cx, |v, _, cx| v.apply_range(cx)).flex_1())
-            .child(button(view, "cancel-instrument-range", "Cancelar", false, cx, |v, _, cx| { v.range_editor = None; cx.notify(); }).flex_1()))
-        .child(button(view, "reset-edited-range", "Usar rango habitual", false, cx, move |v, _, cx| {
+            .child(act(view, "apply-instrument-range", "Aplicar", true, cx, |v, _, cx| v.apply_range(cx))
+                .tooltip(described_hint("Aplicar", None, "Se guarda con esta parte y admite Deshacer. Tab cambia de campo; Enter aplica y Esc cancela."))
+                .flex_1())
+            .child(act(view, "cancel-instrument-range", "Cancelar", false, cx, |v, _, cx| { v.range_editor = None; cx.notify(); }).flex_1()))
+        .child(act(view, "reset-edited-range", "Usar rango habitual", false, cx, move |v, _, cx| {
             v.edit(Command::SetInstrumentRange(part, None), cx);
             v.range_editor = None;
             cx.notify();
         }).w_full())
-        .child(caption("Se guarda con esta parte y admite Deshacer. Tab cambia de campo; Enter aplica y Esc cancela."))
 }
 
 // Ribbon labels are kept on one line by inline_text. Review explanations need
@@ -152,56 +152,291 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
     let page_count = count.div_ceil(crate::review::PAGE_SIZE).max(1);
     let page = review.page.min(page_count - 1);
     let part = score.part(view.document.editor.cursor().part).unwrap();
-    div().flex().flex_col()
-        .when(view.comments.open, |body| body.child(super::comments::panel(view, cx)))
-        .when(view.range_editor.is_some(), |body| body.child(range_form(view, cx)))
-        .child(section("COMPROBAR")
-            .child(command_button("review-check-score", "Toda la partitura", false, view, cx, id::CHECK_SCORE).w_full())
-            .child(command_button("review-check-selection", "Selección actual", false, view, cx, id::CHECK_SELECTION).w_full())
-            .child(caption("Comprueba rangos, repeticiones y destinos de saltos. Los avisos son orientativos.")))
-        .child(section("AVISOS")
-            .child(div().text_size(px(12.)).child(if review.checked() {
-                format!("{count} de {} avisos · {}", review.issues.len(), if review.selection_scope { "selección" } else { "obra completa" })
-            } else if review.stale { "La partitura cambió. Comprueba de nuevo la selección.".into() }
-            else { "Todavía no se ha comprobado la partitura.".into() }))
-            .child(button(view, "review-filter", format!("{} ▾", review.filter.map_or_else(|| "Todos los instrumentos".into(), |part| instrument_name(score, part))), review.filter_open, cx, |v, _, cx| {
-                v.review.filter_open = !v.review.filter_open; cx.notify();
-            }).w_full())
-            .when(review.filter_open, |body| body.child(div().flex().flex_col().gap_1()
-                .child(button(view, "review-filter-all", "Todos los instrumentos", review.filter.is_none(), cx, |v, _, cx| { v.review.set_filter(None); cx.notify(); }).w_full())
-                .children(score.parts().iter().map(|part| {
-                    let id = part.id();
-                    button(view, format!("review-filter-{}", id.0), instrument_name(score, id), review.filter == Some(id), cx, move |v, _, cx| { v.review.set_filter(Some(id)); cx.notify(); }).w_full()
-                }))))
-            .child(div().flex().gap_2()
-                .child(command_button("review-prev", "‹ Anterior", false, view, cx, id::REVIEW_PREVIOUS).flex_1())
-                .child(command_button("review-next", "Siguiente ›", false, view, cx, id::REVIEW_NEXT).flex_1()))
-            .when(review.checked() && count == 0, |body| body.child(caption("Sin avisos en este ámbito y filtro.")))
-            .children(filtered.iter().skip(page * crate::review::PAGE_SIZE).take(crate::review::PAGE_SIZE).map(|&index| {
-                let issue = review.issues[index];
-                let location = match issue.target {
-                    ReviewTarget::Note(id, pitch) => format!("{} · c. {} · {}", instrument_name(score, id.part), id.measure + 1, note_name(pitch.in_key(score.written_key_at(id.part, id.measure)))),
-                    ReviewTarget::Bar(bar, _) => format!("Obra · compás {}", bar + 1),
-                };
-                action(format!("review-issue-{index}"), div().w_full().min_w_0().flex().flex_col().gap_1()
-                    .child(div().text_size(px(11.)).text_color(rgb(BLUE)).child(wrapped_text(view, location)))
-                    .child(div().text_size(px(11.)).child(wrapped_text(view, issue.kind.message()))), review.current == Some(index), cx, move |v, _, cx| v.goto_review_issue(index, cx))
-                    .w_full().justify_start().px_2().py_2()
-            }))
-            .when(page_count > 1, |body| body.child(div().flex().flex_col().gap_1()
-                .child(caption(format!("Página {} de {page_count}", page + 1)))
-                .child(div().flex().gap_2()
-                    .child(button(view, "review-list-prev", "‹ Lista", false, cx, move |v, _, cx| { v.review.page = page.saturating_sub(1); cx.notify(); }).flex_1())
-                    .child(button(view, "review-list-next", "Lista ›", false, cx, move |v, _, cx| { v.review.page = (page + 1).min(page_count - 1); cx.notify(); }).flex_1()))))
-            .when(review.filter.is_some(), |body| body.child(caption("Los avisos de repeticiones y saltos pertenecen a toda la obra."))))
-        .child(section("RANGOS")
-            .child(command_button("review-show-ranges", "Mostrar notas en rojo", review.show_ranges, view, cx, id::SHOW_RANGES).w_full())
-            .child(div().text_size(px(12.)).child(instrument_name(score, part.id())))
-            .child(div().text_size(px(11.)).child(wrapped_text(view, part.sounding_range().map_or_else(|| "Percusión sin altura: no se comprueba el registro.".into(), |range| format!("{}: {range} · altura real", if part.range_override().is_some() { "Personalizado" } else { "Habitual" })))))
-            .when(part.sounding_range().is_some(), |body| body
-                .child(command_button("review-edit-range", "Editar rango de esta parte…", view.range_editor.is_some(), view, cx, id::EDIT_RANGE).w_full())
-                .when(part.range_override().is_some(), |body| body.child(command_button("review-reset-range", "Restablecer rango habitual", false, view, cx, id::RESET_RANGE).w_full())))
-            .child(caption("Ocultar el rojo no desactiva las comprobaciones. Estos colores no se exportan.")))
+    div()
+        .flex()
+        .flex_col()
+        .when(view.comments.open, |body| {
+            body.child(super::comments::panel(view, cx))
+        })
+        .when(view.range_editor.is_some(), |body| {
+            body.child(range_form(view, cx))
+        })
+        .child(
+            section_hinted(
+                "Comprobar",
+                "Comprueba rangos, repeticiones y destinos de saltos. Los avisos son orientativos.",
+            )
+            .child(
+                command_act(
+                    view,
+                    "review-check-score",
+                    "Toda la partitura",
+                    cx,
+                    id::CHECK_SCORE,
+                )
+                .w_full(),
+            )
+            .child(
+                command_act(
+                    view,
+                    "review-check-selection",
+                    "Selección actual",
+                    cx,
+                    id::CHECK_SELECTION,
+                )
+                .w_full(),
+            ),
+        )
+        .child(
+            section("Avisos")
+                .child(div().text_size(px(12.)).child(if review.checked() {
+                    format!(
+                        "{count} de {} avisos · {}",
+                        review.issues.len(),
+                        if review.selection_scope {
+                            "selección"
+                        } else {
+                            "obra completa"
+                        }
+                    )
+                } else if review.stale {
+                    "La partitura cambió. Comprueba de nuevo la selección.".into()
+                } else {
+                    "Todavía no se ha comprobado la partitura.".into()
+                }))
+                .child(
+                    choice(
+                        view,
+                        "review-filter",
+                        format!(
+                            "{} ▾",
+                            review.filter.map_or_else(
+                                || "Todos los instrumentos".into(),
+                                |part| instrument_name(score, part)
+                            )
+                        ),
+                        review.filter_open,
+                        cx,
+                        |v, _, cx| {
+                            v.review.filter_open = !v.review.filter_open;
+                            cx.notify();
+                        },
+                    )
+                    .when(review.filter.is_some(), |filter| {
+                        filter.tooltip(described_hint(
+                            "Filtro por instrumento",
+                            None,
+                            "Los avisos de repeticiones y saltos pertenecen a toda la obra.",
+                        ))
+                    })
+                    .w_full(),
+                )
+                .when(review.filter_open, |body| {
+                    body.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                choice(
+                                    view,
+                                    "review-filter-all",
+                                    "Todos los instrumentos",
+                                    review.filter.is_none(),
+                                    cx,
+                                    |v, _, cx| {
+                                        v.review.set_filter(None);
+                                        cx.notify();
+                                    },
+                                )
+                                .w_full(),
+                            )
+                            .children(score.parts().iter().map(|part| {
+                                let id = part.id();
+                                choice(
+                                    view,
+                                    format!("review-filter-{}", id.0),
+                                    instrument_name(score, id),
+                                    review.filter == Some(id),
+                                    cx,
+                                    move |v, _, cx| {
+                                        v.review.set_filter(Some(id));
+                                        cx.notify();
+                                    },
+                                )
+                                .w_full()
+                            })),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            command_act(view, "review-prev", "‹ Anterior", cx, id::REVIEW_PREVIOUS)
+                                .flex_1(),
+                        )
+                        .child(
+                            command_act(view, "review-next", "Siguiente ›", cx, id::REVIEW_NEXT)
+                                .flex_1(),
+                        ),
+                )
+                .when(review.checked() && count == 0, |body| {
+                    body.child(caption("Sin avisos en este ámbito y filtro."))
+                })
+                .children(
+                    filtered
+                        .iter()
+                        .skip(page * crate::review::PAGE_SIZE)
+                        .take(crate::review::PAGE_SIZE)
+                        .map(|&index| {
+                            let issue = review.issues[index];
+                            let location = match issue.target {
+                                ReviewTarget::Note(id, pitch) => format!(
+                                    "{} · c. {} · {}",
+                                    instrument_name(score, id.part),
+                                    id.measure + 1,
+                                    selection_view::pitch_name(
+                                        pitch.in_key(score.written_key_at(id.part, id.measure))
+                                    )
+                                ),
+                                ReviewTarget::Bar(bar, _) => format!("Obra · compás {}", bar + 1),
+                            };
+                            action(
+                                format!("review-issue-{index}"),
+                                div()
+                                    .w_full()
+                                    .min_w_0()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(rgb(BLUE))
+                                            .child(wrapped_text(view, location)),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .child(wrapped_text(view, issue.kind.message())),
+                                    ),
+                                review.current == Some(index),
+                                cx,
+                                move |v, _, cx| v.goto_review_issue(index, cx),
+                            )
+                            .w_full()
+                            .justify_start()
+                            .px_2()
+                            .py_2()
+                        }),
+                )
+                .when(page_count > 1, |body| {
+                    body.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(caption(format!("Página {} de {page_count}", page + 1)))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(
+                                        act(
+                                            view,
+                                            "review-list-prev",
+                                            "‹ Lista",
+                                            false,
+                                            cx,
+                                            move |v, _, cx| {
+                                                v.review.page = page.saturating_sub(1);
+                                                cx.notify();
+                                            },
+                                        )
+                                        .flex_1(),
+                                    )
+                                    .child(
+                                        act(
+                                            view,
+                                            "review-list-next",
+                                            "Lista ›",
+                                            false,
+                                            cx,
+                                            move |v, _, cx| {
+                                                v.review.page = (page + 1).min(page_count - 1);
+                                                cx.notify();
+                                            },
+                                        )
+                                        .flex_1(),
+                                    ),
+                            ),
+                    )
+                }),
+        )
+        .child(
+            section_hinted(
+                "Rangos",
+                "Ocultar el rojo no desactiva las comprobaciones. Estos colores no se exportan.",
+            )
+            .child(
+                command_choice(
+                    view,
+                    "review-show-ranges",
+                    "Mostrar notas en rojo",
+                    review.show_ranges,
+                    cx,
+                    id::SHOW_RANGES,
+                )
+                .w_full(),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .child(instrument_name(score, part.id())),
+            )
+            .child(div().text_size(px(11.)).child(wrapped_text(
+                view,
+                part.sounding_range().map_or_else(
+                    || "Percusión sin altura: no se comprueba el registro.".into(),
+                    |range| {
+                        format!(
+                            "{}: {range} · altura real",
+                            if part.range_override().is_some() {
+                                "Personalizado"
+                            } else {
+                                "Habitual"
+                            }
+                        )
+                    },
+                ),
+            )))
+            .when(part.sounding_range().is_some(), |body| {
+                body.child(
+                    command_choice(
+                        view,
+                        "review-edit-range",
+                        "Editar rango de esta parte…",
+                        view.range_editor.is_some(),
+                        cx,
+                        id::EDIT_RANGE,
+                    )
+                    .w_full(),
+                )
+                .when(part.range_override().is_some(), |body| {
+                    body.child(
+                        command_act(
+                            view,
+                            "review-reset-range",
+                            "Restablecer rango habitual",
+                            cx,
+                            id::RESET_RANGE,
+                        )
+                        .w_full(),
+                    )
+                })
+            }),
+        )
 }
 
 #[cfg(test)]

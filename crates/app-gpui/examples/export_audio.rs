@@ -15,8 +15,8 @@ const RATE: u32 = 48_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 2 {
-        return Err("usage: export_audio input.partitura output-float.wav".into());
+    if !(2..=3).contains(&args.len()) {
+        return Err("usage: export_audio input.partitura output-float.wav [sound-pack-id]".into());
     }
     let score = score_io::load(Path::new(&args[0]))?;
     let timeline = Timeline::with_repeats(&score, Tempo::default(), true);
@@ -46,7 +46,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     #[cfg(feature = "vsco")]
-    let (mut control, mut renderer) = if let Some(bank) = score_sound_vsco::VscoPack::discover() {
+    let (mut control, mut renderer) = if let Some(id) = args.get(2) {
+        use score_platform::sound_engine::SoundBank;
+        let id = id.to_string_lossy();
+        let (packs, _) = score_sound_vsco::SfzPack::discover_all(&[]);
+        let pack = packs
+            .into_iter()
+            .find(|pack| pack.id() == id)
+            .ok_or_else(|| format!("No sound pack with id {id}"))?;
+        println!("Sound bank: {} with GeneralUser fallback", pack.name());
+        Renderer::with_bank(RATE, &pack, &score, score_core::Instrument::Viola)?
+    } else if let Some(bank) = score_sound_vsco::VscoPack::discover() {
         println!("Sound bank: VSCO CE with GeneralUser fallback");
         Renderer::with_bank(RATE, &bank, &score, score_core::Instrument::Viola)?
     } else {

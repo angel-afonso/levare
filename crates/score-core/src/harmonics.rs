@@ -47,7 +47,7 @@ impl Event {
     }
     /// Resolve the key before changing octaves. Natural harmonics are already
     /// written at sounding pitch; artificial ones sound only the fourth partial.
-    pub fn sounding_pitches(self, key: KeySignature) -> Pitches {
+    pub fn sounding_pitches(&self, key: KeySignature) -> Pitches {
         let pitches = self.pitches.in_key(key);
         if self.notation.harmonic == Some(Harmonic::Artificial) {
             pitches
@@ -59,7 +59,7 @@ impl Event {
     }
     /// Diatonic location and absolute alteration of the generated touch head.
     /// Alterations can include double flats (e.g. a stopped F-flat).
-    pub fn harmonic_touch(self, key: KeySignature) -> Option<(Pitch, i8)> {
+    pub fn harmonic_touch(&self, key: KeySignature) -> Option<(Pitch, i8)> {
         if self.notation.harmonic != Some(Harmonic::Artificial) {
             return None;
         }

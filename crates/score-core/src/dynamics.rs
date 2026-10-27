@@ -37,7 +37,8 @@ impl DynamicEnvelope {
                 }
             }
         }
-        let mut hairpins: Vec<_> = score
+        // Hairpins and written «cresc.» or «dim.» shape the level alike.
+        let mut swells: Vec<_> = score
             .connections()
             .iter()
             .filter(|c| {
@@ -45,8 +46,14 @@ impl DynamicEnvelope {
                     && c.start.part == part
                     && (c.start.staff == staff_value.id() || part_value.is_divisi())
             })
+            .map(|c| Swell {
+                start: score.event_tick(c.start).unwrap(),
+                end: score.event_tick(c.end).unwrap(),
+                crescendo: c.kind == ConnectionKind::Crescendo,
+            })
+            .chain(score.swells(part, staff_value.id()))
             .collect();
-        hairpins.sort_by_key(|c| score.event_tick(c.start).unwrap());
+        swells.sort_by_key(|swell| swell.start);
         let mut segments = Vec::new();
         let mut cursor = 0;
         let mut level = Dynamic::Mf.velocity();
@@ -61,9 +68,8 @@ impl DynamicEnvelope {
                 });
             }
         };
-        for hairpin in hairpins {
-            let start = score.event_tick(hairpin.start)?;
-            let end = score.event_tick(hairpin.end)?;
+        for swell in swells {
+            let (start, end) = (swell.start, swell.end);
             while marks.peek().is_some_and(|(tick, _)| *tick <= start) {
                 let (tick, mark) = marks.next().unwrap();
                 push(cursor, tick, level, level);
@@ -80,11 +86,7 @@ impl DynamicEnvelope {
             }
             if cursor < end {
                 let fallback = Dynamic::nearest(level)
-                    .shifted(if hairpin.kind == ConnectionKind::Crescendo {
-                        2
-                    } else {
-                        -2
-                    })
+                    .shifted(if swell.crescendo { 2 } else { -2 })
                     .velocity();
 
                 push(cursor, end, level, fallback);

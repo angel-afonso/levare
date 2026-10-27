@@ -1,0 +1,628 @@
+<title>Cinta de Levare</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Music&display=swap">
+<style>
+/* Layout: the page frames one Levare window; inside it the ribbon follows one grammar —
+   bare controls at rest, a tone step on hover, the blue fill when on, a shared track for choices. */
+:root {
+  color-scheme: dark;
+  --page: #0e0f11;
+  --bg: #131417;       /* window ground (Levare BG) */
+  --panel: #18191d;    /* bars and ribbon (PANEL) */
+  --popover: #1d1e23;
+  --field: #222329;    /* choice track (FIELD) */
+  --hover: #2c2e36;
+  --border: #2b2d35;
+  --outline: #33353e;
+  --text: #e8e9ee;
+  --secondary: #bfc3ce;
+  --muted: #969ba7;
+  --blue: #79a4ff;
+  --accent-text: #b8ceff;
+  --select: #22314d;
+  --select-border: #3c5d94;
+  --warn: #f2b282;
+  --paper: #f6f4ef;
+  --ink: #242323;
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --music: "Noto Music", "Bravura Text", "Apple Symbols", "Segoe UI Symbol", serif;
+  --score: "Times New Roman", Georgia, serif;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--page); color: var(--text); }
+body {
+  font-family: var(--ui);
+  font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+kbd { font-family: var(--ui); font-size: inherit; }
+
+/* The page around the mockup */
+.intro { max-width: 1400px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: end; justify-content: space-between; }
+.intro h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+.intro p { margin: 0; color: var(--secondary); max-width: 62ch; line-height: 1.5; }
+.switches { display: flex; flex-wrap: wrap; gap: 12px; }
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--field); border-radius: 8px; }
+.seg button { padding: 5px 12px; border-radius: 6px; color: var(--secondary); font-size: 13px; border: 1px solid transparent; }
+.seg button:hover { background: var(--hover); color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--select); border-color: var(--select-border); color: var(--accent-text); }
+.switch-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+
+.frame-wrap { max-width: 1400px; margin: 0 auto; overflow-x: auto; border-radius: 12px; }
+.window { min-width: 1080px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.window.narrow { max-width: 1080px; }
+
+/* Title bar */
+.titlebar { height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.lights { display: flex; gap: 8px; margin-right: 6px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.app { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.app .mark { font-family: var(--music); font-size: 18px; color: var(--text); }
+.doc { padding: 4px 10px; border-radius: 6px; background: var(--field); color: var(--secondary); font-size: 13px; }
+.iconbtn { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--secondary); }
+.iconbtn:hover { background: var(--hover); color: var(--text); }
+.iconbtn.on { background: var(--select); color: var(--accent-text); }
+.spacer { flex: 1; }
+.search { width: 300px; height: 28px; border-radius: 6px; border: 1px solid var(--outline); display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--muted); font-size: 13px; }
+.search span:last-child { margin-left: auto; font-size: 11px; }
+.export { height: 28px; padding: 0 12px; border-radius: 6px; background: var(--text); color: #131417; font-weight: 600; font-size: 13px; }
+
+/* Tabs and the entry status */
+.tabbar { height: 38px; display: flex; align-items: stretch; gap: 2px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.filemenu { align-self: center; margin-right: 8px; padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 13px; }
+.filemenu:hover { background: var(--hover); }
+.tab { position: relative; padding: 0 12px; font-size: 13px; color: var(--muted); }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--blue); border-radius: 2px; }
+.status { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secondary); padding: 4px 10px; border-radius: 6px; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status.writing { color: var(--accent-text); background: var(--select); }
+.status.writing .dot { background: var(--blue); }
+
+/* The ribbon */
+.ribbon { background: var(--panel); border-bottom: 1px solid var(--border); padding: 8px 12px 6px; display: flex; gap: 22px; overflow-x: auto; min-height: 92px; align-items: stretch; }
+.group { display: flex; flex-direction: column; justify-content: space-between; gap: 4px; flex: none; }
+.group .row { display: flex; align-items: stretch; gap: 2px; min-height: 58px; }
+.group .name { font-size: 11px; color: var(--muted); padding-left: 4px; }
+.track { display: flex; gap: 2px; padding: 2px; background: var(--field); border-radius: 9px; }
+.ctl { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 44px; padding: 4px 7px 3px; border-radius: 7px; border: 1px solid transparent; color: var(--text); transition: background-color .12s, color .12s, transform .08s; }
+.ctl:hover { background: var(--hover); }
+.ctl:active, .ctl.flash { transform: scale(.96); background: var(--hover); }
+.ctl[aria-pressed="true"] { background: var(--select); border-color: var(--select-border); color: var(--accent-text); }
+.ctl .g { height: 28px; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; }
+.ctl .g.music { font-family: var(--music); font-size: 26px; }
+.ctl .g.score { font-family: var(--score); font-style: italic; font-size: 17px; }
+.ctl .g.word { font-size: 15px; font-weight: 500; }
+.ctl .g svg { width: 24px; height: 24px; }
+.ctl .l { display: flex; gap: 4px; align-items: baseline; font-size: 10.5px; color: var(--secondary); white-space: nowrap; }
+.ctl[aria-pressed="true"] .l { color: var(--accent-text); }
+.ctl .k { color: var(--muted); font-size: 10px; }
+.ctl[aria-pressed="true"] .k { color: var(--accent-text); opacity: .8; }
+.ctl.big { min-width: 66px; }
+.ctl.big .g { height: 30px; }
+.narrow .ctl .nm { display: none; }
+.narrow .ctl { min-width: 36px; padding-inline: 5px; }
+.narrow .ribbon { gap: 14px; }
+
+/* Before: the current ribbon as it is today */
+.before img { display: block; width: 100%; height: auto; }
+.before { background: var(--panel); border-bottom: 1px solid var(--border); }
+
+/* Score and panels below, quiet */
+.work { display: grid; grid-template-columns: 220px 1fr 260px; height: 300px; }
+.side { background: var(--panel); padding: 12px; color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+.side.left { border-right: 1px solid var(--border); }
+.side.right { border-left: 1px solid var(--border); }
+.side strong { color: var(--text); font-weight: 600; font-size: 13px; }
+.part { padding: 8px 10px; border-radius: 8px; background: var(--select); border: 1px solid var(--select-border); color: var(--text); }
+.part small { display: block; color: var(--secondary); margin-top: 2px; }
+.canvas { background: #24252a; display: grid; place-items: start center; padding-top: 24px; overflow: hidden; }
+.sheet { width: 560px; height: 260px; background: var(--paper); color: var(--ink); padding: 26px 34px; }
+.sheet h2 { font-family: var(--score); font-weight: 400; text-align: center; font-size: 22px; margin: 0 0 22px; }
+.sheet svg { width: 100%; height: auto; display: block; }
+.kv { display: flex; justify-content: space-between; }
+.kv span:last-child { color: var(--text); }
+
+/* Tooltip */
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--popover); border: 1px solid var(--outline); border-radius: 8px; padding: 8px 10px; max-width: 260px; box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 12px; line-height: 1.4; }
+.tip b { font-weight: 600; color: var(--text); }
+.tip .tk { color: var(--accent-text); margin-left: 6px; }
+.tip p { margin: 3px 0 0; color: var(--secondary); }
+
+.notes { max-width: 1400px; margin: 20px auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 28px; }
+.notes h3 { font-size: 14px; margin: 0 0 6px; }
+.notes p { margin: 0; color: var(--secondary); line-height: 1.5; font-size: 13px; }
+.hint { max-width: 1400px; margin: 10px auto 0; color: var(--muted); font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { .ctl { transition: none; } .ctl:active, .ctl.flash { transform: none; } }
+</style>
+
+<header class="intro">
+  <div>
+    <h1>Propuesta de cinta para Levare</h1>
+    <p>Maqueta navegable. Cambia de pestaña, pulsa los botones o usa el teclado: N activa la entrada, 1–6 eligen la figura, 7·8·9 las alteraciones, ⌥1 y ⌥2 la voz.</p>
+  </div>
+  <div class="switches">
+    <div><span class="switch-label">Versión</span>
+      <div class="seg" role="group" aria-label="Versión">
+        <button id="v-new" aria-pressed="true">Propuesta</button>
+        <button id="v-old" aria-pressed="false">Antes</button>
+      </div></div>
+    <div><span class="switch-label">Ventana</span>
+      <div class="seg" role="group" aria-label="Ancho de ventana">
+        <button id="w-wide" aria-pressed="true">Amplia</button>
+        <button id="w-narrow" aria-pressed="false">Estrecha</button>
+      </div></div>
+  </div>
+</header>
+
+<div class="frame-wrap">
+  <div class="window" id="win">
+    <div id="newbars">
+      <div class="titlebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="app"><span class="mark">𝅘𝅥𝅮</span>Levare</div>
+        <button class="iconbtn" title="Guardar ⌘S" aria-label="Guardar"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2.5h8l2.5 2.5v8.5h-10.5z"/><path d="M5.5 2.5v3.5h5V2.5M5 13.5V9.5h6v4"/></svg></button>
+        <button class="iconbtn" title="Deshacer ⌘Z" aria-label="Deshacer"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5.5 4 2.5 7l3 3"/><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H7"/></svg></button>
+        <button class="iconbtn" title="Rehacer ⇧⌘Z" aria-label="Rehacer"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m10.5 4 3 3-3 3"/><path d="M13 7H6.5a3.5 3.5 0 0 0 0 7H9"/></svg></button>
+        <span class="doc">Cuarteto en sol</span>
+        <span class="spacer"></span>
+        <div class="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span>Buscar comandos…</span><span>⌘F</span></div>
+        <span class="spacer"></span>
+        <button class="iconbtn on" title="Instrumentos" aria-label="Instrumentos"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/></svg></button>
+        <button class="iconbtn on" title="Propiedades" aria-label="Propiedades"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/></svg></button>
+        <button class="iconbtn" title="Panel de agente" aria-label="Panel de agente"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3.5h10v7H7l-3 2.5v-2.5H3z"/></svg></button>
+        <button class="export">Exportar…</button>
+      </div>
+      <div class="tabbar" role="tablist" id="tabs">
+        <button class="filemenu">Archivo ▾</button>
+      </div>
+      <div class="ribbon" id="ribbon" role="tabpanel"></div>
+    </div>
+    <div class="before" id="before" hidden><img alt="La cinta actual de Levare en la pestaña Entrada" src="{{BEFORE}}"></div>
+    <div class="work">
+      <div class="side left">
+        <strong>Instrumentos</strong>
+        <div class="part">Violín I<small>Clave de sol</small></div>
+        <div>Violín II</div><div>Viola</div><div>Violonchelo</div><div>Contrabajo</div>
+      </div>
+      <div class="canvas">
+        <div class="sheet">
+          <h2>Cuarteto en sol</h2>
+          <svg viewBox="0 0 500 90" aria-label="Primer sistema del violín I">
+            <g stroke="#242323" stroke-width="1">
+              <line x1="0" y1="20" x2="500" y2="20"/><line x1="0" y1="30" x2="500" y2="30"/><line x1="0" y1="40" x2="500" y2="40"/><line x1="0" y1="50" x2="500" y2="50"/><line x1="0" y1="60" x2="500" y2="60"/>
+              <line x1="170" y1="20" x2="170" y2="60"/><line x1="335" y1="20" x2="335" y2="60"/><line x1="499" y1="20" x2="499" y2="60" stroke-width="2"/>
+            </g>
+            <text x="2" y="61" font-family="Noto Music, serif" font-size="46" fill="#242323">𝄞</text>
+            <text x="38" y="35" font-family="Noto Music, serif" font-size="22" fill="#242323">♯</text>
+            <text x="56" y="40" font-family="Times New Roman, serif" font-size="20" font-weight="700" fill="#242323">4</text>
+            <text x="56" y="60" font-family="Times New Roman, serif" font-size="20" font-weight="700" fill="#242323">4</text>
+            <g font-family="Noto Music, serif" font-size="40" fill="#242323">
+              <text x="88" y="55">𝅘𝅥</text><text x="112" y="50">𝅘𝅥</text><text x="136" y="45">𝅘𝅥</text>
+              <text x="186" y="40" fill="#3f6fd8">𝅗𝅥</text><text x="240" y="45">𝅘𝅥</text><text x="270" y="50">𝅘𝅥</text>
+              <text x="350" y="55">𝅝</text>
+            </g>
+            <path d="M92 66 Q130 82 158 60" fill="none" stroke="#242323" stroke-width="1.4"/>
+            <text x="88" y="84" font-family="Times New Roman, serif" font-style="italic" font-weight="700" font-size="15" fill="#242323">mf</text>
+          </svg>
+        </div>
+      </div>
+      <div class="side right">
+        <strong>Propiedades</strong>
+        <div class="kv"><span>Nota</span><span>Si 4</span></div>
+        <div class="kv"><span>Duración</span><span id="prop-dur">Blanca</span></div>
+        <div class="kv"><span>Voz</span><span id="prop-voice">1</span></div>
+        <div class="kv"><span>Compás</span><span>2 · tiempo 1</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="hint" id="hint">Pasa el cursor por un botón para ver qué hace y su tecla.</p>
+
+<section class="notes" aria-label="Qué cambia">
+  <div><h3>Una sola forma de botón</h3><p>En reposo, solo el símbolo o el texto. Al pasar el cursor, un tono más claro. Activo o elegido, relleno azul. Las opciones que se excluyen comparten un carril. Los grupos se separan con espacio y su nombre, sin tarjetas.</p></div>
+  <div><h3>Nombre y tecla a la vista</h3><p>Bajo cada símbolo musical, su nombre y su atajo: «Negra 4». En una ventana estrecha queda solo la tecla. La pastilla del estado dice siempre qué vas a escribir.</p></div>
+  <div><h3>Pestañas por tarea</h3><p>Escribir, Articulaciones, Dinámicas, Texto, Partitura, Reproducción, Revisión y Vista. Clave, tonalidad, compases, repeticiones y saltos de página pasan a Partitura. El portapapeles queda en el menú Edición y en sus teclas.</p></div>
+</section>
+
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(() => {
+  const svg = {
+    up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 19V6M7 11l5-5 5 5"/></svg>',
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v13M7 13l5 5 5-5"/></svg>',
+    staccato: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>',
+    tenuto: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="2.2" rx="1" fill="currentColor"/></svg>',
+    accent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 7l14 5-14 5"/></svg>',
+    marcato: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M6 18 12 6l6 12"/></svg>',
+    tie: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="5" cy="15" rx="2.6" ry="2" fill="currentColor" stroke="none"/><ellipse cx="19" cy="15" rx="2.6" ry="2" fill="currentColor" stroke="none"/><path d="M6 11c3-3 9-3 12 0"/></svg>',
+    slur: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 15c4-8 14-8 18 0"/></svg>',
+    cresc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12 21 6M3 12l18 6"/></svg>',
+    dim: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M21 12 3 6M21 12 3 18"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
+    stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>',
+    first: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="2" height="12" rx="1"/><path d="M19 6v12l-10-6z"/></svg>',
+    fromsel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="6.5" width="7" height="11" rx="1.5"/><path d="M13 7.5v9l7-4.5z" fill="currentColor" stroke="none"/></svg>',
+    loop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V9a3 3 0 0 1 3-3h10l-2.5-2.5M19 13v2a3 3 0 0 1-3 3H6l2.5 2.5"/></svg>',
+    half: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>',
+    speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 10h4l5-4v12l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6" stroke-linecap="round"/></svg>',
+    mixer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4v16M12 4v16M18 4v16"/><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor"/></svg>',
+    bank: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v8M12 5v8M16 5v8"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg>',
+    flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M6 20V4M6 5h11l-2 4 2 4H6"/></svg>',
+    prev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m14 6-6 6 6 6"/></svg>',
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m10 6 6 6-6 6"/></svg>',
+    range: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 18 19 6"/><circle cx="5" cy="18" r="1.8" fill="currentColor"/><circle cx="19" cy="6" r="1.8" fill="currentColor"/></svg>',
+    reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 6 5 9l3 3"/><path d="M5.5 9H14a4.5 4.5 0 0 1 0 9H9"/></svg>',
+    comment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 5h16v11h-9l-4 3v-3H4z"/><path d="M12 8v5M9.5 10.5h5" stroke-linecap="round"/></svg>',
+    comments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 5h16v11h-9l-4 3v-3H4z"/></svg>',
+    resolve: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+    page: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="3.5" width="12" height="17" rx="1.5"/><path d="M9 8h6M9 11h6M9 14h6"/></svg>',
+    continuous: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="7" width="19" height="10" rx="1.5"/><path d="M6 10.5h12M6 13.5h12"/></svg>',
+    system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 12h18M3 15h18"/></svg>',
+    zin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5M8 10.5h5M10.5 8v5"/></svg>',
+    zout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5M8 10.5h5"/></svg>',
+    fit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    fold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M3.5 10h17M10 15l2-2 2 2"/></svg>',
+    staff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 7h18M3 10h18M3 13h18M3 16h18M3 19h18" opacity=".55"/><path d="M12 9v8M8 13h8" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    piano: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M7.5 5v9M12 5v9M16.5 5v9" stroke-width="2.4"/><path d="M9.7 14v5M14.3 14v5"/></svg>',
+    ossia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10 4h11M10 6.5h11M10 9h11" opacity=".7"/><path d="M3 13h18M3 15.5h18M3 18h18M3 20.5h18"/></svg>',
+    barend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 8h12M3 11h12M3 14h12M3 17h12M15 8v9" opacity=".7"/><path d="M19 9.5v6M16 12.5h6" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    barbefore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 8h12M9 11h12M9 14h12M9 17h12M9 8v9" opacity=".7"/><path d="M5 9.5v6M2 12.5h6" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    bardel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 8h18M3 11h18M3 14h18M3 17h18" opacity=".55"/><path d="m8 9 8 7M16 9l-8 7" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    sysbreak: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h12a3 3 0 0 1 0 6H7"/><path d="m9 10.5-2.5 2.5L9 15.5"/><path d="M4 18h16" opacity=".55"/></svg>',
+    pagebreak: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="2.5" width="12" height="7" rx="1"/><rect x="6" y="14.5" width="12" height="7" rx="1"/><path d="M3 12h3M9 12h2M13 12h2M18 12h3" stroke-linecap="round"/></svg>',
+    title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 6h14M12 6v12M8 18h8"/></svg>',
+    more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg>'
+  };
+
+  // kind: choice (shares a track, one on), toggle (on/off), action (runs once)
+  const c = (id, name, glyph, type, kind, key, desc, extra = {}) => ({ id, name, glyph, type, kind, key, desc, ...extra });
+  const TABS = [
+    { id: 'write', label: 'Escribir', groups: [
+      { name: 'Entrada', items: [
+        c('entry', 'Escribir', '𝅘𝅥𝅮', 'music', 'toggle', 'N', 'Activa la entrada de notas. Con ella encendida, las letras A–G escriben notas.', { big: true }),
+        c('oct-up', 'Octava', 'up', 'svg', 'action', '⌘↑', 'Sube una octava la nota seleccionada o la siguiente que escribas.'),
+        c('oct-down', 'Octava', 'down', 'svg', 'action', '⌘↓', 'Baja una octava la nota seleccionada o la siguiente que escribas.'),
+      ]},
+      { name: 'Duración', track: 'dur', items: [
+        c('d6', 'Redonda', '𝅝', 'music', 'choice', '6', 'Cuatro tiempos en 4/4.'),
+        c('d5', 'Blanca', '𝅗𝅥', 'music', 'choice', '5', 'Dos tiempos en 4/4.'),
+        c('d4', 'Negra', '𝅘𝅥', 'music', 'choice', '4', 'Un tiempo en 4/4.'),
+        c('d3', 'Corchea', '𝅘𝅥𝅮', 'music', 'choice', '3', 'Medio tiempo.'),
+        c('d2', 'Semicorchea', '𝅘𝅥𝅯', 'music', 'choice', '2', 'Un cuarto de tiempo.'),
+        c('d1', 'Fusa', '𝅘𝅥𝅰', 'music', 'choice', '1', 'Un octavo de tiempo.'),
+      ]},
+      { name: 'Modificar', items: [
+        c('dot', 'Puntillo', '𝅘𝅥 .', 'music', 'toggle', '.', 'Alarga la figura la mitad de su valor.'),
+        c('triplet', 'Tresillo', '3', 'word', 'toggle', '⌘3', 'Tres figuras en el tiempo de dos.'),
+        c('rest', 'Silencio', '𝄽', 'music', 'action', '0', 'Escribe un silencio con la duración elegida.'),
+      ]},
+      { name: 'Alteración', track: 'acc', items: [
+        c('nat', 'Becuadro', '♮', 'music', 'choice', '7', 'Pulsa otra vez para quitarlo.'),
+        c('sharp', 'Sostenido', '♯', 'music', 'choice', '8', 'Pulsa otra vez para quitarlo.'),
+        c('flat', 'Bemol', '♭', 'music', 'choice', '9', 'Pulsa otra vez para quitarlo.'),
+        c('key', 'Armadura', 'arm.', 'word', 'choice', '', 'La nota sigue la armadura: sin alteración propia.'),
+      ]},
+      { name: 'Ligadura', items: [
+        c('tie', 'De unión', 'tie', 'svg', 'toggle', '↩', 'Une la nota con la siguiente de la misma altura.'),
+        c('slur', 'De expresión', 'slur', 'svg', 'toggle', 'S', 'Pulsa en la primera nota y otra vez en la última.'),
+      ]},
+      { name: 'Voz', track: 'voice', items: [
+        c('v1', 'Voz 1', '1', 'word', 'choice', '⌥1', 'Plicas hacia arriba.'),
+        c('v2', 'Voz 2', '2', 'word', 'choice', '⌥2', 'Plicas hacia abajo, con su propio ritmo.'),
+      ]},
+      { name: 'Acorde', items: [
+        c('chord', 'Modo acorde', '𝅘𝅥', 'music', 'toggle', '⌥A', 'Las notas que escribas se apilan en la misma posición.'),
+        c('interval', 'Intervalo', 'more', 'svg', 'action', '⇧2–⇧8', 'Añade una segunda, tercera… u octava encima de la nota.'),
+      ]},
+    ]},
+    { id: 'artic', label: 'Articulaciones', groups: [
+      { name: 'Articulación', items: [
+        c('stacc', 'Staccato', 'staccato', 'svg', 'toggle', '', 'Nota corta y separada.'),
+        c('ten', 'Tenuto', 'tenuto', 'svg', 'toggle', '', 'Nota sostenida en todo su valor.'),
+        c('acc', 'Acento', 'accent', 'svg', 'toggle', '', 'Ataque más fuerte.'),
+        c('marc', 'Marcato', 'marcato', 'svg', 'toggle', '', 'Acento fuerte y marcado.'),
+        c('ferm', 'Calderón', '𝄐', 'music', 'toggle', '', 'Mantiene la nota a criterio del intérprete.'),
+      ]},
+      { name: 'Nota de adorno', items: [
+        c('acciac', 'Acciaccatura', '𝆔', 'music', 'toggle', ';', 'Adorno rápido, tachado, antes de la nota.'),
+        c('appog', 'Appoggiatura', '𝆕', 'music', 'toggle', '', 'Adorno que toma tiempo de la nota principal.'),
+      ]},
+      { name: 'Arpegio', items: [
+        c('arp', 'Arpegio', '𝆃', 'music', 'toggle', '', 'Toca el acorde de abajo arriba, sin flecha.'),
+        c('arp-up', 'Hacia arriba', '𝆃', 'music', 'toggle', '', 'Arpegio con flecha hacia arriba.'),
+        c('arp-down', 'Hacia abajo', '𝆄', 'music', 'toggle', '', 'Arpegio con flecha hacia abajo.'),
+      ]},
+      { name: 'Trémolo', items: [
+        c('trem1', 'Una barra', '𝅘𝅧𝅥', 'music', 'toggle', '', 'Repite la nota en corcheas.'),
+        c('trem2', 'Dos barras', '𝅘𝅨𝅥', 'music', 'toggle', '', 'Repite la nota en semicorcheas.'),
+        c('trem3', 'Tres barras', '𝅘𝅩𝅥', 'music', 'toggle', '', 'Trémolo sin medida.'),
+      ]},
+      { name: 'Técnica de cuerda', items: [
+        c('pizz', 'Pizzicato', 'pizz.', 'score', 'toggle', '', 'Pellizcando la cuerda.'),
+        c('arco', 'Arco', 'arco', 'score', 'toggle', '', 'Vuelve a tocar con arco.'),
+        c('harm', 'Armónico', '°', 'word', 'toggle', '', 'Armónico natural sobre la nota.'),
+      ]},
+    ]},
+    { id: 'dyn', label: 'Dinámicas', groups: [
+      { name: 'Dinámica', items: ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'].map(d => c('dy-' + d, d, d, 'score', 'action', '', 'Escribe ' + d + ' bajo la nota seleccionada.')) },
+      { name: 'Regulador', items: [
+        c('cresc', 'Crescendo', 'cresc', 'svg', 'toggle', 'H', 'Pulsa en la primera nota y otra vez en la última.'),
+        c('dimin', 'Diminuendo', 'dim', 'svg', 'toggle', '⇧H', 'Pulsa en la primera nota y otra vez en la última.'),
+      ]},
+      { name: 'Líneas', items: [
+        c('8va', '8va', '8va', 'score', 'toggle', '', 'Suena una octava más aguda.'),
+        c('8vb', '8vb', '8vb', 'score', 'toggle', '', 'Suena una octava más grave.'),
+        c('ped', 'Pedal', '𝆮', 'music', 'toggle', '', 'Pedal de resonancia del piano.'),
+        c('trill', 'Trino', 'tr', 'score', 'toggle', '', 'Alterna rápido con la nota superior.'),
+        c('gliss', 'Glissando', 'gliss.', 'score', 'toggle', '', 'Desliza de una nota a la siguiente.'),
+      ]},
+      { name: 'Divisi', items: [
+        c('div', 'Dividir', 'div.', 'score', 'toggle', '', 'La sección se divide en dos pentagramas.'),
+        c('unis', 'Unir', 'unis.', 'score', 'toggle', '', 'La sección vuelve a tocar al unísono.'),
+      ]},
+    ]},
+    { id: 'text', label: 'Texto', groups: [
+      { name: 'Partitura', items: [ c('titles', 'Título y créditos', 'title', 'svg', 'action', '', 'Título, subtítulo, compositor y arreglista.', { big: true }) ] },
+      { name: 'Tempo', items: [
+        c('tempo', 'Indicación', 'Allegro', 'score', 'action', '⌥⌘T', 'Escribe un tempo y su metrónomo en el compás.'),
+        c('tempo-up', 'Más rápido', 'up', 'svg', 'action', '', 'Sube el metrónomo de la indicación seleccionada.'),
+        c('tempo-down', 'Más lento', 'down', 'svg', 'action', '', 'Baja el metrónomo de la indicación seleccionada.'),
+      ]},
+      { name: 'Sobre el pentagrama', items: [
+        c('expr', 'Expresión', 'dolce', 'score', 'action', '⌘E', 'Texto de carácter bajo el pentagrama.'),
+        c('tech', 'Técnica', 'con sord.', 'score', 'action', '⌘T', 'Instrucción de técnica sobre el pentagrama.'),
+      ]},
+      { name: 'Letra y cifrado', items: [
+        c('lyric', 'Letra', 'la-la', 'score', 'action', '⌘L', 'Escribe sílabas bajo las notas.'),
+        c('chordsym', 'Cifrado', 'C7', 'word', 'action', '⌘K', 'Escribe acordes sobre el pentagrama.'),
+      ]},
+      { name: 'Marca de ensayo', items: [
+        c('reh', 'Añadir', 'A', 'word', 'action', '⌘R', 'Añade la siguiente marca en el compás seleccionado.'),
+      ]},
+      { name: 'Estilo de ensayo', track: 'reh', items: [
+        c('reh-a', 'Letras', 'A B', 'word', 'choice', '', 'A, B, C…'),
+        c('reh-1', 'Números', '1 2', 'word', 'choice', '', '1, 2, 3…'),
+        c('reh-bar', 'Nº de compás', '12', 'word', 'choice', '', 'El número del compás donde está la marca.'),
+      ]},
+    ]},
+    { id: 'score', label: 'Partitura', groups: [
+      { name: 'Instrumentos', items: [
+        c('add-inst', 'Añadir…', 'staff', 'svg', 'action', 'I', 'Elige instrumentos de la orquesta, por familias.', { big: true }),
+        c('piano', 'Piano', 'piano', 'svg', 'action', '', 'Piano a dos manos.'),
+        c('ossia', 'Ossia', 'ossia', 'svg', 'action', '', 'Un pentagrama pequeño encima para una alternativa.'),
+      ]},
+      { name: 'Compases', items: [
+        c('bar-end', 'Al final', 'barend', 'svg', 'action', '⌘B', 'Añade un compás al final de la obra.'),
+        c('bar-before', 'Antes', 'barbefore', 'svg', 'action', '⇧⌘B', 'Inserta un compás antes del seleccionado.'),
+        c('bar-del', 'Eliminar', 'bardel', 'svg', 'action', '⌘⌫', 'Elimina los compases seleccionados.'),
+      ]},
+      { name: 'Cambios', items: [
+        c('clef', 'Clave…', '𝄞', 'music', 'action', 'Q', 'Cambia la clave desde la nota seleccionada.'),
+        c('keysig', 'Tonalidad…', '♯', 'music', 'action', 'K', 'Cambia la armadura desde el compás seleccionado.'),
+        c('timesig', 'Compás…', '4/4', 'score', 'action', 'T', 'Cambia el compás de tiempo.'),
+      ]},
+      { name: 'Repeticiones', items: [
+        c('rep-start', 'Inicio', '𝄆', 'music', 'toggle', '', 'Barra de inicio de repetición.'),
+        c('rep-end', 'Fin', '𝄇', 'music', 'toggle', '', 'Barra de fin de repetición.'),
+        c('end1', '1.ª vez', '1.', 'word', 'toggle', '', 'Casilla de primera vez.'),
+        c('end2', '2.ª vez', '2.', 'word', 'toggle', '', 'Casilla de segunda vez.'),
+        c('dbl', 'Doble barra', '𝄁', 'music', 'toggle', '', 'Doble barra al final del compás.'),
+        c('fin', 'Final', '𝄂', 'music', 'toggle', '', 'Barra final.'),
+      ]},
+      { name: 'Da capo y segno', items: [
+        c('segno', 'Segno', '𝄋', 'music', 'toggle', '', 'Punto al que vuelve un D.S.'),
+        c('coda', 'Coda', '𝄌', 'music', 'toggle', '', 'Comienzo de la coda.'),
+        c('fine', 'Fine', 'Fine', 'score', 'toggle', '', 'Donde termina la obra tras volver.'),
+        c('jumps', 'D.C. / D.S.', 'more', 'svg', 'action', '', 'D.C., D.C. al Fine, D.C. al Coda, D.S… y To Coda.'),
+      ]},
+      { name: 'Sistema y página', items: [
+        c('sys-break', 'Salto de sistema', 'sysbreak', 'svg', 'toggle', '', 'El siguiente compás empieza un sistema nuevo.'),
+        c('page-break', 'Salto de página', 'pagebreak', 'svg', 'toggle', '', 'El siguiente compás empieza una página nueva.'),
+      ]},
+    ]},
+    { id: 'play', label: 'Reproducción', groups: [
+      { name: 'Reproducir', items: [
+        c('playbtn', 'Reproducir', 'play', 'svg', 'toggle', 'Espacio', 'Reproduce, pausa o continúa.', { big: true }),
+        c('fromsel', 'Desde la selección', 'fromsel', 'svg', 'action', 'P', 'Empieza en la nota seleccionada.'),
+        c('fromstart', 'Desde el inicio', 'first', 'svg', 'action', '', 'Empieza en el primer compás.'),
+        c('stopbtn', 'Detener', 'stop', 'svg', 'action', '⇧O', 'Para y vuelve al punto de partida.'),
+      ]},
+      { name: 'Práctica', items: [
+        c('loop', 'Bucle', 'loop', 'svg', 'toggle', '⌥P', 'Repite el pasaje seleccionado.'),
+        c('halfspeed', 'Media velocidad', 'half', 'svg', 'toggle', '⇧Espacio', 'Reproduce a la mitad del tempo.'),
+        c('repeats', 'Repeticiones', '𝄇', 'music', 'toggle', '', 'Sigue las barras de repetición al reproducir.'),
+      ]},
+      { name: 'Sonido', items: [
+        c('audition', 'Oír al escribir', 'speaker', 'svg', 'toggle', '', 'Cada nota que escribes suena.'),
+        c('chordplay', 'Cifrados', 'C7', 'word', 'toggle', '', 'Los cifrados suenan al reproducir.'),
+        c('mixer', 'Mezclador', 'mixer', 'svg', 'action', '', 'Volumen y posición de cada instrumento.'),
+        c('sounds', 'Sonidos', 'bank', 'svg', 'action', '', 'Elige el banco de sonidos e instala más.'),
+      ]},
+    ]},
+    { id: 'review', label: 'Revisión', groups: [
+      { name: 'Comprobar', items: [
+        c('check-score', 'Toda la partitura', 'check', 'svg', 'action', '', 'Busca notas fuera de registro, compases incompletos y más.', { big: true }),
+        c('check-sel', 'Selección', 'check', 'svg', 'action', '', 'Comprueba solo lo seleccionado.'),
+      ]},
+      { name: 'Avisos', items: [
+        c('notices', 'Mostrar', 'flag', 'svg', 'toggle', '', 'Marca los avisos sobre la partitura.'),
+        c('prev', 'Anterior', 'prev', 'svg', 'action', '', 'Va al aviso anterior.'),
+        c('nextw', 'Siguiente', 'next', 'svg', 'action', '', 'Va al aviso siguiente.'),
+      ]},
+      { name: 'Registro del instrumento', items: [
+        c('ranges', 'Mostrar', 'range', 'svg', 'toggle', '', 'Colorea las notas fuera del registro cómodo.'),
+        c('edit-range', 'Editar…', 'range', 'svg', 'action', '', 'Ajusta el registro de este instrumento.'),
+        c('reset-range', 'Restablecer', 'reset', 'svg', 'action', '', 'Vuelve al registro habitual.'),
+      ]},
+      { name: 'Comentarios', items: [
+        c('new-comment', 'Nuevo', 'comment', 'svg', 'action', '', 'Comenta la selección.'),
+        c('show-comments', 'Mostrar', 'comments', 'svg', 'toggle', '', 'Muestra los comentarios en el panel.'),
+        c('resolve', 'Resolver', 'resolve', 'svg', 'action', '', 'Resuelve o reabre el comentario.'),
+      ]},
+    ]},
+    { id: 'view', label: 'Vista', groups: [
+      { name: 'Modo', track: 'vmode', items: [
+        c('vm-page', 'Página', 'page', 'svg', 'choice', '', 'Páginas como se imprimirán.'),
+        c('vm-cont', 'Continua', 'continuous', 'svg', 'choice', '', 'Un sistema infinito hacia la derecha.'),
+        c('vm-sys', 'Un sistema', 'system', 'svg', 'choice', '', 'Solo el sistema actual, a lo ancho.'),
+      ]},
+      { name: 'Zoom', items: [
+        c('zout', 'Alejar', 'zout', 'svg', 'action', '⌘−', 'Reduce el zoom.'),
+        c('z70', '70 %', '70 %', 'word', 'action', '', 'Zoom actual. Pulsa para escribir otro.'),
+        c('zin', 'Acercar', 'zin', 'svg', 'action', '⌘+', 'Aumenta el zoom.'),
+        c('z100', 'Tamaño real', '100', 'word', 'action', '⌘1', 'Zoom al 100 %.'),
+        c('zfit', 'Ajustar', 'fit', 'svg', 'action', '⌘0', 'La página entera en la ventana.'),
+      ]},
+      { name: 'Cinta', items: [ c('fold', 'Plegar', 'fold', 'svg', 'toggle', '', 'Oculta la cinta; las pestañas la muestran al pulsarlas.') ] },
+    ]},
+  ];
+
+  const state = { tab: 'write', on: new Set(['v1', 'vm-page', 'reh-a', 'd5', 'key', 'audition', 'repeats', 'show-comments']), narrow: false };
+  const byId = {};
+  TABS.forEach(t => t.groups.forEach(g => g.items.forEach(it => { byId[it.id] = { ...it, track: g.track }; })));
+
+  const tabsEl = document.getElementById('tabs');
+  const ribbon = document.getElementById('ribbon');
+  const status = document.createElement('div');
+  status.className = 'status';
+  status.setAttribute('aria-live', 'polite');
+
+  function renderTabs() {
+    tabsEl.querySelectorAll('.tab').forEach(n => n.remove());
+    TABS.forEach(t => {
+      const b = document.createElement('button');
+      b.className = 'tab'; b.textContent = t.label; b.id = 'tab-' + t.id;
+      b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(state.tab === t.id));
+      b.addEventListener('click', () => { state.tab = t.id; render(); });
+      tabsEl.insertBefore(b, status.parentNode ? status : null);
+    });
+    if (!status.parentNode) tabsEl.appendChild(status);
+  }
+
+  function glyphHTML(it) {
+    if (it.type === 'svg') return `<span class="g">${svg[it.glyph]}</span>`;
+    return `<span class="g ${it.type}">${it.glyph}</span>`;
+  }
+
+  function control(it) {
+    const b = document.createElement('button');
+    b.className = 'ctl' + (it.big ? ' big' : '');
+    b.id = 'c-' + it.id;
+    b.dataset.id = it.id;
+    if (it.kind !== 'action') b.setAttribute('aria-pressed', String(state.on.has(it.id)));
+    b.setAttribute('aria-label', it.name + (it.key ? ', tecla ' + it.key : ''));
+    b.innerHTML = glyphHTML(it) + `<span class="l"><span class="nm">${it.name}</span>${it.key ? `<span class="k">${it.key}</span>` : ''}</span>`;
+    b.addEventListener('click', () => press(it.id));
+    b.addEventListener('mouseenter', e => showTip(it, b));
+    b.addEventListener('mouseleave', hideTip);
+    b.addEventListener('focus', () => showTip(it, b));
+    b.addEventListener('blur', hideTip);
+    return b;
+  }
+
+  function renderRibbon() {
+    ribbon.innerHTML = '';
+    const tab = TABS.find(t => t.id === state.tab);
+    ribbon.setAttribute('aria-labelledby', 'tab-' + tab.id);
+    tab.groups.forEach(g => {
+      const ge = document.createElement('div'); ge.className = 'group';
+      const row = document.createElement('div'); row.className = 'row';
+      const holder = g.track ? Object.assign(document.createElement('div'), { className: 'track' }) : row;
+      g.items.forEach(it => holder.appendChild(control({ ...it, track: g.track })));
+      if (g.track) row.appendChild(holder);
+      ge.appendChild(row);
+      const n = document.createElement('div'); n.className = 'name'; n.textContent = g.name;
+      ge.appendChild(n);
+      ribbon.appendChild(ge);
+    });
+  }
+
+  const DUR = { d6: 'Redonda', d5: 'Blanca', d4: 'Negra', d3: 'Corchea', d2: 'Semicorchea', d1: 'Fusa' };
+  function renderStatus() {
+    const writing = state.on.has('entry');
+    const dur = Object.keys(DUR).find(k => state.on.has(k));
+    const parts = [writing ? 'Escribiendo' : 'Seleccionando'];
+    if (dur) parts.push(DUR[dur] + (state.on.has('dot') ? ' con puntillo' : '') + (state.on.has('triplet') ? ' en tresillo' : ''));
+    parts.push(state.on.has('v2') ? 'Voz 2' : 'Voz 1');
+    if (state.on.has('chord')) parts.push('Acorde');
+    if (state.on.has('playbtn')) parts.unshift('Reproduciendo');
+    status.className = 'status' + (writing ? ' writing' : '');
+    status.innerHTML = `<span class="dot"></span>${parts.join(' · ')}`;
+    document.getElementById('prop-dur').textContent = dur ? DUR[dur] : '—';
+    document.getElementById('prop-voice').textContent = state.on.has('v2') ? '2' : '1';
+  }
+
+  function press(id, fromKey) {
+    const it = byId[id]; if (!it) return;
+    if (it.kind === 'choice') {
+      const wasOn = state.on.has(id);
+      TABS.forEach(t => t.groups.forEach(g => { if (g.track === it.track) g.items.forEach(x => state.on.delete(x.id)); }));
+      // Accidentals clear when pressed again, like Levare.
+      if (!(wasOn && it.track === 'acc')) state.on.add(id); else state.on.add('key');
+    } else if (it.kind === 'toggle') {
+      state.on.has(id) ? state.on.delete(id) : state.on.add(id);
+    }
+    renderRibbon(); renderStatus();
+    const el = document.getElementById('c-' + id);
+    if (el && fromKey) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 160); }
+    if (fromKey && !el) hint(`${it.name}${it.key ? ' (' + it.key + ')' : ''}: está en la pestaña ${TABS.find(t => t.groups.some(g => g.items.some(x => x.id === id))).label}.`);
+  }
+
+  const tip = document.getElementById('tip');
+  function showTip(it, el) {
+    tip.innerHTML = `<b>${it.name}</b>${it.key ? `<span class="tk">${it.key}</span>` : ''}<p>${it.desc}</p>`;
+    tip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    tip.style.top = (r.bottom + 8) + 'px';
+  }
+  function hideTip() { tip.hidden = true; }
+  const hintEl = document.getElementById('hint');
+  function hint(t) { hintEl.textContent = t; }
+
+  const KEYS = { n: 'entry', '1': 'd1', '2': 'd2', '3': 'd3', '4': 'd4', '5': 'd5', '6': 'd6', '.': 'dot', '7': 'nat', '8': 'sharp', '9': 'flat', '0': 'rest', s: 'slur', enter: 'tie', ' ': 'playbtn', h: 'cresc' };
+  document.addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('input, textarea')) return;
+    let id;
+    if (e.altKey && (e.code === 'Digit1' || e.code === 'Digit2')) id = e.code === 'Digit1' ? 'v1' : 'v2';
+    else if (e.altKey && e.code === 'KeyA') id = 'chord';
+    else if (e.metaKey && e.key === '3') id = 'triplet';
+    else if (!e.metaKey && !e.ctrlKey && !e.altKey) id = KEYS[e.key.toLowerCase()];
+    if (!id) return;
+    e.preventDefault();
+    press(id, true);
+  });
+
+  function setVersion(old) {
+    document.getElementById('v-old').setAttribute('aria-pressed', String(old));
+    document.getElementById('v-new').setAttribute('aria-pressed', String(!old));
+    document.getElementById('before').hidden = !old;
+    document.getElementById('newbars').hidden = old;
+    hint(old ? 'Así es hoy la pestaña Entrada, capturada de Levare.' : 'Pasa el cursor por un botón para ver qué hace y su tecla.');
+  }
+  function setNarrow(n) {
+    state.narrow = n;
+    document.getElementById('win').classList.toggle('narrow', n);
+    document.getElementById('w-narrow').setAttribute('aria-pressed', String(n));
+    document.getElementById('w-wide').setAttribute('aria-pressed', String(!n));
+  }
+  document.getElementById('v-old').addEventListener('click', () => setVersion(true));
+  document.getElementById('v-new').addEventListener('click', () => setVersion(false));
+  document.getElementById('w-narrow').addEventListener('click', () => setNarrow(true));
+  document.getElementById('w-wide').addEventListener('click', () => setNarrow(false));
+
+  function render() { renderTabs(); renderRibbon(); renderStatus(); }
+  render();
+})();
+</script>

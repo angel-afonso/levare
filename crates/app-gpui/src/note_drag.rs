@@ -195,10 +195,14 @@ impl NoteDrag {
             })?;
         let local_x = x - measure.origin.x - offset;
         let raw = measure.content.tick_at_x(local_x);
-        let quantum = if self.base.event(self.id)?.duration.is_triplet() {
-            8
-        } else {
-            12
+        // The grid is a sixteenth, or a thirty-second for the notes that short.
+        let duration = self.base.event(self.id)?.duration;
+        let fine = duration.value() == score_core::NoteValue::ThirtySecond;
+        let quantum = match (fine, duration.is_triplet()) {
+            (false, false) => 12,
+            (false, true) => 8,
+            (true, false) => 6,
+            (true, true) => 4,
         };
         let capacity = self.base.time_at(measure.index).capacity();
         let mut tick = ((raw / f64::from(quantum)).round() as u16 * quantum).min(capacity);

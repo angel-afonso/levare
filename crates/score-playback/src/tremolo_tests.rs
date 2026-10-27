@@ -179,3 +179,30 @@ fn maximum_ensemble_tremolos_keep_the_existing_simultaneous_voice_limit() {
         MAX_SOUNDING_NOTES
     );
 }
+#[test]
+fn three_strokes_mark_the_first_repeated_and_last_attacks_and_two_strokes_do_not() {
+    let roles = |strokes| {
+        let mut score = Score::default();
+        score
+            .insert(0, 0, event(Duration::Quarter, strokes))
+            .unwrap();
+        let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+        attacks(&plan)
+            .iter()
+            .map(|attack| match attack.message {
+                Message::NoteOn(note) => note.tremolo,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let unmeasured = roles(Tremolo::Three);
+    assert_eq!(unmeasured.len(), 8);
+    assert_eq!(unmeasured[0], Some(TremoloAttack::First));
+    assert!(
+        unmeasured[1..7]
+            .iter()
+            .all(|role| *role == Some(TremoloAttack::Repeat))
+    );
+    assert_eq!(unmeasured[7], Some(TremoloAttack::Last));
+    assert!(roles(Tremolo::Two).iter().all(Option::is_none));
+}

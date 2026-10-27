@@ -31,7 +31,9 @@ pub(super) fn dots(
         .fold(0f32, f32::max);
     let flagged = matches!(
         event.duration.value(),
-        score_core::NoteValue::Eighth | score_core::NoteValue::Sixteenth
+        score_core::NoteValue::Eighth
+            | score_core::NoteValue::Sixteenth
+            | score_core::NoteValue::ThirtySecond
     );
     let x = right
         + if flagged && !event.pitches.is_empty() {

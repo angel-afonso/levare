@@ -265,9 +265,16 @@ pub mod id {
         DIMINUENDO = "expresion.diminuendo";
         REMOVE_CRESCENDO = "expresion.quitar-crescendo";
         REMOVE_DIMINUENDO = "expresion.quitar-diminuendo";
+        OTTAVA_ALTA = "notacion.8va";
+        OTTAVA_BASSA = "notacion.8vb";
+        PEDAL = "notacion.pedal";
+        TRILL = "notacion.trino";
+        GLISSANDO = "notacion.glissando";
         PIZZICATO = "expresion.pizzicato";
         ARCO = "expresion.arco";
         HARMONIC_NATURAL = "expresion.armonico-natural";
+        ACCIACCATURA = "notacion.acciaccatura";
+        APPOGGIATURA = "notacion.appoggiatura";
         HARMONIC_ARTIFICIAL = "expresion.armonico-artificial";
         CLEAR_TECHNIQUE = "expresion.sin-tecnica";
         CLEAR_ARTICULATION = "expresion.sin-articulacion";
@@ -337,6 +344,8 @@ pub mod id {
         DAL_SEGNO_AL_FINE = "compases.dal-segno-al-fine";
         DAL_SEGNO_AL_CODA = "compases.dal-segno-al-coda";
         CLEAR_FORM = "compases.quitar-forma";
+        SYSTEM_BREAK = "compases.salto-de-sistema";
+        PAGE_BREAK = "compases.salto-de-pagina";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -368,7 +377,9 @@ pub mod id {
         LOOP = "reproduccion.bucle";
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
+        CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
+        SOUNDS = "reproduccion.sonidos";
         AUDITION = "reproduccion.audicion";
         TEMPO_UP = "reproduccion.tempo-mas";
         TEMPO_DOWN = "reproduccion.tempo-menos";
@@ -381,9 +392,21 @@ pub mod id {
         FULL_SCREEN = "vista.pantalla-completa";
         TOGGLE_INSTRUMENTS_PANEL = "vista.panel-instrumentos";
         TOGGLE_INSPECTOR = "vista.panel-propiedades";
+        TOGGLE_AGENT_PANEL = "vista.panel-agente";
         PAGE_VIEW = "vista.pagina";
         CONTINUOUS_VIEW = "vista.continua";
         SINGLE_SYSTEM_VIEW = "vista.pentagrama";
+        COMMAND_SEARCH = "vista.buscar-comandos";
+        TAB_HOME = "vista.pestana.inicio";
+        TAB_NOTE_INPUT = "vista.pestana.entrada";
+        TAB_NOTATION = "vista.pestana.notacion";
+        TAB_DYNAMICS = "vista.pestana.dinamicas";
+        TAB_TEXT = "vista.pestana.texto";
+        TAB_PLAYBACK = "vista.pestana.reproduccion";
+        TAB_LAYOUT = "vista.pestana.disposicion";
+        TAB_REVIEW = "vista.pestana.revision";
+        TAB_VIEW = "vista.pestana.vista";
+        TOGGLE_RIBBON = "vista.plegar-cinta";
     }
 }
 
@@ -474,12 +497,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::VOICE_2, C::NoteInput, "Voz 2", S, false, R),
     spec(id::VOICE_3, C::NoteInput, "Voz 3", S, false, P),
     spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, P),
-    spec(id::GRACE_NOTE, C::NoteInput, "Convertir en nota de adorno", S, false, P),
+    spec(id::GRACE_NOTE, C::NoteInput, "Añadir nota de adorno", S, false, R),
+    spec(id::ACCIACCATURA, C::NoteInput, "Acciaccatura", S, false, R),
+    spec(id::APPOGGIATURA, C::NoteInput, "Appoggiatura", S, false, R),
     spec(id::FLEXI_TIME, C::NoteInput, "Entrada en tiempo real", G, false, P),
     spec(id::STEP_TIME, C::NoteInput, "Entrada paso a paso", S, false, R),
     spec(id::MIDI_INPUT, C::NoteInput, "Entrada con teclado MIDI", G, false, P),
 
-    spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, P),
+    spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, R),
     spec(id::SIXTEENTH, C::Duration, "Semicorchea", S, false, R),
     spec(id::EIGHTH, C::Duration, "Corchea", S, false, R),
     spec(id::QUARTER, C::Duration, "Negra", S, false, R),
@@ -505,6 +530,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DIMINUENDO, C::Expression, "Diminuendo: inicio o fin", S, false, R),
     spec(id::REMOVE_CRESCENDO, C::Expression, "Quitar crescendo", S, false, R),
     spec(id::REMOVE_DIMINUENDO, C::Expression, "Quitar diminuendo", S, false, R),
+    spec(id::OTTAVA_ALTA, C::Notation, "Octava alta 8va", S, false, R),
+    spec(id::OTTAVA_BASSA, C::Notation, "Octava baja 8vb", S, false, R),
+    spec(id::PEDAL, C::Notation, "Pedal de resonancia", S, false, R),
+    spec(id::TRILL, C::Notation, "Trino", S, false, R),
+    spec(id::GLISSANDO, C::Notation, "Glissando hasta la nota siguiente", S, false, R),
     spec(id::PIZZICATO, C::Expression, "Pizzicato", S, false, R),
     spec(id::ARCO, C::Expression, "Arco", S, false, R),
     spec(id::HARMONIC_NATURAL, C::Expression, "Armónico natural", S, false, R),
@@ -528,11 +558,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DYNAMIC_FF, C::Expression, "Dinámica ff", S, false, R),
     spec(id::DYNAMIC_FFF, C::Expression, "Dinámica fff", S, false, R),
     spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
-    spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión", G, false, P),
-    spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica", G, false, P),
+    spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión…", S, false, R),
+    spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica…", S, false, R),
     spec(id::TEMPO_TEXT, C::Expression, "Indicación de tempo…", G, false, R),
-    spec(id::LYRICS, C::Expression, "Letra", G, false, P),
-    spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes", G, false, P),
+    spec(id::LYRICS, C::Expression, "Letra…", S, false, R),
+    spec(id::CHORD_SYMBOL, C::Expression, "Cifrado de acordes…", S, false, R),
     spec(id::REHEARSAL_MARK, C::Expression, "Marca de ensayo", G, false, R),
     spec(id::REHEARSAL_LETTERS, C::Expression, "Marcas de ensayo con letras", G, false, R),
     spec(id::REHEARSAL_NUMBERS, C::Expression, "Marcas de ensayo con números", G, false, R),
@@ -547,7 +577,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::BAR_AT_END, C::Bars, "Añadir un compás al final", G, true, R),
     spec(id::SINGLE_BAR, C::Bars, "Insertar un compás antes del actual", G, false, R),
     spec(id::DELETE_BAR, C::Bars, "Eliminar compases seleccionados", G, false, R),
-    spec(id::GO_TO_BAR, C::Bars, "Ir al compás…", G, false, P),
+    spec(id::GO_TO_BAR, C::Bars, "Ir al compás…", G, false, R),
     spec(id::REPEAT_START, C::Bars, "Inicio de repetición", G, false, R),
     spec(id::REPEAT_END, C::Bars, "Fin de repetición", G, false, R),
     spec(id::ENDING_1, C::Bars, "Primera casilla", G, false, R),
@@ -566,6 +596,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DAL_SEGNO_AL_FINE, C::Bars, "D.S. al Fine", G, false, R),
     spec(id::DAL_SEGNO_AL_CODA, C::Bars, "D.S. al Coda", G, false, R),
     spec(id::CLEAR_FORM, C::Bars, "Quitar repeticiones y saltos", G, false, R),
+    spec(id::SYSTEM_BREAK, C::Bars, "Salto de sistema tras el compás", G, false, R),
+    spec(id::PAGE_BREAK, C::Bars, "Salto de página tras el compás", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),
@@ -586,18 +618,20 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::OCTAVE_DOWN, C::Navigation, "Bajar una octava", S, true, R),
     spec(id::UPPER_NOTE_OR_STAFF, C::Navigation, "Nota superior del acorde o pentagrama de arriba", S, true, R),
     spec(id::LOWER_NOTE_OR_STAFF, C::Navigation, "Nota inferior del acorde o pentagrama de abajo", S, true, R),
-    spec(id::BAR_START, C::Navigation, "Inicio del compás", S, true, P),
-    spec(id::NEXT_BAR, C::Navigation, "Compás siguiente", S, true, P),
+    spec(id::BAR_START, C::Navigation, "Inicio del compás", S, true, R),
+    spec(id::NEXT_BAR, C::Navigation, "Compás siguiente", S, true, R),
 
     spec(id::PLAY, C::Playback, "Reproducir, pausar o continuar", S, false, R),
     spec(id::PLAY_FROM_SELECTION, C::Playback, "Reproducir desde la selección", S, false, R),
     spec(id::PLAY_FROM_START, C::Playback, "Reproducir desde el inicio", G, false, R),
     spec(id::STOP, C::Playback, "Detener la reproducción", G, false, R),
-    spec(id::PLAYLINE_TO_START, C::Playback, "Llevar la línea de reproducción al inicio", G, false, P),
-    spec(id::LOOP, C::Playback, "Reproducción en bucle", S, false, P),
-    spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, P),
-    spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, P),
-    spec(id::MIXER, C::Playback, "Mostrar el mezclador", S, false, R),
+    spec(id::PLAYLINE_TO_START, C::Playback, "Llevar la línea de reproducción al inicio", G, false, R),
+    spec(id::LOOP, C::Playback, "Reproducción en bucle", S, false, R),
+    spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, R),
+    spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, R),
+    spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
+    spec(id::MIXER, C::Playback, "Mezcla de las partes", S, false, R),
+    spec(id::SOUNDS, C::Playback, "Mostrar el sonido", S, false, R),
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
     spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),
     spec(id::TEMPO_DOWN, C::Playback, "Bajar el tempo", G, true, R),
@@ -619,11 +653,23 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::ZOOM_ACTUAL, C::View, "Tamaño real (100 %)", G, false, R),
     spec(id::ZOOM_FIT, C::View, "Ajustar a la página", G, false, R),
     spec(id::FULL_SCREEN, C::View, "Pantalla completa", G, false, R),
-    spec(id::TOGGLE_INSTRUMENTS_PANEL, C::View, "Mostrar u ocultar instrumentos", G, false, R),
-    spec(id::TOGGLE_INSPECTOR, C::View, "Mostrar u ocultar propiedades", G, false, R),
+    spec(id::TOGGLE_INSTRUMENTS_PANEL, C::View, "Mostrar u ocultar las partes", G, false, R),
+    spec(id::TOGGLE_INSPECTOR, C::View, "Mostrar u ocultar el panel derecho", G, false, R),
+    spec(id::TOGGLE_AGENT_PANEL, C::View, "Panel de agente", G, false, R),
     spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, R),
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
+    spec(id::COMMAND_SEARCH, C::View, "Buscar comandos…", G, false, R),
+    spec(id::TAB_NOTE_INPUT, C::View, "Pestaña Escribir", G, false, R),
+    spec(id::TAB_NOTATION, C::View, "Pestaña Articulaciones", G, false, R),
+    spec(id::TAB_DYNAMICS, C::View, "Pestaña Dinámicas", G, false, R),
+    spec(id::TAB_TEXT, C::View, "Pestaña Texto", G, false, R),
+    spec(id::TAB_HOME, C::View, "Pestaña Partitura", G, false, R),
+    spec(id::TAB_LAYOUT, C::View, "Pestaña Partitura (saltos de página)", G, false, R),
+    spec(id::TAB_PLAYBACK, C::View, "Pestaña Reproducción", G, false, R),
+    spec(id::TAB_REVIEW, C::View, "Pestaña Revisión", G, false, R),
+    spec(id::TAB_VIEW, C::View, "Pestaña Vista", G, false, R),
+    spec(id::TOGGLE_RIBBON, C::View, "Plegar o desplegar la cinta", G, false, R),
 ];
 
 #[cfg(test)]

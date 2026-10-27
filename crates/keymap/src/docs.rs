@@ -30,7 +30,7 @@ pub fn markdown(registry: &Registry, keymap: &Keymap) -> String {
             text.push_str(&format!(
                 "| {} | {} | {} |\n",
                 if keys.is_empty() {
-                    "—".to_owned()
+                    "Sin atajo".to_owned()
                 } else {
                     keys.join(" · ")
                 },

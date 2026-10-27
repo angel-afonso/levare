@@ -113,7 +113,7 @@ fn select_whole_bar(
 
 /// Prefer the nearest row of the originating staff, then the nearest time on
 /// that row. Pitch height and other instruments cannot divert the passage.
-fn nearest_event(
+pub(super) fn nearest_event(
     layout: &Layout,
     anchor: ElementId,
     point: ScorePoint,
@@ -199,7 +199,7 @@ impl AppView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_blocks(cx) {
             return;
         }
         self.focus.focus(window);
@@ -280,6 +280,7 @@ impl AppView {
         if !self.ui.note_entry
             || self.busy
             || self.confirming
+            || self.agent_locked()
             || self.ui.context_menu.is_some()
             || self.note_drag.is_some()
             || self.mark_drag.is_some()
@@ -318,18 +319,40 @@ impl AppView {
     ) {
         self.focus.focus(window);
         self.ui.context_menu = None;
-        let interrupted_drag =
-            self.selection_drag.is_some() || self.note_drag.is_some() || self.mark_drag.is_some();
+        let interrupted_drag = self.selection_drag.is_some()
+            || self.note_drag.is_some()
+            || self.mark_drag.is_some()
+            || self.connection_drag.is_some();
+        // Read before the drags are dropped: the handles belong to the picked line.
+        let handles = self.line_handles();
         self.selection_drag = None;
         self.note_drag = None;
         self.mark_drag = None;
+        self.connection_drag = None;
         self.ghost = None;
         self.hover = None;
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_blocks(cx) {
             return;
         }
         self.reveal_selection = false;
         let point = canvas_point(event.position, self.canvas_origin);
+        if self.begin_line_drag(event, point, handles, cx) {
+            return;
+        }
+        self.select_at(event, point, interrupted_drag, cx);
+        if self.close_moved_editors() {
+            cx.notify();
+        }
+    }
+
+    /// What a press on the score selects, writes or starts dragging.
+    fn select_at(
+        &mut self,
+        event: &MouseDownEvent,
+        point: ScorePoint,
+        interrupted_drag: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.clicked_mark = None;
         self.clicked_bar_mark = None;
         if event.click_count == 2
@@ -433,9 +456,18 @@ impl AppView {
                 .score()
                 .mark_label(mark)
                 .unwrap_or_default();
-            self.status = format!(
-                "{label} seleccionado · Backspace lo borra; pulsa otra marca de la cinta para cambiarlo"
-            );
+            let step = if mark.follows_time() {
+                "; ⌥←/→ lo lleva a otra nota"
+            } else {
+                ""
+            };
+            self.status = if matches!(mark, MarkRef::Grace(..)) {
+                "Nota de adorno seleccionada · ↑/↓ cambian su altura; Backspace la borra".into()
+            } else {
+                format!(
+                    "{label} seleccionado · Backspace lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
+                )
+            };
             cx.notify();
             return;
         }
@@ -537,6 +569,121 @@ impl AppView {
         cx.notify();
     }
 
+    /// A press on a handle of the picked line stretches it; ⌥ on a note draws
+    /// a slur from it, ⌥⌘ a crescendo and ⌥⇧⌘ a diminuendo.
+    fn begin_line_drag(
+        &mut self,
+        event: &MouseDownEvent,
+        point: ScorePoint,
+        handles: Option<Connection>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        use crate::connection_input::{ConnectionDrag, handle_at};
+        if let Some(line) = handles
+            && let Some(end) = handle_at(&self.layout, line, (point.x, point.y))
+        {
+            self.connection_drag = Some(ConnectionDrag::stretch(
+                self.document.editor.score(),
+                line,
+                end,
+                event.position,
+                &self.layout,
+            ));
+            self.clicked_mark = Some(MarkRef::Connection(line));
+            self.status = "Arrastra el extremo hasta otra nota; Esc cancela".into();
+            cx.notify();
+            return true;
+        }
+        if !event.modifiers.alt {
+            return false;
+        }
+        let Some((id, pitch, _)) = self
+            .layout
+            .hit_pitch_with_position(point, self.document.editor.cursor().voice)
+        else {
+            return false;
+        };
+        let kind = match (event.modifiers.platform, event.modifiers.shift) {
+            (false, _) => ConnectionKind::Slur,
+            (true, false) => ConnectionKind::Crescendo,
+            (true, true) => ConnectionKind::Diminuendo,
+        };
+        self.clicked_mark = None;
+        self.ui.note_entry = false;
+        self.document.editor.select(id);
+        self.playback.follow_staff(id.part, id.staff);
+        if kind == ConnectionKind::Slur && pitch.is_none() {
+            self.status = "La ligadura de expresión empieza en una nota o acorde".into();
+        } else {
+            self.connection_drag = Some(ConnectionDrag::draw(
+                self.document.editor.score(),
+                kind,
+                id,
+                event.position,
+                &self.layout,
+            ));
+            self.status = format!("{}: arrastra hasta la nota final y suelta", kind.label());
+        }
+        cx.notify();
+        true
+    }
+
+    /// Point the dragged end of a line at the nearest event of its voice.
+    fn aim_line_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(drag) = self.connection_drag.as_mut() else {
+            return;
+        };
+        if drag.pending(position) {
+            return;
+        }
+        let point = canvas_point(position, self.canvas_origin);
+        let Some(target) = nearest_event(&drag.geometry, drag.fixed, point, false) else {
+            return;
+        };
+        if !drag.aim(target) {
+            return;
+        }
+        self.playback.stop();
+        self.status = match (drag.candidate, drag.error) {
+            (Some(line), _) => format!(
+                "{} hasta el compás {} · Suelta para aplicar; Esc cancela",
+                line.kind.label(),
+                line.end.measure + 1
+            ),
+            (None, Some(error)) => error.into(),
+            (None, None) => String::new(),
+        };
+        cx.notify();
+    }
+
+    fn finish_line_drag(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(drag) = self.connection_drag.take() else {
+            return false;
+        };
+        self.selection_drag = None;
+        if let Some(command) = drag.command()
+            && let Some(line) = drag.candidate
+        {
+            if self.try_edit(command, cx) {
+                let mark = MarkRef::Connection(line);
+                self.document.editor.select(mark.anchor());
+                self.clicked_mark = Some(mark);
+                self.status = format!(
+                    "{} hasta el compás {} · ⌘Z para deshacer",
+                    line.kind.label(),
+                    line.end.measure + 1
+                );
+            }
+        } else if drag.active {
+            self.status = drag.error.map_or("Sin cambios", |error| error).into();
+            if let Some(line) = drag.original {
+                self.clicked_mark = Some(MarkRef::Connection(line));
+            }
+        }
+        cx.notify();
+        true
+    }
+
     fn selection_status(&mut self) {
         let count = self.document.editor.selected_ids().len();
         self.status = if count > 1 {
@@ -549,10 +696,14 @@ impl AppView {
     }
 
     fn extend_passage_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let locked = self.agent_locked();
         let Some(drag) = self.selection_drag.as_mut() else {
             return;
         };
-        if self.busy || self.confirming || self.document.editor.score().event(drag.anchor).is_none()
+        if self.busy
+            || self.confirming
+            || locked
+            || self.document.editor.score().event(drag.anchor).is_none()
         {
             self.selection_drag = None;
             return;
@@ -581,7 +732,7 @@ impl AppView {
             if self.hover.take().is_some() {
                 cx.notify();
             }
-            self.move_score_pointer(event.position, event.modifiers.shift, cx);
+            self.move_score_pointer(event.position, event.modifiers, cx);
         } else {
             self.selection_drag = None;
             self.cancel_note_drag(cx);
@@ -597,6 +748,7 @@ impl AppView {
                 && self.mark_drag.is_none()
                 && !self.busy
                 && !self.confirming
+                && !self.agent_locked()
             {
                 let point = canvas_point(event.position, self.canvas_origin);
                 self.layout.hit(point).map(|hit| Hover {
@@ -619,10 +771,20 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.move_score_pointer(event.position, event.modifiers.shift, cx);
+        self.move_score_pointer(event.position, event.modifiers, cx);
+        if self.finish_line_drag(cx) {
+            return;
+        }
         if let Some(drag) = self.mark_drag.take() {
             let mark = drag.mark;
-            if let Some(offset) = drag.target() {
+            if let crate::mark_drag::DragTarget::Mark(from) = mark
+                && let Some((to, offset)) = drag.destination()
+            {
+                self.move_mark(from, to, offset, cx);
+            } else if let Some(error) = drag.error.filter(|_| drag.active) {
+                self.status = error.into();
+                cx.notify();
+            } else if let Some(offset) = drag.target() {
                 let label = mark.label(self.document.editor.score());
                 match mark {
                     crate::mark_drag::DragTarget::Mark(mark) => {
@@ -635,8 +797,9 @@ impl AppView {
                         self.reveal_selection = false;
                     }
                 }
-                self.status =
-                    format!("{label} colocada · ⇧⌘P la devuelve a su sitio · ⌘Z para deshacer");
+                self.status = format!(
+                    "{label} · Posición ajustada; ⇧⌘P la devuelve a su sitio · ⌘Z para deshacer"
+                );
                 cx.notify();
             } else if !drag.active
                 && let crate::mark_drag::DragTarget::Bar(mark) = mark
@@ -725,12 +888,17 @@ impl AppView {
     fn move_score_pointer(
         &mut self,
         position: Point<Pixels>,
-        axis_lock: bool,
+        modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             self.cancel_note_drag(cx);
             self.selection_drag = None;
+            self.connection_drag = None;
+            return;
+        }
+        if self.connection_drag.is_some() {
+            self.aim_line_drag(position, cx);
             return;
         }
         if let Some(drag) = self.mark_drag.as_mut() {
@@ -738,16 +906,28 @@ impl AppView {
                 return;
             }
             let starting = !drag.active;
-            let changed = drag.update(position, self.canvas_origin, axis_lock);
-            let mark = drag.mark;
+            let free = modifiers.platform;
+            let changed = drag.update(position, self.canvas_origin, modifiers.shift, free);
             if starting {
                 self.playback.stop();
             }
             if changed {
-                let label = mark.label(self.document.editor.score());
-                self.status = format!(
-                    "{label} · Suelta para colocarla; Mayús fija la dirección; Esc cancela"
-                );
+                let score = self.document.editor.score();
+                let label = drag.mark.label(score);
+                self.status = if let Some(error) = drag.error {
+                    error.into()
+                } else if let Some((moved, _)) = drag.destination() {
+                    format!(
+                        "{label} → {} · Suelta para aplicar; ⌘ mueve sin cambiar de nota; Esc cancela",
+                        crate::mark_drag::place_label(score, moved.anchor())
+                    )
+                } else if drag.follows_time() && !free {
+                    format!(
+                        "{label} · Arrastra a los lados para cambiar de nota; ⌘ mueve sin cambiar de nota; Esc cancela"
+                    )
+                } else {
+                    format!("{label} · Suelta para colocarla; Mayús fija la dirección; Esc cancela")
+                };
                 cx.notify();
             }
             return;

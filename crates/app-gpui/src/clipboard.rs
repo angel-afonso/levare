@@ -54,13 +54,18 @@ impl AppView {
         cx.notify();
     }
     pub(super) fn paste_music(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let clip = cx
             .read_from_clipboard()
             .ok_or("El portapapeles está vacío".to_owned())
             .and_then(|item| decode_item(&item));
         match clip.and_then(|clip| self.document.editor.paste(&clip).map_err(|e| e.to_string())) {
             Ok(count) => {
-                self.playback.stop();
+                if !self.agent_acting {
+                    self.playback.stop();
+                }
                 self.pending_slur = None;
                 self.pending_hairpin = None;
                 self.reveal_selection = true;
@@ -132,6 +137,11 @@ mod playback_tests {
                 dynamic: Some(Dynamic::F),
                 articulation: Some(Articulation::Staccato),
                 fermata: false,
+                grace: None,
+                expression_text: None,
+                technique_text: None,
+                lyrics: Default::default(),
+                chord: None,
                 offsets: Default::default(),
             },
         };

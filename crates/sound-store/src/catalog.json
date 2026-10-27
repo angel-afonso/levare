@@ -1,0 +1,273 @@
+{
+  "packs": [
+    {
+      "id": "vsco-alta-calidad",
+      "name": "VSCO CE · Alta calidad",
+      "description": "Las grabaciones de VSCO 2 Community Edition que usa Levare, sin pérdida: piano, cuerdas solistas y de sección con pizzicato, staccato y trémolo, maderas y metales.",
+      "version": 1,
+      "author": "Versilian Studios",
+      "license": {
+        "name": "CC0 1.0",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/deed.es"
+      },
+      "installed_size": 480226284,
+      "archives": [
+        {
+          "url": "https://github.com/angel-afonso/levare/releases/download/sonidos-vsco-alta-calidad-1/vsco-alta-calidad-1.zip",
+          "sha256": "05c60f45378e800820bfad726d454524b8b64373add346f7dff96cf3a20d3ac9",
+          "size": 480489696
+        }
+      ]
+    },
+    {
+      "id": "virtual-playing-orchestra",
+      "name": "Virtual Playing Orchestra 3 · Performance",
+      "description": "Orquesta completa de Paul Battersby: solistas y secciones de cuerda con segundos violines y trémolo, maderas, metales, arpa, celesta y percusión afinada. Se descarga de la web de su autor.",
+      "version": 1,
+      "author": "Paul Battersby (VirtualPlaying.com)",
+      "license": {
+        "name": "Creative Commons (varias) · uso libre para hacer música",
+        "url": "https://virtualplaying.com/virtual-playing-orchestra/"
+      },
+      "installed_size": 723123746,
+      "archives": [
+        {
+          "url": "https://drive.usercontent.google.com/download?id=17bY90ybtA5CyNJMnQ4KK9i5YO3tCN7HR&export=download&confirm=t",
+          "sha256": "ca8f1e0b56eede35314994646e5f1f307ec349616c967fbecf627c43aa646e90",
+          "size": 616114842
+        },
+        {
+          "url": "https://virtualplaying.com/vp-downloads/Virtual-Playing-Orchestra3-3-performance-scripts.zip",
+          "sha256": "7543e64585ef28022bcf9759f127d12ee2d51a831f3bfba9fbb584a8bb993bfd",
+          "size": 361503
+        }
+      ],
+      "manifest": {
+        "format": 2,
+        "kind": "sfz",
+        "id": "virtual-playing-orchestra",
+        "name": "Virtual Playing Orchestra 3 · Performance",
+        "samples": "Virtual-Playing-Orchestra3",
+        "license": "Virtual-Playing-Orchestra3/Documentation/license.htm",
+        "instruments": {
+          "Violin": {
+            "sustain": "Strings/1st-violin-SEC-PERF.sfz",
+            "pizzicato": "Strings/1st-violin-SEC-PERF-pizzicato.sfz",
+            "staccato": "Strings/1st-violin-SEC-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "second": {
+              "sustain": "Strings/2nd-violin-SEC-PERF.sfz",
+              "pizzicato": "Strings/2nd-violin-SEC-PERF-pizzicato.sfz",
+              "staccato": "Strings/2nd-violin-SEC-PERF-staccato.sfz",
+              "tremolo": "Strings/2nd-violin-SEC-PERF-tremolo.sfz"
+            },
+            "solo": {
+              "sustain": "Strings/1st-violin-SOLO-PERF.sfz",
+              "pizzicato": "Strings/1st-violin-SOLO-PERF-pizzicato.sfz",
+              "staccato": "Strings/1st-violin-SOLO-PERF-staccato.sfz",
+              "second": {
+                "sustain": "Strings/2nd-violin-SOLO-PERF.sfz",
+                "pizzicato": "Strings/2nd-violin-SOLO-PERF-pizzicato.sfz",
+                "staccato": "Strings/2nd-violin-SOLO-PERF-staccato.sfz"
+              },
+              "tremolo": "Strings/1st-violin-SOLO-PERF-tremolo.sfz"
+            },
+            "tremolo": "Strings/1st-violin-SEC-PERF-tremolo.sfz"
+          },
+          "Viola": {
+            "sustain": "Strings/viola-SEC-PERF.sfz",
+            "pizzicato": "Strings/viola-SEC-PERF-pizzicato.sfz",
+            "staccato": "Strings/viola-SEC-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "solo": {
+              "sustain": "Strings/viola-SOLO-PERF.sfz",
+              "pizzicato": "Strings/viola-SOLO-PERF-pizzicato.sfz",
+              "staccato": "Strings/viola-SOLO-PERF-staccato.sfz"
+            },
+            "tremolo": "Strings/viola-SEC-PERF-tremolo.sfz"
+          },
+          "Cello": {
+            "sustain": "Strings/cello-SEC-PERF.sfz",
+            "pizzicato": "Strings/cello-SEC-PERF-pizzicato.sfz",
+            "staccato": "Strings/cello-SEC-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "solo": {
+              "sustain": "Strings/cello-SOLO-PERF.sfz",
+              "pizzicato": "Strings/cello-SOLO-PERF-pizzicato.sfz",
+              "staccato": "Strings/cello-SOLO-PERF-staccato.sfz"
+            },
+            "tremolo": "Strings/cello-SEC-PERF-tremolo.sfz"
+          },
+          "DoubleBass": {
+            "sustain": "Strings/bass-SEC-PERF.sfz",
+            "pizzicato": "Strings/bass-SEC-PERF-pizzicato.sfz",
+            "staccato": "Strings/bass-SEC-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "solo": {
+              "sustain": "Strings/bass-SOLO-PERF.sfz",
+              "pizzicato": "Strings/bass-SOLO-PERF-pizzicato.sfz",
+              "staccato": "Strings/bass-SOLO-PERF-staccato.sfz"
+            },
+            "tremolo": "Strings/bass-SEC-PERF-tremolo.sfz"
+          },
+          "Piccolo": {
+            "sustain": "Woodwinds/piccolo-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Woodwinds/piccolo-SOLO-PERF-staccato.sfz"
+          },
+          "Flute": {
+            "sustain": "Woodwinds/flute-SOLO-PERF.sfz",
+            "staccato": "Woodwinds/flute-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Woodwinds/flute-SEC-PERF.sfz",
+              "staccato": "Woodwinds/flute-SEC-PERF-staccato.sfz"
+            }
+          },
+          "AltoFlute": {
+            "sustain": "Woodwinds/alto-flute-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Woodwinds/alto-flute-SOLO-PERF-staccato.sfz"
+          },
+          "Oboe": {
+            "sustain": "Woodwinds/oboe-SOLO-PERF.sfz",
+            "staccato": "Woodwinds/oboe-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Woodwinds/oboe-SEC-PERF.sfz",
+              "staccato": "Woodwinds/oboe-SEC-PERF-staccato.sfz"
+            }
+          },
+          "EnglishHorn": {
+            "sustain": "Woodwinds/english-horn-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Woodwinds/english-horn-SOLO-PERF-staccato.sfz"
+          },
+          "Clarinet": {
+            "sustain": "Woodwinds/clarinet-SOLO-PERF.sfz",
+            "staccato": "Woodwinds/clarinet-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Woodwinds/clarinet-SEC-PERF.sfz",
+              "staccato": "Woodwinds/clarinet-SEC-PERF-staccato.sfz"
+            }
+          },
+          "BassClarinet": {
+            "sustain": "Woodwinds/bass-clarinet-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Woodwinds/bass-clarinet-SOLO-PERF-staccato.sfz"
+          },
+          "Bassoon": {
+            "sustain": "Woodwinds/bassoon-SOLO-PERF.sfz",
+            "staccato": "Woodwinds/bassoon-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Woodwinds/bassoon-SEC-PERF.sfz",
+              "staccato": "Woodwinds/bassoon-SEC-PERF-staccato.sfz"
+            }
+          },
+          "Contrabassoon": {
+            "sustain": "Woodwinds/contrabassoon-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Woodwinds/contrabassoon-SOLO-PERF-staccato.sfz"
+          },
+          "Trumpet": {
+            "sustain": "Brass/trumpet-SOLO-PERF.sfz",
+            "staccato": "Brass/trumpet-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Brass/trumpet-SEC-PERF.sfz",
+              "staccato": "Brass/trumpet-SEC-PERF-staccato.sfz"
+            }
+          },
+          "Horn": {
+            "sustain": "Brass/french-horn-SOLO-PERF.sfz",
+            "staccato": "Brass/french-horn-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Brass/french-horn-SEC-PERF.sfz",
+              "staccato": "Brass/french-horn-SEC-PERF-staccato.sfz"
+            }
+          },
+          "Trombone": {
+            "sustain": "Brass/trombone-SOLO-PERF.sfz",
+            "staccato": "Brass/trombone-SOLO-PERF-staccato.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "section": {
+              "sustain": "Brass/trombone-SEC-PERF.sfz",
+              "staccato": "Brass/trombone-SEC-PERF-staccato.sfz"
+            }
+          },
+          "BassTrombone": {
+            "sustain": "Brass/bass-trombone-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Brass/bass-trombone-SOLO-PERF-staccato.sfz"
+          },
+          "Tuba": {
+            "sustain": "Brass/tuba-SOLO-PERF.sfz",
+            "dynamics": "cc1",
+            "spread_layers": false,
+            "staccato": "Brass/tuba-SOLO-PERF-staccato.sfz"
+          },
+          "Harp": {
+            "sustain": "Strings/harp-sustain.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "Celesta": {
+            "sustain": "Keys/celesta.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "Timpani": {
+            "sustain": "Percussion/timpani-hit.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "BassDrum": {
+            "sustain": "Percussion/bassdrum.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "Glockenspiel": {
+            "sustain": "Percussion/glockenspiel.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "Xylophone": {
+            "sustain": "Percussion/xylophone.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "Vibraphone": {
+            "sustain": "Percussion/vibraphone-open.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          },
+          "TubularBells": {
+            "sustain": "Percussion/tubular-bells.sfz",
+            "dynamics": "velocity",
+            "spread_layers": false
+          }
+        }
+      }
+    }
+  ]
+}

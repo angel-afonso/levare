@@ -1,0 +1,11 @@
+[package]
+name = "score-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+score-core.workspace = true
+
+[dev-dependencies]
+score-edit.workspace = true

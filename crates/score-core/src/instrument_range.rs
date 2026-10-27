@@ -101,6 +101,11 @@ impl Instrument {
             Celesta => (60, 108),           // C4–C8, four-octave model
             Organ => (36, 96),              // C2–C7, manuals (without stop shifts)
             Harp => (24, 103),              // C1–G7
+            Voice => (55, 84),              // G3–C6, a trained solo voice
+            Soprano => (60, 81),            // C4–A5, choral writing
+            Contralto => (53, 74),          // F3–D5
+            Tenor => (48, 69),              // C3–A4, sounding
+            BassVoice => (40, 62),          // E2–D4
             SnareDrum | BassDrum | Cymbals | Triangle | Tambourine | TamTam => return None,
         };
         Some(InstrumentRange { lowest, highest })

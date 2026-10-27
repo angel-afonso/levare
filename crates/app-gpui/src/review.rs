@@ -144,7 +144,7 @@ impl AppView {
     pub(super) fn show_review(&mut self) {
         self.ui.tab = score_toolbar::TabId::Review;
         self.ui.show_inspector = true;
-        self.ui.inspector = "Revisión";
+        self.ui.right = crate::panels::RightTab::Review;
     }
 
     pub(super) fn check_review(&mut self, selection: bool, cx: &mut Context<Self>) {
@@ -164,6 +164,9 @@ impl AppView {
     }
 
     pub(super) fn goto_review_issue(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(issue) = self.review.issues.get(index).copied() else {
             return;
         };
@@ -176,7 +179,9 @@ impl AppView {
         else {
             return;
         };
-        self.playback.stop();
+        if !self.agent_acting {
+            self.playback.stop();
+        }
         self.note_drag = None;
         self.mark_drag = None;
         self.selection_drag = None;
@@ -209,6 +214,9 @@ impl AppView {
     }
 
     pub(super) fn open_range_editor(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         self.show_review();
         let part = self
             .document
@@ -225,6 +233,9 @@ impl AppView {
     }
 
     pub(super) fn apply_range(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.range_editor else {
             return;
         };

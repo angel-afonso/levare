@@ -1,8 +1,8 @@
 use super::*;
 use gpui::point;
 use score_core::{
-    Arpeggio, BarMark, BarMarkRef, Connection, ConnectionKind, Duration, Dynamic, Ending, Event,
-    Instrument, Pitches, Step, Tremolo,
+    Arpeggio, BarMark, BarMarkRef, Connection, ConnectionKind, Duration, Dynamic, ElementId,
+    Ending, Event, Instrument, Pitch, Pitches, Step, Tremolo,
 };
 use score_edit::Command;
 use score_layout::{LayoutEngine, ViewMode};
@@ -42,7 +42,7 @@ fn mark_x(layout: &Layout, mark: MarkRef) -> f32 {
 }
 
 #[test]
-fn previews_follow_pointer_in_tenths_at_all_zooms_and_commit_as_one_undo() {
+fn a_cmd_drag_follows_the_pointer_in_tenths_at_all_zooms_and_commits_as_one_undo() {
     for scale in [0.5, 0.7, 1., 1.5, 2.] {
         let (score, mark) = fixture();
         let shown = geometry(&score, scale);
@@ -50,7 +50,7 @@ fn previews_follow_pointer_in_tenths_at_all_zooms_and_commit_as_one_undo() {
         let start = origin + point(px(400.), px(180.));
         let mut drag = MarkDrag::new(&score, mark, start, origin, scale, shown.clone()).unwrap();
         let position = start + point(px(30.), px(20.));
-        assert!(drag.update(position, origin, false));
+        assert!(drag.update(position, origin, false, true));
         let expected = Offset {
             dx: (30. / scale).round() as i16,
             dy: (20. / scale).round() as i16,
@@ -88,7 +88,7 @@ fn jitter_under_five_pixels_is_a_click() {
     .unwrap();
     let jitter = start + point(px(2.), px(4.));
     assert!(drag.pending(jitter));
-    assert!(!drag.update(jitter, Point::default(), false));
+    assert!(!drag.update(jitter, Point::default(), false, true));
     assert!(!drag.active);
     assert_eq!(drag.target(), None);
 }
@@ -106,9 +106,19 @@ fn shift_locks_the_dominant_axis() {
         geometry(&score, 1.),
     )
     .unwrap();
-    assert!(drag.update(start + point(px(30.), px(20.)), Point::default(), true));
+    assert!(drag.update(
+        start + point(px(30.), px(20.)),
+        Point::default(),
+        true,
+        true
+    ));
     assert_eq!(drag.target(), Some(Offset { dx: 30, dy: 0 }));
-    assert!(drag.update(start + point(px(10.), px(40.)), Point::default(), true));
+    assert!(drag.update(
+        start + point(px(10.), px(40.)),
+        Point::default(),
+        true,
+        true
+    ));
     assert_eq!(drag.target(), Some(Offset { dx: 0, dy: 40 }));
 }
 
@@ -121,7 +131,7 @@ fn existing_offset_is_the_base() {
     let shown = geometry(&score, 1.);
     let start = point(px(20.), px(30.));
     let mut drag = MarkDrag::new(&score, mark, start, Point::default(), 1., shown.clone()).unwrap();
-    assert!(drag.update(start + point(px(5.), px(0.)), Point::default(), false));
+    assert!(drag.update(start + point(px(5.), px(0.)), Point::default(), false, true));
     assert_eq!(drag.target(), Some(Offset { dx: 15, dy: 0 }));
     assert!(
         (mark_x(drag.preview.as_ref().unwrap(), mark) - mark_x(&shown, mark) - 5.).abs() < 0.001
@@ -182,13 +192,14 @@ fn scrolling_during_the_drag_does_not_move_the_mark() {
     let origin = point(px(100.), px(200.));
     let start = origin + point(px(20.), px(30.));
     let mut drag = MarkDrag::new(&score, mark, start, origin, 1., geometry(&score, 1.)).unwrap();
-    assert!(drag.update(start + point(px(30.), px(20.)), origin, false));
+    assert!(drag.update(start + point(px(30.), px(20.)), origin, false, true));
     let first = drag.target();
     let new_origin = origin + point(px(80.), px(-40.));
     assert!(!drag.update(
         start + point(px(30.), px(20.)) + (new_origin - origin),
         new_origin,
-        false
+        false,
+        true
     ));
     assert_eq!(drag.target(), first);
 }
@@ -260,7 +271,7 @@ fn rehearsal_bar_drag_previews_at_every_zoom_and_commits_one_undo_step() {
         let start = origin + point(px(300.), px(160.));
         let mut drag =
             MarkDrag::new_bar(&score, mark, start, origin, scale, shown.clone()).unwrap();
-        assert!(drag.update(start + point(px(20.), px(-10.)), origin, false));
+        assert!(drag.update(start + point(px(20.), px(-10.)), origin, false, false));
         let expected = Offset {
             dx: (20. / scale).round() as i16,
             dy: (-10. / scale).round() as i16,
@@ -305,7 +316,12 @@ fn tempo_click_below_drag_threshold_has_no_target() {
     )
     .unwrap();
     assert!(drag.pending(start));
-    assert!(!drag.update(start + point(px(2.), px(3.)), Point::default(), false));
+    assert!(!drag.update(
+        start + point(px(2.), px(3.)),
+        Point::default(),
+        false,
+        false
+    ));
     assert!(!drag.active);
     assert_eq!(drag.target(), None);
 }
@@ -337,7 +353,12 @@ fn dragging_an_ending_continuation_moves_every_segment_in_one_undo_step() {
     let start = point(px(100.), px(100.));
     let mut drag =
         MarkDrag::new_bar(&score, mark, start, Point::default(), 1., shown.clone()).unwrap();
-    assert!(drag.update(start + point(px(18.), px(25.)), Point::default(), false));
+    assert!(drag.update(
+        start + point(px(18.), px(25.)),
+        Point::default(),
+        false,
+        false
+    ));
     let offset = Offset { dx: 18, dy: 25 };
     assert_eq!(drag.target(), Some(offset));
     let preview = drag.preview.as_ref().unwrap();
@@ -361,4 +382,223 @@ fn dragging_an_ending_continuation_moves_every_segment_in_one_undo_step() {
     assert!(document.editor.undo());
     assert_eq!(document.editor.score(), &score);
     assert!(!document.editor.can_undo());
+}
+
+/// C D E F in quarters.
+fn phrase() -> (Score, Vec<ElementId>) {
+    let mut score = Score::default();
+    let ids = [Step::C, Step::D, Step::E, Step::F]
+        .into_iter()
+        .enumerate()
+        .map(|(index, step)| {
+            let event = Event {
+                duration: Duration::Quarter,
+                pitches: Pitches::single(Pitch::new(step, 4)),
+                notation: Default::default(),
+            };
+            score.insert(0, index, event).unwrap()
+        })
+        .collect();
+    (score, ids)
+}
+
+fn mark_point(layout: &Layout, mark: MarkRef) -> Point<Pixels> {
+    let (placed, found) = layout
+        .measures
+        .iter()
+        .find_map(|placed| {
+            let found = placed.content.marks.iter().find(|box_| box_.mark == mark)?;
+            Some((placed, found))
+        })
+        .unwrap();
+    point(
+        px((placed.origin.x + found.center.x) * layout.scale),
+        px((placed.origin.y + found.center.y) * layout.scale),
+    )
+}
+
+/// Horizontal canvas distance between two notes.
+fn gap(layout: &Layout, from: ElementId, to: ElementId) -> f32 {
+    event_point(layout, to).unwrap().x - event_point(layout, from).unwrap().x
+}
+
+#[test]
+fn a_dynamic_dragged_sideways_goes_to_the_nearest_note() {
+    for scale in [0.7, 1., 1.5] {
+        let (mut score, ids) = phrase();
+        score.set_dynamic(ids[0], Some(Dynamic::F)).unwrap();
+        let mark = MarkRef::Dynamic(ids[0]);
+        let shown = geometry(&score, scale);
+        let start = mark_point(&shown, mark);
+        let mut drag =
+            MarkDrag::new(&score, mark, start, Point::default(), scale, shown.clone()).unwrap();
+        // A sideways drag by an unsteady hand keeps the height.
+        let to = start + point(px(gap(&shown, ids[0], ids[2])), px(3.));
+        assert!(drag.update(to, Point::default(), false, false));
+        let moved = MarkRef::Dynamic(ids[2]);
+        assert_eq!(drag.destination(), Some((moved, Offset::ZERO)));
+        assert_eq!(drag.target(), None);
+        assert_eq!(drag.shown_mark(), Some(moved));
+        let shown_score = drag.preview_score().unwrap();
+        assert_eq!(shown_score.event(ids[0]).unwrap().notation.dynamic, None);
+        assert_eq!(
+            shown_score.event(ids[2]).unwrap().notation.dynamic,
+            Some(Dynamic::F)
+        );
+        let preview = drag.preview.as_ref().unwrap();
+        let lines = drag.anchor_lines();
+        let note = event_point(preview, ids[2]).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!((lines[0].1.x, lines[0].1.y), (note.x, note.y));
+        assert!((lines[0].0.x - note.x).abs() < 12. * scale);
+
+        let mut document = score_document::Document::new(score.clone()).unwrap();
+        let (to, offset) = drag.destination().unwrap();
+        document
+            .execute(Command::MoveMark(mark, to, offset))
+            .unwrap();
+        let after = document.editor.score();
+        assert_eq!(after.event(ids[0]).unwrap().notation.dynamic, None);
+        assert_eq!(
+            after.event(ids[2]).unwrap().notation.dynamic,
+            Some(Dynamic::F)
+        );
+        assert!(document.editor.undo());
+        assert_eq!(document.editor.score(), &score);
+    }
+}
+
+#[test]
+fn cmd_keeps_the_note_and_back_home_only_the_height_changes() {
+    let (mut score, ids) = phrase();
+    score.set_dynamic(ids[0], Some(Dynamic::F)).unwrap();
+    let mark = MarkRef::Dynamic(ids[0]);
+    let shown = geometry(&score, 1.);
+    let start = mark_point(&shown, mark);
+    let mut drag = MarkDrag::new(&score, mark, start, Point::default(), 1., shown.clone()).unwrap();
+    let step = gap(&shown, ids[0], ids[2]);
+    let sideways = start + point(px(step), px(0.));
+    assert!(drag.update(sideways, Point::default(), false, true));
+    assert_eq!(drag.destination(), None);
+    assert_eq!(
+        drag.target(),
+        Some(Offset {
+            dx: step.round() as i16,
+            dy: 0
+        })
+    );
+    // The line still points back to the note it sounds on.
+    let home = event_point(&shown, ids[0]).unwrap();
+    assert_eq!(drag.anchor_lines()[0].1.x, home.x);
+    // Letting go of ⌘ takes it to the note under the pointer.
+    assert!(drag.update(sideways, Point::default(), false, false));
+    assert_eq!(
+        drag.destination(),
+        Some((MarkRef::Dynamic(ids[2]), Offset::ZERO))
+    );
+    // Over its own note again, only the dragged height remains.
+    assert!(drag.update(
+        start + point(px(2.), px(20.)),
+        Point::default(),
+        false,
+        false
+    ));
+    assert_eq!(drag.destination(), None);
+    assert_eq!(drag.target(), Some(Offset { dx: 0, dy: 16 }));
+}
+
+#[test]
+fn a_mark_never_lands_where_its_family_is_already_written() {
+    let (mut score, ids) = phrase();
+    score.set_dynamic(ids[0], Some(Dynamic::F)).unwrap();
+    score.set_dynamic(ids[2], Some(Dynamic::P)).unwrap();
+    let mark = MarkRef::Dynamic(ids[0]);
+    let shown = geometry(&score, 1.);
+    let start = mark_point(&shown, mark);
+    let mut drag = MarkDrag::new(&score, mark, start, Point::default(), 1., shown.clone()).unwrap();
+    let to = start + point(px(gap(&shown, ids[0], ids[2])), px(0.));
+    assert!(drag.update(to, Point::default(), false, false));
+    assert_eq!(drag.error, Some("Ahí ya hay una dinámica"));
+    assert_eq!(drag.destination(), None);
+    assert_eq!(drag.target(), None);
+    assert!(drag.preview.is_none());
+}
+
+#[test]
+fn a_hairpin_body_moves_whole_and_keeps_its_length() {
+    let (mut score, ids) = phrase();
+    let hairpin = Connection {
+        start: ids[0],
+        end: ids[2],
+        kind: ConnectionKind::Crescendo,
+    };
+    score.add_connection(hairpin).unwrap();
+    let mark = MarkRef::Connection(hairpin);
+    let shown = geometry(&score, 1.);
+    let (a, b) = crate::connection_input::handles(&shown, hairpin).unwrap();
+    let start = point(px((a.0 + b.0) / 2.), px((a.1 + b.1) / 2.));
+    let mut drag = MarkDrag::new(&score, mark, start, Point::default(), 1., shown.clone()).unwrap();
+    let to = start + point(px(gap(&shown, ids[0], ids[1])), px(0.));
+    assert!(drag.update(to, Point::default(), false, false));
+    let moved = MarkRef::Connection(Connection {
+        start: ids[1],
+        end: ids[3],
+        kind: ConnectionKind::Crescendo,
+    });
+    assert_eq!(drag.destination(), Some((moved, Offset::ZERO)));
+    assert_eq!(drag.anchor_lines().len(), 2);
+}
+
+#[test]
+fn alt_arrows_step_a_mark_through_its_voice() {
+    let alt = Modifiers {
+        alt: true,
+        ..Default::default()
+    };
+    assert_eq!(step("left", alt), Some(false));
+    assert_eq!(step("right", alt), Some(true));
+    assert_eq!(step("right", Modifiers::default()), None);
+    assert_eq!(step("right", Modifiers { shift: true, ..alt }), None);
+    let (mut score, ids) = phrase();
+    score.set_fermata(ids[1], true).unwrap();
+    let fermata = MarkRef::Fermata(ids[1]);
+    assert_eq!(
+        stepped(&score, fermata, true),
+        Some(MarkRef::Fermata(ids[2]))
+    );
+    assert_eq!(
+        stepped(&score, fermata, false),
+        Some(MarkRef::Fermata(ids[0]))
+    );
+    score.set_dynamic(ids[0], Some(Dynamic::P)).unwrap();
+    assert_eq!(stepped(&score, MarkRef::Dynamic(ids[0]), false), None);
+    let hairpin = Connection {
+        start: ids[0],
+        end: ids[2],
+        kind: ConnectionKind::Diminuendo,
+    };
+    score.add_connection(hairpin).unwrap();
+    assert_eq!(
+        stepped(&score, MarkRef::Connection(hairpin), true),
+        Some(MarkRef::Connection(Connection {
+            start: ids[1],
+            end: ids[3],
+            ..hairpin
+        }))
+    );
+}
+
+#[test]
+fn places_count_the_beats_of_their_bar() {
+    let (score, ids) = phrase();
+    assert_eq!(place_label(&score, ids[2]), "compás 1, tiempo 3");
+    let mut score = Score::default();
+    let eighth = Event {
+        duration: Duration::Eighth,
+        pitches: Pitches::single(Pitch::new(Step::C, 4)),
+        notation: Default::default(),
+    };
+    score.insert(0, 0, eighth).unwrap();
+    let second = score.insert(0, 1, eighth).unwrap();
+    assert_eq!(place_label(&score, second), "compás 1, tiempo 1,5");
 }

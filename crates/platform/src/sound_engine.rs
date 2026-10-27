@@ -56,7 +56,7 @@ pub trait SoundBank: Send + Sync {
 /// Only instrument/routing changes require preparing a new engine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoutingSignature {
-    parts: Vec<(Instrument, bool)>,
+    parts: Vec<(Instrument, bool, score_core::Players)>,
     audition: Instrument,
 }
 impl RoutingSignature {
@@ -68,11 +68,8 @@ impl RoutingSignature {
                 .map(|part| {
                     (
                         part.instrument(),
-                        part.instrument().is_grand_staff()
-                            && score
-                                .connections()
-                                .iter()
-                                .any(|c| c.kind.is_hairpin() && c.start.part == part.id()),
+                        part.instrument().is_grand_staff() && score.shapes_level(part.id()),
+                        score.players(part.id()),
                     )
                 })
                 .collect(),

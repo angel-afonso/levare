@@ -11,15 +11,15 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     let score = view.document.editor.score();
     let count = selection.file_count();
     div().id("export-dialog").absolute().top_0().left_0().size_full()
-        .flex().items_center().justify_center().bg(rgba(0x08090ccc)).occlude()
+        .flex().items_center().justify_center().bg(rgba(SCRIM)).occlude()
         .child(div().w(px(580.)).max_w(relative(0.94)).max_h(relative(0.92))
-            .flex().flex_col().bg(rgb(PANEL)).border_1().border_color(rgb(0x3a3d46))
+            .flex().flex_col().bg(rgb(PANEL)).border_1().border_color(rgb(POPOVER_BORDER))
             .rounded_lg().shadow_lg().overflow_hidden()
             .child(div().p_4().flex().flex_col().gap_2().border_b_1().border_color(rgb(BORDER))
                 .child(div().text_size(px(20.)).font_weight(FontWeight::SEMIBOLD).child("Exportar partitura y partes"))
                 .child(div().text_size(px(12.)).text_color(rgb(MUTED)).child("Elige los documentos y formatos que quieres entregar.")))
             .child(div().p_4().flex().flex_col().gap_2()
-                .child(caption("FORMATOS"))
+                .child(caption("Formatos"))
                 .child(div().flex().gap_2()
                     .child(button(view, "export-pdf", check(selection.pdf, "PDF"), selection.pdf, cx, |v, _, cx| {
                         if let Some(p) = &mut v.export_picker { p.selection.pdf = !p.selection.pdf; p.error = None; } cx.notify();
@@ -28,7 +28,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                         if let Some(p) = &mut v.export_picker { p.selection.musicxml = !p.selection.musicxml; p.error = None; } cx.notify();
                     }).px_3()))
                 .child(div().mt_3().flex().items_center().justify_between()
-                    .child(caption("DOCUMENTOS"))
+                    .child(caption("Documentos"))
                     .child(div().flex().gap_2()
                         .child(button(view, "export-all", "Todo", false, cx, |v, _, cx| {
                             let parts = v.document.editor.score().parts().iter().map(|p| p.id()).collect();
@@ -55,7 +55,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
             .child(div().p_4().flex().flex_col().gap_3().border_t_1().border_color(rgb(BORDER))
                 .child(div().text_size(px(12.)).child(format!("{count} archivos · Un archivo por documento y formato")))
                 .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("Se creará una carpeta nueva en el destino que elijas. Las partes conservan sus voces, pentagramas y divisis. Alturas de concierto."))
-                .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(12.)).text_color(rgb(0xf1a4a4)).child(error)))
+                .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(12.)).text_color(rgb(ERROR)).child(error)))
                 .child(div().flex().justify_end().gap_2()
                     .child(button(view, "export-cancel", "Cancelar", false, cx, |v, _, cx| v.close_export_picker(cx)).px_3())
                     .child(button(view, "export-confirm", "Elegir destino…", true, cx, |v, _, cx| v.confirm_export(cx)).px_3()

@@ -1,7 +1,11 @@
+mod agent;
+#[cfg(test)]
+mod agent_tests;
 mod app_icon;
 mod app_paths;
 mod clipboard;
 mod comments;
+mod connection_input;
 mod follow;
 mod ghost;
 mod keyboard;
@@ -10,19 +14,26 @@ mod menu_typography;
 mod music_font;
 mod note_drag;
 mod paint;
+mod panels;
+#[cfg(test)]
+mod panels_tests;
 mod playback;
 mod playhead;
+mod practice;
 mod review;
 mod selection;
 mod shortcuts;
 mod sound_banks;
+mod staff_text;
+#[cfg(feature = "vsco")]
+mod store;
 mod ui;
 
 use app_paths::data_path;
 use gpui::{prelude::*, *};
 use score_core::{
-    Accidental, Articulation, BarMarkRef, Barline, Connection, ConnectionKind, Dynamic, ElementId,
-    Instrument, Jump, KeyMode, KeySignature, MarkFamily, MarkKind, MarkRef, PartId, StaffId,
+    Accidental, BarMarkRef, Barline, Connection, ConnectionKind, ElementId, Instrument, Jump,
+    KeyMode, KeySignature, MarkKind, MarkRef, PartId, StaffId,
 };
 use score_document::Document;
 use score_edit::{Command, Cursor, FormEdit};
@@ -60,6 +71,8 @@ enum Next {
 }
 
 struct AppView {
+    #[cfg(feature = "vsco")]
+    store: store::Store,
     document: Document,
     ui: ui::UiState,
     focus: FocusHandle,
@@ -73,9 +86,16 @@ struct AppView {
     time_picker: bool,
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
+    command_search: Option<ui::CommandSearch>,
+    /// The bar number field of «Ir al compás», open in the transport.
+    go_to_bar: Option<Entity<ui::text_input::TextInput>>,
+    recent_searches: Vec<CommandId>,
     header_editor: Option<ui::HeaderEditor>,
     range_editor: Option<ui::RangeEditor>,
     comment_editor: Option<ui::CommentEditor>,
+    text_editor: Option<ui::StaffTextEditor>,
+    lyric_editor: Option<ui::LyricEditor>,
+    chord_editor: Option<ui::ChordEditor>,
     comments: comments::CommentState,
     review: review::ReviewState,
     signature_from_start: bool,
@@ -85,6 +105,10 @@ struct AppView {
     entry_accidental: Option<Accidental>,
     pending_slur: Option<ElementId>,
     pending_hairpin: Option<(ElementId, ConnectionKind)>,
+    /// The line from the pending start to the last note typed in entry mode;
+    /// it grows with each note until S, H or Esc ends it.
+    open_line: Option<Connection>,
+    connection_drag: Option<connection_input::ConnectionDrag>,
     /// A mark clicked in the score. Its note is the editor's selection, so
     /// the ribbon's toggles change or remove it; see `selected_mark`.
     clicked_mark: Option<MarkRef>,
@@ -116,6 +140,17 @@ struct AppView {
     held: HashMap<String, Instant>,
     recent: score_io::RecentFiles,
     recent_path: Option<PathBuf>,
+    panels_path: Option<PathBuf>,
+    /// What `paneles.json` holds, to write it again only when something changed.
+    panels_saved: panels::PanelMemory,
+    agent: agent::AgentState,
+    /// The agent panel's message field.
+    agent_field: Entity<ui::text_input::TextInput>,
+    /// «Buscar parte» in the left panel.
+    parts_search: Entity<ui::text_input::TextInput>,
+    /// Set while one of the agent's tool calls runs a command, which lets it
+    /// past the lock that holds the user's input during the turn.
+    agent_acting: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -164,6 +199,8 @@ impl AppView {
             .as_deref()
             .and_then(|path| score_io::RecentFiles::load(path).ok())
             .unwrap_or_default();
+        let panels_path = data_path("paneles.json");
+        let panels_saved = panels_path.as_deref().map(panels::load).unwrap_or_default();
         shortcuts.recent = recent.files().to_vec();
         shortcuts.install(cx);
         let layout = Rc::new(document.layout(960.));
@@ -174,7 +211,7 @@ impl AppView {
         let view = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             view.update(cx, |view, cx| {
-                if view.busy || view.confirming {
+                if view.busy || view.confirming || !view.agent_allows_close(cx) {
                     return false;
                 }
                 if view.document.is_dirty() {
@@ -196,6 +233,10 @@ impl AppView {
                             view.quit_snapshot.as_ref().and_then(|r| r.take_error())
                         {
                             view.status = format!("No se pudo autoguardar: {error}");
+                            cx.notify();
+                        }
+                        #[cfg(feature = "vsco")]
+                        if view.store.moved() {
                             cx.notify();
                         }
                         if view.playback.tick() {
@@ -237,7 +278,7 @@ impl AppView {
         });
         Self {
             document,
-            ui: ui::UiState::default(),
+            ui: ui::UiState::restore(panels_saved.clone()),
             focus,
             path,
             status,
@@ -249,9 +290,15 @@ impl AppView {
             time_picker: false,
             clef_picker: false,
             tempo_picker: None,
+            command_search: None,
+            go_to_bar: None,
+            recent_searches: Vec::new(),
             header_editor: None,
             range_editor: None,
             comment_editor: None,
+            text_editor: None,
+            lyric_editor: None,
+            chord_editor: None,
             comments: comments::CommentState::default(),
             review: review::ReviewState::default(),
             signature_from_start: false,
@@ -261,6 +308,8 @@ impl AppView {
             entry_accidental: None,
             pending_slur: None,
             pending_hairpin: None,
+            open_line: None,
+            connection_drag: None,
             clicked_mark: None,
             clicked_bar_mark: None,
             hover: None,
@@ -273,6 +322,8 @@ impl AppView {
             mark_drag: None,
             ghost: None,
             mixer_drag: None,
+            #[cfg(feature = "vsco")]
+            store: store::Store::new(),
             viewport: follow::PlaybackViewport::default(),
             layout,
             position,
@@ -286,6 +337,12 @@ impl AppView {
             held: HashMap::new(),
             recent,
             recent_path,
+            panels_path,
+            panels_saved,
+            agent: agent::AgentState::default(),
+            agent_field: ui::agent_panel::field(cx),
+            parts_search: ui::parts_search_field(cx),
+            agent_acting: false,
             _subscriptions: vec![interceptor, layout_change],
         }
     }
@@ -312,6 +369,7 @@ impl AppView {
         match kind {
             MarkKind::Connection(ConnectionKind::Tie) => self.toggle_tie(cx),
             MarkKind::Connection(ConnectionKind::Slur) => self.toggle_slur(cx),
+            MarkKind::Connection(kind) if kind.is_line() => self.toggle_line(kind, cx),
             MarkKind::Connection(kind) => self.toggle_hairpin(kind, cx),
             kind => self.edit(Command::ToggleMark(kind), cx),
         }
@@ -330,8 +388,50 @@ impl AppView {
             .copied()
             .find(|c| c.kind == kind && c.end != id && editor.score().connection_contains(*c, id))
     }
+    /// A line over the selected passage. A single note takes an octave line,
+    /// pedal or trill of its own, and a glissando to the next note; the same
+    /// command on a written line removes it.
+    fn toggle_line(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if let Some(MarkRef::Connection(old)) = self.selected_mark()
+            && old.kind == kind
+        {
+            self.edit(Command::RemoveConnection(old), cx);
+            return;
+        }
+        let editor = &self.document.editor;
+        let score = editor.score();
+        let ids = editor.selected_ids();
+        let (Some(&start), Some(&last)) = (ids.first(), ids.last()) else {
+            self.status = format!("{}: selecciona primero sus notas", kind.label());
+            cx.notify();
+            return;
+        };
+        let end = if kind == ConnectionKind::Glissando && start == last {
+            score.next_event(start)
+        } else {
+            Some(last)
+        };
+        let written = score.connections().iter().copied().find(|c| {
+            c.kind == kind
+                && ((c.start == start && Some(c.end) == end)
+                    || (ids.len() == 1 && kind.is_range() && score.connection_contains(*c, start)))
+        });
+        match (written, end) {
+            (Some(connection), _) => self.edit(Command::RemoveConnection(connection), cx),
+            (None, Some(end)) => {
+                self.edit(Command::AddConnection(Connection { start, end, kind }), cx)
+            }
+            (None, None) => {
+                self.status = "Escribe primero la nota en la que acaba el glissando".into();
+                cx.notify();
+            }
+        }
+    }
     fn toggle_tie(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let score = self.document.editor.score();
@@ -371,6 +471,17 @@ impl AppView {
                 && editor.selected_ids().len() == 1
         })
     }
+    /// The line whose ends show drag handles: the one being dragged, else a
+    /// picked slur or hairpin.
+    pub(crate) fn line_handles(&self) -> Option<Connection> {
+        if let Some(drag) = &self.connection_drag {
+            return drag.candidate.or(drag.original);
+        }
+        match self.selected_mark() {
+            Some(MarkRef::Connection(line)) if line.kind != ConnectionKind::Tie => Some(line),
+            _ => None,
+        }
+    }
     pub(crate) fn selected_bar_mark(&self) -> Option<BarMarkRef> {
         let editor = &self.document.editor;
         self.clicked_bar_mark.filter(|mark| {
@@ -400,6 +511,50 @@ impl AppView {
             cx.notify();
         }
     }
+    /// Take a mark that follows time to another note; it then sounds there.
+    fn move_mark(
+        &mut self,
+        from: MarkRef,
+        to: MarkRef,
+        offset: score_core::Offset,
+        cx: &mut Context<Self>,
+    ) {
+        let label = self
+            .document
+            .editor
+            .score()
+            .mark_label(from)
+            .unwrap_or_default();
+        if self.try_edit(Command::MoveMark(from, to, offset), cx) {
+            self.document.editor.select(to.anchor());
+            self.clicked_mark = Some(to);
+            self.status = format!(
+                "{label}: {} · ⌘Z para deshacer",
+                mark_drag::place_label(self.document.editor.score(), to.anchor())
+            );
+        }
+        cx.notify();
+    }
+    /// ⌥← and ⌥→ move a mark that follows time one note earlier or later.
+    fn step_mark(&mut self, mark: MarkRef, later: bool, cx: &mut Context<Self>) {
+        let score = self.document.editor.score();
+        let Some(to) = mark_drag::stepped(score, mark, later) else {
+            self.status = if matches!(mark, MarkRef::Connection(_)) {
+                "El regulador no cabe ahí".into()
+            } else if later {
+                "No hay más notas después en esta voz".into()
+            } else {
+                "No hay más notas antes en esta voz".into()
+            };
+            cx.notify();
+            return;
+        };
+        let offset = score_core::Offset {
+            dx: 0,
+            dy: score.mark_offset(mark).dy,
+        };
+        self.move_mark(mark, to, offset, cx);
+    }
     fn nudge_mark(&mut self, mark: MarkRef, dx: i16, dy: i16, cx: &mut Context<Self>) {
         let base = self.document.editor.score().mark_offset(mark);
         let max = i32::from(score_core::Offset::MAX);
@@ -419,8 +574,87 @@ impl AppView {
             cx.notify();
         }
     }
+    /// The line following the typed notes, while its start is still pending.
+    fn following_line(&self, kind: ConnectionKind) -> Option<Connection> {
+        let start = if kind == ConnectionKind::Slur {
+            self.pending_slur
+        } else {
+            self.pending_hairpin
+                .filter(|(_, pending)| *pending == kind)
+                .map(|(start, _)| start)
+        }?;
+        self.open_line
+            .filter(|line| line.kind == kind && line.start == start)
+            .filter(|line| self.document.editor.score().connections().contains(line))
+    }
+    /// S or H on a line that follows the typed notes ends it where it is.
+    fn close_open_line(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) -> bool {
+        if self.following_line(kind).is_none() {
+            return false;
+        }
+        self.pending_slur = None;
+        self.pending_hairpin = None;
+        self.open_line = None;
+        let (name, ending) = connection_words(kind);
+        self.status = format!("{name} terminad{ending}");
+        cx.notify();
+        true
+    }
+    /// After a note typed in entry mode, stretch the pending line to it. One
+    /// undo removes the note and gives the line back its previous end. A line
+    /// that cannot reach the note ends where it was; the message says why.
+    fn extend_open_line(&mut self) -> Option<String> {
+        let (start, kind) = match (self.pending_slur, self.pending_hairpin) {
+            (Some(start), _) => (start, ConnectionKind::Slur),
+            (None, Some(pending)) => pending,
+            (None, None) => return None,
+        };
+        let end = self.document.editor.selection()?;
+        let (next, command) = connection_input::follow_command(
+            self.document.editor.score(),
+            start,
+            end,
+            kind,
+            self.following_line(kind),
+        )?;
+        match self.document.editor.execute_joined(command) {
+            Ok(_) => {
+                self.open_line = Some(next);
+                None
+            }
+            Err(error) => {
+                self.pending_slur = None;
+                self.pending_hairpin = None;
+                self.open_line = None;
+                let (name, ending) = connection_words(kind);
+                Some(format!("{name} terminad{ending}: {}", error.0))
+            }
+        }
+    }
+    fn line_prompt(&self, kind: ConnectionKind) -> String {
+        let command = match kind {
+            ConnectionKind::Slur => id::SLUR,
+            ConnectionKind::Crescendo => id::CRESCENDO,
+            _ => id::DIMINUENDO,
+        };
+        let key = self
+            .shortcuts
+            .label(command)
+            .map_or_else(String::new, |key| format!(" ({key})"));
+        let (name, ending) = connection_words(kind);
+        if self.ui.note_entry {
+            format!(
+                "{name} abiert{ending}: sigue a las notas que escribas; pulsa de nuevo{key} o Esc para terminar"
+            )
+        } else {
+            format!("{name}: selecciona la nota final y pulsa de nuevo{key}. Esc cancela")
+        }
+    }
     fn toggle_hairpin(&mut self, kind: ConnectionKind, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.close_open_line(kind, cx) {
             return;
         }
         // A hairpin picked in the score: the same kind removes it, the other
@@ -472,15 +706,41 @@ impl AppView {
         } else {
             self.pending_slur = None;
             self.pending_hairpin = Some((selected, kind));
-            self.status = format!(
-                "{}: selecciona el final y pulsa el mismo regulador. Esc cancela",
-                kind.label()
-            );
+            self.open_line = None;
+            self.status = self.line_prompt(kind);
             cx.notify();
         }
     }
     fn toggle_slur(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.close_open_line(ConnectionKind::Slur, cx) {
+            return;
+        }
+        let ids = self.document.editor.selected_ids();
+        if ids.len() > 1 {
+            let score = self.document.editor.score();
+            match connection_input::passage_endpoints(score, &ids, ConnectionKind::Slur) {
+                Some((start, end)) => {
+                    let slur = Connection {
+                        start,
+                        end,
+                        kind: ConnectionKind::Slur,
+                    };
+                    // The same passage again takes its slur away.
+                    let command = if score.connections().contains(&slur) {
+                        Command::RemoveConnection(slur)
+                    } else {
+                        Command::AddConnection(slur)
+                    };
+                    self.edit(command, cx);
+                }
+                None => {
+                    self.status = "El pasaje necesita al menos dos notas o acordes".into();
+                    cx.notify();
+                }
+            }
             return;
         }
         let Some(id) = self.document.editor.selection() else {
@@ -519,8 +779,8 @@ impl AppView {
         {
             self.pending_slur = Some(id);
             self.pending_hairpin = None;
-            self.status =
-                "Selecciona la nota final y pulsa Terminar expresión (L). Esc cancela".into();
+            self.open_line = None;
+            self.status = self.line_prompt(ConnectionKind::Slur);
             cx.notify();
         } else {
             self.status = "Elige una nota o acorde, no un silencio".into();
@@ -536,8 +796,9 @@ impl AppView {
         self.selection_drag = None;
         self.note_drag = None;
         self.mark_drag = None;
+        self.connection_drag = None;
         self.ghost = None;
-        if self.busy || self.confirming || self.instrument_picker.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.instrument_picker.is_some() {
             return false;
         }
         self.clicked_bar_mark = None;
@@ -554,11 +815,26 @@ impl AppView {
                 .floor() as u64
         });
         let mut changed = false;
+        let mut line_message = None;
         self.status = match self.document.execute(command.clone()) {
             Ok(true) => {
                 changed = true;
-                self.pending_slur = None;
-                self.pending_hairpin = None;
+                // Typing in entry mode carries a pending slur or hairpin along.
+                let typed = self.ui.note_entry
+                    && matches!(
+                        command,
+                        Command::Insert(_)
+                            | Command::Write(_)
+                            | Command::WriteAt { .. }
+                            | Command::AddPitch(_)
+                    );
+                if typed {
+                    line_message = self.extend_open_line();
+                } else {
+                    self.pending_slur = None;
+                    self.pending_hairpin = None;
+                    self.open_line = None;
+                }
                 if !matches!(
                     command,
                     Command::SetHeader(..)
@@ -566,7 +842,9 @@ impl AppView {
                         | Command::SaveComment { .. }
                         | Command::SetCommentResolved(..)
                         | Command::RemoveComment(_)
-                ) {
+                ) && !self.agent_acting
+                {
+                    // The agent's edits leave the user's playback running.
                     self.playback.stop();
                 }
                 if let Some(tick) = tempo_tick {
@@ -574,25 +852,27 @@ impl AppView {
                 }
 
                 self.reveal_selection = true;
-                if matches!(
-                    command,
-                    Command::Insert(_)
-                        | Command::Write(_)
-                        | Command::WriteAt { .. }
-                        | Command::ReplacePitch(_)
-                        | Command::Transpose(_)
-                        | Command::AddPitch(_)
-                        | Command::RemoveHighestPitch
-                        | Command::SetAccidental(_)
-                        | Command::SetKeySignature(_)
-                        | Command::SetKeySignatureAt(_, _)
-                        | Command::RemoveKeyChange(_)
-                        | Command::SetTechnique(_)
-                        | Command::SetDynamic(_)
-                        | Command::SetArticulation(_)
-                        | Command::ToggleMark(_)
-                        | Command::SetArpeggioBothHands(_)
-                ) && let Some(id) = self.document.editor.selection()
+                if !self.agent_acting
+                    && matches!(
+                        command,
+                        Command::Insert(_)
+                            | Command::Write(_)
+                            | Command::WriteAt { .. }
+                            | Command::ReplacePitch(_)
+                            | Command::Transpose(_)
+                            | Command::AddPitch(_)
+                            | Command::RemoveHighestPitch
+                            | Command::SetAccidental(_)
+                            | Command::SetKeySignature(_)
+                            | Command::SetKeySignatureAt(_, _)
+                            | Command::RemoveKeyChange(_)
+                            | Command::SetTechnique(_)
+                            | Command::SetDynamic(_)
+                            | Command::SetArticulation(_)
+                            | Command::ToggleMark(_)
+                            | Command::SetArpeggioBothHands(_)
+                    )
+                    && let Some(id) = self.document.editor.selection()
                     && self
                         .document
                         .editor
@@ -620,12 +900,26 @@ impl AppView {
                         parts.len()
                     ),
                     Command::SetHeader(..) => "Cabecera actualizada. Puedes deshacer.".into(),
+                    Command::SetPlayers(part, _) => {
+                        let score = self.document.editor.score();
+                        format!(
+                            "{}: grabaciones de {} · ⌘Z para deshacer",
+                            ui::instrument_name(score, part),
+                            match score.players(part) {
+                                score_core::Players::Solo => "solista",
+                                score_core::Players::Section => "sección",
+                            }
+                        )
+                    }
                     _ => "Partitura actualizada".into(),
                 }
             }
             Ok(false) => self.status.clone(),
             Err(error) => error.to_string(),
         };
+        if let Some(message) = line_message {
+            self.status = message;
+        }
         self.sync_quit_snapshot();
         cx.notify();
         changed
@@ -661,6 +955,18 @@ impl AppView {
                 return;
             }
         }
+        if let Some(drag) = self.connection_drag.take() {
+            self.selection_drag = None;
+            if let Some(line) = drag.original {
+                self.clicked_mark = Some(MarkRef::Connection(line));
+            }
+            cx.notify();
+            if stroke.key == "escape" {
+                self.status = "Dibujo cancelado".into();
+                cx.stop_propagation();
+                return;
+            }
+        }
         if self.export_picker.is_some() {
             cx.stop_propagation();
             if !stroke.modifiers.modified() {
@@ -683,6 +989,158 @@ impl AppView {
             cx.stop_propagation();
             if !repeated {
                 self.confirm_instruments(cx);
+            }
+            return;
+        }
+        if self
+            .command_search
+            .as_ref()
+            .is_some_and(|search| search.focused(window, cx))
+        {
+            let count = self.command_results(cx).len();
+            match stroke.key.as_str() {
+                "down" | "up" => {
+                    cx.stop_propagation();
+                    if let Some(search) = &mut self.command_search {
+                        search.selected = if stroke.key == "down" {
+                            (search.selected + 1).min(count.saturating_sub(1))
+                        } else {
+                            search.selected.saturating_sub(1)
+                        };
+                    }
+                }
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    let selected = self.command_search.as_ref().map_or(0, |s| s.selected);
+                    if let Some(result) = self.command_results(cx).get(selected) {
+                        self.run_search_result(result.item.command, window, cx);
+                    }
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.command_search = None;
+                    window.focus(&self.focus);
+                }
+                _ => {
+                    if let Some(search) = &mut self.command_search {
+                        search.selected = 0;
+                    }
+                }
+            }
+            cx.notify();
+            return;
+        }
+        if self.agent_field_focused(window, cx) {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    if !repeated {
+                        self.send_agent_field(window, cx);
+                    }
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    window.focus(&self.focus);
+                    cx.notify();
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.parts_search_focused(window, cx) {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    self.choose_found_part(window, cx);
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.clear_parts_search(window, cx);
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self
+            .go_to_bar
+            .as_ref()
+            .is_some_and(|field| field.focus_handle(cx).is_focused(window))
+        {
+            match stroke.key.as_str() {
+                "enter" if !stroke.modifiers.modified() => {
+                    cx.stop_propagation();
+                    self.confirm_go_to_bar(window, cx);
+                }
+                "escape" => {
+                    cx.stop_propagation();
+                    self.close_go_to_bar(window, cx);
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self
+            .lyric_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            let plain = !stroke.modifiers.modified();
+            let join = match stroke.key.as_str() {
+                "space" if plain => Some(score_core::Join::Word),
+                "-" if stroke.modifiers.shift => Some(score_core::Join::Melisma),
+                "-" if plain => Some(score_core::Join::Hyphen),
+                _ if stroke.key_char.as_deref() == Some("_") => Some(score_core::Join::Melisma),
+                _ => None,
+            };
+            if let Some(join) = join {
+                cx.stop_propagation();
+                self.apply_syllable(join, true, cx);
+            } else if stroke.key == "enter" && plain {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_syllable(score_core::Join::Word, false, cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.lyric_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
+            .chord_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "tab" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                self.apply_chord(true, cx);
+            } else if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_chord(false, cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.chord_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
+            }
+            return;
+        }
+        if self
+            .text_editor
+            .as_ref()
+            .is_some_and(|editor| editor.focused(window, cx))
+        {
+            if stroke.key == "enter" && !stroke.modifiers.modified() {
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                self.apply_text(cx);
+            } else if stroke.key == "escape" {
+                cx.stop_propagation();
+                self.text_editor = None;
+                window.focus(&self.focus);
+                cx.notify();
             }
             return;
         }
@@ -776,6 +1234,18 @@ impl AppView {
             }
             return;
         }
+        if let Some(mark) = self.selected_mark()
+            && mark.follows_time()
+            && self
+                .preferences
+                .as_ref()
+                .is_none_or(|p| p.recording.is_none())
+            && let Some(later) = mark_drag::step(&stroke.key, stroke.modifiers)
+        {
+            cx.stop_propagation();
+            self.step_mark(mark, later, cx);
+            return;
+        }
         // A selected mark is nudged by physical arrows, leaving Tab for navigation.
         if let Some(mark) = self.selected_mark()
             && mark.can_move()
@@ -867,15 +1337,42 @@ impl AppView {
                 .comment_editor
                 .as_ref()
                 .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .text_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .lyric_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .chord_editor
+                .as_ref()
+                .is_some_and(|editor| editor.focused(window, cx))
+            || self
+                .command_search
+                .as_ref()
+                .is_some_and(|search| search.focused(window, cx))
+            || self.agent_field_focused(window, cx)
+            || self.parts_search_focused(window, cx)
         {
-            // TextInput owns writing/navigation/clipboard keys while it has focus.
-            return;
+            // TextInput owns writing/navigation/clipboard keys while it has focus;
+            // the agent's commands are not keys, and the agent panel, which has
+            // no key, closes from the menu while its field is in use.
+            if !self.agent_acting && command != id::TOGGLE_AGENT_PANEL {
+                return;
+            }
         }
         self.selection_drag = None;
         let Some(spec) = self.shortcuts.spec(command).copied() else {
             return;
         };
         if self.busy || self.confirming {
+            return;
+        }
+        if !agent::user_may_run(spec.category, self.agent_locked()) {
+            self.status = agent::lock_message(command).into();
+            cx.notify();
             return;
         }
         if self.instrument_picker.is_some() {
@@ -936,6 +1433,12 @@ impl AppView {
             cx.notify();
             return;
         }
+        match score_toolbar::marks::kind(command) {
+            Some(MarkKind::Text(kind)) => return self.open_text_editor(kind, window, cx),
+            Some(MarkKind::Lyric) => return self.open_lyric_editor(window, cx),
+            Some(MarkKind::Chord) => return self.open_chord_editor(window, cx),
+            _ => {}
+        }
         if let Some(kind) = score_toolbar::marks::kind(command) {
             self.apply_mark(kind, cx);
             cx.notify();
@@ -946,6 +1449,19 @@ impl AppView {
             return;
         }
         use score_core::Step;
+        let moves_selection = matches!(
+            command,
+            id::PREVIOUS
+                | id::NEXT
+                | id::EXTEND_PREVIOUS
+                | id::EXTEND_NEXT
+                | id::UPPER_NOTE_OR_STAFF
+                | id::LOWER_NOTE_OR_STAFF
+                | id::BAR_START
+                | id::NEXT_BAR
+                | id::NEXT_INSTRUMENT
+                | id::PREVIOUS_INSTRUMENT
+        );
         match command {
             id::NEW_COMMENT => self.open_comment_editor(None, window, cx),
             id::SHOW_COMMENTS => {
@@ -973,6 +1489,14 @@ impl AppView {
                 cx,
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            id::SYSTEM_BREAK => self.edit(
+                Command::ToggleLayoutBreak(score_core::LayoutBreak::System),
+                cx,
+            ),
+            id::PAGE_BREAK => self.edit(
+                Command::ToggleLayoutBreak(score_core::LayoutBreak::Page),
+                cx,
+            ),
             id::REHEARSAL_LETTERS => self.edit(
                 Command::SetRehearsalStyle(score_core::RehearsalStyle::Letters),
                 cx,
@@ -1095,6 +1619,7 @@ impl AppView {
             id::DOT => self.toggle_rhythm(false, cx),
             id::TRIPLET => self.toggle_rhythm(true, cx),
             id::SIXTEENTH => self.choose_duration(score_core::Duration::Sixteenth, cx),
+            id::THIRTY_SECOND => self.choose_duration(score_core::Duration::ThirtySecond, cx),
             id::EIGHTH => self.choose_duration(score_core::Duration::Eighth, cx),
             id::QUARTER => self.choose_duration(score_core::Duration::Quarter, cx),
             id::HALF => self.choose_duration(score_core::Duration::Half, cx),
@@ -1129,6 +1654,7 @@ impl AppView {
                 self.edit(Command::SetArpeggioBothHands(!enabled), cx);
             }
             id::TEMPO_TEXT => self.toggle_tempo_picker(cx),
+            id::COMMAND_SEARCH => self.open_command_search(window, cx),
             id::REPEATS => {
                 self.playback.toggle_repeats();
                 self.status = if self.playback.follow_repeats {
@@ -1139,10 +1665,7 @@ impl AppView {
                 cx.notify();
             }
             id::SCORE_INFO => self.toggle_header_editor(window, cx),
-            id::KEY_SIGNATURE => {
-                self.ui.show_instruments = true;
-                self.toggle_key_picker(cx);
-            }
+            id::KEY_SIGNATURE => self.toggle_key_picker(cx),
             id::BAR_AT_END => self.edit(Command::AppendMeasure, cx),
             id::SINGLE_BAR => self.edit(Command::InsertMeasure, cx),
             id::DELETE_BAR => self.edit(Command::DeleteMeasures, cx),
@@ -1167,6 +1690,41 @@ impl AppView {
                 self.reveal_selection = true;
                 self.audition_selection();
             }
+            // A picked grace note moves alone, not the note it decorates.
+            id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
+                if matches!(self.selected_mark(), Some(MarkRef::Grace(..))) =>
+            {
+                let Some(MarkRef::Grace(id, index)) = self.selected_mark() else {
+                    unreachable!("checked grace mark");
+                };
+                let steps = match command {
+                    id::STEP_UP => 1,
+                    id::STEP_DOWN => -1,
+                    id::OCTAVE_UP => 7,
+                    _ => -7,
+                };
+                self.edit(Command::TransposeGraceNote(id, index, steps), cx);
+                self.clicked_mark = Some(MarkRef::Grace(id, index));
+            }
+            id::GRACE_NOTE => {
+                self.edit(Command::AddGraceNote, cx);
+                if let Some(id) = self.document.editor.selection()
+                    && let Some(grace) = self
+                        .document
+                        .editor
+                        .score()
+                        .event(id)
+                        .and_then(|event| event.notation.grace)
+                {
+                    // The new grace note is picked, so the arrows tune it at once.
+                    self.clicked_mark = Some(MarkRef::Grace(id, (grace.len() - 1) as u8));
+                    self.status = format!(
+                        "{} de {} notas · ↑/↓ cambian la altura de la nueva; Backspace la borra",
+                        grace.kind.label(),
+                        grace.len()
+                    );
+                }
+            }
             // A mark picked in the score must not move its note by surprise.
             id::STEP_UP | id::STEP_DOWN | id::OCTAVE_UP | id::OCTAVE_DOWN
                 if self.selected_mark().is_some() || self.selected_bar_mark().is_some() =>
@@ -1187,6 +1745,22 @@ impl AppView {
                 self.toggle_playback(cx);
             }
             id::PLAY_FROM_START => self.playback_from_start(cx),
+            id::PLAYLINE_TO_START => self.playline_to_start(cx),
+            id::LOOP => self.toggle_loop(cx),
+            id::REPLAY => self.replay(cx),
+            id::HALF_SPEED => self.toggle_half_speed(cx),
+            id::CHORD_PLAYBACK => {
+                let sound = !self.document.editor.score().chords_sound();
+                self.edit(Command::SetChordsSound(sound), cx);
+                self.status = if sound {
+                    "Los cifrados suenan al reproducir"
+                } else {
+                    "Los cifrados solo se escriben"
+                }
+                .into();
+            }
+            id::BAR_START | id::NEXT_BAR => self.move_by_bar(command == id::NEXT_BAR, cx),
+            id::GO_TO_BAR => self.open_go_to_bar(window, cx),
             id::STOP => self.stop_playback(cx),
             id::AUDITION => {
                 self.playback.audition = !self.playback.audition;
@@ -1199,9 +1773,25 @@ impl AppView {
             }
             id::TEMPO_UP => self.change_written_tempo(5, cx),
             id::TEMPO_DOWN => self.change_written_tempo(-5, cx),
+            // Each part's mix lives in the left panel's Mezcla; again goes back to Lista.
             id::MIXER => {
-                self.ui.show_inspector = true;
-                self.ui.inspector = "Mezclador";
+                if self.ui.show_instruments && self.ui.parts_mode == panels::PartsMode::Mix {
+                    self.ui.parts_mode = panels::PartsMode::List;
+                } else {
+                    self.reveal_selection |= !self.ui.show_instruments;
+                    self.ui.show_instruments = true;
+                    self.ui.parts_mode = panels::PartsMode::Mix;
+                }
+            }
+            // Like MIXER: again goes back to Selección.
+            id::SOUNDS => {
+                if self.ui.show_inspector && self.ui.right == panels::RightTab::Sound {
+                    self.ui.right = panels::RightTab::Selection;
+                } else {
+                    self.reveal_selection |= !self.ui.show_inspector;
+                    self.ui.show_inspector = true;
+                    self.ui.right = panels::RightTab::Sound;
+                }
             }
 
             id::ZOOM_IN => self.set_zoom(self.ui.zoom + 0.1),
@@ -1223,6 +1813,19 @@ impl AppView {
                 self.reveal_selection = true;
             }
             id::FULL_SCREEN => window.toggle_fullscreen(),
+            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::Write),
+            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Articulations),
+            id::TAB_DYNAMICS => self.show_tab(score_toolbar::TabId::Dynamics),
+            id::TAB_TEXT => self.show_tab(score_toolbar::TabId::Text),
+            // Breaks moved to Partitura; the old Disposición shortcut follows them.
+            id::TAB_HOME | id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Score),
+            id::TAB_PLAYBACK => self.show_tab(score_toolbar::TabId::Playback),
+            id::TAB_REVIEW => self.show_tab(score_toolbar::TabId::Review),
+            id::TAB_VIEW => self.show_tab(score_toolbar::TabId::View),
+            id::TOGGLE_RIBBON => {
+                self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
+                self.ui.ribbon_peek = false;
+            }
             id::TOGGLE_INSTRUMENTS_PANEL => {
                 self.ui.show_instruments = !self.ui.show_instruments;
                 self.reveal_selection = true;
@@ -1231,13 +1834,34 @@ impl AppView {
                 self.ui.show_inspector = !self.ui.show_inspector;
                 self.reveal_selection = true;
             }
-            _ => self.status = format!("Sin acción para «{}»", spec.label),
+            id::TOGGLE_AGENT_PANEL => {
+                self.ui.show_agent = !self.ui.show_agent;
+                self.reveal_selection = true;
+                if self.ui.show_agent {
+                    self.probe_agents(cx);
+                    self.agent_field.focus_handle(cx).focus(window);
+                } else if self.agent_field_focused(window, cx) {
+                    window.focus(&self.focus);
+                }
+            }
+            _ => self.status = format!("«{}» no está disponible en esta versión", spec.label),
+        }
+        if moves_selection {
+            self.close_moved_editors();
         }
         cx.notify();
     }
 
+    fn show_tab(&mut self, tab: score_toolbar::TabId) {
+        self.ui.tab = tab;
+        self.ui.open_group = None;
+        if self.ui.ribbon_collapsed {
+            self.ui.ribbon_peek = true;
+        }
+    }
+
     fn choose_voice(&mut self, voice: score_core::Voice, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.document.editor.select_voice(voice);
@@ -1345,18 +1969,12 @@ impl AppView {
             cx.notify();
             return;
         }
-        if self.clef_picker {
-            self.clef_picker = false;
+        if self.open_editor().is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
             cx.notify();
             return;
         }
-        if self.tempo_picker.take().is_some() {
-            self.status = "Edición de tempo cancelada".into();
-            cx.notify();
-            return;
-        }
-        if self.header_editor.take().is_some() {
-            self.status = "Edición de la cabecera cancelada".into();
+        if self.cancel_editor() {
             cx.notify();
             return;
         }
@@ -1366,10 +1984,23 @@ impl AppView {
         } else if self.clicked_mark.take().is_some() {
             self.status = "Nota seleccionada".into();
             cx.notify();
-        } else if self.pending_hairpin.take().is_some() {
-            self.status = "Regulador cancelado".into();
-        } else if self.pending_slur.take().is_some() {
-            self.status = "Ligadura cancelada".into();
+        } else if let Some(kind) = self
+            .pending_hairpin
+            .map(|(_, kind)| kind)
+            .or(self.pending_slur.map(|_| ConnectionKind::Slur))
+        {
+            // A line that already follows the typed notes stays where it is.
+            let (name, ending) = connection_words(kind);
+            self.status = if self.following_line(kind).is_some() {
+                format!("{name} terminad{ending}")
+            } else if kind.is_hairpin() {
+                "Regulador cancelado".into()
+            } else {
+                "Ligadura cancelada".into()
+            };
+            self.pending_hairpin = None;
+            self.pending_slur = None;
+            self.open_line = None;
         } else if self.playback.is_playing() || self.playback.is_paused() {
             self.stop_playback(cx);
         } else {
@@ -1389,7 +2020,7 @@ impl AppView {
     }
 
     fn toggle_rhythm(&mut self, triplet: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let current = self
@@ -1464,7 +2095,8 @@ impl AppView {
     }
 
     fn audition_selection(&mut self) {
-        if self.playback.is_playing() {
+        // The agent's moves are silent.
+        if self.playback.is_playing() || self.agent_acting {
             return;
         }
         let now = Instant::now();
@@ -1482,7 +2114,7 @@ impl AppView {
             let result = self.playback.preview(self.document.editor.score(), id);
             self.last_audition = Some(now);
             if let Err(error) = result {
-                self.status = format!("Audio: {error}");
+                self.status = format!("No se pudo escuchar la nota: {error}");
             }
         }
     }
@@ -1589,13 +2221,16 @@ impl AppView {
     }
 
     fn open_preferences(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         self.preferences = Some(ui::Preferences::default());
         self.playback.stop();
         cx.notify();
     }
 
     fn open_instrument_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming || self.preferences.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.preferences.is_some() {
             return;
         }
         self.instrument_picker = Some(ui::InstrumentPicker::default());
@@ -1617,7 +2252,7 @@ impl AppView {
     }
 
     fn confirm_instruments(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let Some(mut picker) = self.instrument_picker.take() else {
@@ -1728,7 +2363,7 @@ impl AppView {
     fn request_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         self.note_drag = None;
         self.mark_drag = None;
-        if self.busy || self.confirming || self.instrument_picker.is_some() {
+        if self.busy || self.confirming || self.agent_locked() || self.instrument_picker.is_some() {
             return;
         }
         self.playback.stop();
@@ -1766,6 +2401,7 @@ impl AppView {
                 self.clicked_bar_mark = None;
                 self.pending_slur = None;
                 self.pending_hairpin = None;
+                self.end_agent_conversation(cx);
                 self.document = Document::default();
                 self.review.reset_document();
                 self.comments = comments::CommentState::default();
@@ -1778,11 +2414,7 @@ impl AppView {
                 self.mixer_drag = None;
                 self.viewport.scroll.set_offset(Point::default());
                 self.instrument_picker = None;
-                self.key_picker = false;
-                self.time_picker = false;
-                self.clef_picker = false;
-                self.tempo_picker = None;
-                self.header_editor = None;
+                self.cancel_editor();
                 self.chord_entry = false;
                 self.entry_accidental = None;
                 self.path = None;
@@ -1848,6 +2480,7 @@ impl AppView {
                             view.clicked_bar_mark = None;
                             view.pending_slur = None;
                             view.pending_hairpin = None;
+                            view.end_agent_conversation(cx);
                             view.document = document;
                             view.review.reset_document();
                             view.comments = comments::CommentState::default();
@@ -1860,11 +2493,7 @@ impl AppView {
                             view.mixer_drag = None;
                             view.viewport.scroll.set_offset(Point::default());
                             view.instrument_picker = None;
-                            view.key_picker = false;
-                            view.time_picker = false;
-                            view.clef_picker = false;
-                            view.tempo_picker = None;
-                            view.header_editor = None;
+                            view.cancel_editor();
                             view.chord_entry = false;
                             view.entry_accidental = None;
                             view.remember_recent(&path, cx);
@@ -1920,6 +2549,20 @@ impl AppView {
         self.shortcuts.install(cx);
     }
 
+    /// Writes `paneles.json` when a remembered panel field changed since the last write.
+    fn remember_panels(&mut self) {
+        let memory = self.ui.panel_memory();
+        if memory == self.panels_saved {
+            return;
+        }
+        if let Some(path) = &self.panels_path
+            && let Err(error) = panels::save(path, &memory)
+        {
+            self.status = format!("No se pudo guardar el estado de los paneles: {error}");
+        }
+        self.panels_saved = memory;
+    }
+
     fn export_pdf(&mut self, cx: &mut Context<Self>) {
         self.export_score(false, cx);
     }
@@ -1929,7 +2572,7 @@ impl AppView {
     }
 
     fn export_score(&mut self, musicxml: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.playback.stop();
@@ -2020,7 +2663,7 @@ impl AppView {
     }
 
     fn save(&mut self, save_as: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.busy = true;
@@ -2087,7 +2730,7 @@ impl AppView {
 
     fn history(&mut self, redo: bool, cx: &mut Context<Self>) {
         self.selection_drag = None;
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let changed = if redo {
@@ -2147,7 +2790,7 @@ impl AppView {
     }
 
     fn select_part(&mut self, part: PartId, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.document.editor.select_part(part);
@@ -2169,6 +2812,11 @@ impl AppView {
                 })
         }
     }
+    /// The signature editors write from the first bar instead of the cursor's.
+    fn sign_from_start(&mut self, cx: &mut Context<Self>) {
+        self.signature_from_start = true;
+        self.sync_signature_controls(cx);
+    }
     fn sync_signature_controls(&mut self, cx: &mut Context<Self>) {
         let bar = self.signature_measure();
         if let Some(editor) = &self.tempo_picker {
@@ -2181,11 +2829,162 @@ impl AppView {
         self.pending_time = self.document.editor.score().time_at(bar);
         self.key_mode = self.document.editor.score().key_signature_at(bar).mode();
     }
+    fn open_command_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = ui::CommandSearch::new(cx);
+        search.field.focus_handle(cx).focus(window);
+        self.command_search = Some(search);
+        self.ui.file_menu = false;
+        self.ui.open_group = None;
+        self.ui.context_menu = None;
+        cx.notify();
+    }
+
+    /// Ranked results for the typed query; the last commands run from the
+    /// search while it is empty.
+    fn command_results(&self, cx: &App) -> Vec<score_toolbar::SearchResult> {
+        let Some(search) = &self.command_search else {
+            return Vec::new();
+        };
+        let query = search.field.read(cx).value();
+        if query.trim().is_empty() {
+            return self
+                .recent_searches
+                .iter()
+                .map(|command| score_toolbar::SearchResult {
+                    item: score_toolbar::item_view(
+                        *command,
+                        &self.shortcuts.registry,
+                        &self.shortcuts.keymap,
+                        self,
+                    ),
+                    place: score_toolbar::ribbon_place(*command).unwrap_or_else(|| {
+                        self.shortcuts
+                            .spec(*command)
+                            .map_or_else(String::new, |spec| spec.category.label().to_owned())
+                    }),
+                })
+                .collect();
+        }
+        score_toolbar::search(
+            query,
+            &self.shortcuts.registry,
+            &self.shortcuts.keymap,
+            self,
+            10,
+        )
+    }
+
+    fn run_search_result(
+        &mut self,
+        command: CommandId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_search = None;
+        window.focus(&self.focus);
+        self.recent_searches.retain(|recent| *recent != command);
+        self.recent_searches.insert(0, command);
+        self.recent_searches.truncate(5);
+        cx.notify();
+        self.run(command, window, cx);
+    }
+
+    /// The editor open in the Selection tab. Opening one closes the others,
+    /// so at most one is set.
+    fn open_editor(&self) -> Option<ui::EditorKind> {
+        use ui::EditorKind as Kind;
+        [
+            (self.header_editor.is_some(), Kind::ScoreInfo),
+            (self.tempo_picker.is_some(), Kind::Tempo),
+            (self.clef_picker, Kind::Clef),
+            (self.key_picker, Kind::Key),
+            (self.time_picker, Kind::Time),
+            (self.text_editor.is_some(), Kind::Text),
+            (self.lyric_editor.is_some(), Kind::Lyric),
+            (self.chord_editor.is_some(), Kind::Chord),
+        ]
+        .into_iter()
+        .find_map(|(open, kind)| open.then_some(kind))
+    }
+    /// Editors live in the right panel's Selection tab: opening one, from
+    /// anywhere, shows it there. The words editors are closed here, the
+    /// signature, tempo and header editors by the function that opens one.
+    fn show_editor_tab(&mut self) {
+        self.text_editor = None;
+        self.lyric_editor = None;
+        self.chord_editor = None;
+        self.reveal_editor_tab();
+    }
+    fn reveal_editor_tab(&mut self) {
+        self.ui.show_inspector = true;
+        self.ui.right = panels::RightTab::Selection;
+    }
+    /// An open editor the user cannot see: asking for it again shows it
+    /// instead of closing it.
+    fn editor_hidden(&self) -> bool {
+        !self.ui.show_inspector || self.ui.right != panels::RightTab::Selection
+    }
+    /// Closes the open editor without writing, as Esc does. Returns whether
+    /// one was open.
+    fn cancel_editor(&mut self) -> bool {
+        if self.text_editor.take().is_some()
+            | self.lyric_editor.take().is_some()
+            | self.chord_editor.take().is_some()
+        {
+            return true;
+        }
+        if self.clef_picker || self.key_picker || self.time_picker {
+            self.clef_picker = false;
+            self.key_picker = false;
+            self.time_picker = false;
+            return true;
+        }
+        if self.tempo_picker.take().is_some() {
+            self.status = "Edición de tempo cancelada".into();
+            return true;
+        }
+        if self.header_editor.take().is_some() {
+            self.status = "Edición de la cabecera cancelada".into();
+            return true;
+        }
+        false
+    }
+    /// A click or a navigation key moved the selection: the editors of what
+    /// was selected close as Esc closes them, after the move's own status.
+    /// Returns whether one closed.
+    fn close_moved_editors(&mut self) -> bool {
+        self.open_editor()
+            .is_some_and(|kind| !kind.survives_selection_move())
+            && self.cancel_editor()
+    }
+    /// The editors' Cancelar button.
+    fn close_editors(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.cancel_editor() {
+            cx.notify();
+        }
+    }
+    /// Opens the header editor, if needed, on one of its fields.
+    fn edit_header_field(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.header_editor.is_none() {
+            self.toggle_header_editor(window, cx);
+        }
+        if let Some(editor) = &self.header_editor {
+            editor.focus_field(index, window, cx);
+        }
+    }
     fn toggle_tempo_picker(&mut self, cx: &mut Context<Self>) {
         self.toggle_tempo_at(self.document.editor.cursor().measure, cx);
     }
     fn toggle_tempo_at(&mut self, measure: usize, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.tempo_picker.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         if self.tempo_picker.is_some() {
@@ -2204,11 +3003,18 @@ impl AppView {
         self.time_picker = false;
         self.clef_picker = false;
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.tempo_picker.is_some() {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn toggle_header_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.header_editor.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         if self.header_editor.take().is_none() {
@@ -2220,11 +3026,14 @@ impl AppView {
             self.time_picker = false;
             self.clef_picker = false;
             self.instrument_picker = None;
-            self.ui.show_instruments = true;
+            self.show_editor_tab();
         }
         cx.notify();
     }
     fn apply_header(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.header_editor else {
             return;
         };
@@ -2248,6 +3057,9 @@ impl AppView {
         cx.notify();
     }
     fn apply_tempo(&mut self, cx: &mut Context<Self>) {
+        if self.agent_blocks(cx) {
+            return;
+        }
         let Some(editor) = &self.tempo_picker else {
             return;
         };
@@ -2282,7 +3094,12 @@ impl AppView {
         self.edit(Command::SetTempoAt(bar, mark), cx);
     }
     fn toggle_clef_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.clef_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         self.clef_picker = !self.clef_picker;
@@ -2292,11 +3109,13 @@ impl AppView {
         self.header_editor = None;
         self.instrument_picker = None;
         self.signature_from_start = false;
-        self.ui.show_instruments = true;
+        if self.clef_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn choose_clef(&mut self, clef: Option<score_core::Clef>, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let cursor = self.document.editor.cursor();
@@ -2318,7 +3137,12 @@ impl AppView {
         cx.notify();
     }
     fn toggle_key_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.key_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         self.key_picker = !self.key_picker;
@@ -2329,11 +3153,18 @@ impl AppView {
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.key_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn toggle_time_picker(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.time_picker && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
             return;
         }
         self.time_picker = !self.time_picker;
@@ -2344,11 +3175,13 @@ impl AppView {
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.time_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn choose_key(&mut self, key: KeySignature, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if !self.key_picker {
@@ -2367,7 +3200,7 @@ impl AppView {
         cx.notify();
     }
     fn choose_time(&mut self, time: score_core::TimeSignature, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         let bar = self.signature_measure();
@@ -2396,7 +3229,7 @@ impl AppView {
         note
     }
     fn apply_accidental(&mut self, accidental: Option<Accidental>, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.document.editor.selection().is_some() {
@@ -2408,7 +3241,7 @@ impl AppView {
         }
     }
     fn toggle_chord(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.chord_entry = !self.chord_entry;
@@ -2422,7 +3255,7 @@ impl AppView {
     }
 
     fn select_hand(&mut self, part: PartId, staff: StaffId, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         if self.document.editor.score().part(part).is_none_or(|part| {
@@ -2460,7 +3293,7 @@ impl AppView {
     }
 
     fn toggle_note_entry(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || self.agent_locked() {
             return;
         }
         self.ui.note_entry = !self.ui.note_entry;
@@ -2547,10 +3380,7 @@ impl AppView {
                 .playback
                 .choose_sound(bank, score, self.document.editor.cursor().part)
             {
-                Ok(()) => format!(
-                    "Sonido: {} · Listo para reproducir",
-                    self.playback.sound_name()
-                ),
+                Ok(()) => format!("Sonido: {}", self.playback.sound_name()),
                 Err(error) => {
                     self.playback.sound_error = Some(error.clone());
                     error
@@ -2562,6 +3392,7 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.remember_panels();
         self.review.refresh(self.document.editor.score());
         self.comments.refresh(self.document.editor.score());
         if self
@@ -2595,6 +3426,10 @@ impl Render for AppView {
             ui::RIGHT_WIDTH
         } else {
             0.
+        } + if self.ui.show_agent {
+            ui::AGENT_WIDTH
+        } else {
+            0.
         };
         let width =
             ((f32::from(window.viewport_size().width) - panels - 128.) / self.ui.zoom).max(500.);
@@ -2604,6 +3439,10 @@ impl Render for AppView {
             .and_then(|drag| drag.preview.as_ref())
         {
             Rc::clone(preview)
+        } else if let Some(drag) = &mut self.connection_drag
+            && let Some(layout) = drag.shown(self.ui.zoom)
+        {
+            layout
         } else if let Some(drag) = &mut self.note_drag
             && let Some(score) = &drag.preview
         {
@@ -2629,7 +3468,7 @@ impl Render for AppView {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
         window.set_window_title(&format!(
-            "{}{} — Levare",
+            "{}{} · Levare",
             title,
             if self.document.is_dirty() { " •" } else { "" }
         ));
@@ -2758,6 +3597,22 @@ fn escape_step(note_entry: bool) -> EscapeStep {
         EscapeStep::LeaveEntry
     } else {
         EscapeStep::Deselect
+    }
+}
+
+/// Status-bar name of a line and its gender ending: «ligadura terminada»,
+/// «crescendo terminado».
+fn connection_words(kind: ConnectionKind) -> (&'static str, &'static str) {
+    match kind {
+        ConnectionKind::Slur => ("Ligadura", "a"),
+        ConnectionKind::Tie => ("Unión", "a"),
+        ConnectionKind::Crescendo => ("Crescendo", "o"),
+        ConnectionKind::Diminuendo => ("Diminuendo", "o"),
+        ConnectionKind::OttavaAlta | ConnectionKind::OttavaBassa | ConnectionKind::Pedal => {
+            (kind.label(), "o")
+        }
+        ConnectionKind::Trill => ("Trino", "o"),
+        ConnectionKind::Glissando => ("Glissando", "o"),
     }
 }
 

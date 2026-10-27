@@ -49,6 +49,7 @@ mod tests {
             Duration::Quarter,
             Duration::Eighth,
             Duration::Sixteenth,
+            Duration::ThirtySecond,
         ] {
             for chord in [false, true] {
                 let mut score = Score::new("Rangos".into(), &[Instrument::Flute], 1).unwrap();

@@ -53,3 +53,22 @@ fn native_deserialization_rejects_tremolo_on_a_rest() {
     }
     assert!(decode(&serde_json::to_vec(&file).unwrap()).is_err());
 }
+#[test]
+fn native_grace_notes_round_trip() {
+    let mut score = Score::default();
+    let id = score
+        .insert(
+            0,
+            0,
+            Event {
+                pitches: Pitches::single(Pitch::new(Step::D, 5)),
+                duration: Duration::Quarter,
+                notation: Notation::default(),
+            },
+        )
+        .unwrap();
+    score.add_grace_note(id).unwrap();
+    score.add_grace_note(id).unwrap();
+    score.transpose_grace_note(id, 1, 2).unwrap();
+    assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);
+}

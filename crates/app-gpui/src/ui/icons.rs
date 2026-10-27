@@ -20,18 +20,32 @@ pub enum Icon {
     HalfSpeed,
     LeftPanel,
     RightPanel,
+    Agent,
     Export,
     Clipboard,
     First,
     Play,
+    PlayFromSelection,
     Pause,
     Stop,
     Loop,
     Speaker,
+    SoundBank,
     Mixer,
     Copy,
     Cut,
     Trash,
+    Flag,
+    Piano,
+    Ossia,
+    BarAtEnd,
+    BarBefore,
+    DeleteBar,
+    RehearsalMark,
+    /// An unfolded group.
+    ChevronDown,
+    /// A folded group.
+    ChevronRight,
 }
 
 impl Icon {
@@ -60,12 +74,21 @@ impl Icon {
             "clipboard" => Self::Clipboard,
             "first" => Self::First,
             "play" => Self::Play,
+            "play-from-selection" => Self::PlayFromSelection,
             "stop" => Self::Stop,
             "loop" | "repeat" => Self::Loop,
             "speaker" => Self::Speaker,
+            "sound-bank" => Self::SoundBank,
             "mixer" => Self::Mixer,
             "copy" => Self::Copy,
             "cut" => Self::Cut,
+            "flag" => Self::Flag,
+            "piano" => Self::Piano,
+            "ossia" => Self::Ossia,
+            "bar-at-end" => Self::BarAtEnd,
+            "bar-before" => Self::BarBefore,
+            "delete-bar" => Self::DeleteBar,
+            "rehearsal-mark" => Self::RehearsalMark,
             _ => return None,
         })
     }
@@ -213,6 +236,21 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     };
                     line(&[(x, 3.), (x, 15.)]);
                 }
+                Icon::Agent => {
+                    // A speech bubble: the conversation with the agent.
+                    line(&[
+                        (2., 3.),
+                        (16., 3.),
+                        (16., 12.),
+                        (8., 12.),
+                        (4., 15.5),
+                        (4., 12.),
+                        (2., 12.),
+                        (2., 3.),
+                    ]);
+                    line(&[(5., 6.5), (13., 6.5)]);
+                    line(&[(5., 9.), (10., 9.)]);
+                }
                 Icon::Export => {
                     line(&[(9., 13.), (9., 1.), (5., 5.)]);
                     line(&[(9., 1.), (13., 5.)]);
@@ -237,6 +275,11 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                 }
                 Icon::Play => {
                     line(&[(5., 2.), (15., 9.), (5., 16.), (5., 2.)]);
+                }
+                Icon::PlayFromSelection => {
+                    // The selected notes, then play.
+                    line(&[(2., 5.), (8., 5.), (8., 13.), (2., 13.), (2., 5.)]);
+                    line(&[(10.5, 5.), (16., 9.), (10.5, 13.), (10.5, 5.)]);
                 }
                 Icon::Pause => {
                     line(&[(6., 3.), (6., 15.)]);
@@ -267,6 +310,80 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     line(&[(2., 13.), (5., 12.), (6., 15.), (3., 16.), (2., 13.)]);
                     line(&[(16., 13.), (13., 12.), (12., 15.), (15., 16.), (16., 13.)]);
                 }
+                Icon::SoundBank => {
+                    // A keyboard: the instruments' sounds.
+                    line(&[(2., 3.), (16., 3.), (16., 15.), (2., 15.), (2., 3.)]);
+                    for x in [6., 9., 12.] {
+                        line(&[(x, 3.), (x, 10.)]);
+                    }
+                }
+                Icon::Flag => {
+                    line(&[(4., 16.), (4., 2.)]);
+                    line(&[(4., 3.), (15., 3.), (12.5, 6.5), (15., 10.), (4., 10.)]);
+                }
+                Icon::Piano => {
+                    // A keyboard with its black keys.
+                    line(&[
+                        (2.5, 3.5),
+                        (15.5, 3.5),
+                        (15.5, 14.5),
+                        (2.5, 14.5),
+                        (2.5, 3.5),
+                    ]);
+                    for x in [5.75, 9., 12.25] {
+                        line(&[
+                            (x - 0.6, 3.5),
+                            (x - 0.6, 10.),
+                            (x + 0.6, 10.),
+                            (x + 0.6, 3.5),
+                        ]);
+                    }
+                    for x in [7.375, 10.625] {
+                        line(&[(x, 10.), (x, 14.5)]);
+                    }
+                }
+                Icon::Ossia => {
+                    // A short staff over the end of a full one.
+                    for y in [2., 4.5] {
+                        line(&[(8., y), (16., y)]);
+                    }
+                    for y in [8.5, 11., 13.5, 16.] {
+                        line(&[(2., y), (16., y)]);
+                    }
+                }
+                Icon::BarAtEnd | Icon::BarBefore => {
+                    // A bar and, on the side it is added, a plus.
+                    let (from, to, plus) = if matches!(kind, Icon::BarAtEnd) {
+                        (1., 10.5, 14.75)
+                    } else {
+                        (17., 7.5, 3.25)
+                    };
+                    for y in [5.5, 8., 10.5, 13.] {
+                        line(&[(from, y), (to, y)]);
+                    }
+                    line(&[(to, 5.5), (to, 13.)]);
+                    line(&[(plus - 2.25, 9.25), (plus + 2.25, 9.25)]);
+                    line(&[(plus, 7.), (plus, 11.5)]);
+                }
+                Icon::DeleteBar => {
+                    for y in [5.5, 8., 10.5, 13.] {
+                        line(&[(1., y), (17., y)]);
+                    }
+                    line(&[(6., 4.), (12., 14.5)]);
+                    line(&[(12., 4.), (6., 14.5)]);
+                }
+                Icon::RehearsalMark => {
+                    // A boxed letter, as rehearsal marks are engraved.
+                    line(&[
+                        (2.5, 2.5),
+                        (15.5, 2.5),
+                        (15.5, 15.5),
+                        (2.5, 15.5),
+                        (2.5, 2.5),
+                    ]);
+                    line(&[(5.5, 13.), (9., 5.), (12.5, 13.)]);
+                    line(&[(6.8, 10.), (11.2, 10.)]);
+                }
                 Icon::Speaker => {
                     line(&[
                         (2., 7.),
@@ -279,6 +396,8 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     ]);
                     line(&[(13., 6.), (15., 9.), (13., 12.)]);
                 }
+                Icon::ChevronDown => line(&[(5., 7.), (9., 11.), (13., 7.)]),
+                Icon::ChevronRight => line(&[(7., 5.), (11., 9.), (7., 13.)]),
             }
             if let Ok(path) = path.build() {
                 window.paint_path(path, rgb(color));

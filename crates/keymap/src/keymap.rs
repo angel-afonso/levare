@@ -231,6 +231,14 @@ mod tests {
     }
 
     #[test]
+    fn tab_shortcuts_do_not_steal_voice_keys() {
+        let (keymap, problems) = resolve(&UserKeymap::new());
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(keymap.label(id::VOICE_1).as_deref(), Some("⌥1"));
+        assert_eq!(keymap.label(id::TAB_NOTE_INPUT).as_deref(), Some("⌥⌘1"));
+    }
+
+    #[test]
     fn user_changes_replace_or_remove_profile_keys() {
         let mut user = UserKeymap::new();
         user.set(id::STACCATO, &[KeySequence::parse("alt-s").unwrap()]);

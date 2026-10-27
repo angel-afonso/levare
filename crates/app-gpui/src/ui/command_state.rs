@@ -11,6 +11,20 @@ impl CommandStates for AppView {
         if let Some(state) = form_state(editor, command) {
             return state;
         }
+        let layout_break = |kind| {
+            let bar = editor
+                .selected_ids()
+                .iter()
+                .map(|id| id.measure)
+                .max()
+                .unwrap_or(editor.cursor().measure);
+            CommandState::checked(editor.score().layout_break(bar) == Some(kind))
+        };
+        match command {
+            id::SYSTEM_BREAK => return layout_break(score_core::LayoutBreak::System),
+            id::PAGE_BREAK => return layout_break(score_core::LayoutBreak::Page),
+            _ => {}
+        }
         let rehearsal = match command {
             id::REHEARSAL_MARK => Some(
                 editor.score().has_rehearsal_mark(
@@ -38,12 +52,14 @@ impl CommandStates for AppView {
         }
         let duration = active_duration(self);
         let value = |note: NoteValue| CommandState::checked(duration.value() == note);
-        let accidental = |sign: Accidental| {
+        // The selected note's own sign, or the next note's: `None` follows the
+        // key, so the Alteración track always shows one choice.
+        let accidental = |sign: Option<Accidental>| {
             CommandState::checked(
                 editor
                     .selected_pitch()
-                    .map_or(self.entry_accidental == Some(sign), |pitch| {
-                        pitch.accidental() == Some(sign)
+                    .map_or(self.entry_accidental == sign, |pitch| {
+                        pitch.accidental() == sign
                     }),
             )
         };
@@ -53,9 +69,23 @@ impl CommandStates for AppView {
                 .is_some_and(|(_, pending)| pending == kind);
             CommandState {
                 checked: open || selected_connection(self, kind),
-                label: open.then(|| format!("Terminar {}", kind.label().to_lowercase())),
+                // No wider than «Crescendo»; the hint keeps the full sentence.
+                label: open.then(|| "Terminar".to_owned()),
                 ..CommandState::default()
             }
+        };
+        let text = |kind: score_core::TextKind| CommandState {
+            checked: self.text_editor.as_ref().is_some_and(|e| e.kind == kind)
+                || editor
+                    .selection()
+                    .is_some_and(|id| editor.score().text(id, kind).is_some()),
+            enabled: editor.selection().is_some(),
+            ..CommandState::default()
+        };
+        let line = |kind: ConnectionKind| CommandState {
+            checked: selected_connection(self, kind),
+            enabled: editor.selection().is_some(),
+            ..CommandState::default()
         };
         let enabled = |enabled: bool| CommandState {
             enabled,
@@ -127,7 +157,7 @@ impl CommandStates for AppView {
         match command {
             id::NEW_COMMENT => enabled(editor.selection().is_some()),
             id::SHOW_COMMENTS => CommandState::checked(
-                self.comments.open && self.ui.show_inspector && self.ui.inspector == "Revisión",
+                self.comments.open && self.ui.show_inspector && self.ui.right == RightTab::Review,
             ),
             id::RESOLVE_COMMENT => {
                 let comment = self
@@ -138,9 +168,9 @@ impl CommandStates for AppView {
                     enabled: comment.is_some(),
                     label: comment.map(|comment| {
                         if comment.resolved {
-                            "Reabrir comentario".into()
+                            "Reabrir".into()
                         } else {
-                            "Resolver comentario".into()
+                            "Resolver".into()
                         }
                     }),
                     ..Default::default()
@@ -149,7 +179,7 @@ impl CommandStates for AppView {
             id::CHECK_SELECTION => enabled(editor.selection().is_some()),
             id::REVIEW_PREVIOUS | id::REVIEW_NEXT => enabled(!self.review.filtered().is_empty()),
             id::REVIEW_ISSUES => {
-                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Revisión")
+                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Review)
             }
             id::SHOW_RANGES => CommandState::checked(self.review.show_ranges),
             id::EDIT_RANGE => enabled(
@@ -199,28 +229,60 @@ impl CommandStates for AppView {
             id::QUARTER => value(NoteValue::Quarter),
             id::EIGHTH => value(NoteValue::Eighth),
             id::SIXTEENTH => value(NoteValue::Sixteenth),
+            id::THIRTY_SECOND => value(NoteValue::ThirtySecond),
             id::DOT => CommandState::checked(duration.is_dotted()),
             id::TRIPLET => CommandState::checked(duration.is_triplet()),
 
-            id::NATURAL => accidental(Accidental::Natural),
-            id::SHARP => accidental(Accidental::Sharp),
-            id::FLAT => accidental(Accidental::Flat),
+            id::NATURAL => accidental(Some(Accidental::Natural)),
+            id::SHARP => accidental(Some(Accidental::Sharp)),
+            id::FLAT => accidental(Some(Accidental::Flat)),
+            id::FOLLOW_KEY => accidental(None),
 
             id::TIE => CommandState::checked(selected_connection(self, ConnectionKind::Tie)),
             id::SLUR => CommandState {
                 checked: self.pending_slur.is_some(),
-                label: self
-                    .pending_slur
-                    .is_some()
-                    .then(|| "Terminar expresión".to_owned()),
+                label: self.pending_slur.is_some().then(|| "Terminar".to_owned()),
                 ..CommandState::default()
             },
             id::CRESCENDO => hairpin(ConnectionKind::Crescendo),
             id::DIMINUENDO => hairpin(ConnectionKind::Diminuendo),
+            id::EXPRESSION_TEXT => text(score_core::TextKind::Expression),
+            id::TECHNIQUE_TEXT => text(score_core::TextKind::Technique),
+            id::OTTAVA_ALTA => line(ConnectionKind::OttavaAlta),
+            id::OTTAVA_BASSA => line(ConnectionKind::OttavaBassa),
+            id::PEDAL => line(ConnectionKind::Pedal),
+            id::TRILL => line(ConnectionKind::Trill),
+            id::GLISSANDO => line(ConnectionKind::Glissando),
 
             id::CLEF => CommandState::checked(self.clef_picker),
             id::KEY_SIGNATURE => CommandState::checked(self.key_picker),
             id::REPEATS => CommandState::checked(self.playback.follow_repeats),
+            id::LOOP => CommandState::checked(self.playback.looping),
+            id::HALF_SPEED => CommandState::checked(self.playback.half_speed),
+            id::CHORD_PLAYBACK => CommandState::checked(editor.score().chords_sound()),
+            id::LYRICS => CommandState {
+                checked: self.lyric_editor.is_some()
+                    || editor.selection().is_some_and(|id| {
+                        editor
+                            .score()
+                            .event(id)
+                            .is_some_and(|event| !event.notation.lyrics.is_empty())
+                    }),
+                enabled: editor.selection().is_some(),
+                ..CommandState::default()
+            },
+            id::CHORD_SYMBOL => CommandState {
+                checked: self.chord_editor.is_some()
+                    || editor.selection().is_some_and(|id| {
+                        editor
+                            .score()
+                            .event(id)
+                            .is_some_and(|event| event.notation.chord.is_some())
+                    }),
+                enabled: editor.selection().is_some(),
+                ..CommandState::default()
+            },
+            id::GO_TO_BAR => CommandState::checked(self.go_to_bar.is_some()),
             id::TEMPO_TEXT => CommandState::checked(self.tempo_picker.is_some()),
             id::SCORE_INFO => CommandState::checked(self.header_editor.is_some()),
             id::TIME_SIGNATURE => CommandState::checked(self.time_picker),
@@ -232,8 +294,11 @@ impl CommandStates for AppView {
                 ..CommandState::default()
             },
             id::AUDITION => CommandState::checked(self.playback.audition),
-            id::MIXER => {
-                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Mezclador")
+            id::MIXER => CommandState::checked(
+                self.ui.show_instruments && self.ui.parts_mode == crate::panels::PartsMode::Mix,
+            ),
+            id::SOUNDS => {
+                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }
 
             id::TOGGLE_INSTRUMENTS_PANEL => CommandState::checked(self.ui.show_instruments),
@@ -247,6 +312,24 @@ impl CommandStates for AppView {
                 CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
             }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
+            id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
+            id::TAB_NOTE_INPUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Write),
+            id::TAB_NOTATION => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Articulations)
+            }
+            id::TAB_DYNAMICS => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Dynamics)
+            }
+            id::TAB_TEXT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Text),
+            id::TAB_HOME | id::TAB_LAYOUT => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Score)
+            }
+            id::TAB_PLAYBACK => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Playback)
+            }
+            id::TAB_REVIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::Review),
+            id::TAB_VIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::View),
+            id::TOGGLE_RIBBON => CommandState::checked(self.ui.ribbon_collapsed),
             _ => CommandState::default(),
         }
     }

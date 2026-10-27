@@ -1,18 +1,26 @@
 //! GPUI adapter of the toolbar model: paints `ToolbarView` and the File menu
-//! and turns every click into a command. No decisions are taken here — what
+//! and turns every click into a command. No decisions are taken here: what
 //! exists, its state and what folds all come from `score_toolbar`.
 
 use super::*;
 use score_toolbar::{
     BAR_MARK_CONTEXT_MENU, ControlView, FILE_MENU, GroupMode, GroupView, Item, MARK_CONTEXT_MENU,
     MenuItemView, MenuRow, Metrics, NOTE_CONTEXT_MENU, RecentItem, TABS, TabId, ToolbarView,
-    Visual, project, project_menu,
+    Visual, project, project_menu, tile_width,
 };
 
-const CONTROL_HEIGHT: f32 = 58.;
+/// The items row. Every tile is `TILE_HEIGHT` and centred in it, two pixels
+/// from the top like the tiles inside a choice track, so glyphs line up.
+const CONTROL_HEIGHT: f32 = 66.;
+const TILE_HEIGHT: f32 = CONTROL_HEIGHT - 4.;
+/// Glyphs of every kind (font symbols, icons, «arm.», «pizz.») sit in this
+/// box, so names and keys share their lines across a group.
+const GLYPH_BOX: f32 = 28.;
 const ROW_HEIGHT: f32 = 18.;
-const ROW_GAP: f32 = 2.;
-const GROUP_HEIGHT: f32 = 76.;
+/// Group name under the items: 11px on a 14px line, 4px below the items.
+const TITLE_LINE: f32 = 14.;
+const TITLE_GAP: f32 = 4.;
+const GROUP_HEIGHT: f32 = CONTROL_HEIGHT + TITLE_GAP + TITLE_LINE;
 
 fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyElement> {
     match visual {
@@ -20,7 +28,11 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
             Icon::named(name).map(|glyph| icons::icon_sized(glyph, color, size).into_any_element())
         }
         Visual::Music(text) => {
-            Some(music_symbol(view, text, size, (size * 0.7, size * 0.8), color).into_any_element())
+            // Same ink box for every glyph, but a ceiling so small marks
+            // (staccato, tenuto) are not blown up out of proportion.
+            let frame = (size * 0.9, size);
+            let font_size = fitted_music_font_size(&view.music_font, text, frame).min(size * 1.6);
+            Some(music_symbol(view, text, font_size, frame, color).into_any_element())
         }
         Visual::Clef(clef) => {
             Some(clef_symbol(view, clef, (size * 0.7, size), color).into_any_element())
@@ -50,22 +62,79 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
                 .child(text)
                 .into_any_element(),
         ),
+        Visual::Label(text) => Some(
+            div()
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(size * 0.55))
+                .text_color(rgb(color))
+                .child(text)
+                .into_any_element(),
+        ),
         Visual::None => None,
     }
 }
 
-fn ink(control: &ControlView) -> u32 {
-    if control.checked {
-        BLUE
-    } else if control.pending {
-        MUTED
+/// The colours of a control. One rule for every role: bare at rest, the
+/// accent when on (a toggle and a choice alike), dashed while pending.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Look {
+    /// `None`: the panel shows through.
+    bg: Option<u32>,
+    border: Option<u32>,
+    /// The glyph.
+    ink: u32,
+    name: u32,
+    key: u32,
+    dashed: bool,
+    opacity: f32,
+}
+
+fn look(control: &ControlView) -> Look {
+    look_of(control.checked, control.pending, control.enabled)
+}
+
+fn look_of(checked: bool, pending: bool, enabled: bool) -> Look {
+    let opacity = if enabled { 1. } else { 0.4 };
+    if checked {
+        Look {
+            bg: Some(SELECT),
+            border: Some(SELECT_BORDER),
+            ink: ACCENT_TEXT,
+            name: ACCENT_TEXT,
+            key: ACCENT_TEXT,
+            dashed: false,
+            opacity,
+        }
+    } else if pending {
+        Look {
+            bg: None,
+            border: Some(PENDING_OUTLINE),
+            ink: MUTED,
+            name: MUTED,
+            key: MUTED,
+            dashed: true,
+            opacity,
+        }
     } else {
-        TEXT
+        Look {
+            bg: None,
+            border: None,
+            ink: TEXT,
+            name: SECONDARY,
+            key: MUTED,
+            dashed: false,
+            opacity,
+        }
     }
 }
 
-/// Every control shares this frame: same corners, hover, checked colour and
-/// click path (`AppView::run`). `close` also folds an open dropdown.
+fn paint(color: Option<u32>) -> Hsla {
+    color.map_or(transparent_black(), |color| rgb(color).into())
+}
+
+/// Every control shares this frame: its `look`, a tone step on hover and
+/// another while pressed, and one click path (`AppView::run`). `close` also
+/// folds an open dropdown.
 fn frame(
     element: String,
     content: impl IntoElement,
@@ -74,12 +143,14 @@ fn frame(
     close: bool,
 ) -> Stateful<Div> {
     let command = control.command;
-    action(
+    styled(
         element,
         content,
+        look(control),
         control.checked,
         cx,
         move |v, window, cx| {
+            v.ui.ribbon_peek = false;
             if close {
                 v.ui.open_group = None;
                 v.ui.file_menu = false;
@@ -87,83 +158,167 @@ fn frame(
             v.run(command, window, cx)
         },
     )
-    .when(!control.checked, |frame| frame.bg(rgb(PANEL)))
-    .text_color(rgb(ink(control)))
-    .when(!control.enabled, |frame| frame.opacity(0.4))
-    .tooltip(hover_hint(control.description, control.keys.clone()))
+    .tooltip(described_hint(
+        if control.pending {
+            format!("{} · Pendiente", control.description)
+        } else {
+            control.description.to_string()
+        },
+        control.keys.clone(),
+        control.hint,
+    ))
 }
 
-fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Stateful<Div> {
-    frame(
-        format!("tool-{}", control.command),
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(4.))
-            .child(
-                div()
-                    .h(px(30.))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .children(visual(view, control.visual, 26., ink(control))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .text_size(px(11.))
-                    .line_height(px(13.))
-                    .child(control.label.clone()),
-            ),
-        control,
+fn styled(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    look: Look,
+    checked: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    action_with_hover(
+        element,
+        content,
+        checked,
+        move |s| if checked { s } else { s.bg(rgb(HOVER)) },
         cx,
-        false,
+        click,
     )
-    .min_w(px(Metrics::default().large))
-    .h(px(CONTROL_HEIGHT))
-    .px_1()
+    .active(move |s| if checked { s } else { s.bg(rgb(FIELD_HOVER)) })
+    .rounded(px(7.))
+    .bg(paint(look.bg))
+    .border_color(paint(look.border))
+    .when(look.dashed, |frame| frame.border_dashed())
+    .text_color(rgb(look.ink))
+    .opacity(look.opacity)
 }
 
-/// A musical glyph; `named` adds its name when the group has room.
+/// A panel control that is not a ribbon command, in the ribbon's grammar:
+/// bare at rest, a tone step on hover and pressed, the accent when chosen.
+pub(super) fn control(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    chosen: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    styled(
+        element,
+        content,
+        look_of(chosen, false, true),
+        chosen,
+        cx,
+        click,
+    )
+}
+
+/// A panel button that does something rather than choose: on a field at
+/// rest, a tone step on hover and pressed, never the chosen look. The
+/// primary one (Aplicar) is inverted.
+pub(super) fn action_button(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    primary: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    let (rest, hover, ink) = if primary {
+        (TEXT, SECONDARY, FIELD)
+    } else {
+        (FIELD, FIELD_HOVER, TEXT)
+    };
+    action_with_hover(
+        element,
+        content,
+        false,
+        move |s| s.bg(rgb(hover)),
+        cx,
+        click,
+    )
+    .active(move |s| s.bg(rgb(hover)))
+    .rounded(px(7.))
+    .bg(rgb(rest))
+    .text_color(rgb(ink))
+    .when(primary, |button| button.font_weight(FontWeight::SEMIBOLD))
+}
+
+/// Options that exclude each other on one track, as in the ribbon; each
+/// takes an equal share of the width.
+pub(super) fn track(options: impl IntoIterator<Item = Stateful<Div>>) -> Div {
+    div()
+        .flex()
+        .gap(px(2.))
+        .p(px(2.))
+        .rounded(px(9.))
+        .bg(rgb(FIELD))
+        .children(options.into_iter().map(|option| option.flex_1()))
+}
+
+/// A glyph in its box, its name under it when the group has room and, on
+/// the last line, its key.
 fn tile(
     view: &AppView,
     control: &ControlView,
     cx: &Context<AppView>,
     named: bool,
 ) -> Stateful<Div> {
-    let metrics = Metrics::default();
+    let look = look(control);
     frame(
         format!("tool-{}", control.command),
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .children(visual(
-                view,
-                control.visual,
-                if named { 22. } else { 26. },
-                ink(control),
-            ))
+            .line_height(px(12.))
+            .whitespace_nowrap()
+            .child(
+                div()
+                    .h(px(GLYPH_BOX))
+                    .mb(px(2.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .children(visual(view, control.visual, 26., look.ink)),
+            )
             .when(named, |tile| {
                 tile.child(
                     div()
-                        .text_size(px(10.))
-                        .line_height(px(11.))
+                        .text_size(px(10.5))
+                        .text_color(rgb(look.name))
                         .child(control.label.clone()),
                 )
-            }),
+            })
+            .children(control.keys.clone().map(|keys| {
+                div()
+                    .text_size(px(10.))
+                    .text_color(rgb(look.key))
+                    .child(keys)
+            })),
         control,
         cx,
         false,
     )
-    .when(named, |tile| tile.min_w(px(metrics.labeled_tile)).px_1())
-    .when(!named, |tile| tile.w(px(metrics.tile)))
-    .h(px(if named { CONTROL_HEIGHT } else { 48. }))
+    .items_start()
+    .pt(px(4.))
+    .w(px(tile_width(control, named, &Metrics::default())))
+    .h(px(TILE_HEIGHT))
+}
+
+/// Options that exclude each other share one track; the chosen one is lit.
+fn segment(view: &AppView, controls: &[ControlView], named: bool, cx: &Context<AppView>) -> Div {
+    div()
+        .flex()
+        .flex_shrink_0()
+        .gap(px(2.))
+        .p(px(2.))
+        .rounded(px(9.))
+        .bg(rgb(FIELD))
+        .children(
+            controls
+                .iter()
+                .map(|control| tile(view, control, cx, named && !control.symbol_only)),
+        )
 }
 
 fn row(
@@ -174,6 +329,7 @@ fn row(
     close: bool,
 ) -> Stateful<Div> {
     let named = close || !control.symbol_only;
+    let ink = look(control).ink;
     frame(
         format!("{prefix}-{}", control.command),
         div()
@@ -190,10 +346,7 @@ fn row(
                     .items_center()
                     .justify_center()
                     .children(if close && let Visual::Music(text) = control.visual {
-                        Some(
-                            fitted_music_symbol(view, text, (36., 22.), ink(control))
-                                .into_any_element(),
-                        )
+                        Some(fitted_music_symbol(view, text, (36., 22.), ink).into_any_element())
                     } else {
                         visual(
                             view,
@@ -203,13 +356,14 @@ fn row(
                             } else {
                                 16.
                             },
-                            ink(control),
+                            ink,
                         )
                     }),
             )
             .when(named, |row| {
                 row.child(div().flex_1().truncate().child(control.label.clone()))
             })
+            .when(named && control.pending, |row| row.child(pending_mark()))
             .when(close, |row| {
                 row.children(control.keys.clone().map(shortcut))
             }),
@@ -231,103 +385,196 @@ fn items(view: &AppView, group: &GroupView, cx: &Context<AppView>) -> Div {
         .gap(px(Metrics::default().gap))
         .h(px(CONTROL_HEIGHT))
         .children(group.items.iter().map(|item| {
-            let width = px(item.width(&Metrics::default()));
             match item {
-                Item::Large(control) => large(view, control, cx).w(width).into_any_element(),
                 Item::Tile(control) => tile(view, control, cx, false).into_any_element(),
-                Item::LabeledTile(control) => {
-                    tile(view, control, cx, true).w(width).into_any_element()
-                }
-                Item::Column(column) => div()
-                    .flex()
-                    .flex_col()
-                    .w(width)
-                    .flex_shrink_0()
-                    .gap(px(ROW_GAP))
-                    .children(
-                        column
-                            .iter()
-                            .map(|control| row(view, control, cx, "tool", false)),
-                    )
+                Item::LabeledTile(control) => tile(view, control, cx, true).into_any_element(),
+                Item::Segment { controls, named } => segment(view, controls, *named, cx)
+                    .w(px(item.width(&Metrics::default())))
                     .into_any_element(),
             }
         }))
 }
 
-fn popover(content: impl IntoElement) -> Div {
+pub(super) fn popover(content: impl IntoElement) -> Div {
     div()
         .p_1()
         .flex()
         .flex_col()
         .gap(px(1.))
-        .bg(rgb(0x1d1e23))
+        .bg(rgb(POPOVER))
         .border_1()
-        .border_color(rgb(0x3a3d46))
+        .border_color(rgb(POPOVER_BORDER))
         .rounded_lg()
         .shadow_lg()
         .child(content)
 }
 
+/// One part of a folded group's button: bare, a tone step on hover unless
+/// the button is lit (its list is open or one of its options is on).
+fn fold_zone(
+    element: String,
+    content: impl IntoElement,
+    lit: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    action_with_hover(
+        element,
+        content,
+        false,
+        move |s| if lit { s } else { s.bg(rgb(HOVER)) },
+        cx,
+        click,
+    )
+    .active(move |s| if lit { s } else { s.bg(rgb(FIELD_HOVER)) })
+    .bg(transparent_black())
+    .border_0()
+    .h_full()
+    .text_color(rgb(if lit { ACCENT_TEXT } else { TEXT }))
+}
+
 fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>) -> Div {
     let open = view.ui.open_group == Some(index);
     let title = group.title;
-    let active = open || group.controls.iter().any(|control| control.checked);
-    let color = if active { BLUE } else { TEXT };
+    let lit = open || group.controls.iter().any(|control| control.checked);
+    let ink = if lit { ACCENT_TEXT } else { TEXT };
+    // Laid out like a tile: the glyph in its box, one short line under it.
+    let face = |visual_of: Visual, line: Option<String>| {
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .line_height(px(12.))
+            .whitespace_nowrap()
+            .child(
+                div()
+                    .h(px(GLYPH_BOX))
+                    .mb(px(2.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .children(match visual_of {
+                        Visual::Music(text) => Some(
+                            fitted_music_symbol(view, text, (40., GLYPH_BOX), ink)
+                                .into_any_element(),
+                        ),
+                        _ => visual(view, visual_of, 26., ink),
+                    }),
+            )
+            .children(line.map(|line| {
+                div()
+                    .text_size(px(10.))
+                    .text_color(rgb(if lit { ACCENT_TEXT } else { MUTED }))
+                    .child(line)
+            }))
+    };
+    let toggle_list = move |v: &mut AppView, _: &mut Window, cx: &mut Context<AppView>| {
+        v.ui.open_group = if open { None } else { Some(index) };
+        v.ui.file_menu = false;
+        cx.notify();
+    };
+    // A split button repeats the last option used; the arrow opens the list.
+    let target = group
+        .dropdown
+        .then(|| {
+            view.ui
+                .last_choice
+                .get(title)
+                .and_then(|last| group.controls.iter().find(|c| c.command == *last))
+                .or_else(|| group.controls.first())
+        })
+        .flatten();
+    // Lit like a checked tile: one outline around both parts of a split button.
+    let button = div()
+        .flex()
+        .w_full()
+        .h(px(TILE_HEIGHT))
+        .rounded(px(7.))
+        .border_1()
+        .border_color(paint(lit.then_some(SELECT_BORDER)))
+        .bg(paint(lit.then_some(SELECT)));
+    let button = if let Some(target) = target {
+        let command = target.command;
+        button
+            .child(
+                fold_zone(
+                    format!("fold-main-{title}"),
+                    face(target.visual, target.keys.clone()),
+                    lit,
+                    cx,
+                    move |v, window, cx| {
+                        v.ui.last_choice.insert(title, command);
+                        v.ui.ribbon_peek = false;
+                        v.ui.open_group = None;
+                        v.ui.file_menu = false;
+                        v.run(command, window, cx);
+                    },
+                )
+                .flex_1()
+                .items_start()
+                .pt(px(4.))
+                .rounded_l(px(6.))
+                .rounded_r_none()
+                .tooltip(described_hint(
+                    target.description,
+                    target.keys.clone(),
+                    target.hint,
+                )),
+            )
+            .child(
+                fold_zone(format!("fold-arrow-{title}"), "▾", lit, cx, toggle_list)
+                    .w(px(16.))
+                    .rounded_r(px(6.))
+                    .rounded_l_none()
+                    // Two click targets read as two: a line between them.
+                    .border_l_1()
+                    .border_color(rgb(BORDER))
+                    .text_color(rgb(if lit { ACCENT_TEXT } else { MUTED })),
+            )
+    } else {
+        button.child(
+            fold_zone(
+                format!("fold-{title}"),
+                face(group.visual, Some("▾".to_string())),
+                lit,
+                cx,
+                toggle_list,
+            )
+            .flex_1()
+            .items_start()
+            .pt(px(4.))
+            .rounded(px(6.)),
+        )
+    };
     div()
         .flex()
         .flex_col()
         .w_full()
         .child(
-            action(
-                format!("fold-{title}"),
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        div()
-                            .h(px(30.))
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .children(match group.visual {
-                                Visual::Music(text) => Some(
-                                    fitted_music_symbol(view, text, (40., 30.), color)
-                                        .into_any_element(),
-                                ),
-                                _ => visual(view, group.visual, 26., color),
-                            }),
-                    )
-                    .child(div().text_size(px(11.5)).child(format!("{title} ▾"))),
-                active,
-                cx,
-                move |v, _, cx| {
-                    v.ui.open_group = if open { None } else { Some(index) };
-                    v.ui.file_menu = false;
-                    cx.notify();
-                },
-            )
-            .when(!active, |button| button.bg(rgb(PANEL)))
-            .w_full()
-            .h(px(GROUP_HEIGHT))
-            .px_1(),
+            div()
+                .w_full()
+                .h(px(CONTROL_HEIGHT))
+                .flex()
+                .items_center()
+                .child(button),
         )
         .when(open, |column| {
             column.child(deferred(
                 // Absolute children start at the column's corner: drop below the button.
                 anchored()
-                    .offset(point(px(0.), px(GROUP_HEIGHT + 4.)))
+                    .offset(point(px(0.), px(CONTROL_HEIGHT + 2.)))
                     .snap_to_window()
                     .child(
-                        popover(
-                            div().w(px(240.)).flex().flex_col().gap(px(1.)).children(
-                                group.controls.iter().map(|control| {
-                                    row(view, control, cx, "folded", true).h(px(26.))
-                                }),
-                            ),
-                        )
+                        popover(div().w(px(240.)).flex().flex_col().gap(px(1.)).children(
+                            group.controls.iter().map(|control| {
+                                let command = control.command;
+                                row(view, control, cx, "folded", true).h(px(26.)).on_click(
+                                    cx.listener(move |v, _, _, _| {
+                                        v.ui.last_choice.insert(title, command);
+                                    }),
+                                )
+                            }),
+                        ))
                         .on_mouse_down_out(cx.listener(|v, _, _, cx| {
                             v.ui.open_group = None;
                             cx.notify();
@@ -337,6 +584,8 @@ fn folded(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>
         })
 }
 
+/// No card: groups are set apart by `Metrics::separator` and named under
+/// their items, flush with the first tile.
 fn group(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>) -> Div {
     div()
         .w(px(group.width_in(group.mode)))
@@ -344,23 +593,22 @@ fn group(view: &AppView, group: &GroupView, index: usize, cx: &Context<AppView>)
         .px(px(Metrics::default().group_padding / 2.))
         .flex()
         .flex_col()
-        .justify_between()
+        .gap(px(TITLE_GAP))
         .flex_shrink_0()
-        .border_r_1()
-        .border_color(rgb(BORDER))
         .child(match group.mode {
             GroupMode::Full | GroupMode::Expanded => items(view, group, cx),
             GroupMode::Folded => folded(view, group, index, cx),
         })
-        .when(group.mode != GroupMode::Folded, |group_row| {
-            group_row.child(
-                div()
-                    .text_center()
-                    .text_size(px(10.))
-                    .text_color(rgb(MUTED))
-                    .child(group.title),
-            )
-        })
+        .child(
+            div()
+                .h(px(TITLE_LINE))
+                .line_height(px(TITLE_LINE))
+                .pl(px(4.))
+                .whitespace_nowrap()
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .child(group.title),
+        )
 }
 
 pub fn toolbar_view(view: &AppView) -> ToolbarView {
@@ -376,13 +624,45 @@ pub fn toolbar_view(view: &AppView) -> ToolbarView {
 
 /// The ribbon row. It never scrolls: groups fold instead.
 pub fn ribbon(view: &AppView, cx: &Context<AppView>) -> Div {
+    if !view.ui.ribbon_collapsed {
+        return ribbon_row(view, cx);
+    }
+    // Folded: a thin strip; a tab click floats the ribbon over the score.
+    let strip = div().h(px(4.)).flex_shrink_0().bg(rgb(PANEL));
+    if !view.ui.ribbon_peek {
+        return strip;
+    }
+    strip.child(
+        deferred(
+            anchored()
+                .offset(point(px(0.), px(0.)))
+                .snap_to_window()
+                .child(
+                    ribbon_row(view, cx)
+                        .shadow_lg()
+                        .w(px(view.ui.width))
+                        .on_mouse_down_out(cx.listener(|v, _, _, cx| {
+                            v.ui.ribbon_peek = false;
+                            cx.notify();
+                        })),
+                ),
+        )
+        .with_priority(1),
+    )
+}
+
+fn ribbon_row(view: &AppView, cx: &Context<AppView>) -> Div {
     let toolbar = toolbar_view(view);
     div()
-        .h(px(GROUP_HEIGHT + 8.))
+        // Groups, 8px above and 6px below them, and the bottom line.
+        .h(px(GROUP_HEIGHT + 8. + 6. + 1.))
         .flex_shrink_0()
         .flex()
         .items_center()
+        .gap(px(Metrics::default().separator))
         .px(px(10.))
+        .pt(px(8.))
+        .pb(px(6.))
         .overflow_hidden()
         .bg(rgb(PANEL))
         .border_b_1()
@@ -416,6 +696,7 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
             .gap_3()
             .w_full()
             .child(div().flex_1().child(item.label.clone()))
+            .when(item.pending, |row| row.child(pending_mark()))
             .children(
                 item.keys
                     .clone()
@@ -437,7 +718,7 @@ fn menu_row(view: &AppView, item: &MenuItemView, cx: &Context<AppView>) -> State
     .w_full()
     .h(px(28.))
     .px_2()
-    .bg(rgb(0x1d1e23))
+    .bg(rgb(POPOVER))
     .text_size(px(12.5))
     .text_color(rgb(if item.pending { MUTED } else { TEXT }))
     .when(!item.enabled, |row| row.opacity(0.4))
@@ -557,7 +838,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                     .w_full()
                                     .h(px(28.))
                                     .px_2()
-                                    .when(!recent_open, |row| row.bg(rgb(0x1d1e23)))
+                                    .when(!recent_open, |row| row.bg(rgb(POPOVER)))
                                     .text_size(px(12.5))
                                     .into_any_element(),
                                 }
@@ -575,7 +856,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                     .flex()
                                     .flex_col()
                                     .gap(px(1.))
-                                    .child(caption("RECIENTES").px_2().py_1())
+                                    .child(caption("Recientes").px_2().py_1())
                                     .when(files.is_empty(), |list| {
                                         list.child(
                                             div()
@@ -624,7 +905,7 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                                         .w_full()
                                         .h(px(40.))
                                         .px_2()
-                                        .bg(rgb(0x1d1e23))
+                                        .bg(rgb(POPOVER))
                                     }))
                                     .child(separator())
                                     .child(menu_row(view, clear, cx)),
@@ -640,11 +921,46 @@ fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     .with_priority(1)
 }
 
-/// The tab row: the Archivo dropdown, then one tab per `TabId`.
+/// The tab row's measures, shared by `tabs` and its width estimate.
+const ROW_PADDING: f32 = 12.;
+const TAB_TEXT: f32 = 13.;
+const TAB_PADDING: f32 = 12.;
+const TAB_GAP: f32 = 2.;
+const PILL_TEXT: f32 = 12.5;
+const PILL_PADDING: f32 = 10.;
+const PILL_MARGIN: f32 = 12.;
+const PILL_DOT: f32 = 8.;
+
+/// Text width estimated per character like the ribbon's tiles:
+/// `Metrics::char_width` is measured on 11px text.
+fn estimate(text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * Metrics::default().char_width / 11. * size
+}
+
+/// What the tab row needs before the pill: its padding, Archivo and every
+/// tab. Tabs never shrink.
+fn tabs_width() -> f32 {
+    let tabs: f32 = TABS
+        .iter()
+        .map(|spec| estimate(spec.id.label(), TAB_TEXT) + 2. * TAB_PADDING)
+        .sum();
+    // Archivo ▾: 8px padding each side, a 4px gap and an 8px margin.
+    let file = estimate("Archivo▾", TAB_TEXT) + 4. + 2. * 8. + 8.;
+    ROW_PADDING + file + TABS.len() as f32 * TAB_GAP + tabs
+}
+
+/// The pill with `text`, its margin included.
+fn pill_width(text: &str) -> f32 {
+    // Its 1px border on each side, the dot and the gap after it.
+    2. * PILL_PADDING + 2. + 2. * PILL_DOT + estimate(text, PILL_TEXT) + PILL_MARGIN
+}
+
+/// The tab row: the Archivo dropdown, then one tab per `TabId`, the chosen
+/// one underlined.
 pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
     let open = view.ui.file_menu;
     div()
-        .h(px(35.))
+        .h(px(38.))
         .flex_shrink_0()
         .flex()
         .items_center()
@@ -656,14 +972,17 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
             div()
                 .flex()
                 .items_center()
-                .min_w_0()
-                .px_2()
+                .h_full()
+                .flex_shrink_0()
+                .pl(px(ROW_PADDING))
+                .gap(px(TAB_GAP))
                 .child(
                     div()
                         .flex()
                         .flex_col()
+                        .mr_2()
                         .child(
-                            action(
+                            action_with_hover(
                                 "file-menu",
                                 div()
                                     .flex()
@@ -672,6 +991,7 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                                     .child("Archivo")
                                     .child("▾"),
                                 open,
+                                move |s| if open { s } else { s.bg(rgb(HOVER)) },
                                 cx,
                                 move |v, _, cx| {
                                     v.ui.file_menu = !open;
@@ -681,78 +1001,326 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
                                 },
                             )
                             .h(px(26.))
-                            .px_3()
+                            .px_2()
+                            .text_size(px(TAB_TEXT))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .when(!open, |button| button.bg(rgb(PANEL))),
+                            .when(!open, |button| button.bg(transparent_black())),
                         )
                         .when(open, |column| column.child(file_menu(view, cx))),
                 )
-                .child(div().w(px(1.)).h(px(18.)).mx_1().bg(rgb(BORDER)))
                 .children(TABS.iter().map(|spec| {
                     let id: TabId = spec.id;
                     let selected = view.ui.tab == id;
-                    action(
-                        format!("tab-{}", id.label()),
-                        div().child(id.label()),
-                        false,
-                        cx,
-                        move |v, _, cx| {
+                    div()
+                        .id(SharedString::from(format!("tab-{}", id.label())))
+                        .relative()
+                        .flex()
+                        .items_center()
+                        .h_full()
+                        .flex_shrink_0()
+                        .px(px(TAB_PADDING))
+                        .text_size(px(TAB_TEXT))
+                        .text_color(rgb(if selected { TEXT } else { MUTED }))
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(rgb(TEXT)))
+                        .child(id.label())
+                        .when(selected, |tab| {
+                            // On the row's bottom line, like the mockup's underline.
+                            tab.child(
+                                div()
+                                    .absolute()
+                                    .bottom(px(-1.))
+                                    .left(px(10.))
+                                    .right(px(10.))
+                                    .h(px(2.))
+                                    .rounded(px(2.))
+                                    .bg(rgb(BLUE)),
+                            )
+                        })
+                        .tooltip(command_hint(view, id.command()))
+                        .on_click(cx.listener(move |v, event: &ClickEvent, window, cx| {
+                            v.focus.focus(window);
+                            if event.click_count() == 2 {
+                                v.ui.ribbon_collapsed = !v.ui.ribbon_collapsed;
+                                v.ui.ribbon_peek = false;
+                            } else if v.ui.ribbon_collapsed {
+                                v.ui.ribbon_peek = !(v.ui.ribbon_peek && v.ui.tab == id);
+                            }
                             v.ui.tab = id;
                             v.ui.open_group = None;
                             cx.notify();
-                        },
-                    )
-                    .h(px(35.))
-                    .px_3()
-                    .rounded_none()
-                    .bg(rgb(PANEL))
-                    .border_0()
-                    .border_b_2()
-                    .border_color(if selected {
-                        Hsla::from(rgb(BLUE))
-                    } else {
-                        transparent_black()
-                    })
-                    .text_color(rgb(if selected { TEXT } else { MUTED }))
+                        }))
                 })),
         )
-        .child(
-            command_button(
-                "entry-state",
-                if view.ui.note_entry {
-                    "●  Entrada activa"
-                } else {
-                    "Entrada desactivada"
-                },
-                view.ui.note_entry,
-                view,
-                cx,
-                id::TOGGLE_NOTE_INPUT,
+        .child(entry_pill(view, cx))
+}
+
+/// What the pill reports: what typing a note does, or how to start writing.
+#[derive(Clone, Copy)]
+struct Entry<'a> {
+    writing: bool,
+    duration: Option<&'a str>,
+    dotted: bool,
+    triplet: bool,
+    voice: u8,
+    chord: bool,
+    /// The key that starts writing, offered while selecting.
+    key: Option<&'a str>,
+}
+
+impl Entry<'_> {
+    fn text(&self) -> String {
+        if !self.writing {
+            return match self.key {
+                Some(key) => format!("Seleccionando · {key} para escribir"),
+                None => "Seleccionando".to_string(),
+            };
+        }
+        let mut parts = vec!["Escribiendo".to_string()];
+        if let Some(duration) = self.duration {
+            let mut figure = duration.to_string();
+            if self.dotted {
+                figure.push_str(" con puntillo");
+            }
+            if self.triplet {
+                figure.push_str(" en tresillo");
+            }
+            parts.push(figure);
+        }
+        parts.push(format!("Voz {}", self.voice));
+        if self.chord {
+            parts.push("Acorde".to_string());
+        }
+        parts.join(" · ")
+    }
+
+    /// The text for a window `width` wide: all of it while the row has room,
+    /// otherwise without the modifiers (puntillo, tresillo, acorde, the key).
+    /// Narrower still, the pill truncates what is left.
+    fn fitted(&self, width: f32) -> String {
+        let text = self.text();
+        if tabs_width() + pill_width(&text) <= width {
+            return text;
+        }
+        Entry {
+            dotted: false,
+            triplet: false,
+            chord: false,
+            key: None,
+            ..*self
+        }
+        .text()
+    }
+}
+
+/// The entry state, a dot ahead of it: blue while writing. Pressing it
+/// toggles note input.
+fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
+    let writing = view.ui.note_entry;
+    let duration = [
+        id::WHOLE,
+        id::HALF,
+        id::QUARTER,
+        id::EIGHTH,
+        id::SIXTEENTH,
+        id::THIRTY_SECOND,
+    ]
+    .into_iter()
+    .find(|command| view.state(*command).checked)
+    .and_then(|command| view.shortcuts.registry.get(command.as_str()))
+    .map(|spec| spec.label);
+    let key = view.shortcuts.label(id::TOGGLE_NOTE_INPUT);
+    let text = Entry {
+        writing,
+        duration,
+        dotted: view.state(id::DOT).checked,
+        triplet: view.state(id::TRIPLET).checked,
+        voice: if view.state(id::VOICE_1).checked {
+            1
+        } else {
+            2
+        },
+        chord: view.state(id::CHORD_MODE).checked,
+        key: key.as_deref(),
+    }
+    .fitted(view.ui.width);
+    action_with_hover(
+        "entry-state",
+        div()
+            .flex()
+            .items_center()
+            .min_w_0()
+            .gap(px(PILL_DOT))
+            .child(
+                div()
+                    .size(px(PILL_DOT))
+                    .flex_shrink_0()
+                    .rounded_full()
+                    .bg(rgb(if writing { BLUE } else { MUTED })),
             )
-            .mr_3()
-            .h(px(23.))
-            .rounded_full()
-            .text_size(px(10.)),
-        )
+            .child(div().min_w_0().truncate().child(text)),
+        writing,
+        move |s| if writing { s } else { s.bg(rgb(HOVER)) },
+        cx,
+        move |v, window, cx| v.run(id::TOGGLE_NOTE_INPUT, window, cx),
+    )
+    .tooltip(command_hint(view, id::TOGGLE_NOTE_INPUT))
+    // Shrinks into the room the tabs leave, never over them.
+    .flex_shrink()
+    .min_w_0()
+    .overflow_hidden()
+    .mr(px(PILL_MARGIN))
+    .h(px(24.))
+    .px(px(PILL_PADDING))
+    .rounded(px(6.))
+    .when(!writing, |pill| {
+        pill.bg(transparent_black()).text_color(rgb(SECONDARY))
+    })
+    .text_size(px(PILL_TEXT))
 }
 
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the GPUI glob would shadow `#[test]` with `gpui::test`.
-    use score_toolbar::{TABS, TabId, Visual};
+    use super::super::theme::{ACCENT_TEXT, MUTED, PENDING_OUTLINE, SELECT, SELECT_BORDER, TEXT};
+    use super::{Entry, Look, look, pill_width, tabs_width};
+    use score_keymap::id;
+    use score_toolbar::{ControlSize, ControlView, Role, TABS, Visual};
+
+    fn control(role: Role, checked: bool, pending: bool, enabled: bool) -> ControlView {
+        ControlView {
+            command: id::DOT,
+            size: ControlSize::Tile,
+            role,
+            visual: Visual::Music("\u{e1e7}"),
+            symbol_only: false,
+            name: "Puntillo",
+            label: "Puntillo".into(),
+            description: "Puntillo",
+            hint: "",
+            keys: Some(".".into()),
+            enabled,
+            checked,
+            pending,
+        }
+    }
+
+    fn entry<'a>(
+        writing: bool,
+        duration: Option<&'a str>,
+        dotted: bool,
+        triplet: bool,
+        voice: u8,
+        chord: bool,
+        key: Option<&'a str>,
+    ) -> Entry<'a> {
+        Entry {
+            writing,
+            duration,
+            dotted,
+            triplet,
+            voice,
+            chord,
+            key,
+        }
+    }
 
     #[test]
-    fn every_view_tab_icon_has_a_drawing() {
-        for group in score_toolbar::tab(TabId::View).groups {
-            let visuals = std::iter::once(group.visual)
-                .chain(group.controls.iter().map(|control| control.visual));
-            for visual in visuals {
-                if let Visual::Icon(name) = visual {
-                    assert!(
-                        super::Icon::named(name).is_some(),
-                        "{}: {name}",
-                        group.title
-                    );
+    fn the_tab_row_fits_the_narrowest_window() {
+        // `window_min_size` in main.rs.
+        const NARROWEST: f32 = 960.;
+        let busy = entry(true, Some("Blanca"), true, true, 2, true, Some("N"));
+        assert_eq!(busy.fitted(1440.), busy.text(), "wide: every modifier");
+        // Narrow: the modifiers go first, then the pill truncates into what
+        // the tabs leave. Its dot and first word always fit.
+        assert_eq!(busy.fitted(NARROWEST), "Escribiendo · Blanca · Voz 2");
+        assert!(tabs_width() + pill_width("Escribiendo") <= NARROWEST);
+        let idle = entry(false, None, false, false, 1, false, Some("N"));
+        assert_eq!(idle.fitted(NARROWEST), "Seleccionando");
+        // The modifiers stay while the row has room for them.
+        let width = tabs_width() + pill_width(&busy.text());
+        assert_eq!(busy.fitted(width), busy.text());
+        assert_eq!(busy.fitted(width - 1.), "Escribiendo · Blanca · Voz 2");
+    }
+
+    #[test]
+    fn entry_pill_text_names_every_active_modifier() {
+        assert_eq!(
+            entry(true, Some("Negra"), true, false, 2, false, Some("N")).text(),
+            "Escribiendo · Negra con puntillo · Voz 2"
+        );
+        assert_eq!(
+            entry(true, Some("Corchea"), false, true, 1, true, Some("N")).text(),
+            "Escribiendo · Corchea en tresillo · Voz 1 · Acorde"
+        );
+        assert_eq!(
+            entry(true, Some("Blanca"), true, true, 1, false, None).text(),
+            "Escribiendo · Blanca con puntillo en tresillo · Voz 1"
+        );
+        assert_eq!(
+            entry(true, None, false, false, 1, false, None).text(),
+            "Escribiendo · Voz 1"
+        );
+        assert_eq!(
+            entry(false, Some("Negra"), true, false, 2, true, Some("N")).text(),
+            "Seleccionando · N para escribir"
+        );
+        assert_eq!(
+            entry(false, None, false, false, 1, false, None).text(),
+            "Seleccionando"
+        );
+    }
+
+    #[test]
+    fn checked_toggles_and_choices_share_one_look() {
+        let on = look(&control(Role::Toggle, true, false, true));
+        assert_eq!(on, look(&control(Role::Choice, true, false, true)));
+        assert_eq!(on, look(&control(Role::Action, true, false, true)));
+        assert_eq!(
+            on,
+            Look {
+                bg: Some(SELECT),
+                border: Some(SELECT_BORDER),
+                ink: ACCENT_TEXT,
+                name: ACCENT_TEXT,
+                key: ACCENT_TEXT,
+                dashed: false,
+                opacity: 1.,
+            }
+        );
+
+        let off = look(&control(Role::Toggle, false, false, true));
+        assert_eq!(off.border, None, "an unchecked toggle has no outline");
+        assert_eq!(off.bg, None);
+        assert_eq!(off.ink, TEXT);
+        assert_eq!(off, look(&control(Role::Choice, false, false, true)));
+        assert_eq!(off, look(&control(Role::Action, false, false, true)));
+
+        let pending = look(&control(Role::Toggle, false, true, true));
+        assert_eq!(pending.border, Some(PENDING_OUTLINE));
+        assert!(pending.dashed);
+        assert_eq!(pending.ink, MUTED);
+
+        assert_eq!(
+            look(&control(Role::Toggle, false, false, false)).opacity,
+            0.4
+        );
+    }
+
+    #[test]
+    fn every_ribbon_icon_has_a_drawing() {
+        for tab in TABS {
+            for group in tab.groups {
+                let visuals = std::iter::once(group.visual)
+                    .chain(group.controls.iter().map(|control| control.visual));
+                for visual in visuals {
+                    if let Visual::Icon(name) = visual {
+                        assert!(
+                            super::Icon::named(name).is_some(),
+                            "{}: {name}",
+                            group.title
+                        );
+                    }
                 }
             }
         }
@@ -813,6 +1381,51 @@ mod tests {
                     width <= frame.0 + 0.001 && height <= frame.1 + 0.001,
                     "{clef:?}: canvas needs {width:.2}×{height:.2}, frame is {frame:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn every_label_is_short_and_not_musical_text() {
+        for tab in TABS {
+            for group in tab.groups {
+                let visuals = std::iter::once(group.visual)
+                    .chain(group.controls.iter().map(|control| control.visual));
+                for visual in visuals {
+                    if let Visual::Label(text) = visual {
+                        assert!(text.chars().count() <= 4, "{}: {text}", group.title);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_ribbon_music_glyph_fits_its_frame_under_the_size_ceiling() {
+        let font = crate::music_font::MusicFont::new();
+        for tab in TABS {
+            for group in tab.groups {
+                let visuals = std::iter::once(group.visual)
+                    .chain(group.controls.iter().map(|control| control.visual));
+                for visual in visuals {
+                    let Visual::Music(text) = visual else {
+                        continue;
+                    };
+                    for nominal in [16_f32, 22., 26.] {
+                        let frame = (nominal * 0.9, nominal);
+                        let size = super::super::fitted_music_font_size(&font, text, frame)
+                            .min(nominal * 1.6);
+                        let ink = font.bounds(text, size);
+                        let width = f32::from(ink.size.width) + super::super::MUSIC_SYMBOL_PADDING;
+                        let height =
+                            f32::from(ink.size.height) + super::super::MUSIC_SYMBOL_PADDING;
+                        assert!(
+                            width <= frame.0 + 0.001 && height <= frame.1 + 0.001,
+                            "{}: {text:?} needs {width:.2}×{height:.2}, frame is {frame:?}",
+                            group.title
+                        );
+                    }
+                }
             }
         }
     }

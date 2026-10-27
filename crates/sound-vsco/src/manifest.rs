@@ -1,6 +1,6 @@
 //! Validated SFZ package descriptions; legacy VSCO manifests are converted here.
 use crate::{AudioError, error};
-use score_core::Instrument;
+use score_core::{Instrument, Players};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -20,8 +20,78 @@ pub struct PatchSpec {
     pub sustain: PathBuf,
     pub pizzicato: Option<PathBuf>,
     pub staccato: Option<PathBuf>,
+    /// Unmeasured bowed tremolo, for three-stroke tremolos.
+    pub tremolo: Option<PathBuf>,
     pub dynamics: DynamicsMode,
     pub spread_layers: bool,
+}
+
+/// One set of recordings, and another for a second part of the same
+/// instrument, so two violin sections never play identical samples.
+#[derive(Clone, Debug)]
+pub struct Variant {
+    pub first: PatchSpec,
+    pub second: Option<PatchSpec>,
+}
+
+/// An instrument's recordings: `main` unless the pack has a set for the
+/// part's solo or section players.
+#[derive(Clone, Debug)]
+pub struct InstrumentSpec {
+    pub main: Variant,
+    pub solo: Option<Variant>,
+    pub section: Option<Variant>,
+}
+
+impl InstrumentSpec {
+    #[cfg(test)]
+    pub fn patches(&self) -> impl Iterator<Item = &PatchSpec> {
+        [Some(&self.main), self.solo.as_ref(), self.section.as_ref()]
+            .into_iter()
+            .flatten()
+            .flat_map(|variant| std::iter::once(&variant.first).chain(variant.second.as_ref()))
+    }
+
+    fn patches_mut(&mut self) -> impl Iterator<Item = &mut PatchSpec> {
+        [
+            Some(&mut self.main),
+            self.solo.as_mut(),
+            self.section.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        .flat_map(|variant| std::iter::once(&mut variant.first).chain(variant.second.as_mut()))
+    }
+}
+
+impl From<PatchSpec> for InstrumentSpec {
+    fn from(first: PatchSpec) -> Self {
+        Self {
+            main: Variant {
+                first,
+                second: None,
+            },
+            solo: None,
+            section: None,
+        }
+    }
+}
+
+/// Who plays a part, as a pack needs it to choose recordings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Seat {
+    pub players: Players,
+    /// An earlier part plays the same instrument with the same players.
+    pub second: bool,
+}
+
+impl Default for Seat {
+    fn default() -> Self {
+        Self {
+            players: Players::Solo,
+            second: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -32,7 +102,7 @@ pub struct PackSpec {
     pub engine: PathBuf,
     pub license: Option<PathBuf>,
     // Instrument has no Ord; JSON keys are sorted before conversion to this list.
-    pub instruments: Vec<(Instrument, PatchSpec)>,
+    pub instruments: Vec<(Instrument, InstrumentSpec)>,
 }
 
 #[derive(Deserialize)]
@@ -40,25 +110,79 @@ struct Manifest {
     format: u32,
     kind: String,
     samples: PathBuf,
-    engine: PathBuf,
+    engine: Option<PathBuf>,
     id: Option<String>,
     name: Option<String>,
     license: Option<PathBuf>,
-    instruments: Option<BTreeMap<String, RawPatch>>,
+    instruments: Option<BTreeMap<String, RawInstrument>>,
 }
 
+#[derive(Deserialize)]
+struct RawInstrument {
+    #[serde(flatten)]
+    main: RawVariant,
+    solo: Option<RawVariant>,
+    section: Option<RawVariant>,
+}
+
+#[derive(Deserialize)]
+struct RawVariant {
+    #[serde(flatten)]
+    patch: RawPatch,
+    second: Option<RawPatch>,
+}
+
+/// `dynamics` and `spread_layers` left out follow the recordings this set
+/// varies: the instrument's main set, or the first part's for a second part.
 #[derive(Deserialize)]
 struct RawPatch {
     sustain: PathBuf,
     pizzicato: Option<PathBuf>,
     staccato: Option<PathBuf>,
-    #[serde(default)]
-    dynamics: DynamicsMode,
-    #[serde(default)]
-    spread_layers: bool,
+    tremolo: Option<PathBuf>,
+    dynamics: Option<DynamicsMode>,
+    spread_layers: Option<bool>,
+}
+
+impl RawPatch {
+    fn spec(self, dynamics: DynamicsMode, spread_layers: bool) -> PatchSpec {
+        PatchSpec {
+            sustain: self.sustain,
+            pizzicato: self.pizzicato,
+            staccato: self.staccato,
+            tremolo: self.tremolo,
+            dynamics: self.dynamics.unwrap_or(dynamics),
+            spread_layers: self.spread_layers.unwrap_or(spread_layers),
+        }
+    }
+}
+
+impl RawInstrument {
+    fn spec(self) -> InstrumentSpec {
+        let dynamics = self.main.patch.dynamics.unwrap_or_default();
+        let spread = self.main.patch.spread_layers.unwrap_or(false);
+        let variant = |raw: RawVariant| {
+            let first = raw.patch.spec(dynamics, spread);
+            let second = raw
+                .second
+                .map(|patch| patch.spec(first.dynamics, first.spread_layers));
+            Variant { first, second }
+        };
+        InstrumentSpec {
+            main: variant(self.main),
+            solo: self.solo.map(variant),
+            section: self.section.map(variant),
+        }
+    }
 }
 
 pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
+    load_manifest_with(path, bundled_engine())
+}
+
+/// `engine` serves manifests that name none, as packs installed from the
+/// catalog must: they never bring code of their own.
+pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSpec, AudioError> {
     let data = std::fs::read(path).map_err(error)?;
     let raw: Manifest = serde_json::from_slice(&data).map_err(error)?;
     let parent = path.parent().unwrap_or(Path::new("."));
@@ -94,21 +218,15 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
             let instrument: Instrument =
                 serde_json::from_value(serde_json::Value::String(key.clone()))
                     .map_err(|_| error(format!("Instrumento SFZ desconocido: {key}")))?;
-            instruments.push((
-                instrument,
-                PatchSpec {
-                    sustain: patch.sustain,
-                    pizzicato: patch.pizzicato,
-                    staccato: patch.staccato,
-                    dynamics: patch.dynamics,
-                    spread_layers: patch.spread_layers,
-                },
-            ));
+            instruments.push((instrument, patch.spec()));
         }
         (id, name, instruments)
     };
     let root = parent.join(raw.samples);
-    let engine = parent.join(raw.engine);
+    let engine = match raw.engine {
+        Some(engine) => parent.join(engine),
+        None => engine.ok_or_else(|| error("Falta el motor SFZ de Levare (sfizz)"))?,
+    };
     if !engine.is_file() {
         return Err(error(format!("Falta motor SFZ: {}", engine.display())));
     }
@@ -122,22 +240,24 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
     {
         return Err(error(format!("Falta licencia SFZ: {}", path.display())));
     }
-    for (_, patch) in &mut instruments {
+    for patch in instruments
+        .iter_mut()
+        .flat_map(|(_, instrument)| instrument.patches_mut())
+    {
         for file in std::iter::once(&patch.sustain).chain(patch.pizzicato.iter()) {
             let path = root.join(file);
             if !path.is_file() {
                 return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
             }
         }
-        if legacy {
-            patch.staccato = patch
-                .staccato
-                .take()
-                .filter(|path| root.join(path).is_file());
-        } else if let Some(file) = &patch.staccato {
-            let path = root.join(file);
-            if !path.is_file() {
-                return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
+        for optional in [&mut patch.staccato, &mut patch.tremolo] {
+            if legacy {
+                *optional = optional.take().filter(|path| root.join(path).is_file());
+            } else if let Some(file) = optional {
+                let path = root.join(file);
+                if !path.is_file() {
+                    return Err(error(format!("Falta instrumento SFZ: {}", path.display())));
+                }
             }
         }
     }
@@ -151,6 +271,28 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
     })
 }
 
+/// The sfizz library shipped in the app bundle (`Contents/Frameworks`), or in
+/// development the one installed with VSCO next to an ancestor of the
+/// executable. `LEVARE_SFIZZ` overrides both.
+pub fn bundled_engine() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("LEVARE_SFIZZ") {
+        return Some(PathBuf::from(path));
+    }
+    let executable = std::env::current_exe().ok()?;
+    let frameworks = executable
+        .parent()?
+        .parent()
+        .map(|contents| contents.join("Frameworks/libsfizz.dylib"));
+    frameworks
+        .into_iter()
+        .chain(
+            executable
+                .ancestors()
+                .map(|directory| directory.join("soundpacks/vsco-ce/libsfizz.dylib")),
+        )
+        .find(|path| path.is_file())
+}
+
 pub fn fallback_family(instrument: Instrument) -> Option<Instrument> {
     use Instrument::*;
     match instrument {
@@ -161,8 +303,11 @@ pub fn fallback_family(instrument: Instrument) -> Option<Instrument> {
     }
 }
 
-pub fn patch_for(spec: &PackSpec, instrument: Instrument) -> Option<&PatchSpec> {
-    spec.instruments
+/// The recordings for a part: its players' set when the pack has one, and
+/// the second recording for a repeated part when there is one.
+pub fn patch_for(spec: &PackSpec, instrument: Instrument, seat: Seat) -> Option<&PatchSpec> {
+    let (_, found) = spec
+        .instruments
         .iter()
         .find(|(candidate, _)| *candidate == instrument)
         .or_else(|| {
@@ -171,59 +316,125 @@ pub fn patch_for(spec: &PackSpec, instrument: Instrument) -> Option<&PatchSpec> 
                     .iter()
                     .find(|(candidate, _)| *candidate == fallback)
             })
-        })
-        .map(|(_, patch)| patch)
+        })?;
+    let variant = match seat.players {
+        Players::Solo => found.solo.as_ref(),
+        Players::Section => found.section.as_ref(),
+    }
+    .unwrap_or(&found.main);
+    Some(
+        variant
+            .second
+            .as_ref()
+            .filter(|_| seat.second)
+            .unwrap_or(&variant.first),
+    )
 }
 
-pub fn vsco_instruments() -> Vec<(Instrument, PatchSpec)> {
+pub fn vsco_instruments() -> Vec<(Instrument, InstrumentSpec)> {
     use Instrument::*;
-    let entries: &[(Instrument, &str, Option<&str>, Option<&str>)] = &[
-        (Piano, "UprightPiano.sfz", None, None),
+    /// Instrument, then its sustain, pizzicato, staccato and tremolo files.
+    type Entry = (
+        Instrument,
+        &'static str,
+        Option<&'static str>,
+        Option<&'static str>,
+        Option<&'static str>,
+    );
+    let entries: &[Entry] = &[
+        (Piano, "UprightPiano.sfz", None, None, None),
         (
             Violin,
             "SViolinVib.sfz",
             Some("SViolinPizz.sfz"),
             Some("SViolinSpic.sfz"),
+            Some("SViolinTrem.sfz"),
         ),
         (
             Viola,
             "ViolaEnsSusVib.sfz",
             Some("ViolaEnsPizz.sfz"),
             Some("ViolaEnsSpic.sfz"),
+            Some("ViolaEnsTrem.sfz"),
         ),
         (
             Cello,
             "CelloEnsSusVib.sfz",
             Some("CelloEnsPizz.sfz"),
             Some("CelloEnsSpic.sfz"),
+            Some("CelloEnsTrem.sfz"),
         ),
         (
             DoubleBass,
             "ContrabassSusVB.sfz",
             Some("ContrabassPizz.sfz"),
             Some("ContrabassSpic.sfz"),
+            Some("ContrabassTrem.sfz"),
         ),
-        (Flute, "FluteSusVib.sfz", None, Some("FluteStac.sfz")),
-        (Oboe, "OboeSusVib.sfz", None, Some("OboeStac.sfz")),
-        (Clarinet, "ClarinetSus.sfz", None, Some("ClarinetStac.sfz")),
-        (Bassoon, "BassoonSus.sfz", None, Some("BassoonStac.sfz")),
-        (Trumpet, "TrumpetSus.sfz", None, Some("TrumpetStac.sfz")),
-        (Horn, "FHornSus.sfz", None, Some("FHornStac.sfz")),
-        (Trombone, "TromboneSus.sfz", None, Some("TromboneStac.sfz")),
+        (Flute, "FluteSusVib.sfz", None, Some("FluteStac.sfz"), None),
+        (Oboe, "OboeSusVib.sfz", None, Some("OboeStac.sfz"), None),
+        (
+            Clarinet,
+            "ClarinetSus.sfz",
+            None,
+            Some("ClarinetStac.sfz"),
+            None,
+        ),
+        (
+            Bassoon,
+            "BassoonSus.sfz",
+            None,
+            Some("BassoonStac.sfz"),
+            None,
+        ),
+        (
+            Trumpet,
+            "TrumpetSus.sfz",
+            None,
+            Some("TrumpetStac.sfz"),
+            None,
+        ),
+        (Horn, "FHornSus.sfz", None, Some("FHornStac.sfz"), None),
+        (
+            Trombone,
+            "TromboneSus.sfz",
+            None,
+            Some("TromboneStac.sfz"),
+            None,
+        ),
     ];
+    let patch = |sustain: &str,
+                 pizzicato: Option<&str>,
+                 staccato: Option<&str>,
+                 tremolo: Option<&str>,
+                 layers| PatchSpec {
+        sustain: sustain.into(),
+        pizzicato: pizzicato.map(Into::into),
+        staccato: staccato.map(Into::into),
+        tremolo: tremolo.map(Into::into),
+        dynamics: DynamicsMode::Velocity,
+        spread_layers: layers,
+    };
     entries
         .iter()
-        .map(|&(instrument, sustain, pizzicato, staccato)| {
-            (
-                instrument,
-                PatchSpec {
-                    sustain: sustain.into(),
-                    pizzicato: pizzicato.map(Into::into),
-                    staccato: staccato.map(Into::into),
-                    dynamics: DynamicsMode::Velocity,
-                    spread_layers: instrument != Piano,
-                },
-            )
+        .map(|&(instrument, sustain, pizzicato, staccato, tremolo)| {
+            let layers = instrument != Piano;
+            let mut spec =
+                InstrumentSpec::from(patch(sustain, pizzicato, staccato, tremolo, layers));
+            // The main violin is a soloist; VSCO also recorded a violin section.
+            if instrument == Violin {
+                spec.section = Some(Variant {
+                    first: patch(
+                        "ViolinEnsSusVib.sfz",
+                        Some("ViolinEnsPizz.sfz"),
+                        Some("ViolinEnsSpic.sfz"),
+                        Some("ViolinEnsTrem.sfz"),
+                        true,
+                    ),
+                    second: None,
+                });
+            }
+            (instrument, spec)
         })
         .collect()
 }

@@ -192,10 +192,71 @@ impl Score {
                 }))
             })));
         }
-        part.transposition.pitches(
+        let sounding = part.transposition.pitches(
             event.sounding_pitches(self.written_key_at(id.part, id.measure)),
             KeySignature::default(),
-        )
+        )?;
+        self.with_ottava(id, sounding)
+    }
+
+    fn with_ottava(&self, id: ElementId, pitches: Pitches) -> Result<Pitches, ScoreError> {
+        match self.ottava_steps(id) {
+            0 => Ok(pitches),
+            _ if pitches.is_empty() => Ok(pitches),
+            steps => pitches.transposed(steps),
+        }
+    }
+
+    /// `pitches` written at `id`'s place, as they sound: key, the part's
+    /// transposition and any octave line applied.
+    pub(crate) fn sounding_at(
+        &self,
+        id: ElementId,
+        pitches: Pitches,
+    ) -> Result<Pitches, ScoreError> {
+        let part = self
+            .part(id.part)
+            .ok_or(ScoreError("El instrumento no existe"))?;
+        let key = self.written_key_at(id.part, id.measure);
+        let sounding = part
+            .transposition
+            .pitches(pitches.in_key(key), KeySignature::default())?;
+        self.with_ottava(id, sounding)
+    }
+
+    /// Diatonic steps an 8va (+7) or 8vb (−7) line moves the note at `id`.
+    pub fn ottava_steps(&self, id: ElementId) -> i16 {
+        let Some(tick) = self.event_tick(id) else {
+            return 0;
+        };
+        self.connections()
+            .iter()
+            .find(|c| {
+                c.kind.is_ottava()
+                    && c.start.part == id.part
+                    && c.start.staff == id.staff
+                    && self.event_tick(c.start).is_some_and(|start| start <= tick)
+                    && self.event_tick(c.end).is_some_and(|end| tick <= end)
+            })
+            .map_or(0, |c| {
+                if c.kind == ConnectionKind::OttavaAlta {
+                    7
+                } else {
+                    -7
+                }
+            })
+    }
+
+    /// The note above for a trill on the single note at `id`, as it sounds.
+    pub fn trill_upper(&self, id: ElementId) -> Option<Pitch> {
+        let event = self.event(id)?;
+        let [pitch] = event.pitches.iter().collect::<Vec<_>>()[..] else {
+            return None;
+        };
+        let upper = pitch.with_accidental(None).shift(1)?;
+        self.sounding_at(id, Pitches::single(Some(upper)))
+            .ok()?
+            .first()
     }
 }
 

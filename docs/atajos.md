@@ -19,11 +19,11 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘W` | Cerrar ventana |  |
 | `⌘Q` | Salir de Levare |  |
 | `⌘P` | Imprimir… | Pendiente |
-| — | Exportar partitura y partes… |  |
-| — | Exportar MusicXML… |  |
-| — | Información de la partitura… |  |
+| Sin atajo | Exportar partitura y partes… |  |
+| Sin atajo | Exportar MusicXML… |  |
+| Sin atajo | Información de la partitura… |  |
 | `⌘,` | Preferencias de atajos… |  |
-| — | Borrar la lista de recientes |  |
+| Sin atajo | Borrar la lista de recientes |  |
 | `Esc` | Cerrar el panel abierto |  |
 
 ## Edición
@@ -37,7 +37,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘V` | Pegar |  |
 | `⌘A` | Seleccionar todo el pentagrama |  |
 | `⌫` · `⌦` | Convertir en silencios |  |
-| — | Eliminar notas y su tiempo |  |
+| Sin atajo | Eliminar notas y su tiempo |  |
 | `⇧⌘P` | Restablecer posición |  |
 | `Esc` | Detener, cancelar o quitar la selección |  |
 | `R` | Repetir la nota, acorde o silencio |  |
@@ -73,22 +73,24 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `0` | Escribir un silencio |  |
 | `⌥A` | Modo acorde |  |
 | `⌥⌫` | Quitar la nota más aguda del acorde |  |
-| — | Subir la octava de entrada |  |
-| — | Bajar la octava de entrada |  |
+| Sin atajo | Subir la octava de entrada |  |
+| Sin atajo | Bajar la octava de entrada |  |
 | `⌥1` | Voz 1 |  |
 | `⌥2` | Voz 2 |  |
 | `⌥3` | Voz 3 | Pendiente |
 | `⌥4` | Voz 4 | Pendiente |
-| `;` | Convertir en nota de adorno | Pendiente |
+| `;` | Añadir nota de adorno |  |
+| Sin atajo | Acciaccatura |  |
+| Sin atajo | Appoggiatura |  |
 | `⇧⌘F` | Entrada en tiempo real | Pendiente |
-| — | Entrada paso a paso |  |
-| — | Entrada con teclado MIDI | Pendiente |
+| Sin atajo | Entrada paso a paso |  |
+| Sin atajo | Entrada con teclado MIDI | Pendiente |
 
 ## Duración
 
 | Atajo | Comando | Estado |
 |---|---|---|
-| `1` | Fusa | Pendiente |
+| `1` | Fusa |  |
 | `2` | Semicorchea |  |
 | `3` | Corchea |  |
 | `4` | Negra |  |
@@ -104,7 +106,7 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `7` | Becuadro |  |
 | `8` | Sostenido |  |
 | `9` | Bemol |  |
-| — | Seguir la armadura |  |
+| Sin atajo | Seguir la armadura |  |
 
 ## Expresión
 
@@ -112,55 +114,60 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 |---|---|---|
 | `↩` | Ligadura de unión con la siguiente |  |
 | `S` | Inicio o fin de ligadura de expresión |  |
-| — | Quitar ligadura de unión |  |
-| — | Quitar ligadura de expresión |  |
-| — | Staccato |  |
-| — | Tenuto |  |
-| — | Acento |  |
-| — | Marcato |  |
+| Sin atajo | Quitar ligadura de unión |  |
+| Sin atajo | Quitar ligadura de expresión |  |
+| Sin atajo | Staccato |  |
+| Sin atajo | Tenuto |  |
+| Sin atajo | Acento |  |
+| Sin atajo | Marcato |  |
 | `H` | Crescendo: inicio o fin |  |
 | `⇧H` | Diminuendo: inicio o fin |  |
-| — | Quitar crescendo |  |
-| — | Quitar diminuendo |  |
-| — | Pizzicato |  |
-| — | Arco |  |
-| — | Armónico natural |  |
-| — | Armónico artificial |  |
-| — | Quitar indicación de técnica |  |
-| — | Quitar articulación |  |
-| — | Arpegio en ambas manos |  |
-| — | Arpegio |  |
-| — | Arpegio ascendente |  |
-| — | Arpegio descendente |  |
-| — | Calderón |  |
-| — | Trémolo de una barra |  |
-| — | Trémolo de dos barras |  |
-| — | Trémolo de tres barras |  |
-| — | Dinámica ppp |  |
-| — | Dinámica pp |  |
-| — | Dinámica p |  |
-| — | Dinámica mp |  |
-| — | Dinámica mf |  |
-| — | Dinámica f |  |
-| — | Dinámica ff |  |
-| — | Dinámica fff |  |
-| — | Quitar dinámica |  |
-| `⌘E` | Texto de expresión | Pendiente |
-| `⌘T` | Texto de técnica | Pendiente |
+| Sin atajo | Quitar crescendo |  |
+| Sin atajo | Quitar diminuendo |  |
+| Sin atajo | Pizzicato |  |
+| Sin atajo | Arco |  |
+| Sin atajo | Armónico natural |  |
+| Sin atajo | Armónico artificial |  |
+| Sin atajo | Quitar indicación de técnica |  |
+| Sin atajo | Quitar articulación |  |
+| Sin atajo | Arpegio en ambas manos |  |
+| Sin atajo | Arpegio |  |
+| Sin atajo | Arpegio ascendente |  |
+| Sin atajo | Arpegio descendente |  |
+| Sin atajo | Calderón |  |
+| Sin atajo | Trémolo de una barra |  |
+| Sin atajo | Trémolo de dos barras |  |
+| Sin atajo | Trémolo de tres barras |  |
+| Sin atajo | Dinámica ppp |  |
+| Sin atajo | Dinámica pp |  |
+| Sin atajo | Dinámica p |  |
+| Sin atajo | Dinámica mp |  |
+| Sin atajo | Dinámica mf |  |
+| Sin atajo | Dinámica f |  |
+| Sin atajo | Dinámica ff |  |
+| Sin atajo | Dinámica fff |  |
+| Sin atajo | Quitar dinámica |  |
+| `⌘E` | Texto de expresión… |  |
+| `⌘T` | Texto de técnica… |  |
 | `⌥⌘T` | Indicación de tempo… |  |
-| `⌘L` | Letra | Pendiente |
-| `⌘K` | Cifrado de acordes | Pendiente |
+| `⌘L` | Letra… |  |
+| `⌘K` | Cifrado de acordes… |  |
 | `⌘R` | Marca de ensayo |  |
-| — | Marcas de ensayo con letras |  |
-| — | Marcas de ensayo con números |  |
-| — | Marcas de ensayo con números de compás |  |
+| Sin atajo | Marcas de ensayo con letras |  |
+| Sin atajo | Marcas de ensayo con números |  |
+| Sin atajo | Marcas de ensayo con números de compás |  |
 
 ## Notación
 
 | Atajo | Comando | Estado |
 |---|---|---|
-| — | Indicación div. |  |
-| — | Indicación unis. |  |
+| Sin atajo | Indicación div. |  |
+| Sin atajo | Indicación unis. |  |
+| Sin atajo | Octava alta 8va |  |
+| Sin atajo | Octava baja 8vb |  |
+| Sin atajo | Pedal de resonancia |  |
+| Sin atajo | Trino |  |
+| Sin atajo | Glissando hasta la nota siguiente |  |
 | `K` | Tonalidad… |  |
 | `T` | Compás de tiempo… |  |
 | `Q` | Clave… |  |
@@ -174,40 +181,42 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘B` | Añadir un compás al final |  |
 | `⇧⌘B` | Insertar un compás antes del actual |  |
 | `⌘⌫` | Eliminar compases seleccionados |  |
-| `⌥⌘G` | Ir al compás… | Pendiente |
-| — | Inicio de repetición |  |
-| — | Fin de repetición |  |
-| — | Primera casilla |  |
-| — | Segunda casilla |  |
-| — | Quitar casilla |  |
-| — | Doble barra |  |
-| — | Barra final |  |
-| — | Segno |  |
-| — | Coda |  |
-| — | To Coda |  |
-| — | Fine |  |
-| — | D.C. |  |
-| — | D.C. al Fine |  |
-| — | D.C. al Coda |  |
-| — | D.S. |  |
-| — | D.S. al Fine |  |
-| — | D.S. al Coda |  |
-| — | Quitar repeticiones y saltos |  |
+| `⌥⌘G` | Ir al compás… |  |
+| Sin atajo | Inicio de repetición |  |
+| Sin atajo | Fin de repetición |  |
+| Sin atajo | Primera casilla |  |
+| Sin atajo | Segunda casilla |  |
+| Sin atajo | Quitar casilla |  |
+| Sin atajo | Doble barra |  |
+| Sin atajo | Barra final |  |
+| Sin atajo | Segno |  |
+| Sin atajo | Coda |  |
+| Sin atajo | To Coda |  |
+| Sin atajo | Fine |  |
+| Sin atajo | D.C. |  |
+| Sin atajo | D.C. al Fine |  |
+| Sin atajo | D.C. al Coda |  |
+| Sin atajo | D.S. |  |
+| Sin atajo | D.S. al Fine |  |
+| Sin atajo | D.S. al Coda |  |
+| Sin atajo | Quitar repeticiones y saltos |  |
+| Sin atajo | Salto de sistema tras el compás |  |
+| Sin atajo | Salto de página tras el compás |  |
 
 ## Instrumentos
 
 | Atajo | Comando | Estado |
 |---|---|---|
-| — | Dividir el pasaje en dos pentagramas |  |
-| — | Volver a un pentagrama desde esta posición |  |
+| Sin atajo | Dividir el pasaje en dos pentagramas |  |
+| Sin atajo | Volver a un pentagrama desde esta posición |  |
 | `I` | Añadir instrumentos… |  |
-| — | Añadir piano a dos manos |  |
-| — | Ossia | Pendiente |
-| — | Eliminar el instrumento seleccionado |  |
-| — | Instrumento siguiente |  |
-| — | Instrumento anterior |  |
-| — | Piano: mano derecha |  |
-| — | Piano: mano izquierda |  |
+| Sin atajo | Añadir piano a dos manos |  |
+| Sin atajo | Ossia | Pendiente |
+| Sin atajo | Eliminar el instrumento seleccionado |  |
+| Sin atajo | Instrumento siguiente |  |
+| Sin atajo | Instrumento anterior |  |
+| Sin atajo | Piano: mano derecha |  |
+| Sin atajo | Piano: mano izquierda |  |
 
 ## Navegación
 
@@ -223,8 +232,8 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘↓` | Bajar una octava |  |
 | `⌥↑` | Nota superior del acorde o pentagrama de arriba |  |
 | `⌥↓` | Nota inferior del acorde o pentagrama de abajo |  |
-| `⌘←` | Inicio del compás | Pendiente |
-| `⌘→` | Compás siguiente | Pendiente |
+| `⌘←` | Inicio del compás |  |
+| `⌘→` | Compás siguiente |  |
 
 ## Reproducción
 
@@ -232,33 +241,35 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 |---|---|---|
 | `Espacio` | Reproducir, pausar o continuar |  |
 | `P` | Reproducir desde la selección |  |
-| — | Reproducir desde el inicio |  |
+| Sin atajo | Reproducir desde el inicio |  |
 | `⇧O` | Detener la reproducción |  |
-| `⌘[` | Llevar la línea de reproducción al inicio | Pendiente |
-| `⌥P` | Reproducción en bucle | Pendiente |
-| `⌥Espacio` | Repetir la última reproducción | Pendiente |
-| `⇧Espacio` | Reproducir a media velocidad | Pendiente |
-| `M` | Mostrar el mezclador |  |
-| — | Audición al escribir |  |
-| — | Subir el tempo |  |
-| — | Bajar el tempo |  |
-| — | Reproducir repeticiones |  |
+| `⌘[` | Llevar la línea de reproducción al inicio |  |
+| `⌥P` | Reproducción en bucle |  |
+| `⌥Espacio` | Repetir la última reproducción |  |
+| `⇧Espacio` | Reproducir a media velocidad |  |
+| Sin atajo | Hacer sonar los cifrados |  |
+| `M` | Mezcla de las partes |  |
+| Sin atajo | Mostrar el sonido |  |
+| Sin atajo | Audición al escribir |  |
+| Sin atajo | Subir el tempo |  |
+| Sin atajo | Bajar el tempo |  |
+| Sin atajo | Reproducir repeticiones |  |
 
 ## Revisión
 
 | Atajo | Comando | Estado |
 |---|---|---|
-| — | Comprobar toda la partitura |  |
-| — | Nuevo comentario sobre la selección… |  |
-| — | Mostrar comentarios |  |
-| — | Resolver o reabrir el comentario activo |  |
-| — | Comprobar la selección |  |
-| — | Mostrar avisos de revisión |  |
-| — | Aviso anterior |  |
-| — | Aviso siguiente |  |
-| — | Mostrar notas fuera de rango en rojo |  |
-| — | Editar rango de la parte activa… |  |
-| — | Restablecer rango de la parte activa |  |
+| Sin atajo | Comprobar toda la partitura |  |
+| Sin atajo | Nuevo comentario sobre la selección… |  |
+| Sin atajo | Mostrar comentarios |  |
+| Sin atajo | Resolver o reabrir el comentario activo |  |
+| Sin atajo | Comprobar la selección |  |
+| Sin atajo | Mostrar avisos de revisión |  |
+| Sin atajo | Aviso anterior |  |
+| Sin atajo | Aviso siguiente |  |
+| Sin atajo | Mostrar notas fuera de rango en rojo |  |
+| Sin atajo | Editar rango de la parte activa… |  |
+| Sin atajo | Restablecer rango de la parte activa |  |
 
 ## Vista
 
@@ -269,8 +280,20 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | `⌘1` | Tamaño real (100 %) |  |
 | `⌘0` | Ajustar a la página |  |
 | `⌘U` | Pantalla completa |  |
-| — | Mostrar u ocultar instrumentos |  |
-| — | Mostrar u ocultar propiedades |  |
-| — | Vista de página |  |
-| — | Vista continua |  |
-| — | Vista de pentagrama |  |
+| Sin atajo | Mostrar u ocultar las partes |  |
+| Sin atajo | Mostrar u ocultar el panel derecho |  |
+| Sin atajo | Panel de agente |  |
+| Sin atajo | Vista de página |  |
+| Sin atajo | Vista continua |  |
+| Sin atajo | Vista de pentagrama |  |
+| `⌘F` | Buscar comandos… |  |
+| `⌥⌘1` | Pestaña Escribir |  |
+| `⌥⌘2` | Pestaña Articulaciones |  |
+| `⌥⌘3` | Pestaña Dinámicas |  |
+| `⌥⌘4` | Pestaña Texto |  |
+| `⌥⌘5` | Pestaña Partitura |  |
+| Sin atajo | Pestaña Partitura (saltos de página) |  |
+| `⌥⌘6` | Pestaña Reproducción |  |
+| `⌥⌘7` | Pestaña Revisión |  |
+| `⌥⌘8` | Pestaña Vista |  |
+| Sin atajo | Plegar o desplegar la cinta |  |

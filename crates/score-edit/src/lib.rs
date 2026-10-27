@@ -7,12 +7,20 @@ pub mod clipboard;
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
+mod grace_tests;
+#[cfg(test)]
+mod group_tests;
+#[cfg(test)]
 mod instrument_tests;
 #[cfg(test)]
 mod move_tests;
 #[cfg(test)]
+mod navigation_tests;
+#[cfg(test)]
 mod range_tests;
 mod selection;
+#[cfg(test)]
+mod text_tests;
 #[cfg(test)]
 mod write_tests;
 
@@ -50,6 +58,7 @@ pub enum Command {
     EditForm(FormEdit),
     SetEnding(Vec<u8>),
     ToggleRehearsalMark,
+    ToggleLayoutBreak(score_core::LayoutBreak),
     SetRehearsalStyle(score_core::RehearsalStyle),
     RemoveEndings,
     Insert(Event),
@@ -79,6 +88,9 @@ pub enum Command {
     RemoveMark(score_core::MarkRef),
     /// Move one written mark in tenths of a staff space; zero restores engraving.
     SetMarkOffset(score_core::MarkRef, score_core::Offset),
+    /// Take a mark to another note, or a line to other ends, on the same staff,
+    /// with its manual offset there.
+    MoveMark(score_core::MarkRef, score_core::MarkRef, score_core::Offset),
     SetBarMarkOffset(score_core::BarMarkRef, score_core::Offset),
     ResetBarMarkOffset(score_core::BarMarkRef),
     /// Restore one mark, or all marks on selected notes and spans starting there.
@@ -86,6 +98,17 @@ pub enum Command {
     /// The ribbon's point marks: write `kind` on the selection, replacing its
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
+    /// Write words at a note or rest, or remove them with `None`.
+    SetText(ElementId, score_core::TextKind, Option<String>),
+    /// Sing a syllable on a note in a verse (from 0), or clear it.
+    SetSyllable(ElementId, u8, Option<(String, score_core::Join)>),
+    SetChord(ElementId, Option<score_core::ChordSymbol>),
+    /// Whether chord symbols are heard in playback.
+    SetChordsSound(bool),
+    /// One more grace note before the selected note, or a first acciaccatura.
+    AddGraceNote,
+    /// Move one grace note of a note by diatonic steps.
+    TransposeGraceNote(ElementId, u8, i16),
     Delete,
     /// Clear pitches while keeping all event onsets unchanged.
     Erase,
@@ -119,6 +142,8 @@ pub enum Command {
     SetHeader(String, score_core::Credits),
     RemoveTempoChange(usize),
     SetInstrumentRange(PartId, Option<score_core::InstrumentRange>),
+    /// Solo or section recordings for one part; `None` lets the score decide.
+    SetPlayers(PartId, Option<score_core::Players>),
 }
 
 #[derive(Clone)]
@@ -129,6 +154,12 @@ struct Snapshot {
     range_anchor: Option<ElementId>,
     divisi_anchor: Option<score_core::DivisiPoint>,
     tone: usize,
+}
+
+/// Opaque position in an `Editor`'s history; see `Editor::mark`.
+pub struct HistoryMark {
+    undo_len: usize,
+    snapshot: Snapshot,
 }
 
 pub struct Editor {
@@ -354,6 +385,66 @@ impl Editor {
         }
     }
 
+    /// ⌘→ selects the first note or rest of the next bar; ⌘← the first of
+    /// this bar, or of the previous one when already there. An empty bar
+    /// takes the cursor instead. Returns whether anything moved.
+    pub fn navigate_bar(&mut self, forward: bool) -> bool {
+        let cursor = self.cursor();
+        let staff = self
+            .score()
+            .part(cursor.part)
+            .expect("cursor part")
+            .staff(cursor.staff)
+            .expect("cursor staff");
+        let current = self.selection().map_or(cursor.measure, |id| id.measure);
+        let at_start = match self.selection() {
+            Some(id) => {
+                staff.measures()[id.measure].voice_index_of(cursor.voice, id.event) == Some(0)
+            }
+            None => cursor.index == 0,
+        };
+        let measure = if forward {
+            current + 1
+        } else if at_start {
+            match current.checked_sub(1) {
+                Some(previous) => previous,
+                None => return false,
+            }
+        } else {
+            current
+        };
+        self.go_to_bar(measure)
+    }
+
+    /// Select the first note or rest of `measure` on the cursor's staff and
+    /// voice, or put the cursor there if that bar is empty.
+    pub fn go_to_bar(&mut self, measure: usize) -> bool {
+        let cursor = self.cursor();
+        let staff = self
+            .score()
+            .part(cursor.part)
+            .expect("cursor part")
+            .staff(cursor.staff)
+            .expect("cursor staff");
+        let Some(bar) = staff.measures().get(measure) else {
+            return false;
+        };
+        match bar.voice_id_at(cursor.voice, 0) {
+            Some(event) => self.select(ElementId {
+                part: cursor.part,
+                staff: cursor.staff,
+                measure,
+                event,
+            }),
+            None => self.set_cursor(Cursor {
+                measure,
+                index: 0,
+                ..cursor
+            }),
+        }
+        true
+    }
+
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {
         let mut next = self.state.clone();
         match command {
@@ -376,6 +467,11 @@ impl Editor {
             }
             Command::SetInstrumentRange(part, range) => {
                 if !next.score.set_instrument_range(part, range)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetPlayers(part, players) => {
+                if !next.score.set_players(part, players)? {
                     return Ok(false);
                 }
             }
@@ -506,12 +602,23 @@ impl Editor {
                 if !next.score.connections().contains(&old) {
                     return Err(ScoreError("La marca ya no está en la partitura"));
                 }
+                let offset = next.score.mark_offset(score_core::MarkRef::Connection(old));
                 next.score.remove_connection(old);
                 next.score.add_connection(new)?;
+                // A stretched or reversed mark stays where the user nudged it.
+                if offset != score_core::Offset::ZERO {
+                    next.score
+                        .set_mark_offset(score_core::MarkRef::Connection(new), offset)?;
+                }
             }
             Command::RemoveMark(mark) => next.score.remove_mark(mark)?,
             Command::SetMarkOffset(mark, offset) => {
                 if !next.score.set_mark_offset(mark, offset)? {
+                    return Ok(false);
+                }
+            }
+            Command::MoveMark(from, to, offset) => {
+                if !next.score.move_mark(from, to, offset)? {
                     return Ok(false);
                 }
             }
@@ -630,6 +737,53 @@ impl Editor {
                 let current = next.score.point_mark(id, family);
                 next.score
                     .set_point_mark(id, family, (current != Some(kind)).then_some(kind))?;
+            }
+            Command::SetText(id, kind, ref text) => {
+                if next
+                    .score
+                    .text(id, kind)
+                    .map(|words| words.to_string())
+                    .as_deref()
+                    == text.as_deref().map(str::trim)
+                {
+                    return Ok(false);
+                }
+                next.score.set_text(id, kind, text.as_deref())?;
+            }
+            Command::SetSyllable(id, verse, ref syllable) => {
+                let syllable = syllable
+                    .as_ref()
+                    .map(|(text, join)| score_core::Syllable::new(text, *join))
+                    .transpose()?;
+                let current = next
+                    .score
+                    .event(id)
+                    .and_then(|event| event.notation.lyrics.verse(usize::from(verse)));
+                if current == syllable {
+                    return Ok(false);
+                }
+                next.score.set_syllable(id, usize::from(verse), syllable)?;
+            }
+            Command::SetChord(id, chord) => {
+                if next.score.event(id).map(|event| event.notation.chord) == Some(chord) {
+                    return Ok(false);
+                }
+                next.score.set_chord(id, chord)?;
+            }
+            Command::SetChordsSound(sound) => {
+                if !next.score.set_chords_sound(sound) {
+                    return Ok(false);
+                }
+            }
+            Command::AddGraceNote => {
+                let id = next
+                    .selection
+                    .ok_or(ScoreError("Selecciona una nota o acorde"))?;
+                next.score.add_grace_note(id)?;
+            }
+            Command::TransposeGraceNote(id, index, steps) => {
+                next.score
+                    .transpose_grace_note(id, usize::from(index), steps)?;
             }
             Command::RemoveConnections(kind) => {
                 let id = next
@@ -839,6 +993,17 @@ impl Editor {
                     .min()
                     .unwrap_or(next.cursor.measure);
                 if !next.score.toggle_rehearsal_mark(bar)? {
+                    return Ok(false);
+                }
+            }
+            Command::ToggleLayoutBreak(kind) => {
+                let bar = self
+                    .selected_ids()
+                    .iter()
+                    .map(|id| id.measure)
+                    .max()
+                    .unwrap_or(next.cursor.measure);
+                if !next.score.toggle_layout_break(bar, kind)? {
                     return Ok(false);
                 }
             }
@@ -1118,7 +1283,10 @@ impl Editor {
                 | Command::SetCommentResolved(..)
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
+                | Command::SetPlayers(_, _)
+                | Command::SetChordsSound(_)
                 | Command::ToggleRehearsalMark
+                | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
                 | Command::SetEnding(_)
                 | Command::RemoveEndings
@@ -1129,6 +1297,9 @@ impl Editor {
                 )
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
+                | Command::MoveMark(..)
+                | Command::AddGraceNote
+                | Command::TransposeGraceNote(..)
                 | Command::SetBarMarkOffset(_, _)
                 | Command::ResetBarMarkOffset(_)
                 | Command::ResetMarkOffsets(_)
@@ -1147,6 +1318,7 @@ impl Editor {
                 | Command::SetCommentResolved(..)
                 | Command::RemoveComment(_)
                 | Command::SetInstrumentRange(_, _)
+                | Command::SetPlayers(_, _)
                 | Command::ToggleMark(score_core::MarkKind::Division(_))
         ) {
             next.divisi_anchor = None;
@@ -1170,6 +1342,106 @@ impl Editor {
             self.sync_octave();
         }
         Ok(true)
+    }
+
+    /// Like `execute`, but one undo removes this edit and the previous one,
+    /// as when a slur follows each note typed after it.
+    pub fn execute_joined(&mut self, command: Command) -> Result<bool, ScoreError> {
+        let previous = self.undo.len();
+        let changed = self.execute(command)?;
+        if changed && previous > 0 {
+            self.undo.pop();
+        }
+        Ok(changed)
+    }
+
+    /// A point in the history that `rollback` and `squash` can return to.
+    pub fn mark(&self) -> HistoryMark {
+        HistoryMark {
+            undo_len: self.undo.len(),
+            snapshot: self.state.clone(),
+        }
+    }
+
+    /// Returns to the state at `mark` and forgets everything done since.
+    pub fn rollback(&mut self, mark: &HistoryMark) {
+        self.undo.truncate(mark.undo_len);
+        self.redo.clear();
+        self.state = mark.snapshot.clone();
+        self.sync_octave_if_cursor_part_exists();
+    }
+
+    /// Folds every edit since `mark` into one undo step that goes back to the
+    /// mark. Returns whether there was anything to fold: edits that leave
+    /// the score as it was at the mark are forgotten instead, whatever they
+    /// did to the selection.
+    pub fn squash(&mut self, mark: &HistoryMark) -> bool {
+        if self.undo.len() <= mark.undo_len {
+            return false;
+        }
+        self.undo.truncate(mark.undo_len);
+        self.redo.clear();
+        if self.state.score == mark.snapshot.score {
+            return false;
+        }
+        self.undo.push(mark.snapshot.clone());
+        true
+    }
+
+    /// Puts the cursor and selection back as they were at `mark`, leaving the
+    /// score and the history alone. If an edit since the mark took away what
+    /// they point at, the current ones stay.
+    pub fn restore_selection(&mut self, mark: &HistoryMark) {
+        let Snapshot {
+            cursor,
+            selection,
+            range_anchor,
+            divisi_anchor,
+            tone,
+            ..
+        } = mark.snapshot;
+        if !self.fits(cursor, selection, range_anchor) {
+            return;
+        }
+        self.state.cursor = cursor;
+        self.state.selection = selection;
+        self.state.range_anchor = range_anchor;
+        self.state.divisi_anchor = divisi_anchor;
+        self.state.tone = tone;
+        self.sync_octave_if_cursor_part_exists();
+    }
+
+    /// Whether a cursor and selection still point into the score, as
+    /// `selected_ids` reads a range: both ends in the focus's staff and the
+    /// cursor's voice.
+    fn fits(
+        &self,
+        cursor: Cursor,
+        selection: Option<ElementId>,
+        range_anchor: Option<ElementId>,
+    ) -> bool {
+        let score = self.score();
+        let staff = |part, staff| score.part(part).and_then(|p| p.staff(staff));
+        let cursor_fits = staff(cursor.part, cursor.staff)
+            .and_then(|staff| staff.measures().get(cursor.measure))
+            .is_some_and(|measure| cursor.index <= measure.voice_len(cursor.voice));
+        let Some(focus) = selection else {
+            return cursor_fits;
+        };
+        let in_range = |id: ElementId| {
+            staff(focus.part, focus.staff)
+                .and_then(|staff| staff.measures().get(id.measure))
+                .is_some_and(|measure| measure.voice_index_of(cursor.voice, id.event).is_some())
+        };
+        cursor_fits
+            && score.event(focus).is_some()
+            && range_anchor.is_none_or(|anchor| in_range(anchor) && in_range(focus))
+    }
+
+    fn sync_octave_if_cursor_part_exists(&mut self) {
+        if self.score().part(self.cursor().part).is_some() {
+            self.sync_octave();
+        }
     }
 
     fn commit(&mut self, next: Snapshot) {
@@ -1293,6 +1565,8 @@ fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
         .unwrap_or(reference)
 }
 
+#[cfg(test)]
+mod breaks_tests;
 #[cfg(test)]
 mod mvp_tests;
 #[cfg(test)]

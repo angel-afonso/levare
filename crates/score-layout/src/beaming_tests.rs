@@ -350,3 +350,128 @@ fn ties_use_the_shared_stem_direction_and_reengraving_removes_obsolete_beams() {
     assert!(m.content.glyphs.iter().any(|g| g.element == Some(all[2])
         && g.text.chars().any(|c| matches!(c as u32, 0xe1d7..=0xe1d8))));
 }
+#[test]
+fn thirty_seconds_beam_by_beats_with_three_levels_and_flag_alone() {
+    let mut s = Score::default();
+    let part = s.parts()[0].id();
+    let beamed = ids(
+        &mut s,
+        part,
+        StaffId::Upper,
+        0,
+        &[Duration::ThirtySecond; 32],
+    );
+    let alone = s
+        .insert_on(part, StaffId::Upper, 1, 0, note(Duration::ThirtySecond))
+        .unwrap();
+    let rest = s
+        .insert_on(
+            part,
+            StaffId::Upper,
+            1,
+            1,
+            Event {
+                pitches: Pitches::default(),
+                ..note(Duration::ThirtySecond)
+            },
+        )
+        .unwrap();
+    s.validate().unwrap();
+    let layout = LayoutEngine::default().layout_compact(&s, 1400.);
+    let first = layout.measure_on(part, StaffId::Upper, 0).unwrap();
+    assert_eq!(first.content.beams.len(), 4);
+    assert!(no_flags(&first.content, &beamed));
+    for group in &first.content.beams {
+        assert_eq!(group.elements.len(), 8);
+        assert_eq!(group.segments.len(), 3);
+    }
+    let second = layout.measure_on(part, StaffId::Upper, 1).unwrap();
+    let glyphs = |id: ElementId| -> Vec<u32> {
+        second
+            .content
+            .glyphs
+            .iter()
+            .filter(|g| g.element == Some(id))
+            .flat_map(|g| g.text.chars().map(|c| c as u32))
+            .collect()
+    };
+    assert!(
+        glyphs(alone)
+            .iter()
+            .any(|code| matches!(code, 0xe244 | 0xe245 | 0xe1db | 0xe1dc))
+    );
+    assert!(glyphs(rest).contains(&0xe4e8));
+}
+#[test]
+fn grace_notes_sit_small_before_their_note_and_make_room_for_themselves() {
+    let plain = |grace: Option<(score_core::GraceKind, usize)>| {
+        let mut s = Score::default();
+        let part = s.parts()[0].id();
+        let a = s
+            .insert_on(part, StaffId::Upper, 0, 0, note(Duration::Quarter))
+            .unwrap();
+        let b = s
+            .insert_on(part, StaffId::Upper, 0, 1, note(Duration::Quarter))
+            .unwrap();
+        if let Some((kind, count)) = grace {
+            for _ in 0..count {
+                s.add_grace_note(b).unwrap();
+            }
+            s.set_grace(b, Some(kind)).unwrap();
+        }
+        let layout = LayoutEngine::default().layout_compact(&s, 1400.);
+        (layout, a, b, part)
+    };
+    let x = |layout: &Layout, part, id: ElementId| {
+        let m = layout.measure_on(part, StaffId::Upper, 0).unwrap();
+        m.content
+            .events
+            .iter()
+            .find(|e| e.id == id)
+            .unwrap()
+            .center
+            .x
+    };
+    let (bare, a, b, part) = plain(None);
+    let (single, _, _, _) = plain(Some((score_core::GraceKind::Acciaccatura, 1)));
+    assert!(x(&single, part, b) - x(&single, part, a) > x(&bare, part, b) - x(&bare, part, a));
+    let m = single.measure_on(part, StaffId::Upper, 0).unwrap();
+    let codes: Vec<u32> = m
+        .content
+        .cue
+        .iter()
+        .flat_map(|cue| cue.glyph.text.chars().map(|c| c as u32))
+        .collect();
+    assert!(codes.contains(&0xe0a4) && codes.contains(&0xe240));
+    let head = m
+        .content
+        .cue
+        .iter()
+        .find(|cue| cue.glyph.text == "\u{e0a4}")
+        .unwrap();
+    assert!(head.glyph.position.x < x(&single, part, b));
+    assert!(
+        m.content
+            .marks
+            .iter()
+            .any(|mark| mark.mark == MarkRef::Grace(b, 0))
+    );
+
+    let (group, _, _, _) = plain(Some((score_core::GraceKind::Appoggiatura, 3)));
+    let m = group.measure_on(part, StaffId::Upper, 0).unwrap();
+    let heads = m
+        .content
+        .cue
+        .iter()
+        .filter(|cue| cue.glyph.text == "\u{e0a4}")
+        .count();
+    assert_eq!(heads, 3);
+    assert!(!m.content.cue.iter().any(|cue| cue.glyph.text == "\u{e240}"));
+    let beams = m
+        .content
+        .lines
+        .iter()
+        .filter(|line| line.element == Some(b) && line.thickness > 3.)
+        .count();
+    assert_eq!(beams, 2);
+}
