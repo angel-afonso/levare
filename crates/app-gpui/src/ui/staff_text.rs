@@ -44,11 +44,6 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
     let kind = editor.kind;
     let score = view.document.editor.score();
     let written = score.text(editor.target, kind).is_some();
-    let place = format!(
-        "{} · compás {}",
-        score.part_name(editor.target.part),
-        editor.target.measure + 1
-    );
     let meaning = match kind {
         TextKind::Expression => {
             "Cursiva bajo el pentagrama, tras la dinámica. «cresc.» y «dim.» cambian el volumen hasta la siguiente dinámica; «legato» liga las notas."
@@ -61,20 +56,15 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .gap_2()
-        .pb_3()
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(caption(kind.label().to_uppercase()))
-        .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(place))
         .child(editor.field.clone())
-        .child(caption("HABITUALES"))
+        .child(caption("Habituales"))
         .child(
             div()
                 .flex()
                 .flex_wrap()
                 .gap_1()
                 .children(kind.suggestions().iter().map(|&words| {
-                    button(
+                    choice(
                         view,
                         format!("staff-text-{words}"),
                         words,
@@ -94,31 +84,22 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(
             div()
                 .flex()
-                .gap_2()
+                .gap(px(6.))
                 .child(
-                    button(view, "apply-staff-text", "Aplicar", true, cx, |v, _, cx| {
+                    choice(view, "apply-staff-text", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_text(cx)
                     })
-                    .flex_1(),
+                    .tooltip(described_hint(
+                        "Aplicar",
+                        Some("Enter".into()),
+                        format!("{meaning} Enter aplica; Esc cancela."),
+                    )),
                 )
-                .child(
-                    button(
-                        view,
-                        "cancel-staff-text",
-                        "Cancelar",
-                        false,
-                        cx,
-                        |v, _, cx| {
-                            v.text_editor = None;
-                            cx.notify();
-                        },
-                    )
-                    .flex_1(),
-                ),
+                .child(close_editor("Cancelar", cx)),
         )
         .when(written, |panel| {
             panel.child(
-                button(
+                choice(
                     view,
                     "remove-staff-text",
                     "Quitar texto",
@@ -133,12 +114,6 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .w_full(),
             )
         })
-        .child(
-            div()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child(format!("{meaning} Enter aplica; Esc cancela.")),
-        )
 }
 
 /// The syllable being typed under one note, verse by verse.
@@ -226,11 +201,6 @@ fn chord_at(score: &Score, target: ElementId) -> String {
 pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = view.lyric_editor.as_ref().unwrap();
     let score = view.document.editor.score();
-    let place = format!(
-        "{} · compás {}",
-        score.part_name(editor.target.part),
-        editor.target.measure + 1
-    );
     let written = score.event(editor.target).is_some_and(|event| {
         event
             .notation
@@ -242,17 +212,12 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .gap_2()
-        .pb_3()
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(caption("LETRA"))
-        .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(place))
         .child(
             div()
                 .flex()
                 .gap_1()
                 .children((0..score_core::MAX_VERSES as u8).map(|verse| {
-                    button(
+                    choice(
                         view,
                         format!("lyric-verse-{verse}"),
                         format!("Estrofa {}", verse + 1),
@@ -269,22 +234,20 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .gap_2()
                 .child(
-                    button(view, "apply-lyric", "Aplicar", true, cx, |v, _, cx| {
+                    choice(view, "apply-lyric", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_syllable(score_core::Join::Word, false, cx)
                     })
-                    .flex_1(),
+                    .tooltip(described_hint(
+                        "Aplicar",
+                        Some("Enter".into()),
+                        "Espacio: siguiente palabra · guion: la palabra sigue en la próxima nota · _: mantener la sílaba en las notas siguientes. Enter aplica; Esc cierra.",
+                    )),
                 )
-                .child(
-                    button(view, "close-lyric", "Cerrar", false, cx, |v, _, cx| {
-                        v.lyric_editor = None;
-                        cx.notify();
-                    })
-                    .flex_1(),
-                ),
+                .child(close_editor("Cerrar", cx)),
         )
         .when(written, |panel| {
             panel.child(
-                button(view, "remove-lyric", "Quitar sílaba", false, cx, |v, _, cx| {
+                choice(view, "remove-lyric", "Quitar sílaba", false, cx, |v, _, cx| {
                     if let Some(editor) = &v.lyric_editor {
                         let (target, verse) = (editor.target, editor.verse);
                         v.edit(Command::SetSyllable(target, verse, None), cx);
@@ -296,19 +259,11 @@ pub(super) fn lyric_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .w_full(),
             )
         })
-        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(
-            "Espacio: siguiente palabra · guion: la palabra sigue en la próxima nota · _: mantener la sílaba en las notas siguientes. Enter aplica; Esc cierra.",
-        ))
 }
 
 pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = view.chord_editor.as_ref().unwrap();
     let score = view.document.editor.score();
-    let place = format!(
-        "{} · compás {}",
-        score.part_name(editor.target.part),
-        editor.target.measure + 1
-    );
     let key = score.written_key_at(editor.target.part, editor.target.measure);
     let written = score
         .event(editor.target)
@@ -317,17 +272,12 @@ pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .gap_2()
-        .pb_3()
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(caption("CIFRADO"))
-        .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(place))
         .child(editor.field.clone())
-        .child(caption(format!("EN {}", key.label().to_uppercase())))
+        .child(caption(format!("En {}", key.label())))
         .child(div().flex().flex_wrap().gap_1().children(
             score_core::ChordSymbol::diatonic(key).into_iter().map(|chord| {
                 let label = chord.label();
-                button(
+                choice(
                     view,
                     format!("chord-{label}"),
                     label.clone(),
@@ -349,22 +299,20 @@ pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .flex()
                 .gap_2()
                 .child(
-                    button(view, "apply-chord", "Aplicar", true, cx, |v, _, cx| {
+                    choice(view, "apply-chord", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_chord(false, cx)
                     })
-                    .flex_1(),
+                    .tooltip(described_hint(
+                        "Aplicar",
+                        Some("Enter".into()),
+                        "Escribe C, F#m7, Bb7/D o Do, Fa#m7, Sib7/Re. Tab pasa a la nota siguiente; Enter aplica; Esc cierra.",
+                    )),
                 )
-                .child(
-                    button(view, "close-chord", "Cerrar", false, cx, |v, _, cx| {
-                        v.chord_editor = None;
-                        cx.notify();
-                    })
-                    .flex_1(),
-                ),
+                .child(close_editor("Cerrar", cx)),
         )
         .when(written, |panel| {
             panel.child(
-                button(view, "remove-chord", "Quitar cifrado", false, cx, |v, _, cx| {
+                choice(view, "remove-chord", "Quitar cifrado", false, cx, |v, _, cx| {
                     if let Some(editor) = v.chord_editor.take() {
                         v.edit(Command::SetChord(editor.target, None), cx);
                     }
@@ -372,7 +320,4 @@ pub(super) fn chord_panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .w_full(),
             )
         })
-        .child(div().text_size(px(10.)).text_color(rgb(MUTED)).child(
-            "Escribe C, F#m7, Bb7/D o Do, Fa#m7, Sib7/Re. Tab pasa a la nota siguiente; Enter aplica; Esc cierra.",
-        ))
 }

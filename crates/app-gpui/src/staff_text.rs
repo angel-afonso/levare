@@ -237,7 +237,11 @@ impl AppView {
         }
         self.tempo_picker = None;
         self.header_editor = None;
-        self.ui.show_instruments = true;
+        self.key_picker = false;
+        self.time_picker = false;
+        self.clef_picker = false;
+        self.ui.show_inspector = true;
+        self.ui.right = crate::panels::RightTab::Selection;
     }
 }
 

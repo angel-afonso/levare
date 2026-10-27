@@ -21,7 +21,6 @@ pub const POPOVER_BORDER: u32 = 0x3a3d46;
 pub const STRONG_BORDER: u32 = 0x424652;
 pub const PENDING_OUTLINE: u32 = 0x4a4d58;
 pub const TICK: u32 = 0x606572;
-pub const KNOB: u32 = 0x6c7280;
 
 // Text.
 pub const TEXT: u32 = 0xe8e9ee;

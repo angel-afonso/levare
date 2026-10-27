@@ -12,13 +12,13 @@ impl HeaderEditor {
         let mut field = |label, value: &str| (label, cx.new(|cx| TextInput::new(value, cx)));
         Self {
             fields: [
-                field("TÍTULO", score.title()),
-                field("SUBTÍTULO", &credits.subtitle),
-                field("COMPOSITOR", &credits.composer),
-                field("ARREGLISTA", &credits.arranger),
-                field("LETRISTA", &credits.lyricist),
-                field("AÑO", &credits.year),
-                field("COPYRIGHT", &credits.copyright),
+                field("Título", score.title()),
+                field("Subtítulo", &credits.subtitle),
+                field("Compositor", &credits.composer),
+                field("Arreglista", &credits.arranger),
+                field("Letrista", &credits.lyricist),
+                field("Año", &credits.year),
+                field("Copyright", &credits.copyright),
             ],
         }
     }
@@ -67,9 +67,6 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .flex()
         .flex_col()
         .gap_2()
-        .pb_3()
-        .border_b_1()
-        .border_color(rgb(BORDER))
         .children(editor.fields.iter().map(|(label, field)| {
             div()
                 .flex()
@@ -81,26 +78,18 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .child(
             div()
                 .flex()
-                .gap_2()
+                .gap(px(6.))
                 .mt_2()
                 .child(
-                    button(view, "apply-header", "Aplicar", true, cx, |v, _, cx| {
+                    choice(view, "apply-header", "Aplicar", true, cx, |v, _, cx| {
                         v.apply_header(cx)
                     })
-                    .flex_1(),
+                    .tooltip(described_hint(
+                        "Aplicar",
+                        Some("Enter".into()),
+                        "Se imprime en la cabecera de la primera página; los campos vacíos no aparecen. Tab pasa al siguiente campo, Enter aplica y Esc cancela.",
+                    )),
                 )
-                .child(
-                    button(view, "cancel-header", "Cancelar", false, cx, |v, _, cx| {
-                        v.header_editor = None;
-                        cx.notify();
-                    })
-                    .flex_1(),
-                ),
-        )
-        .child(
-            div()
-                .text_size(px(10.))
-                .text_color(rgb(MUTED))
-                .child("Se imprime en la cabecera de la primera página; los campos vacíos no aparecen. Tab pasa al siguiente campo, Enter aplica y Esc cancela."),
+                .child(close_editor("Cancelar", cx)),
         )
 }

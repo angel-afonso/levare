@@ -192,7 +192,12 @@ const fn mark(kind: MarkKind, label: &'static str, hint: &'static str) -> Contro
 }
 
 /// Same sentence for every hairpin and slur: they are written in two clicks.
-const TWO_CLICKS: &str = "Pulsa en la primera nota y otra vez en la última.";
+// What the Propiedades panel used to explain in paragraphs, now in the tiles' hints.
+const HAIRPIN_HINT: &str =
+    "Selecciona un pasaje, o marca inicio y final con el mismo botón. Esc cancela.";
+const VOICE_HINT: &str = "Dos voces: plicas arriba para la voz 1 y abajo para la voz 2. Cada una conserva su propio ritmo.";
+const DIVISI_HINT: &str = "div. abre dos pentagramas desde la posición elegida; unis. vuelve a uno. También dentro de un compás.";
+const HARMONIC_HINT: &str = "Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo.";
 
 // Escribir
 
@@ -206,7 +211,7 @@ const ENTRY: GroupSpec = GroupSpec {
             id::TOGGLE_NOTE_INPUT,
             Music("\u{e1d7}"),
             "Escribir",
-            "Activa la entrada de notas. Con ella encendida, las letras A–G escriben notas.",
+            "Activa la entrada de notas. Con ella encendida, las letras A–G escriben notas. Esc sale de la entrada para corregir notas existentes.",
         )),
         tile(
             id::ENTRY_OCTAVE_UP,
@@ -282,7 +287,7 @@ const MODIFY: GroupSpec = GroupSpec {
             id::TRIPLET,
             Music("\u{e883}"),
             "Tresillo",
-            "Tres figuras en el tiempo de dos.",
+            "Tres figuras en el tiempo de dos. Los tresillos se agrupan de tres en tres con la misma figura.",
         )),
         tile(
             id::REST,
@@ -334,9 +339,14 @@ const TIES: GroupSpec = GroupSpec {
             id::TIE,
             Visual::Tie,
             "Unión",
-            "Une la nota con la siguiente de la misma altura.",
+            "Une la nota con la siguiente de la misma altura: notas o acordes iguales y consecutivos.",
         )),
-        toggle(tile(id::SLUR, Visual::Slur, "Expresión", TWO_CLICKS)),
+        toggle(tile(
+            id::SLUR,
+            Visual::Slur,
+            "Expresión",
+            "Elige inicio y final: pulsa en la primera nota y otra vez en la última. Esc cancela.",
+        )),
     ],
 };
 const VOICES: GroupSpec = GroupSpec {
@@ -345,18 +355,8 @@ const VOICES: GroupSpec = GroupSpec {
     visual: Label("1"),
     priority: 6,
     controls: &[
-        choice(tile(
-            id::VOICE_1,
-            Label("1"),
-            "Voz 1",
-            "Plicas hacia arriba.",
-        )),
-        choice(tile(
-            id::VOICE_2,
-            Label("2"),
-            "Voz 2",
-            "Plicas hacia abajo, con su propio ritmo.",
-        )),
+        choice(tile(id::VOICE_1, Label("1"), "Voz 1", VOICE_HINT)),
+        choice(tile(id::VOICE_2, Label("2"), "Voz 2", VOICE_HINT)),
     ],
 };
 const CHORDS: GroupSpec = GroupSpec {
@@ -545,22 +545,22 @@ const TECHNIQUE: GroupSpec = GroupSpec {
         toggle(mark(
             MarkKind::Technique(T::Pizzicato),
             "Pizzicato",
-            "Pellizcando la cuerda.",
+            "Pellizcando la cuerda. Se mantiene hasta la siguiente indicación.",
         )),
         toggle(mark(
             MarkKind::Technique(T::Arco),
             "Arco",
-            "Vuelve a tocar con arco.",
+            "Vuelve a tocar con arco. Se mantiene hasta la siguiente indicación.",
         )),
         toggle(mark(
             MarkKind::Harmonic(H::Natural),
             "Armónico",
-            "Armónico natural sobre la nota.",
+            HARMONIC_HINT,
         )),
         toggle(mark(
             MarkKind::Harmonic(H::Artificial),
             "Artificial",
-            "Armónico artificial sobre la nota.",
+            HARMONIC_HINT,
         )),
     ],
 };
@@ -624,12 +624,12 @@ const HAIRPINS: GroupSpec = GroupSpec {
         toggle(mark(
             MarkKind::Connection(K::Crescendo),
             "Crescendo",
-            TWO_CLICKS,
+            HAIRPIN_HINT,
         )),
         toggle(mark(
             MarkKind::Connection(K::Diminuendo),
             "Diminuendo",
-            TWO_CLICKS,
+            HAIRPIN_HINT,
         )),
     ],
 };
@@ -673,18 +673,8 @@ const DIVISI: GroupSpec = GroupSpec {
     visual: Text("div."),
     priority: 2,
     controls: &[
-        toggle(tile(
-            id::DIVISI,
-            Text("div."),
-            "Dividir",
-            "La sección se divide en dos pentagramas.",
-        )),
-        toggle(tile(
-            id::UNISON,
-            Text("unis."),
-            "Unir",
-            "La sección vuelve a tocar al unísono.",
-        )),
+        toggle(tile(id::DIVISI, Text("div."), "Dividir", DIVISI_HINT)),
+        toggle(tile(id::UNISON, Text("unis."), "Unir", DIVISI_HINT)),
     ],
 };
 

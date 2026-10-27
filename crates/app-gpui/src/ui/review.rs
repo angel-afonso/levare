@@ -180,7 +180,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
             .children(filtered.iter().skip(page * crate::review::PAGE_SIZE).take(crate::review::PAGE_SIZE).map(|&index| {
                 let issue = review.issues[index];
                 let location = match issue.target {
-                    ReviewTarget::Note(id, pitch) => format!("{} · c. {} · {}", instrument_name(score, id.part), id.measure + 1, note_name(pitch.in_key(score.written_key_at(id.part, id.measure)))),
+                    ReviewTarget::Note(id, pitch) => format!("{} · c. {} · {}", instrument_name(score, id.part), id.measure + 1, selection_view::pitch_name(pitch.in_key(score.written_key_at(id.part, id.measure)))),
                     ReviewTarget::Bar(bar, _) => format!("Obra · compás {}", bar + 1),
                 };
                 action(format!("review-issue-{index}"), div().w_full().min_w_0().flex().flex_col().gap_1()

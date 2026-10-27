@@ -90,8 +90,12 @@ struct Look {
 }
 
 fn look(control: &ControlView) -> Look {
-    let opacity = if control.enabled { 1. } else { 0.4 };
-    if control.checked {
+    look_of(control.checked, control.pending, control.enabled)
+}
+
+fn look_of(checked: bool, pending: bool, enabled: bool) -> Look {
+    let opacity = if enabled { 1. } else { 0.4 };
+    if checked {
         Look {
             bg: Some(SELECT),
             border: Some(SELECT_BORDER),
@@ -101,7 +105,7 @@ fn look(control: &ControlView) -> Look {
             dashed: false,
             opacity,
         }
-    } else if control.pending {
+    } else if pending {
         Look {
             bg: None,
             border: Some(PENDING_OUTLINE),
@@ -139,13 +143,11 @@ fn frame(
     close: bool,
 ) -> Stateful<Div> {
     let command = control.command;
-    let checked = control.checked;
-    let look = look(control);
-    action_with_hover(
+    styled(
         element,
         content,
-        checked,
-        move |s| if checked { s } else { s.bg(rgb(HOVER)) },
+        look(control),
+        control.checked,
         cx,
         move |v, window, cx| {
             v.ui.ribbon_peek = false;
@@ -156,13 +158,6 @@ fn frame(
             v.run(command, window, cx)
         },
     )
-    .active(move |s| if checked { s } else { s.bg(rgb(FIELD_HOVER)) })
-    .rounded(px(7.))
-    .bg(paint(look.bg))
-    .border_color(paint(look.border))
-    .when(look.dashed, |frame| frame.border_dashed())
-    .text_color(rgb(look.ink))
-    .opacity(look.opacity)
     .tooltip(described_hint(
         if control.pending {
             format!("{} · Pendiente", control.description)
@@ -172,6 +167,62 @@ fn frame(
         control.keys.clone(),
         control.hint,
     ))
+}
+
+fn styled(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    look: Look,
+    checked: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    action_with_hover(
+        element,
+        content,
+        checked,
+        move |s| if checked { s } else { s.bg(rgb(HOVER)) },
+        cx,
+        click,
+    )
+    .active(move |s| if checked { s } else { s.bg(rgb(FIELD_HOVER)) })
+    .rounded(px(7.))
+    .bg(paint(look.bg))
+    .border_color(paint(look.border))
+    .when(look.dashed, |frame| frame.border_dashed())
+    .text_color(rgb(look.ink))
+    .opacity(look.opacity)
+}
+
+/// A panel control that is not a ribbon command, in the ribbon's grammar:
+/// bare at rest, a tone step on hover and pressed, the accent when chosen.
+pub(super) fn control(
+    element: impl Into<SharedString>,
+    content: impl IntoElement,
+    chosen: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    styled(
+        element,
+        content,
+        look_of(chosen, false, true),
+        chosen,
+        cx,
+        click,
+    )
+}
+
+/// Options that exclude each other on one track, as in the ribbon; each
+/// takes an equal share of the width.
+pub(super) fn track(options: impl IntoIterator<Item = Stateful<Div>>) -> Div {
+    div()
+        .flex()
+        .gap(px(2.))
+        .p(px(2.))
+        .rounded(px(9.))
+        .bg(rgb(FIELD))
+        .children(options.into_iter().map(|option| option.flex_1()))
 }
 
 /// A glyph in its box, its name under it when the group has room and, on

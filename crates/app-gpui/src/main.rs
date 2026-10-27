@@ -32,8 +32,8 @@ mod ui;
 use app_paths::data_path;
 use gpui::{prelude::*, *};
 use score_core::{
-    Accidental, Articulation, BarMarkRef, Barline, Connection, ConnectionKind, Dynamic, ElementId,
-    Instrument, Jump, KeyMode, KeySignature, MarkFamily, MarkKind, MarkRef, PartId, StaffId,
+    Accidental, BarMarkRef, Barline, Connection, ConnectionKind, ElementId, Instrument, Jump,
+    KeyMode, KeySignature, MarkKind, MarkRef, PartId, StaffId,
 };
 use score_document::Document;
 use score_edit::{Command, Cursor, FormEdit};
@@ -1634,10 +1634,7 @@ impl AppView {
                 cx.notify();
             }
             id::SCORE_INFO => self.toggle_header_editor(window, cx),
-            id::KEY_SIGNATURE => {
-                self.ui.show_instruments = true;
-                self.toggle_key_picker(cx);
-            }
+            id::KEY_SIGNATURE => self.toggle_key_picker(cx),
             id::BAR_AT_END => self.edit(Command::AppendMeasure, cx),
             id::SINGLE_BAR => self.edit(Command::InsertMeasure, cx),
             id::DELETE_BAR => self.edit(Command::DeleteMeasures, cx),
@@ -1934,8 +1931,10 @@ impl AppView {
             cx.notify();
             return;
         }
-        if self.clef_picker {
+        if self.clef_picker || self.key_picker || self.time_picker {
             self.clef_picker = false;
+            self.key_picker = false;
+            self.time_picker = false;
             cx.notify();
             return;
         }
@@ -2791,6 +2790,11 @@ impl AppView {
                 })
         }
     }
+    /// The signature editors write from the first bar instead of the cursor's.
+    fn sign_from_start(&mut self, cx: &mut Context<Self>) {
+        self.signature_from_start = true;
+        self.sync_signature_controls(cx);
+    }
     fn sync_signature_controls(&mut self, cx: &mut Context<Self>) {
         let bar = self.signature_measure();
         if let Some(editor) = &self.tempo_picker {
@@ -2863,6 +2867,33 @@ impl AppView {
         self.run(command, window, cx);
     }
 
+    /// The editor open in the Selection tab. Opening one closes the others,
+    /// so at most one is set.
+    fn open_editor(&self) -> Option<ui::EditorKind> {
+        use ui::EditorKind as Kind;
+        [
+            (self.header_editor.is_some(), Kind::ScoreInfo),
+            (self.tempo_picker.is_some(), Kind::Tempo),
+            (self.clef_picker, Kind::Clef),
+            (self.key_picker, Kind::Key),
+            (self.time_picker, Kind::Time),
+            (self.text_editor.is_some(), Kind::Text),
+            (self.lyric_editor.is_some(), Kind::Lyric),
+            (self.chord_editor.is_some(), Kind::Chord),
+        ]
+        .into_iter()
+        .find_map(|(open, kind)| open.then_some(kind))
+    }
+    /// Editors live in the right panel's Selection tab: opening one, from
+    /// anywhere, shows it there. The words editors are closed here, the
+    /// signature, tempo and header editors by the function that opens one.
+    fn show_editor_tab(&mut self) {
+        self.text_editor = None;
+        self.lyric_editor = None;
+        self.chord_editor = None;
+        self.ui.show_inspector = true;
+        self.ui.right = panels::RightTab::Selection;
+    }
     fn toggle_tempo_picker(&mut self, cx: &mut Context<Self>) {
         self.toggle_tempo_at(self.document.editor.cursor().measure, cx);
     }
@@ -2886,7 +2917,9 @@ impl AppView {
         self.time_picker = false;
         self.clef_picker = false;
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.tempo_picker.is_some() {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn toggle_header_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2902,7 +2935,7 @@ impl AppView {
             self.time_picker = false;
             self.clef_picker = false;
             self.instrument_picker = None;
-            self.ui.show_instruments = true;
+            self.show_editor_tab();
         }
         cx.notify();
     }
@@ -2980,7 +3013,9 @@ impl AppView {
         self.header_editor = None;
         self.instrument_picker = None;
         self.signature_from_start = false;
-        self.ui.show_instruments = true;
+        if self.clef_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn choose_clef(&mut self, clef: Option<score_core::Clef>, cx: &mut Context<Self>) {
@@ -3017,7 +3052,9 @@ impl AppView {
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.key_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn toggle_time_picker(&mut self, cx: &mut Context<Self>) {
@@ -3032,7 +3069,9 @@ impl AppView {
         self.signature_from_start = false;
         self.sync_signature_controls(cx);
         self.instrument_picker = None;
-        self.ui.show_instruments = true;
+        if self.time_picker {
+            self.show_editor_tab();
+        }
         cx.notify();
     }
     fn choose_key(&mut self, key: KeySignature, cx: &mut Context<Self>) {
