@@ -154,7 +154,7 @@ impl Shortcuts {
         let keys = self.keymap.keys_for(command);
         let with_modifier = keys
             .first()
-            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.cmd || stroke.ctrl));
+            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.secondary || stroke.ctrl));
         if with_modifier {
             MenuItem::action(label, Run(command))
         } else if let Some(keys) = keys.first() {
@@ -456,7 +456,7 @@ pub fn recent_folder(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use score_keymap::{Layout, UsLayout};
+    use score_keymap::{Layout, Platform, UsLayout};
 
     struct Spanish;
     impl Layout for Spanish {
@@ -471,12 +471,16 @@ mod tests {
     #[test]
     fn every_default_binding_is_valid_gpui_text_on_us_and_spanish_layouts() {
         let layouts: [&dyn Layout; 2] = [&UsLayout, &Spanish];
-        for layout in layouts {
-            let (keymap, problems) = Keymap::resolve(
+        for (layout, platform) in layouts
+            .into_iter()
+            .flat_map(|layout| Platform::ALL.map(|platform| (layout, platform)))
+        {
+            let (keymap, problems) = Keymap::resolve_for(
                 &Registry::builtin(),
-                Profile::sibelius_laptop(),
+                Profile::sibelius_laptop_for(platform),
                 &UserKeymap::new(),
                 layout,
+                platform,
             );
             assert!(problems.is_empty(), "{problems:?}");
             for binding in keymap.bindings() {
@@ -543,11 +547,12 @@ mod tests {
 
     #[test]
     fn gpui_keystrokes_match_what_macos_reports() {
-        let (keymap, _) = Keymap::resolve(
+        let (keymap, _) = Keymap::resolve_for(
             &Registry::builtin(),
-            Profile::sibelius_laptop(),
+            Profile::sibelius_laptop_for(Platform::MacOs),
             &UserKeymap::new(),
             &Spanish,
+            Platform::MacOs,
         );
         let platform = |command: CommandId| {
             keymap

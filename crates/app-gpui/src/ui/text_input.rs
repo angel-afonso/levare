@@ -693,22 +693,32 @@ impl Focusable for TextInput {
     }
 }
 
+/// `secondary` is ⌘ on macOS and Ctrl on Windows and Linux.
 pub fn bindings() -> Vec<KeyBinding> {
-    vec![
+    let mut bindings = vec![
         KeyBinding::new("backspace", Backspace, Some("TextInput")),
         KeyBinding::new("delete", Delete, Some("TextInput")),
         KeyBinding::new("left", Left, Some("TextInput")),
         KeyBinding::new("right", Right, Some("TextInput")),
         KeyBinding::new("shift-left", SelectLeft, Some("TextInput")),
         KeyBinding::new("shift-right", SelectRight, Some("TextInput")),
-        KeyBinding::new("cmd-a", SelectAll, Some("TextInput")),
-        KeyBinding::new("cmd-v", Paste, Some("TextInput")),
-        KeyBinding::new("cmd-c", Copy, Some("TextInput")),
-        KeyBinding::new("cmd-x", Cut, Some("TextInput")),
+        KeyBinding::new("secondary-a", SelectAll, Some("TextInput")),
+        KeyBinding::new("secondary-v", Paste, Some("TextInput")),
+        KeyBinding::new("secondary-c", Copy, Some("TextInput")),
+        KeyBinding::new("secondary-x", Cut, Some("TextInput")),
         KeyBinding::new("home", Home, Some("TextInput")),
         KeyBinding::new("end", End, Some("TextInput")),
-        KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some("TextInput")),
-    ]
+    ];
+    // The emoji and symbol viewer. Windows opens its own with Win+. and Linux
+    // desktops have none GPUI can show.
+    if cfg!(target_os = "macos") {
+        bindings.push(KeyBinding::new(
+            "ctrl-cmd-space",
+            ShowCharacterPalette,
+            Some("TextInput"),
+        ));
+    }
+    bindings
 }
 
 #[cfg(test)]

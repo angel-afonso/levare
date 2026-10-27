@@ -448,7 +448,7 @@ pub fn project(
 mod tests {
     use super::*;
     use crate::spec::{TABS, tab};
-    use score_keymap::{Profile, UsLayout, UserKeymap, id};
+    use score_keymap::{Platform, Profile, UsLayout, UserKeymap, id};
 
     struct Fake(Vec<(CommandId, CommandState)>);
     impl CommandStates for Fake {
@@ -461,21 +461,28 @@ mod tests {
         }
     }
 
-    fn keymap() -> Keymap {
-        Keymap::resolve(
+    fn keymap(platform: Platform) -> Keymap {
+        Keymap::resolve_for(
             &Registry::builtin(),
-            Profile::sibelius_laptop(),
+            Profile::sibelius_laptop_for(platform),
             &UserKeymap::new(),
             &UsLayout,
+            platform,
         )
         .0
     }
 
     fn view(tab_id: TabId, width: f32, states: &Fake) -> ToolbarView {
+        view_on(Platform::MacOs, tab_id, width, states)
+    }
+
+    /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so their tiles are
+    /// wider.
+    fn view_on(platform: Platform, tab_id: TabId, width: f32, states: &Fake) -> ToolbarView {
         project(
             tab(tab_id),
             &Registry::builtin(),
-            &keymap(),
+            &keymap(platform),
             states,
             width,
             &Metrics::default(),
@@ -851,12 +858,16 @@ mod tests {
         assert_eq!(fit(&[titled], 100., &metrics), vec![GroupMode::Expanded]);
     }
 
+    /// The widths are measured on macOS's system font and ⌘-style keys.
+    /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there Escribir
+    /// and Partitura drop one group's names at 1440; their fonts still need
+    /// measuring.
     #[test]
     fn at_1440_every_tab_shows_names_and_keys() {
         let metrics = Metrics::default();
         let mut unnamed = Vec::new();
         for spec in TABS {
-            let row = view(spec.id, 1420., &Fake(vec![]));
+            let row = view_on(Platform::MacOs, spec.id, 1420., &Fake(vec![]));
             let titles: Vec<_> = row
                 .groups
                 .iter()
@@ -937,8 +948,11 @@ mod tests {
     #[test]
     fn narrow_windows_drop_names_before_folding() {
         let metrics = Metrics::default();
-        for spec in TABS {
-            let row = view(spec.id, 1000., &Fake(vec![]));
+        for (platform, spec) in Platform::ALL
+            .into_iter()
+            .flat_map(|platform| TABS.iter().map(move |spec| (platform, spec)))
+        {
+            let row = view_on(platform, spec.id, 1000., &Fake(vec![]));
             let mut groups = row.groups.iter().filter(|group| !group.dropdown);
             if groups.clone().any(|group| group.mode == GroupMode::Folded) {
                 assert!(
@@ -955,9 +969,12 @@ mod tests {
     fn unnamed_tiles_keep_their_key() {
         let metrics = Metrics::default();
         let mut seen = 0;
-        for spec in TABS {
-            let row = view(spec.id, 0., &Fake(vec![]));
-            let row = view(spec.id, full_width(&row), &Fake(vec![]));
+        for (platform, spec) in Platform::ALL
+            .into_iter()
+            .flat_map(|platform| TABS.iter().map(move |spec| (platform, spec)))
+        {
+            let row = view_on(platform, spec.id, 0., &Fake(vec![]));
+            let row = view_on(platform, spec.id, full_width(&row), &Fake(vec![]));
             for item in row.groups.iter().flat_map(|group| &group.items) {
                 if let Item::Tile(control) = item
                     && let Some(keys) = &control.keys

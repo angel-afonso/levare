@@ -1,7 +1,8 @@
 //! Resolution of profile + user changes into the active bindings.
 
 use crate::{
-    CommandId, KeySequence, Layout, Profile, Registry, Scope, UserKeymap, commands::CommandSpec,
+    CommandId, KeySequence, Layout, Platform, Profile, Registry, Scope, UserKeymap,
+    commands::CommandSpec,
 };
 use std::fmt;
 
@@ -69,6 +70,7 @@ impl fmt::Display for Problem {
 pub struct Keymap {
     profile: Profile,
     bindings: Vec<Binding>,
+    platform: Platform,
 }
 
 impl Keymap {
@@ -77,6 +79,18 @@ impl Keymap {
         profile: Profile,
         user: &UserKeymap,
         layout: &dyn Layout,
+    ) -> (Self, Vec<Problem>) {
+        Self::resolve_for(registry, profile, user, layout, Platform::current())
+    }
+
+    /// Resolves for `platform`: its GPUI key text, its conflicts and its
+    /// labels. `profile` should be that platform's.
+    pub fn resolve_for(
+        registry: &Registry,
+        profile: Profile,
+        user: &UserKeymap,
+        layout: &dyn Layout,
+        platform: Platform,
     ) -> (Self, Vec<Problem>) {
         let mut problems: Vec<Problem> = user
             .overrides
@@ -112,17 +126,16 @@ impl Keymap {
         let mut accepted = vec![None; candidates.len()];
         for index in order {
             let (keys, spec, origin) = &candidates[index];
-            let platform = keys.to_platform(layout);
-            if platform.is_none() {
+            let typed = keys.to_platform_for(layout, platform);
+            if typed.is_none() {
                 problems.push(Problem::Unsupported {
                     command: spec.id,
                     keys: keys.clone(),
                 });
             }
-            let clash = platform.as_ref().and_then(|platform| {
+            let clash = typed.as_ref().and_then(|typed| {
                 accepted.iter().flatten().find(|binding: &&Binding| {
-                    binding.platform.as_ref() == Some(platform)
-                        && binding.scope.overlaps(spec.scope)
+                    binding.platform.as_ref() == Some(typed) && binding.scope.overlaps(spec.scope)
                 })
             });
             if let Some(existing) = clash {
@@ -138,13 +151,14 @@ impl Keymap {
                 command: spec.id,
                 scope: spec.scope,
                 origin: *origin,
-                platform,
+                platform: typed,
             });
         }
         (
             Self {
                 profile,
                 bindings: accepted.into_iter().flatten().collect(),
+                platform,
             },
             problems,
         )
@@ -152,6 +166,10 @@ impl Keymap {
 
     pub fn profile(&self) -> &Profile {
         &self.profile
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.platform
     }
 
     pub fn bindings(&self) -> &[Binding] {
@@ -168,7 +186,9 @@ impl Keymap {
 
     /// The label buttons and menus show: the first binding of the command.
     pub fn label(&self, command: CommandId) -> Option<String> {
-        self.keys_for(command).first().map(|keys| keys.label())
+        self.keys_for(command)
+            .first()
+            .map(|keys| keys.label_for(self.platform))
     }
 
     /// Which other command already answers to `keys` where `spec` would work.
@@ -178,12 +198,12 @@ impl Keymap {
         keys: &KeySequence,
         layout: &dyn Layout,
     ) -> Option<CommandId> {
-        let platform = keys.to_platform(layout)?;
+        let typed = keys.to_platform_for(layout, self.platform)?;
         self.bindings
             .iter()
             .find(|binding| {
                 binding.command != spec.id
-                    && binding.platform.as_deref() == Some(platform.as_str())
+                    && binding.platform.as_deref() == Some(typed.as_str())
                     && binding.scope.overlaps(spec.scope)
             })
             .map(|binding| binding.command)
@@ -194,27 +214,64 @@ impl Keymap {
 mod tests {
     use super::*;
     use crate::{UsLayout, commands::id};
+    use Platform::{Linux, MacOs, Windows};
 
-    fn resolve(user: &UserKeymap) -> (Keymap, Vec<Problem>) {
-        Keymap::resolve(
+    struct Spanish;
+    impl Layout for Spanish {
+        fn shifted_digit(&self, digit: u8) -> Option<String> {
+            "=!\"·$%&/()"
+                .chars()
+                .nth(usize::from(digit))
+                .map(String::from)
+        }
+    }
+
+    fn resolve_on(platform: Platform, user: &UserKeymap) -> (Keymap, Vec<Problem>) {
+        Keymap::resolve_for(
             &Registry::builtin(),
-            Profile::sibelius_laptop(),
+            Profile::sibelius_laptop_for(platform),
             user,
             &UsLayout,
+            platform,
         )
+    }
+
+    fn resolve(user: &UserKeymap) -> (Keymap, Vec<Problem>) {
+        resolve_on(MacOs, user)
+    }
+
+    /// What GPUI matches for `command`'s first binding.
+    fn typed(keymap: &Keymap, command: CommandId) -> Option<&str> {
+        keymap
+            .bindings()
+            .iter()
+            .find(|binding| binding.command == command)
+            .and_then(|binding| binding.platform.as_deref())
     }
 
     #[test]
     fn the_sibelius_profile_is_complete_and_free_of_conflicts() {
         let registry = Registry::builtin();
-        for (keys, command) in &Profile::sibelius_laptop().bindings {
-            assert!(
-                registry.get(command.as_str()).is_some(),
-                "{keys} → {command}"
-            );
+        for platform in Platform::ALL {
+            for (keys, command) in &Profile::sibelius_laptop_for(platform).bindings {
+                assert!(
+                    registry.get(command.as_str()).is_some(),
+                    "{keys} → {command}"
+                );
+            }
+            let layouts: [&dyn Layout; 2] = [&UsLayout, &Spanish];
+            for layout in layouts {
+                let (_, problems) = Keymap::resolve_for(
+                    &registry,
+                    Profile::sibelius_laptop_for(platform),
+                    &UserKeymap::new(),
+                    layout,
+                    platform,
+                );
+                assert_eq!(problems, Vec::new(), "{platform:?}");
+            }
         }
-        let (keymap, problems) = resolve(&UserKeymap::new());
-        assert_eq!(problems, Vec::new());
+        let (keymap, _) = resolve(&UserKeymap::new());
         assert_eq!(keymap.label(id::QUARTER).as_deref(), Some("4"));
         assert_eq!(keymap.label(id::INTERVAL_3).as_deref(), Some("⇧3"));
         assert_eq!(keymap.label(id::REDO).as_deref(), Some("⌘Y"));
@@ -228,6 +285,116 @@ mod tests {
             .map(|binding| binding.command)
             .collect();
         assert_eq!(escape, vec![id::CLOSE_PANEL, id::ESCAPE]);
+    }
+
+    #[test]
+    fn macos_keeps_its_command_key_shortcuts() {
+        let (keymap, _) = resolve(&UserKeymap::new());
+        for (command, text, label) in [
+            (id::SAVE, "cmd-s", "⌘S"),
+            (id::REDO, "cmd-y", "⌘Y"),
+            (id::RESET_POSITION, "shift-cmd-p", "⇧⌘P"),
+            (id::TAB_NOTE_INPUT, "alt-cmd-1", "⌥⌘1"),
+            (id::TEMPO_TEXT, "alt-cmd-t", "⌥⌘T"),
+            (id::GO_TO_BAR, "alt-cmd-g", "⌥⌘G"),
+            (id::DELETE_BAR, "cmd-backspace", "⌘⌫"),
+            (id::ZOOM_OUT, "cmd--", "⌘-"),
+            (id::REPLAY, "alt-space", "⌥Espacio"),
+            (id::FULL_SCREEN, "cmd-u", "⌘U"),
+        ] {
+            assert_eq!(typed(&keymap, command), Some(text), "{command}");
+            assert_eq!(keymap.label(command).as_deref(), Some(label), "{command}");
+        }
+    }
+
+    #[test]
+    fn windows_and_linux_use_ctrl_and_their_own_conventions() {
+        for platform in [Windows, Linux] {
+            let (keymap, _) = resolve_on(platform, &UserKeymap::new());
+            for (command, text, label) in [
+                (id::SAVE, "ctrl-s", "Ctrl+S"),
+                (id::REDO, "ctrl-y", "Ctrl+Y"),
+                (id::RESET_POSITION, "ctrl-shift-p", "Ctrl+Mayús+P"),
+                (id::TAB_NOTE_INPUT, "ctrl-!", "Ctrl+Mayús+1"),
+                (id::TEMPO_TEXT, "ctrl-shift-t", "Ctrl+Mayús+T"),
+                (id::GO_TO_BAR, "ctrl-g", "Ctrl+G"),
+                (id::DELETE_BAR, "ctrl-backspace", "Ctrl+Retroceso"),
+                (id::ZOOM_OUT, "ctrl--", "Ctrl+-"),
+                (id::OCTAVE_UP, "ctrl-up", "Ctrl+↑"),
+                (id::FULL_SCREEN, "f11", "F11"),
+            ] {
+                assert_eq!(
+                    typed(&keymap, command),
+                    Some(text),
+                    "{platform:?} {command}"
+                );
+                assert_eq!(keymap.label(command).as_deref(), Some(label), "{command}");
+            }
+        }
+        let (windows, _) = resolve_on(Windows, &UserKeymap::new());
+        assert_eq!(windows.label(id::REPLAY).as_deref(), Some("Alt+Espacio"));
+        let (linux, _) = resolve_on(Linux, &UserKeymap::new());
+        assert_eq!(
+            linux.label(id::REPLAY).as_deref(),
+            Some("Mayús+Alt+Espacio")
+        );
+    }
+
+    #[test]
+    fn no_default_shortcut_needs_a_key_the_system_keeps() {
+        // What the system takes before the app sees it, or what AltGr types.
+        let reserved: &[(Platform, &[&str])] = &[
+            (
+                MacOs,
+                &[
+                    "cmd-tab",
+                    "cmd-space",
+                    "cmd-h",
+                    "cmd-m",
+                    "cmd-`",
+                    "alt-cmd-escape",
+                ],
+            ),
+            (
+                Windows,
+                &[
+                    "alt-tab",
+                    "alt-f4",
+                    "alt-escape",
+                    "ctrl-escape",
+                    "ctrl-shift-escape",
+                ],
+            ),
+            (
+                Linux,
+                &[
+                    "alt-tab",
+                    "alt-f2",
+                    "alt-f4",
+                    "alt-f7",
+                    "alt-f8",
+                    "alt-space",
+                    "alt-`",
+                ],
+            ),
+        ];
+        for (platform, keys) in reserved {
+            let (keymap, _) = resolve_on(*platform, &UserKeymap::new());
+            for binding in keymap.bindings() {
+                let text = binding.platform.as_deref().unwrap();
+                assert!(!keys.contains(&text), "{platform:?}: {text}");
+                if *platform != MacOs {
+                    assert!(
+                        !text.contains("cmd-"),
+                        "{platform:?}: {text} is the Windows key"
+                    );
+                    assert!(
+                        !(text.contains("ctrl-") && text.contains("alt-")),
+                        "{platform:?}: {text} is AltGr or a desktop shortcut"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -259,16 +426,16 @@ mod tests {
     #[test]
     fn user_keys_win_conflicts_and_problems_are_reported() {
         let mut user = UserKeymap::new();
-        user.set(id::STACCATO, &[KeySequence::parse("cmd-b").unwrap()]);
+        user.set(id::STACCATO, &[KeySequence::parse("secondary-b").unwrap()]);
         user.overrides
-            .insert("no.existe".into(), vec!["cmd-j".into()]);
+            .insert("no.existe".into(), vec!["secondary-j".into()]);
         user.overrides
             .insert(id::TENUTO.as_str().into(), vec!["hyper-x".into()]);
         let (keymap, problems) = resolve(&user);
         assert_eq!(keymap.label(id::STACCATO).as_deref(), Some("⌘B"));
         assert!(keymap.label(id::BAR_AT_END).is_none());
         assert!(problems.contains(&Problem::Conflict {
-            keys: KeySequence::parse("cmd-b").unwrap(),
+            keys: KeySequence::parse("secondary-b").unwrap(),
             kept: id::STACCATO,
             dropped: id::BAR_AT_END,
         }));
@@ -277,6 +444,44 @@ mod tests {
             command: id::TENUTO,
             keys: "hyper-x".into(),
         }));
+    }
+
+    #[test]
+    fn a_file_saved_on_macos_with_cmd_keeps_working() {
+        let mut user = UserKeymap::new();
+        user.overrides
+            .insert(id::STACCATO.as_str().into(), vec!["shift-cmd-k".into()]);
+        for platform in Platform::ALL {
+            let (keymap, problems) = resolve_on(platform, &user);
+            assert!(problems.is_empty(), "{problems:?}");
+            assert_eq!(
+                keymap.label(id::STACCATO),
+                Some(
+                    KeySequence::parse("shift-secondary-k")
+                        .unwrap()
+                        .label_for(platform)
+                )
+            );
+        }
+        let (keymap, _) = resolve(&user);
+        assert_eq!(typed(&keymap, id::STACCATO), Some("shift-cmd-k"));
+    }
+
+    #[test]
+    fn ctrl_and_the_command_key_are_one_key_off_macos() {
+        // A user's Ctrl+B on Linux is the profile's Ctrl+B for Add bar.
+        let (keymap, _) = resolve_on(Linux, &UserKeymap::new());
+        let registry = Registry::builtin();
+        let staccato = registry.get(id::STACCATO.as_str()).unwrap();
+        assert_eq!(
+            keymap.conflict(staccato, &KeySequence::parse("ctrl-b").unwrap(), &UsLayout),
+            Some(id::BAR_AT_END)
+        );
+        let (keymap, _) = resolve(&UserKeymap::new());
+        assert_eq!(
+            keymap.conflict(staccato, &KeySequence::parse("ctrl-b").unwrap(), &UsLayout),
+            None
+        );
     }
 
     #[test]

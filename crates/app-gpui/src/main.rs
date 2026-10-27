@@ -1301,10 +1301,10 @@ impl AppView {
         }
         let key = Key::from_platform(
             &stroke.key,
-            modifiers.control,
+            modifiers.control && !modifiers.secondary(),
             modifiers.alt,
             modifiers.shift,
-            modifiers.platform,
+            modifiers.secondary(),
             &self.shortcuts.layout,
         );
         self.record(KeySequence::single(key), cx);

@@ -130,7 +130,7 @@ pub fn project_menu(
 mod tests {
     use super::*;
     use crate::project::CommandState;
-    use score_keymap::{Profile, UsLayout, UserKeymap};
+    use score_keymap::{Platform, Profile, UsLayout, UserKeymap};
 
     struct Defaults;
     impl CommandStates for Defaults {
@@ -142,12 +142,28 @@ mod tests {
     #[test]
     fn file_menu_lists_registered_commands_with_keys_and_recent_files() {
         let registry = Registry::builtin();
-        let (keymap, _) = Keymap::resolve(
+        let keymap = |platform| {
+            Keymap::resolve_for(
+                &registry,
+                Profile::sibelius_laptop_for(platform),
+                &UserKeymap::new(),
+                &UsLayout,
+                platform,
+            )
+            .0
+        };
+        let windows = project_menu(
+            FILE_MENU,
             &registry,
-            Profile::sibelius_laptop(),
-            &UserKeymap::new(),
-            &UsLayout,
+            &keymap(Platform::Windows),
+            &Defaults,
+            &[],
         );
+        let MenuRow::Item(new) = &windows[0] else {
+            panic!("first row is New")
+        };
+        assert_eq!(new.keys.as_deref(), Some("Ctrl+N"));
+        let keymap = keymap(Platform::MacOs);
         let recent = [RecentItem {
             index: 0,
             title: "Trío.partitura".into(),
