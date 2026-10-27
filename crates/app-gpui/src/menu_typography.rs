@@ -280,6 +280,8 @@ mod titles {
         pub music: Vec<Range<usize>>,
     }
 
+    // Elsewhere only the tests build entries, and they check the paths.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub struct Entry {
         pub path: Vec<usize>,
         pub title: Title,
