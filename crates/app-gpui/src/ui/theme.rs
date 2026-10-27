@@ -3,7 +3,6 @@
 
 // Surfaces, darkest first.
 pub const BG: u32 = 0x131417;
-pub const SUNKEN: u32 = 0x16171b;
 pub const PANEL: u32 = 0x18191d;
 pub const POPOVER: u32 = 0x1d1e23;
 pub const CARD: u32 = 0x1f2026;
@@ -28,8 +27,6 @@ pub const KNOB: u32 = 0x6c7280;
 pub const TEXT: u32 = 0xe8e9ee;
 pub const SECONDARY: u32 = 0xbfc3ce;
 pub const MUTED: u32 = 0x969ba7;
-/// Ribbon captions: 5:1 on `CARD` and `SUNKEN` at 9–10 px.
-pub const CAPTION: u32 = 0x8a8f9c;
 /// Placeholders in text fields: 5.6:1 on `FIELD`.
 pub const PLACEHOLDER: u32 = MUTED;
 
@@ -38,8 +35,6 @@ pub const BLUE: u32 = 0x79a4ff;
 pub const ACCENT_TEXT: u32 = 0xb8ceff;
 pub const SELECT: u32 = 0x22314d;
 pub const SELECT_BORDER: u32 = 0x3c5d94;
-pub const CHOSEN: u32 = 0x2b4a85;
-pub const ON_ACCENT: u32 = 0xffffff;
 pub const HEADER_HOVER: u32 = 0x79a4ff14;
 pub const TEXT_SELECTION: u32 = 0x79a4ff40;
 

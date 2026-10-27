@@ -111,7 +111,7 @@ pub enum Item {
     Tile(ControlView),
     /// A tile with its name over the key, when there is room for it.
     LabeledTile(ControlView),
-    /// Consecutive choice tiles, drawn as one sunken bar. Named when expanded.
+    /// Consecutive choice tiles, drawn on one shared track. Named when expanded.
     Segment {
         controls: Vec<ControlView>,
         named: bool,

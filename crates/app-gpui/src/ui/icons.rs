@@ -25,14 +25,17 @@ pub enum Icon {
     Clipboard,
     First,
     Play,
+    PlayFromSelection,
     Pause,
     Stop,
     Loop,
     Speaker,
+    SoundBank,
     Mixer,
     Copy,
     Cut,
     Trash,
+    Flag,
 }
 
 impl Icon {
@@ -61,12 +64,15 @@ impl Icon {
             "clipboard" => Self::Clipboard,
             "first" => Self::First,
             "play" => Self::Play,
+            "play-from-selection" => Self::PlayFromSelection,
             "stop" => Self::Stop,
             "loop" | "repeat" => Self::Loop,
             "speaker" => Self::Speaker,
+            "sound-bank" => Self::SoundBank,
             "mixer" => Self::Mixer,
             "copy" => Self::Copy,
             "cut" => Self::Cut,
+            "flag" => Self::Flag,
             _ => return None,
         })
     }
@@ -254,6 +260,11 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                 Icon::Play => {
                     line(&[(5., 2.), (15., 9.), (5., 16.), (5., 2.)]);
                 }
+                Icon::PlayFromSelection => {
+                    // The selected notes, then play.
+                    line(&[(2., 5.), (8., 5.), (8., 13.), (2., 13.), (2., 5.)]);
+                    line(&[(10.5, 5.), (16., 9.), (10.5, 13.), (10.5, 5.)]);
+                }
                 Icon::Pause => {
                     line(&[(6., 3.), (6., 15.)]);
                     line(&[(12., 3.), (12., 15.)]);
@@ -282,6 +293,17 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     line(&[(14., 2.), (5., 12.)]);
                     line(&[(2., 13.), (5., 12.), (6., 15.), (3., 16.), (2., 13.)]);
                     line(&[(16., 13.), (13., 12.), (12., 15.), (15., 16.), (16., 13.)]);
+                }
+                Icon::SoundBank => {
+                    // A keyboard: the instruments' sounds.
+                    line(&[(2., 3.), (16., 3.), (16., 15.), (2., 15.), (2., 3.)]);
+                    for x in [6., 9., 12.] {
+                        line(&[(x, 3.), (x, 10.)]);
+                    }
+                }
+                Icon::Flag => {
+                    line(&[(4., 16.), (4., 2.)]);
+                    line(&[(4., 3.), (15., 3.), (12.5, 6.5), (15., 10.), (4., 10.)]);
                 }
                 Icon::Speaker => {
                     line(&[

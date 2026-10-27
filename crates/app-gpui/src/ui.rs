@@ -210,13 +210,15 @@ fn shortcut(text: impl Into<SharedString>) -> Div {
 struct HoverHint {
     label: SharedString,
     keys: Option<String>,
+    /// What the control does, on a second line.
+    detail: Option<SharedString>,
 }
 impl Render for HoverHint {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
-            .items_center()
-            .gap_3()
+            .flex_col()
+            .gap(px(2.))
             .px_2()
             .py_1()
             .max_w(px(360.))
@@ -227,19 +229,41 @@ impl Render for HoverHint {
             .shadow_md()
             .text_size(px(11.))
             .text_color(rgb(TEXT))
-            .child(self.label.clone())
-            .children(self.keys.clone().map(shortcut))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(self.label.clone())
+                    .children(self.keys.clone().map(shortcut)),
+            )
+            .children(
+                self.detail
+                    .clone()
+                    .map(|detail| div().text_color(rgb(SECONDARY)).child(detail)),
+            )
     }
 }
 fn hover_hint(
     label: impl Into<SharedString>,
     keys: Option<String>,
 ) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    described_hint(label, keys, "")
+}
+/// A hover hint with a sentence on what the control does under its name;
+/// an empty `detail` leaves the second line out.
+fn described_hint(
+    label: impl Into<SharedString>,
+    keys: Option<String>,
+    detail: &'static str,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     let label = label.into();
+    let detail = (!detail.is_empty()).then(|| SharedString::from(detail));
     move |_, cx| {
         cx.new(|_| HoverHint {
             label: label.clone(),
             keys: keys.clone(),
+            detail: detail.clone(),
         })
         .into()
     }

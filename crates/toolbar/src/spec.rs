@@ -73,14 +73,15 @@ pub enum Visual {
     None,
 }
 
-/// What pressing a control does; the ribbon draws each kind differently.
+/// What pressing a control does. Every role is drawn alike: bare at rest,
+/// lit while on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
-    /// One option among its neighbours: consecutive choice tiles form a segment.
+    /// One option among its neighbours: consecutive choice tiles share a track.
     Choice,
-    /// An on/off state; drawn with an outline while off.
+    /// An on/off state.
     Toggle,
-    /// Runs once; drawn without an outline.
+    /// Runs once.
     Action,
 }
 
@@ -1034,7 +1035,7 @@ const TRANSPORT: GroupSpec = GroupSpec {
         ),
         tile(
             id::PLAY_FROM_SELECTION,
-            Icon("play"),
+            Icon("play-from-selection"),
             "Desde la selección",
             "Empieza en la nota seleccionada.",
         ),
@@ -1099,7 +1100,7 @@ const SOUND: GroupSpec = GroupSpec {
         )),
         toggle(tile(
             id::SOUNDS,
-            Icon("speaker"),
+            Icon("sound-bank"),
             "Sonidos",
             "Elige el banco de sonidos e instala más.",
         )),
@@ -1131,12 +1132,12 @@ const REVIEW_CHECKS: GroupSpec = GroupSpec {
 const REVIEW_NOTICES: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Avisos",
-    visual: Icon("right-panel"),
+    visual: Icon("flag"),
     priority: 4,
     controls: &[
         toggle(tile(
             id::REVIEW_ISSUES,
-            Icon("right-panel"),
+            Icon("flag"),
             "Mostrar",
             "Muestra los avisos en el panel de revisión.",
         )),
@@ -1343,6 +1344,22 @@ pub fn tab(id: TabId) -> &'static TabSpec {
 mod tests {
     use super::*;
     use score_keymap::Registry;
+
+    /// Without their names (narrow windows) two tiles of a tab must still
+    /// look different. Comprobar's two tiles are one check on two ranges.
+    #[test]
+    fn no_tab_draws_two_controls_with_the_same_icon() {
+        for tab in TABS {
+            let mut seen = std::collections::HashSet::new();
+            for control in tab.groups.iter().flat_map(|group| group.controls) {
+                if let Icon(name) = control.visual
+                    && name != "search"
+                {
+                    assert!(seen.insert(name), "{:?}: {name}", tab.id);
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_tab_has_its_own_command() {
