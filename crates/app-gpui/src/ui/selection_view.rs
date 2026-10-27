@@ -22,6 +22,16 @@ pub enum EditorKind {
     ScoreInfo,
 }
 
+impl EditorKind {
+    /// Whether the editor stays open when a click or a navigation key moves
+    /// the selection. The clef, key and time pickers follow the cursor's
+    /// bar; the others belong to what was selected. The lyric and chord
+    /// editors' own advance does not go through this.
+    pub fn survives_selection_move(self) -> bool {
+        matches!(self, Self::Clef | Self::Key | Self::Time)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum SelectionView {
     Score(ScoreSummary),

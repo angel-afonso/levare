@@ -1449,6 +1449,19 @@ impl AppView {
             return;
         }
         use score_core::Step;
+        let moves_selection = matches!(
+            command,
+            id::PREVIOUS
+                | id::NEXT
+                | id::EXTEND_PREVIOUS
+                | id::EXTEND_NEXT
+                | id::UPPER_NOTE_OR_STAFF
+                | id::LOWER_NOTE_OR_STAFF
+                | id::BAR_START
+                | id::NEXT_BAR
+                | id::NEXT_INSTRUMENT
+                | id::PREVIOUS_INSTRUMENT
+        );
         match command {
             id::NEW_COMMENT => self.open_comment_editor(None, window, cx),
             id::SHOW_COMMENTS => {
@@ -1833,6 +1846,9 @@ impl AppView {
             }
             _ => self.status = format!("«{}» no está disponible en esta versión", spec.label),
         }
+        if moves_selection {
+            self.close_moved_editors();
+        }
         cx.notify();
     }
 
@@ -1950,6 +1966,11 @@ impl AppView {
             return;
         }
         if self.ui.context_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
+        if self.open_editor().is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
             cx.notify();
             return;
         }
@@ -2393,11 +2414,7 @@ impl AppView {
                 self.mixer_drag = None;
                 self.viewport.scroll.set_offset(Point::default());
                 self.instrument_picker = None;
-                self.key_picker = false;
-                self.time_picker = false;
-                self.clef_picker = false;
-                self.tempo_picker = None;
-                self.header_editor = None;
+                self.cancel_editor();
                 self.chord_entry = false;
                 self.entry_accidental = None;
                 self.path = None;
@@ -2476,11 +2493,7 @@ impl AppView {
                             view.mixer_drag = None;
                             view.viewport.scroll.set_offset(Point::default());
                             view.instrument_picker = None;
-                            view.key_picker = false;
-                            view.time_picker = false;
-                            view.clef_picker = false;
-                            view.tempo_picker = None;
-                            view.header_editor = None;
+                            view.cancel_editor();
                             view.chord_entry = false;
                             view.entry_accidental = None;
                             view.remember_recent(&path, cx);
@@ -2935,6 +2948,14 @@ impl AppView {
             return true;
         }
         false
+    }
+    /// A click or a navigation key moved the selection: the editors of what
+    /// was selected close as Esc closes them, after the move's own status.
+    /// Returns whether one closed.
+    fn close_moved_editors(&mut self) -> bool {
+        self.open_editor()
+            .is_some_and(|kind| !kind.survives_selection_move())
+            && self.cancel_editor()
     }
     /// The editors' Cancelar button.
     fn close_editors(&mut self, cx: &mut Context<Self>) {

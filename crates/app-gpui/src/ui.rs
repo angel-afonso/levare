@@ -1414,7 +1414,8 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
             MouseButton::Left,
             cx.listener(|v, _, window, cx| {
                 cx.stop_propagation();
-                if v.header_editor.is_none() {
+                // Open, or shown when it is open out of sight; never closed here.
+                if v.header_editor.is_none() || v.editor_hidden() {
                     v.toggle_header_editor(window, cx);
                 }
             }),

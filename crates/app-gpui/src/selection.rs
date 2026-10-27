@@ -339,6 +339,20 @@ impl AppView {
         if self.begin_line_drag(event, point, handles, cx) {
             return;
         }
+        self.select_at(event, point, interrupted_drag, cx);
+        if self.close_moved_editors() {
+            cx.notify();
+        }
+    }
+
+    /// What a press on the score selects, writes or starts dragging.
+    fn select_at(
+        &mut self,
+        event: &MouseDownEvent,
+        point: ScorePoint,
+        interrupted_drag: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.clicked_mark = None;
         self.clicked_bar_mark = None;
         if event.click_count == 2

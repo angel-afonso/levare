@@ -261,3 +261,14 @@ fn an_open_editor_wins_over_the_selection() {
         SelectionView::Rest(_)
     ));
 }
+
+#[test]
+fn moving_the_selection_keeps_only_the_editors_that_follow_the_bar() {
+    use EditorKind::*;
+    for kind in [Clef, Key, Time] {
+        assert!(kind.survives_selection_move(), "{kind:?}");
+    }
+    for kind in [Text, Lyric, Chord, ScoreInfo, Tempo] {
+        assert!(!kind.survives_selection_move(), "{kind:?}");
+    }
+}
