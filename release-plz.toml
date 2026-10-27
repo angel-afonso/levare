@@ -1,0 +1,148 @@
+# release-plz opens the release pull request when the Release PR workflow is
+# run by hand: it raises the workspace version from the conventional commits
+# since the last `v*` tag and adds them to CHANGELOG.md. Merging it makes the
+# Release workflow tag that version and publish it. AGENTS.md says how to
+# write the commits.
+
+[workspace]
+# Levare is not on crates.io: the last release is the latest `v*` tag.
+git_only = true
+git_tag_name = "v{{ version }}"
+publish = false
+# The Release workflow tags and publishes the GitHub release.
+git_tag_enable = false
+git_release_enable = false
+# An app, not a library: there is no public API to check.
+semver_check = false
+# Dependencies are updated on purpose, not with each release.
+dependencies_update = false
+# Before 1.0 too, `feat:` raises the minor version and `fix:` the patch.
+features_always_increment_minor = true
+pr_name = "chore: publica {{ version }}"
+
+# Every crate shares the workspace version; the changelog is the app's and
+# covers all of them.
+[[package]]
+name = "levare"
+version_group = "levare"
+changelog_path = "CHANGELOG.md"
+changelog_include = [
+    "agent-host",
+    "agent-tools",
+    "levare-update",
+    "score-core",
+    "score-document",
+    "score-edit",
+    "score-export",
+    "score-io",
+    "score-keymap",
+    "score-layout",
+    "score-pdf",
+    "score-platform",
+    "score-playback",
+    "score-sound-store",
+    "score-sound-vsco",
+    "score-text",
+    "score-toolbar",
+]
+
+[[package]]
+name = "agent-host"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "agent-tools"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "levare-update"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-core"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-document"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-edit"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-export"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-io"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-keymap"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-layout"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-pdf"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-platform"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-playback"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-sound-store"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-sound-vsco"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-text"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "score-toolbar"
+version_group = "levare"
+changelog_update = false
+
+# Groups the commits by their conventional type; merge commits repeat the
+# pull request's own commits, so they are left out.
+[changelog]
+commit_parsers = [
+    { message = "^Merge (pull request|branch)", skip = true },
+    { message = "^chore: publica", skip = true },
+    { message = "^feat", group = "Añadido" },
+    { message = "^fix", group = "Corregido" },
+    { message = "^perf", group = "Rendimiento" },
+    { message = "^refactor", group = "Cambiado" },
+    { message = "^docs?", group = "Documentación" },
+    { message = "^revert", group = "Revertido" },
+    { message = "^(test|style|ci)", skip = true },
+    { message = ".*", group = "Otros" },
+]

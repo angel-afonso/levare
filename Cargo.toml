@@ -24,6 +24,7 @@ score-toolbar = { path = "crates/toolbar" }
 score-text = { path = "crates/score-text" }
 agent-tools = { path = "crates/agent-tools" }
 agent-host = { path = "crates/agent-host" }
+levare-update = { path = "crates/update" }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 schemars = { version = "=1.2.3", features = ["derive"] }
