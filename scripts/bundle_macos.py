@@ -78,6 +78,11 @@ def main():
     shutil.copy2(binary, staging)
     staging.replace(executable)
     shutil.copy2(ROOT / "packaging" / "macos" / "Info.plist", contents / "Info.plist")
+    # The workspace version, as the release workflow writes it.
+    version = next(p["version"] for p in metadata["packages"] if p["name"] == "levare")
+    for key in ("CFBundleVersion", "CFBundleShortVersionString"):
+        subprocess.run(["plutil", "-replace", key, "-string", version,
+                        str(contents / "Info.plist")], check=True)
     shutil.copy2(icon, resources / icon.name)
     bundle_sfizz(contents, resources)
     subprocess.run(["plutil", "-lint", str(contents / "Info.plist")], check=True)
