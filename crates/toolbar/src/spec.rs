@@ -84,15 +84,11 @@ pub enum Role {
     Action,
 }
 
-/// Every control of a size measures the same, which keeps groups aligned.
+/// Every control is a tile: glyph over its name and key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlSize {
-    /// Icon over label, full height.
+    /// A group's main control: a wider tile while it shows its name.
     Large,
-    /// One row of a three-row column: icon and label. The ribbon no longer
-    /// uses it; every control there is a tile or a large button.
-    Small,
-    /// Glyph, full height, fixed width; its shortcut appears on hover.
     Tile,
 }
 
@@ -274,7 +270,7 @@ const MODIFY: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Modificar",
     visual: Music("\u{e1e7}"),
-    priority: 8,
+    priority: 7,
     controls: &[
         toggle(tile(
             id::DOT,
@@ -300,7 +296,7 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Alteración",
     visual: Music("\u{e262}"),
-    priority: 7,
+    priority: 8,
     controls: &[
         choice(tile(
             id::NATURAL,
@@ -322,22 +318,22 @@ const TIES: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Ligadura",
     visual: Visual::Tie,
-    priority: 6,
+    priority: 5,
     controls: &[
         toggle(tile(
             id::TIE,
             Visual::Tie,
-            "De unión",
+            "Unión",
             "Une la nota con la siguiente de la misma altura.",
         )),
-        toggle(tile(id::SLUR, Visual::Slur, "De expresión", TWO_CLICKS)),
+        toggle(tile(id::SLUR, Visual::Slur, "Expresión", TWO_CLICKS)),
     ],
 };
 const VOICES: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Voz",
     visual: Label("1"),
-    priority: 5,
+    priority: 6,
     controls: &[
         choice(tile(
             id::VOICE_1,
@@ -361,7 +357,7 @@ const CHORDS: GroupSpec = GroupSpec {
     controls: &[toggle(tile(
         id::CHORD_MODE,
         Visual::Chord,
-        "Modo acorde",
+        "Acorde",
         "Las notas que escribas se apilan en la misma posición.",
     ))],
 };
@@ -489,12 +485,12 @@ const ARPEGGIOS: GroupSpec = GroupSpec {
         )),
         toggle(mark(
             MarkKind::Arpeggio(R::Up),
-            "Hacia arriba",
+            "Arriba",
             "Arpegio con flecha hacia arriba.",
         )),
         toggle(mark(
             MarkKind::Arpeggio(R::Down),
-            "Hacia abajo",
+            "Abajo",
             "Arpegio con flecha hacia abajo.",
         )),
         toggle(tile(
@@ -513,17 +509,17 @@ const TREMOLOS: GroupSpec = GroupSpec {
     controls: &[
         toggle(mark(
             MarkKind::Tremolo(M::One),
-            "Una barra",
+            "1 barra",
             "Repite la nota en corcheas.",
         )),
         toggle(mark(
             MarkKind::Tremolo(M::Two),
-            "Dos barras",
+            "2 barras",
             "Repite la nota en semicorcheas.",
         )),
         toggle(mark(
             MarkKind::Tremolo(M::Three),
-            "Tres barras",
+            "3 barras",
             "Repite la nota en fusas.",
         )),
     ],
@@ -1010,13 +1006,13 @@ const BREAKS: GroupSpec = GroupSpec {
         toggle(tile(
             id::SYSTEM_BREAK,
             Icon("continuous"),
-            "Salto de sistema",
+            "Nuevo sistema",
             "El siguiente compás empieza un sistema nuevo.",
         )),
         toggle(tile(
             id::PAGE_BREAK,
             Icon("page"),
-            "Salto de página",
+            "Nueva página",
             "El siguiente compás empieza una página nueva.",
         )),
     ],
@@ -1785,7 +1781,6 @@ mod task_tests {
         for group in TABS.iter().flat_map(|tab| tab.groups) {
             for control in group.controls {
                 let what = format!("{} → {}", group.title, control.command);
-                assert_ne!(control.size, ControlSize::Small, "{what}");
                 assert!(!control.symbol_only, "{what}");
                 assert!(
                     control.label.is_some_and(|label| !label.is_empty()),

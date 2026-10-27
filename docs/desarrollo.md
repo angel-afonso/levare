@@ -678,20 +678,21 @@ AppView::run          punto único de ejecución · ui/command_state.rs implemen
 ```
 
 - **Descripción** (`spec.rs`): pestañas (`TabId`), grupos y controles. Cada control es
-  un `CommandId` con tamaño (grande, fila pequeña o casilla) y un glifo. No contiene
-  textos de estado ni teclas.
+  un `CommandId` con tamaño (grande o casilla), un glifo, un nombre corto y una ayuda.
+  No contiene textos de estado ni teclas.
 - **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
   comando está activo, habilitado o con una etiqueta temporal («Terminar expresión»).
   La app la responde en `ui/command_state.rs`; los tests usan un falso.
-- **Proyección** (`project`): une descripción, registro, mapa y estado, apila las filas
-  pequeñas en columnas de tres y mide con valores fijos (`Metrics`). `fit` pliega
-  grupos por prioridad (el de menor prioridad y, a igualdad, el de la derecha)
-  hasta que la fila cabe. La cinta nunca hace scroll; un grupo plegado es un botón con
-  desplegable.
+- **Proyección** (`project`): une descripción, registro, mapa y estado. Cada control es
+  una casilla: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
+  (`Metrics`, anchos por carácter que cubren el texto más ancho de la cinta). Con
+  sitio, un grupo se amplía y muestra los nombres; si falta, `fit` los quita (glifo y
+  tecla) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
+  el de la derecha) hasta que la fila cabe. La cinta nunca hace scroll; un grupo
+  plegado es un botón con desplegable.
 - **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del
   inspector muestran una ayuda breve con su nombre y la asignación activa después
-  de la espera de GPUI (500 ms). Las teclas no ocupan espacio en los botones ni
-  intervienen en sus medidas. Los desplegables y Preferencias conservan las teclas
+  de la espera de GPUI (500 ms). Los desplegables y Preferencias conservan las teclas
   como referencia; el inspector ya no repite la lista completa de atajos.
 - **Archivo** (`FILE_MENU`): una misma lista genera el desplegable de la ventana y el
   menú nativo de macOS, con el submenú «Abrir reciente».

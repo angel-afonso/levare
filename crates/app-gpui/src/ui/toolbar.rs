@@ -6,13 +6,12 @@ use super::*;
 use score_toolbar::{
     BAR_MARK_CONTEXT_MENU, ControlView, FILE_MENU, GroupMode, GroupView, Item, MARK_CONTEXT_MENU,
     MenuItemView, MenuRow, Metrics, NOTE_CONTEXT_MENU, RecentItem, Role, TABS, TabId, ToolbarView,
-    Visual, project, project_menu,
+    Visual, project, project_menu, tile_width,
 };
 
-const CONTROL_HEIGHT: f32 = 58.;
+const CONTROL_HEIGHT: f32 = 70.;
 const ROW_HEIGHT: f32 = 18.;
-const ROW_GAP: f32 = 2.;
-const GROUP_HEIGHT: f32 = 76.;
+const GROUP_HEIGHT: f32 = 88.;
 
 fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyElement> {
     match visual {
@@ -126,77 +125,38 @@ fn frame(
     ))
 }
 
-fn large(view: &AppView, control: &ControlView, cx: &Context<AppView>) -> Stateful<Div> {
-    frame(
-        format!("tool-{}", control.command),
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(4.))
-            .child(
-                div()
-                    .h(px(30.))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .children(visual(view, control.visual, 26., ink(control))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .text_size(px(11.))
-                    .line_height(px(13.))
-                    .child(control.label.clone()),
-            ),
-        control,
-        cx,
-        false,
-    )
-    .min_w(px(Metrics::default().large))
-    .h(px(CONTROL_HEIGHT))
-    .px_1()
-}
-
-/// A musical glyph; `named` adds its name when the group has room.
+/// A glyph over its name (when the group has room) and, under it, its key.
 fn tile(
     view: &AppView,
     control: &ControlView,
     cx: &Context<AppView>,
     named: bool,
 ) -> Stateful<Div> {
-    let metrics = Metrics::default();
     frame(
         format!("tool-{}", control.command),
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .children(visual(
-                view,
-                control.visual,
-                if named { 22. } else { 26. },
-                ink(control),
-            ))
+            .gap(px(2.))
+            .line_height(px(12.))
+            .whitespace_nowrap()
+            .children(visual(view, control.visual, 26., ink(control)))
             .when(named, |tile| {
-                tile.child(
-                    div()
-                        .text_size(px(10.))
-                        .line_height(px(11.))
-                        .child(control.label.clone()),
-                )
-            }),
+                tile.child(div().text_size(px(10.5)).child(control.label.clone()))
+            })
+            .children(
+                control
+                    .keys
+                    .clone()
+                    .map(|keys| div().text_size(px(10.)).text_color(rgb(MUTED)).child(keys)),
+            ),
         control,
         cx,
         false,
     )
-    .when(named, |tile| tile.min_w(px(metrics.labeled_tile)).px_1())
-    .when(!named, |tile| tile.w(px(metrics.tile)))
-    .h(px(if named { CONTROL_HEIGHT } else { 48. }))
+    .w(px(tile_width(control, named, &Metrics::default())))
+    .h(px(CONTROL_HEIGHT))
 }
 
 /// Consecutive choice tiles as one sunken bar; the chosen one is filled.
@@ -209,18 +169,8 @@ fn segment(view: &AppView, controls: &[ControlView], named: bool, cx: &Context<A
         .rounded(px(8.))
         .bg(rgb(SUNKEN))
         .children(controls.iter().map(|control| {
-            let named = named && !control.symbol_only;
-            let width = if named {
-                Metrics::default().labeled_tile.max(
-                    control.label.chars().count() as f32 * Metrics::default().caption_char_width
-                        + 8.,
-                )
-            } else {
-                Metrics::default().tile
-            };
-            tile(view, control, cx, named)
-                .w(px(width))
-                .h(px(if named { CONTROL_HEIGHT - 4. } else { 44. }))
+            tile(view, control, cx, named && !control.symbol_only)
+                .h(px(CONTROL_HEIGHT - 4.))
                 .when(!control.checked && !control.pending, |tile| {
                     tile.border_color(transparent_black())
                 })
@@ -293,27 +243,11 @@ fn items(view: &AppView, group: &GroupView, cx: &Context<AppView>) -> Div {
         .gap(px(Metrics::default().gap))
         .h(px(CONTROL_HEIGHT))
         .children(group.items.iter().map(|item| {
-            let width = px(item.width(&Metrics::default()));
             match item {
-                Item::Large(control) => large(view, control, cx).w(width).into_any_element(),
                 Item::Tile(control) => tile(view, control, cx, false).into_any_element(),
-                Item::LabeledTile(control) => {
-                    tile(view, control, cx, true).w(width).into_any_element()
-                }
+                Item::LabeledTile(control) => tile(view, control, cx, true).into_any_element(),
                 Item::Segment { controls, named } => segment(view, controls, *named, cx)
-                    .w(width)
-                    .into_any_element(),
-                Item::Column(column) => div()
-                    .flex()
-                    .flex_col()
-                    .w(width)
-                    .flex_shrink_0()
-                    .gap(px(ROW_GAP))
-                    .children(
-                        column
-                            .iter()
-                            .map(|control| row(view, control, cx, "tool", false)),
-                    )
+                    .w(px(item.width(&Metrics::default())))
                     .into_any_element(),
             }
         }))

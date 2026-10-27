@@ -40,36 +40,48 @@ pub trait CommandStates {
 }
 
 /// Sizes in logical pixels. Text widths are estimated per character, so the
-/// fold decision does not need the toolkit's text system.
+/// fold decision does not need the toolkit's text system. The per-character
+/// widths were measured on the ribbon's own names and keys in the system font
+/// («Ambas manos», «⌘⌫» are the widest), so they never reach the tile's edge.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
+    /// Narrowest named tile of a `ControlSize::Large` control.
     pub large: f32,
+    /// Narrowest tile without its name.
     pub tile: f32,
-    pub small_base: f32,
+    /// Narrowest tile with its name.
+    pub labeled_tile: f32,
+    /// Room on each side of a tile's text, border included.
+    pub tile_padding: f32,
+    /// Group titles (11px) and folded captions.
     pub char_width: f32,
+    /// Names under the glyph (10.5px).
+    pub caption_char_width: f32,
+    /// Keys under the name (10px); modifier symbols are the widest.
+    pub key_char_width: f32,
+    /// Glyphs written as text («con sord.», «arm.»).
+    pub glyph_char_width: f32,
     pub gap: f32,
     pub group_padding: f32,
     pub separator: f32,
     pub folded: f32,
-    pub labeled_tile: f32,
-    pub caption_char_width: f32,
-    pub rows: usize,
 }
 
 impl Default for Metrics {
     fn default() -> Self {
         Self {
-            large: 52.,
-            tile: 28.,
-            small_base: 30.,
+            large: 66.,
+            tile: 36.,
+            labeled_tile: 44.,
+            tile_padding: 5.,
             char_width: 6.3,
-            gap: 3.,
-            group_padding: 16.,
-            separator: 6.,
+            caption_char_width: 6.5,
+            key_char_width: 9.,
+            glyph_char_width: 8.,
+            gap: 2.,
+            group_padding: 0.,
+            separator: 20.,
             folded: 64.,
-            labeled_tile: 42.,
-            caption_char_width: 5.6,
-            rows: 3,
         }
     }
 }
@@ -92,15 +104,13 @@ pub struct ControlView {
     pub pending: bool,
 }
 
-/// One slot of a group, left to right. Consecutive small controls stack in
-/// columns of `Metrics::rows`.
+/// One slot of a group, left to right. Every control is a tile: its glyph
+/// and, under it, its key.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
-    Large(ControlView),
     Tile(ControlView),
-    /// A tile with its name under the glyph, when there is room for it.
+    /// A tile with its name over the key, when there is room for it.
     LabeledTile(ControlView),
-    Column(Vec<ControlView>),
     /// Consecutive choice tiles, drawn as one sunken bar. Named when expanded.
     Segment {
         controls: Vec<ControlView>,
@@ -109,7 +119,7 @@ pub enum Item {
 }
 
 /// How much room a group takes, like the Office ribbon's scaling: folded
-/// into one button, normal, or expanded with large buttons and named tiles.
+/// into one button, normal (glyph and key), or expanded with named tiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GroupMode {
     Folded,
@@ -195,15 +205,7 @@ fn text_width(text: &str, per_char: f32) -> f32 {
     text.chars().count() as f32 * per_char
 }
 
-fn small_width(control: &ControlView, metrics: &Metrics) -> f32 {
-    if control.symbol_only {
-        metrics.small_base + 8.
-    } else {
-        metrics.small_base + text_width(&control.label, metrics.char_width)
-    }
-}
-
-fn items(controls: &[ControlView], metrics: &Metrics, expanded: bool) -> Vec<Item> {
+fn items(controls: &[ControlView], expanded: bool) -> Vec<Item> {
     let mut items = Vec::new();
     for control in controls {
         if control.size == ControlSize::Tile && control.role == Role::Choice {
@@ -217,58 +219,56 @@ fn items(controls: &[ControlView], metrics: &Metrics, expanded: bool) -> Vec<Ite
             }
             continue;
         }
-        if expanded && !control.symbol_only {
-            items.push(match control.size {
-                ControlSize::Tile => Item::LabeledTile(control.clone()),
-                ControlSize::Large | ControlSize::Small => Item::Large(control.clone()),
-            });
-            continue;
-        }
-        match control.size {
-            ControlSize::Large => items.push(Item::Large(control.clone())),
-            ControlSize::Tile => items.push(Item::Tile(control.clone())),
-            ControlSize::Small => match items.last_mut() {
-                Some(Item::Column(column)) if column.len() < metrics.rows => {
-                    column.push(control.clone())
-                }
-                _ => items.push(Item::Column(vec![control.clone()])),
-            },
-        }
+        items.push(if expanded && !control.symbol_only {
+            Item::LabeledTile(control.clone())
+        } else {
+            Item::Tile(control.clone())
+        });
     }
     items
+}
+
+/// Width of one tile: its glyph and, under it, the name when `named` and the
+/// key on a line of its own. A text glyph can be wider than both.
+pub fn tile_width(control: &ControlView, named: bool, metrics: &Metrics) -> f32 {
+    let key = control
+        .keys
+        .as_deref()
+        .map_or(0., |keys| text_width(keys, metrics.key_char_width));
+    let (narrowest, text) = if named {
+        let narrowest = if control.size == ControlSize::Large {
+            metrics.large
+        } else {
+            metrics.labeled_tile
+        };
+        (
+            narrowest,
+            text_width(&control.label, metrics.caption_char_width).max(key),
+        )
+    } else {
+        (metrics.tile, key)
+    };
+    let glyph = match control.visual {
+        Visual::Text(text) | Visual::Label(text) => text_width(text, metrics.glyph_char_width),
+        _ => 0.,
+    };
+    narrowest.max(text.max(glyph) + 2. * metrics.tile_padding)
 }
 
 impl Item {
     /// The renderer uses the same slot widths as the fold calculation.
     pub fn width(&self, metrics: &Metrics) -> f32 {
         match self {
-            Item::Large(control) => metrics
-                .large
-                .max(text_width(&control.label, metrics.char_width) + 12.),
-            Item::Tile(_) => metrics.tile,
-            Item::LabeledTile(control) => metrics
-                .labeled_tile
-                .max(text_width(&control.label, metrics.caption_char_width) + 8.),
+            Item::Tile(control) => tile_width(control, false, metrics),
+            Item::LabeledTile(control) => tile_width(control, true, metrics),
             Item::Segment { controls, named } => {
                 controls
                     .iter()
-                    .map(|control| {
-                        if *named {
-                            metrics
-                                .labeled_tile
-                                .max(text_width(&control.label, metrics.caption_char_width) + 8.)
-                        } else {
-                            metrics.tile
-                        }
-                    })
+                    .map(|control| tile_width(control, *named && !control.symbol_only, metrics))
                     .sum::<f32>()
                     + controls.len().saturating_sub(1) as f32 * 2.
                     + 4.
             }
-            Item::Column(column) => column
-                .iter()
-                .map(|control| small_width(control, metrics))
-                .fold(0., f32::max),
         }
     }
 }
@@ -290,11 +290,10 @@ fn group_view(
         .iter()
         .map(|control| control_view(control, registry, keymap, states))
         .collect();
-    let full_items = items(&controls, metrics, false);
-    let title = text_width(group.title, metrics.char_width * 0.9);
+    let full_items = items(&controls, false);
+    let title = text_width(group.title, metrics.char_width);
     let width = row_width(&full_items, metrics).max(title) + metrics.group_padding;
-    let expanded =
-        row_width(&items(&controls, metrics, true), metrics).max(title) + metrics.group_padding;
+    let expanded = row_width(&items(&controls, true), metrics).max(title) + metrics.group_padding;
     let folded_width = metrics
         .folded
         .max(text_width(group.title, metrics.char_width) + metrics.group_padding + 14.);
@@ -344,7 +343,8 @@ pub struct Sizes {
 /// mode (full groups can be narrower than their folded captions).
 /// Room to spare: expand the highest priority first (the leftmost among
 /// equals), skipping a group that would not fit, so no space a group could
-/// use is left empty.
+/// use is left empty. A group as wide expanded as normal (its title is wider
+/// than its named tiles) shows its names for free.
 pub fn fit(groups: &[Sizes], available: f32, metrics: &Metrics) -> Vec<GroupMode> {
     let width = |modes: &[GroupMode]| {
         total(
@@ -377,7 +377,7 @@ pub fn fit(groups: &[Sizes], available: f32, metrics: &Metrics) -> Vec<GroupMode
     let mut order: Vec<usize> = (0..groups.len()).collect();
     order.sort_by(|a, b| groups[*b].priority.cmp(&groups[*a].priority).then(a.cmp(b)));
     for index in order {
-        if groups[index].expanded <= groups[index].full {
+        if groups[index].expanded < groups[index].full {
             continue;
         }
         modes[index] = GroupMode::Expanded;
@@ -426,7 +426,7 @@ pub fn project(
         match mode {
             GroupMode::Folded => group.items.clear(),
             GroupMode::Full => {}
-            GroupMode::Expanded => group.items = items(&group.controls, metrics, true),
+            GroupMode::Expanded => group.items = items(&group.controls, true),
         }
     }
     ToolbarView {
@@ -787,16 +787,149 @@ mod tests {
             priority,
         };
         let groups = [sizes(1), sizes(1), sizes(5)];
+        let separators = 2. * metrics.separator;
         assert_eq!(
-            fit(&groups, 270., &metrics),
+            fit(&groups, 250. + separators, &metrics),
             vec![GroupMode::Full, GroupMode::Folded, GroupMode::Full]
         );
         assert_eq!(fit(&groups, 10., &metrics), vec![GroupMode::Folded; 3]);
         assert_eq!(
-            fit(&groups, 420., &metrics),
+            fit(&groups, 425. + separators, &metrics),
             vec![GroupMode::Expanded, GroupMode::Full, GroupMode::Expanded],
             "highest priority first, then the leftmost of equals"
         );
-        assert_eq!(fit(&groups, 500., &metrics), vec![GroupMode::Expanded; 3]);
+        assert_eq!(
+            fit(&groups, 450. + separators, &metrics),
+            vec![GroupMode::Expanded; 3]
+        );
+        let titled = Sizes {
+            expanded: 100.,
+            ..sizes(1)
+        };
+        assert_eq!(fit(&[titled], 100., &metrics), vec![GroupMode::Expanded]);
+    }
+
+    #[test]
+    fn at_1440_every_tab_shows_names_and_keys() {
+        let metrics = Metrics::default();
+        let mut unnamed = Vec::new();
+        for spec in TABS {
+            let row = view(spec.id, 1420., &Fake(vec![]));
+            let titles: Vec<_> = row
+                .groups
+                .iter()
+                .filter(|group| !group.dropdown && group.mode != GroupMode::Expanded)
+                .map(|group| group.title)
+                .collect();
+            if !titles.is_empty() {
+                unnamed.push(format!(
+                    "{:?} needs {:.1}: {}",
+                    spec.id,
+                    expanded_width(&row),
+                    titles.join(", ")
+                ));
+            }
+            assert!(row.width(&metrics) <= 1420., "{:?}", spec.id);
+        }
+        assert!(unnamed.is_empty(), "{unnamed:#?}");
+    }
+
+    fn expanded_width(view: &ToolbarView) -> f32 {
+        total(
+            view.groups.iter().map(|group| group.expanded_width),
+            &Metrics::default(),
+        )
+    }
+
+    #[test]
+    fn writing_keeps_durations_entry_and_accidentals_longest() {
+        let last = ["Duración", "Entrada", "Alteración"];
+        let middle = ["Voz", "Modificar"];
+        let first = ["Ligadura", "Acorde", "Intervalo"];
+        let priority = |title: &str| {
+            tab(TabId::Write)
+                .groups
+                .iter()
+                .find(|group| group.title == title)
+                .unwrap()
+                .priority
+        };
+        for (low, high) in [(&first[..], &middle[..]), (&middle[..], &last[..])] {
+            for low in low {
+                for high in high {
+                    assert!(priority(low) < priority(high), "{low} before {high}");
+                }
+            }
+        }
+        let row = view(TabId::Write, 1000., &Fake(vec![]));
+        for group in row
+            .groups
+            .iter()
+            .filter(|group| last.contains(&group.title))
+        {
+            assert_ne!(group.mode, GroupMode::Folded, "{}", group.title);
+        }
+    }
+
+    #[test]
+    fn named_tiles_put_the_key_under_the_name() {
+        let metrics = Metrics::default();
+        let row = view(TabId::Playback, 5000., &Fake(vec![]));
+        let practice = row
+            .groups
+            .iter()
+            .find(|group| group.title == "Práctica")
+            .unwrap();
+        let half_speed = practice
+            .controls
+            .iter()
+            .find(|control| control.command == id::HALF_SPEED)
+            .unwrap();
+        // «Media velocidad» over «⇧Espacio»: the name is the wider line.
+        assert_eq!(
+            tile_width(half_speed, true, &metrics),
+            text_width(&half_speed.label, metrics.caption_char_width) + 2. * metrics.tile_padding
+        );
+    }
+
+    #[test]
+    fn narrow_windows_drop_names_before_folding() {
+        let metrics = Metrics::default();
+        for spec in TABS {
+            let row = view(spec.id, 1000., &Fake(vec![]));
+            let mut groups = row.groups.iter().filter(|group| !group.dropdown);
+            if groups.clone().any(|group| group.mode == GroupMode::Folded) {
+                assert!(
+                    groups.all(|group| group.mode != GroupMode::Expanded),
+                    "{:?}",
+                    spec.id
+                );
+            }
+            assert!(row.width(&metrics) <= 1000., "{:?}", spec.id);
+        }
+    }
+
+    #[test]
+    fn unnamed_tiles_keep_their_key() {
+        let metrics = Metrics::default();
+        let mut seen = 0;
+        for spec in TABS {
+            let row = view(spec.id, 0., &Fake(vec![]));
+            let row = view(spec.id, full_width(&row), &Fake(vec![]));
+            for item in row.groups.iter().flat_map(|group| &group.items) {
+                if let Item::Tile(control) = item
+                    && let Some(keys) = &control.keys
+                {
+                    seen += 1;
+                    assert!(
+                        item.width(&metrics)
+                            >= text_width(keys, metrics.key_char_width) + 2. * metrics.tile_padding,
+                        "{}: {keys}",
+                        control.label
+                    );
+                }
+            }
+        }
+        assert!(seen > 0);
     }
 }

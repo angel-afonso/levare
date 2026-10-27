@@ -17,7 +17,7 @@ pub use menu::{
 };
 pub use project::{
     CommandState, CommandStates, ControlView, GroupMode, GroupView, Item, Metrics, ToolbarView,
-    fit, project,
+    fit, project, tile_width,
 };
 pub use search::{SearchResult, normalize, ribbon_place, search};
 pub use spec::{Control, ControlSize, GroupSpec, Role, TABS, TabId, TabSpec, Visual, tab};
