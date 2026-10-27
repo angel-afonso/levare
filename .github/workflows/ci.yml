@@ -93,7 +93,8 @@ jobs:
 
       - name: Check
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}
-        run: cargo check --workspace --all-targets --locked
+        # --keep-going reports every crate that fails, not only the first.
+        run: cargo check --workspace --all-targets --locked --keep-going
 
       - name: Clippy
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE || github.workspace }}

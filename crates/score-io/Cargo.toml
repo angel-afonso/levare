@@ -13,4 +13,6 @@ roxmltree = "=0.20.0"
 zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+# Pinned: 0.2.190 dropped ENOATTR on Linux, which xattr 0.2.3 (under
+# gpui_http_client) needs to compile there.
+libc = "=0.2.189"

@@ -1,6 +1,5 @@
 use std::fs;
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -108,9 +107,18 @@ pub fn resolve_tools(path_env: &str, from_shell: bool) -> ResolvedTools {
     }
 }
 
+#[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
     fs::metadata(path)
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+/// Without execute bits, any file counts; finding Windows' `.exe` and `.cmd`
+/// launchers is still to do.
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 /// Asks the user's interactive login shell for its `PATH` and finds the
