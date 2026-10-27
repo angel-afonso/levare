@@ -160,17 +160,17 @@ impl AppView {
     fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
-        quit_snapshot: QuitSnapshot,
+        recovery: Result<score_io::Recovery, String>,
         mut shortcuts: Shortcuts,
     ) -> Self {
-        let recovered = if quit_snapshot.is_some() {
-            recovery_path()
+        let recovered = match &recovery {
+            Ok(_) => recovery_path()
                 .map(|path| score_io::load_recovery(&path).map_err(|e| e.to_string()))
                 .transpose()
-                .map(|value| value.flatten())
-        } else {
-            Err("No se pudo abrir el autoguardado; puede haber otra sesión activa".to_owned())
+                .map(|value| value.flatten()),
+            Err(reason) => Err(reason.clone()),
         };
+        let quit_snapshot: QuitSnapshot = recovery.ok();
         let nothing_recovered = matches!(recovered, Ok(None));
         let (mut document, path, status) = match recovered {
             Ok(Some(recovered)) => match Document::recover(recovered.score) {
@@ -3541,15 +3541,13 @@ fn main() {
         app_icon::install();
         // App-level ownership survives window/view teardown during a native
         // Dock quit. GPUI's Context::on_app_quit would only hold a weak view.
-        let quit_snapshot =
-            recovery_path().and_then(|path| match score_io::Recovery::open(&path) {
-                Ok(recovery) => Some(recovery),
-                Err(error) => {
-                    eprintln!("Recuperación no disponible: {error}");
-                    None
-                }
-            });
-        let pending = quit_snapshot.clone();
+        let recovery = recovery_path()
+            .ok_or_else(|| "no se encontró la carpeta de datos de Levare".to_owned())
+            .and_then(|path| score_io::Recovery::open(&path).map_err(|e| e.to_string()));
+        if let Err(error) = &recovery {
+            eprintln!("Recuperación no disponible: {error}");
+        }
+        let pending = recovery.as_ref().ok().cloned();
         cx.on_app_quit(move |_| {
             if let Some(recovery) = &pending
                 && let Err(error) = recovery.flush()
@@ -3573,7 +3571,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),
+            |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
         )
         .expect("open Levare window");
         cx.on_window_closed(|cx| {
