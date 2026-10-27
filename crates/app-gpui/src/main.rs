@@ -14,6 +14,9 @@ mod menu_typography;
 mod music_font;
 mod note_drag;
 mod paint;
+mod panels;
+#[cfg(test)]
+mod panels_tests;
 mod playback;
 mod playhead;
 mod practice;
@@ -137,6 +140,9 @@ struct AppView {
     held: HashMap<String, Instant>,
     recent: score_io::RecentFiles,
     recent_path: Option<PathBuf>,
+    panels_path: Option<PathBuf>,
+    /// What `paneles.json` holds, to write it again only when something changed.
+    panels_saved: panels::PanelMemory,
     agent: agent::AgentState,
     /// The agent panel's message field.
     agent_field: Entity<ui::text_input::TextInput>,
@@ -191,6 +197,8 @@ impl AppView {
             .as_deref()
             .and_then(|path| score_io::RecentFiles::load(path).ok())
             .unwrap_or_default();
+        let panels_path = data_path("paneles.json");
+        let panels_saved = panels_path.as_deref().map(panels::load).unwrap_or_default();
         shortcuts.recent = recent.files().to_vec();
         shortcuts.install(cx);
         let layout = Rc::new(document.layout(960.));
@@ -268,7 +276,7 @@ impl AppView {
         });
         Self {
             document,
-            ui: ui::UiState::default(),
+            ui: ui::UiState::restore(panels_saved.clone()),
             focus,
             path,
             status,
@@ -327,6 +335,8 @@ impl AppView {
             held: HashMap::new(),
             recent,
             recent_path,
+            panels_path,
+            panels_saved,
             agent: agent::AgentState::default(),
             agent_field: ui::agent_panel::field(cx),
             agent_acting: false,
@@ -1736,12 +1746,13 @@ impl AppView {
             id::TEMPO_UP => self.change_written_tempo(5, cx),
             id::TEMPO_DOWN => self.change_written_tempo(-5, cx),
             id::MIXER => {
+                // Opens the mixer's current home; the left panel's Mezcla mode takes it over later.
                 self.ui.show_inspector = true;
-                self.ui.inspector = "Mezclador";
+                self.ui.right = panels::RightTab::Sound;
             }
             id::SOUNDS => {
                 self.ui.show_inspector = true;
-                self.ui.inspector = "Sonidos";
+                self.ui.right = panels::RightTab::Sound;
             }
 
             id::ZOOM_IN => self.set_zoom(self.ui.zoom + 0.1),
@@ -2517,6 +2528,20 @@ impl AppView {
         self.shortcuts.install(cx);
     }
 
+    /// Writes `paneles.json` when a remembered panel field changed since the last write.
+    fn remember_panels(&mut self) {
+        let memory = self.ui.panel_memory();
+        if memory == self.panels_saved {
+            return;
+        }
+        if let Some(path) = &self.panels_path
+            && let Err(error) = panels::save(path, &memory)
+        {
+            self.status = format!("No se pudo guardar el estado de los paneles: {error}");
+        }
+        self.panels_saved = memory;
+    }
+
     fn export_pdf(&mut self, cx: &mut Context<Self>) {
         self.export_score(false, cx);
     }
@@ -3222,6 +3247,7 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.remember_panels();
         self.review.refresh(self.document.editor.score());
         self.comments.refresh(self.document.editor.score());
         if self

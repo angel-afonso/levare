@@ -37,6 +37,7 @@ use score_core::Duration;
 use score_keymap::{CommandId, id};
 use score_toolbar::CommandStates;
 
+use crate::panels::{PanelMemory, PartsMode, RightTab};
 use theme::*;
 pub use theme::{BG, TEXT};
 pub const LEFT_WIDTH: f32 = 240.;
@@ -54,7 +55,13 @@ pub struct UiState {
     pub zoom: f32,
     pub view_mode: score_layout::ViewMode,
     pub tab: score_toolbar::TabId,
-    pub inspector: &'static str,
+    pub right: RightTab,
+    pub parts_mode: PartsMode,
+    /// Instrument families folded in the parts list, by name.
+    pub folded_families: std::collections::BTreeSet<String>,
+    /// The parts list filter; not remembered between sessions.
+    #[allow(dead_code)] // read by the parts panel once it is redrawn
+    pub parts_query: String,
     /// Archivo dropdown and its "Abrir reciente" submenu.
     pub file_menu: bool,
     pub recent_menu: bool,
@@ -82,7 +89,10 @@ impl Default for UiState {
             zoom: 0.7,
             view_mode: Default::default(),
             tab: score_toolbar::TabId::Write,
-            inspector: "Propiedades",
+            right: RightTab::default(),
+            parts_mode: PartsMode::default(),
+            folded_families: Default::default(),
+            parts_query: String::new(),
             file_menu: false,
             recent_menu: false,
             context_menu: None,
@@ -91,6 +101,29 @@ impl Default for UiState {
             ribbon_collapsed: false,
             ribbon_peek: false,
             last_choice: Default::default(),
+        }
+    }
+}
+
+impl UiState {
+    /// The remembered part of the state, as read from and written to `paneles.json`.
+    pub fn panel_memory(&self) -> PanelMemory {
+        PanelMemory {
+            show_parts: self.show_instruments,
+            show_right: self.show_inspector,
+            right: self.right,
+            parts_mode: self.parts_mode,
+            folded: self.folded_families.iter().cloned().collect(),
+        }
+    }
+    pub fn restore(memory: PanelMemory) -> Self {
+        Self {
+            show_instruments: memory.show_parts,
+            show_inspector: memory.show_right,
+            right: memory.right,
+            parts_mode: memory.parts_mode,
+            folded_families: memory.folded.into_iter().collect(),
+            ..Self::default()
         }
     }
 }
@@ -1502,26 +1535,22 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 .px_2()
                 .border_b_1()
                 .border_color(rgb(BORDER))
-                .children(
-                    ["Propiedades", "Mezclador", "Sonidos", "Revisión"]
-                        .into_iter()
-                        .map(|tab| {
-                            button(
-                                view,
-                                format!("inspector-{tab}"),
-                                tab,
-                                view.ui.inspector == tab,
-                                cx,
-                                move |v, _, cx| {
-                                    v.ui.inspector = tab;
-                                    cx.notify();
-                                },
-                            )
-                            .px_2()
-                            .text_size(px(11.))
-                            .bg(rgb(PANEL))
-                        }),
-                ),
+                .children(RightTab::ALL.into_iter().map(|tab| {
+                    button(
+                        view,
+                        format!("inspector-{}", tab.label()),
+                        tab.label(),
+                        view.ui.right == tab,
+                        cx,
+                        move |v, _, cx| {
+                            v.ui.right = tab;
+                            cx.notify();
+                        },
+                    )
+                    .px_2()
+                    .text_size(px(11.))
+                    .bg(rgb(PANEL))
+                })),
         )
         .child(
             div()
@@ -1531,16 +1560,14 @@ fn inspector(view: &AppView, cx: &Context<AppView>) -> Div {
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .when(view.ui.inspector == "Propiedades", |body| {
+                .when(view.ui.right == RightTab::Selection, |body| {
                     body.child(properties(view, cx))
                 })
-                .when(view.ui.inspector == "Mezclador", |body| {
-                    body.child(mixer(view, cx))
+                // The mixer stays here, above the sounds, until it moves to the left panel.
+                .when(view.ui.right == RightTab::Sound, |body| {
+                    body.child(mixer(view, cx)).child(sounds(view, cx))
                 })
-                .when(view.ui.inspector == "Sonidos", |body| {
-                    body.child(sounds(view, cx))
-                })
-                .when(view.ui.inspector == "Revisión", |body| {
+                .when(view.ui.right == RightTab::Review, |body| {
                     body.child(review::panel(view, cx))
                 }),
         )
@@ -2447,7 +2474,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                 .tooltip(hover_hint("Elegir fuente de sonido", None))
                 .on_click(cx.listener(|view, _, _, cx| {
                     view.ui.show_inspector = true;
-                    view.ui.inspector = "Sonidos";
+                    view.ui.right = RightTab::Sound;
                     cx.notify();
                 })),
         )

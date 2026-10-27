@@ -27,7 +27,9 @@ score-sound-vsco = { path = "../sound-vsco", optional = true }
 score-sound-store = { path = "../sound-store", optional = true }
 score-keymap.workspace = true
 score-toolbar.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 agent-tools.workspace = true
 agent-host.workspace = true
 futures.workspace = true
@@ -40,5 +42,3 @@ core-text = "=21.0.0"
 core-graphics = "=0.24.0"
 block = "=0.1.6"
 
-[dev-dependencies]
-tempfile.workspace = true

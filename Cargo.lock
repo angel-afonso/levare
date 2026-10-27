@@ -3539,6 +3539,7 @@ dependencies = [
  "score-sound-store",
  "score-sound-vsco",
  "score-toolbar",
+ "serde",
  "serde_json",
  "tempfile",
  "ttf-parser 0.25.1",

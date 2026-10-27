@@ -157,7 +157,7 @@ impl CommandStates for AppView {
         match command {
             id::NEW_COMMENT => enabled(editor.selection().is_some()),
             id::SHOW_COMMENTS => CommandState::checked(
-                self.comments.open && self.ui.show_inspector && self.ui.inspector == "Revisión",
+                self.comments.open && self.ui.show_inspector && self.ui.right == RightTab::Review,
             ),
             id::RESOLVE_COMMENT => {
                 let comment = self
@@ -179,7 +179,7 @@ impl CommandStates for AppView {
             id::CHECK_SELECTION => enabled(editor.selection().is_some()),
             id::REVIEW_PREVIOUS | id::REVIEW_NEXT => enabled(!self.review.filtered().is_empty()),
             id::REVIEW_ISSUES => {
-                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Revisión")
+                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Review)
             }
             id::SHOW_RANGES => CommandState::checked(self.review.show_ranges),
             id::EDIT_RANGE => enabled(
@@ -295,10 +295,10 @@ impl CommandStates for AppView {
             },
             id::AUDITION => CommandState::checked(self.playback.audition),
             id::MIXER => {
-                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Mezclador")
+                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }
             id::SOUNDS => {
-                CommandState::checked(self.ui.show_inspector && self.ui.inspector == "Sonidos")
+                CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }
 
             id::TOGGLE_INSTRUMENTS_PANEL => CommandState::checked(self.ui.show_instruments),

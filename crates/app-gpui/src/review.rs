@@ -144,7 +144,7 @@ impl AppView {
     pub(super) fn show_review(&mut self) {
         self.ui.tab = score_toolbar::TabId::Review;
         self.ui.show_inspector = true;
-        self.ui.inspector = "Revisión";
+        self.ui.right = crate::panels::RightTab::Review;
     }
 
     pub(super) fn check_review(&mut self, selection: bool, cx: &mut Context<Self>) {
