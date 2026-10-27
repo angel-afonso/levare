@@ -73,6 +73,7 @@ dependencies = [
  "agent-client-protocol",
  "agent-tools",
  "axum",
+ "dirs 6.0.0",
  "futures",
  "getrandom 0.3.4",
  "reqwest",

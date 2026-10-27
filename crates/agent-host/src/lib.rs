@@ -2,9 +2,7 @@
 //! tokio runtime of its own. No dependency on the UI: tool calls leave
 //! through a channel for the UI thread to run.
 mod agents;
-// They run login shells and build executables with Unix permissions, as
-// the lookup they test does.
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod agents_tests;
 mod calls;
 #[cfg(test)]
@@ -17,8 +15,8 @@ mod session;
 mod session_tests;
 
 pub use agents::{
-    AgentKind, LaunchCommand, ResolvedTools, explain_error, launch_command, parse_probe, probe,
-    resolve_tools,
+    AgentKind, LaunchCommand, PathSource, ResolvedTools, explain_error, launch_command,
+    parse_probe, probe, resolve_tools,
 };
 pub use mcp::{McpServer, ToolInvocation};
 pub use runtime::Runtime;
