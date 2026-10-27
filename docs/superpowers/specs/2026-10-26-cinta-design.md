@@ -24,7 +24,7 @@ fuente está en el plan). Este documento fija lo que la maqueta decide.
 - Las opciones que se excluyen (duración, alteración, voz, estilo de ensayo, modo de vista)
   comparten un carril `FIELD` con 2px de relleno.
 - Acción: sin estado; solo hover y pulsación.
-- Los grupos no tienen tarjeta: se separan con espacio (22px) y llevan su nombre debajo, 11px,
+- Los grupos no tienen tarjeta: se separan con espacio (20px) y llevan su nombre debajo, 11px,
   `MUTED`, alineado a la izquierda.
 - Pendiente: sigue con borde discontinuo (`PENDING_OUTLINE`).
 
