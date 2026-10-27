@@ -1922,6 +1922,7 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
         audio_error: view.playback.error.as_deref(),
         status: &view.status,
         page,
+        zoom_percent: (view.ui.zoom * 100.).round() as u16,
         recovery_ready: view
             .quit_snapshot
             .as_ref()
@@ -1947,6 +1948,7 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                 .child(inline_text(view.music_font.clone(), bar.message)),
         )
         .children(bar.pages.map(|pages| page_navigation(pages, cx)))
+        .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(bar.zoom))
         .child(
             div()
                 .flex_shrink_0()

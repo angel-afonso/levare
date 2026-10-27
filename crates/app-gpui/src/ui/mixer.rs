@@ -329,7 +329,10 @@ pub fn part_controls(
 /// Choosing the score's own default stores no choice in the document.
 fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {
     let current = view.document.editor.score().players(part);
-    div().w(px(150.)).on_mouse_down(MouseButton::Left, stop_press).child(toolbar::track(
+    div()
+        .w(px(150.))
+        .on_mouse_down(MouseButton::Left, stop_press)
+        .child(toolbar::track(
         [Players::Section, Players::Solo].map(|players| {
             toolbar::control(
                 format!("players-{}-{}", part.0, players.label()),

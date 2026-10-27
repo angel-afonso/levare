@@ -15,6 +15,7 @@ pub struct Facts<'a> {
     pub status: &'a str,
     /// `None` outside Page view.
     pub page: Option<PageFacts>,
+    pub zoom_percent: u16,
     pub recovery_ready: bool,
     pub dirty: bool,
 }
@@ -33,6 +34,8 @@ pub struct Pages {
 pub struct StatusBar {
     pub message: String,
     pub pages: Option<Pages>,
+    /// «70 %».
+    pub zoom: String,
     pub autosave: &'static str,
     pub autosave_ok: bool,
     pub document: &'static str,
@@ -60,6 +63,7 @@ pub fn status_bar(facts: &Facts) -> StatusBar {
     StatusBar {
         message,
         pages,
+        zoom: format!("{} %", facts.zoom_percent),
         autosave: if facts.recovery_ready {
             "Autoguardado activo"
         } else {
@@ -85,6 +89,7 @@ mod tests {
             audio_error: None,
             status: "Listo",
             page: None,
+            zoom_percent: 70,
             recovery_ready: true,
             dirty: false,
         }
@@ -97,6 +102,7 @@ mod tests {
         let StatusBar {
             message,
             pages,
+            zoom,
             autosave,
             autosave_ok,
             document,
@@ -104,6 +110,7 @@ mod tests {
         } = status_bar(&facts());
         assert_eq!(message, "Listo");
         assert!(pages.is_none(), "page navigation only in Page view");
+        assert_eq!(zoom, "70 %");
         assert_eq!(autosave, "Autoguardado activo");
         assert!(autosave_ok);
         assert_eq!(document, "Guardado");
