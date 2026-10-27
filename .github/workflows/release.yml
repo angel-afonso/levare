@@ -5,7 +5,7 @@ name: Release
 # Silicon and Intel Macs and publishes it as a GitHub release. A `v*` tag
 # pushed by hand does the same for that tag. Running it by hand from a branch
 # only builds the app and keeps it as a workflow artifact. The release pull
-# request comes from the Release PR workflow, run by hand. docs/publicar.md
+# request comes from the Release PR workflow, run by hand. docs/releasing.md
 # explains the whole process and the secrets it uses.
 on:
   push:
@@ -63,7 +63,7 @@ jobs:
               exit 1
             fi
             if [[ "$HAS_SIGNING_KEY" != true ]]; then
-              echo "::error::UPDATE_SIGNING_KEY is not set; see docs/publicar.md."
+              echo "::error::UPDATE_SIGNING_KEY is not set; see docs/releasing.md."
               exit 1
             fi
             tag="$GITHUB_REF_NAME"
@@ -74,7 +74,7 @@ jobs:
             elif [[ "$HAS_SIGNING_KEY" != true ]]; then
               # Building would cost a full run (and notarizations) for
               # nothing; run the workflow by hand for a test build.
-              echo "::warning::UPDATE_SIGNING_KEY is not set, so v$version is not tagged, built or published. See docs/publicar.md."
+              echo "::warning::UPDATE_SIGNING_KEY is not set, so v$version is not tagged, built or published. See docs/releasing.md."
               build=false
             else
               tag="v$version"

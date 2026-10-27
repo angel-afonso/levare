@@ -17,7 +17,7 @@ use crate::AppView;
 use crate::app_paths::data_path;
 
 /// The key the release workflow signs updates with; its secret half is the
-/// repository's UPDATE_SIGNING_KEY (see docs/publicar.md).
+/// repository's UPDATE_SIGNING_KEY (see docs/releasing.md).
 const PUBLIC_KEY: &str = include_str!("../assets/update.pub");
 /// Long enough after start-up not to slow it down.
 const FIRST_CHECK: Duration = Duration::from_secs(10);

@@ -1,73 +1,95 @@
-# Instrucciones para agentes
+# Instructions for agents
 
-## Los mensajes de commit son el changelog
+## Language
 
-La versión de Levare y su `CHANGELOG.md` salen de los mensajes de commit, con
-[release-plz](https://release-plz.dev) (configurado en `release-plz.toml`). No hay
-ningún archivo de cambios que añadir: cada commit es su propia entrada. Cuando se
-ejecuta el workflow Release PR, release-plz lee los commits desde la última etiqueta
-`vX.Y.Z`, elige la versión siguiente según sus tipos y copia sus títulos en
-`CHANGELOG.md` dentro de una pull request de release. `docs/publicar.md` cuenta el
-proceso entero.
+Everything at the software level is written in English: code, comments, commit
+messages, the changelog, docs, pull requests and CI messages. The app's interface stays
+in Spanish: labels, menus, status messages and errors shown to the musician. Older docs
+in Spanish move to English when they are next changed.
 
-Por eso todo commit que cambie el comportamiento es un
-[Conventional Commit](https://www.conventionalcommits.org/es/):
+## Platforms
+
+Levare is built, tested and released for macOS, Windows and Linux alike. None of them is
+the main one: a change is finished when it works on all three.
+
+- Shortcuts use `secondary-` (⌘ on macOS, Ctrl elsewhere), never `cmd-`. A shortcut gets
+  per-platform defaults only where the platforms' conventions differ.
+- Labels shown to the musician come from the keymap (`⇧⌘Z` on macOS, `Ctrl+Mayús+Z`
+  elsewhere), never hard-coded glyphs.
+- Platform code sits behind `cfg(target_os = …)` with a working branch for every
+  platform, not just a stub that fails.
+- Paths go through `Path::join`, `std::env::split_paths` and `dirs`; never assume `/`,
+  `:` or a Unix tool.
+
+Without a Linux or Windows machine, `cargo check` and `cargo clippy` can still target
+them from macOS (`--target x86_64-pc-windows-msvc`, `--target x86_64-unknown-linux-gnu`),
+and CI runs the tests and opens the app on all three.
+
+## Commit messages are the changelog
+
+Levare's version and its `CHANGELOG.md` come from the commit messages, through
+[release-plz](https://release-plz.dev) (configured in `release-plz.toml`). There is no
+changes file to add: each commit is its own entry. When the Release PR workflow runs,
+release-plz reads the commits since the last `vX.Y.Z` tag, picks the next version from
+their types and copies their titles into `CHANGELOG.md` in a release pull request.
+`docs/releasing.md` describes the whole process.
+
+So every commit that changes behavior is a
+[Conventional Commit](https://www.conventionalcommits.org/):
 
 ```
-<tipo>(<ámbito>): <título>
+<type>(<scope>): <title>
 ```
 
-### Tipo: decide la versión
+### Type: decides the version
 
-| Tipo | Para | Versión |
+| Type | For | Version |
 | --- | --- | --- |
-| `feat` | Algo nuevo que el músico puede hacer o ver | menor (0.4.2 → 0.5.0) |
-| `fix` | Un error corregido: resultado incorrecto, cierre, datos perdidos | parche (0.4.2 → 0.4.3) |
-| `perf` | Lo mismo, más rápido o más ligero | parche |
-| `refactor` | Código reorganizado, sin cambio de comportamiento | parche |
-| `docs` | Solo documentación | parche |
-| `chore` | Mantenimiento: dependencias, configuración | parche |
-| `ci`, `test`, `style` | Solo CI, pruebas o formato | parche, fuera del changelog |
+| `feat` | Something new the musician can do or see | minor (0.4.2 → 0.5.0) |
+| `fix` | A bug fixed: a wrong result, a crash, lost data | patch (0.4.2 → 0.4.3) |
+| `perf` | The same, faster or lighter | patch |
+| `refactor` | Code reorganized, no change in behavior | patch |
+| `docs` | Documentation only | patch |
+| `chore` | Maintenance: dependencies, configuration | patch |
+| `ci`, `test`, `style` | CI, tests or formatting only | patch, left out of the changelog |
 
-Un cambio que rompe algo de lo que dependen los usuarios (el formato `.partitura`, los
-atajos guardados, un paquete de sonidos) lleva `!` tras el ámbito, `feat(archivo)!: …`,
-y explica qué se rompe en un pie `BREAKING CHANGE:`. Antes de la 1.0 sube la versión
-menor.
+A change that breaks something users rely on (the `.partitura` format, saved shortcuts, a
+sound pack) takes `!` after the scope, `feat(file)!: …`, and explains what breaks in a
+`BREAKING CHANGE:` footer. Before 1.0 it raises the minor version.
 
-### Ámbito: dónde cambió
+### Scope: where it changed
 
-La parte de la app que nota el músico, en minúsculas y sin tildes: `partitura`
-(escritura y edición), `cinta`, `paneles`, `agente`, `reproduccion`, `sonidos`,
-`archivo` (abrir, guardar, exportar, importar), `atajos`, `revision`, `maquetacion`,
-`actualizaciones`. Para un cambio interno sin parte visible, el nombre del directorio
-del crate (`score-core`, `keymap`, `update`…). Sin ámbito si abarca varias.
+The part of the app the musician notices, in lowercase: `score` (writing and editing),
+`ribbon`, `panels`, `agent`, `playback`, `sounds`, `file` (open, save, export, import),
+`shortcuts`, `review`, `layout`, `updates`, `window`. For an internal change with no
+visible part, the crate's directory name (`score-core`, `keymap`, `update`…). No scope if
+it spans several.
 
-Solo cuentan para una versión, y salen en el changelog, los commits que tocan un crate
-(`crates/…`, incluido su `Cargo.toml`). Los cambios solo en `docs/`, el README,
-`scripts/` o la CI no publican nada; usa igualmente `docs:`, `ci:` o `chore:`.
+Only commits that touch a crate (`crates/…`, including its `Cargo.toml`) count toward a
+release and appear in the changelog. Changes only to `docs/`, the README, `scripts/` or
+CI publish nothing; still use `docs:`, `ci:` or `chore:` for them.
 
-### Título: es la línea del changelog
+### Title: it is the changelog line
 
-El título pasa tal cual a `CHANGELOG.md`, así que se escribe para quien usa Levare,
-en español:
+The title goes into `CHANGELOG.md` as is, so write it for the people who use Levare:
 
-- Di qué cambia para el músico, en presente, en minúscula y sin punto final:
-  `fix(paneles): recuerda la pestaña elegida al volver a abrir Levare`, no
-  `fix: arreglo en panels.rs`.
-- Un cambio por commit. Dos correcciones sin relación son dos commits, cada uno con su
-  línea y su tipo.
-- El porqué y los detalles van en el cuerpo; solo el título llega al changelog.
+- Say what changes for the musician, in the present tense, lowercase, with no final
+  period: `fix(panels): remember the chosen tab when Levare reopens`, not
+  `fix: fix in panels.rs`.
+- One change per commit. Two unrelated fixes are two commits, each with its own line and
+  type.
+- The why and the details go in the body; only the title reaches the changelog.
 
-### Nunca a mano
+### Never by hand
 
-- No cambies `[workspace.package] version` en `Cargo.toml` ni edites `CHANGELOG.md`:
-  la pull request de release hace las dos cosas.
-- No crees etiquetas `v*`: al fusionar la pull request de release, el workflow Release
-  etiqueta y publica la versión.
+- Don't change `[workspace.package] version` in `Cargo.toml` or edit `CHANGELOG.md`: the
+  release pull request does both.
+- Don't create `v*` tags: when the release pull request is merged, the Release workflow
+  tags and publishes the version.
 
-## Antes de dar algo por terminado
+## Before calling something done
 
-Lo que comprueba la CI (README, «Verificar»):
+What CI checks (README, «Verificar»):
 
 ```sh
 cargo fmt --all --check
@@ -75,5 +97,5 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-`docs/atajos.md` se genera desde `crates/keymap`; si cambias comandos o atajos,
-regéneralo con `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
+`docs/atajos.md` is generated from `crates/keymap`; if you change commands or shortcuts,
+regenerate it with `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
