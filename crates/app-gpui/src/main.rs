@@ -284,7 +284,7 @@ impl AppView {
         let view = cx.weak_entity();
         let layout_change = cx.on_keyboard_layout_change(move |cx| {
             let _ = view.update(cx, |view: &mut Self, cx| {
-                view.shortcuts.refresh_layout();
+                view.shortcuts.refresh_layout(cx);
                 view.shortcuts.install(cx);
                 cx.notify();
             });
@@ -3565,7 +3565,7 @@ fn main() {
             async {}
         })
         .detach();
-        let shortcuts = Shortcuts::load();
+        let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
         let bounds = Bounds::centered(None, size(px(1440.), px(1000.)), cx);
         cx.open_window(

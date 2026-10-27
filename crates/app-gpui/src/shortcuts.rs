@@ -52,7 +52,7 @@ pub struct Shortcuts {
 }
 
 impl Shortcuts {
-    pub fn load() -> Self {
+    pub fn load(cx: &App) -> Self {
         let path = crate::data_path("atajos.json");
         let mut problems = Vec::new();
         let user = match path.as_deref().map(UserKeymap::load) {
@@ -69,11 +69,11 @@ impl Shortcuts {
                 &Registry::builtin(),
                 Profile::sibelius_laptop(),
                 &UserKeymap::new(),
-                &SystemLayout::current(),
+                &SystemLayout::current(cx.keyboard_layout().name()),
             )
             .0,
             user,
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(cx.keyboard_layout().name()),
             path,
             problems,
             recent: Vec::new(),
@@ -101,8 +101,8 @@ impl Shortcuts {
             .extend(problems.into_iter().map(|problem| problem.to_string()));
     }
 
-    pub fn refresh_layout(&mut self) {
-        self.layout = SystemLayout::current();
+    pub fn refresh_layout(&mut self, cx: &App) {
+        self.layout = SystemLayout::current(cx.keyboard_layout().name());
         self.rebuild();
     }
 
@@ -519,7 +519,7 @@ mod tests {
             )
             .0,
             user: UserKeymap::new(),
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(""),
             path: None,
             problems: Vec::new(),
             recent: Vec::new(),
