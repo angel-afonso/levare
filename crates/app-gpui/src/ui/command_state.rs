@@ -312,18 +312,20 @@ impl CommandStates for AppView {
             }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
-            id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),
-            id::TAB_NOTE_INPUT => {
-                CommandState::checked(self.ui.tab == score_toolbar::TabId::NoteInput)
-            }
+            id::TAB_NOTE_INPUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Write),
             id::TAB_NOTATION => {
-                CommandState::checked(self.ui.tab == score_toolbar::TabId::Notation)
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Articulations)
+            }
+            id::TAB_DYNAMICS => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Dynamics)
             }
             id::TAB_TEXT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Text),
+            id::TAB_HOME | id::TAB_LAYOUT => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Score)
+            }
             id::TAB_PLAYBACK => {
                 CommandState::checked(self.ui.tab == score_toolbar::TabId::Playback)
             }
-            id::TAB_LAYOUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Layout),
             id::TAB_REVIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::Review),
             id::TAB_VIEW => CommandState::checked(self.ui.tab == score_toolbar::TabId::View),
             id::TOGGLE_RIBBON => CommandState::checked(self.ui.ribbon_collapsed),

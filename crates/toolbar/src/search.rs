@@ -148,7 +148,7 @@ mod tests {
     fn a_prefix_finds_the_command_and_says_where_it_lives() {
         let results = run("stacc");
         assert_eq!(results[0].item.command, id::STACCATO);
-        assert_eq!(results[0].place, "Entrada › Articulaciones y ligaduras");
+        assert_eq!(results[0].place, "Articulaciones › Articulación");
     }
 
     #[test]

@@ -287,12 +287,13 @@ Los comandos *pendientes* ya tienen su tecla reservada y muestran un aviso hasta
 | Sin atajo | Vista continua |  |
 | Sin atajo | Vista de pentagrama |  |
 | `⌘F` | Buscar comandos… |  |
-| `⌥⌘1` | Pestaña Inicio |  |
-| `⌥⌘2` | Pestaña Entrada |  |
-| `⌥⌘3` | Pestaña Notación |  |
+| `⌥⌘1` | Pestaña Escribir |  |
+| `⌥⌘2` | Pestaña Articulaciones |  |
+| `⌥⌘3` | Pestaña Dinámicas |  |
 | `⌥⌘4` | Pestaña Texto |  |
-| `⌥⌘5` | Pestaña Reproducción |  |
-| `⌥⌘8` | Pestaña Disposición |  |
-| `⌥⌘6` | Pestaña Revisión |  |
-| `⌥⌘7` | Pestaña Vista |  |
+| `⌥⌘5` | Pestaña Partitura |  |
+| Sin atajo | Pestaña Partitura (saltos de página) |  |
+| `⌥⌘6` | Pestaña Reproducción |  |
+| `⌥⌘7` | Pestaña Revisión |  |
+| `⌥⌘8` | Pestaña Vista |  |
 | Sin atajo | Plegar o desplegar la cinta |  |

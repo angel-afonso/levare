@@ -235,7 +235,7 @@ mod tests {
         let (keymap, problems) = resolve(&UserKeymap::new());
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(keymap.label(id::VOICE_1).as_deref(), Some("⌥1"));
-        assert_eq!(keymap.label(id::TAB_HOME).as_deref(), Some("⌥⌘1"));
+        assert_eq!(keymap.label(id::TAB_NOTE_INPUT).as_deref(), Some("⌥⌘1"));
     }
 
     #[test]

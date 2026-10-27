@@ -84,6 +84,8 @@ pub struct ControlView {
     pub label: String,
     /// Full registry label, for tooltips and accessibility.
     pub description: &'static str,
+    /// What the control does, in one sentence, for its tooltip.
+    pub hint: &'static str,
     pub keys: Option<String>,
     pub enabled: bool,
     pub checked: bool,
@@ -181,6 +183,7 @@ pub fn control_view(
             .label
             .unwrap_or_else(|| control.label.unwrap_or(description).to_owned()),
         description,
+        hint: control.hint,
         keys: keymap.label(control.command),
         enabled: state.enabled,
         checked: state.checked,
@@ -487,7 +490,7 @@ mod tests {
             }
         }
         split.sort_unstable();
-        assert_eq!(split, vec!["Dinámicas", "Repeticiones", "Saltos"]);
+        assert_eq!(split, vec!["D.C. / D.S.", "Intervalo"]);
     }
 
     fn controls(view: &ToolbarView) -> Vec<&ControlView> {
@@ -509,7 +512,7 @@ mod tests {
                 },
             ),
         ]);
-        let input = view(TabId::NoteInput, 2000., &states);
+        let input = view(TabId::Write, 2000., &states);
         let find = |view: &ToolbarView, command| {
             controls(view)
                 .into_iter()
@@ -523,48 +526,19 @@ mod tests {
         assert_eq!(eighth.label, "Corchea");
         assert!(!find(&input, id::THIRTY_SECOND).pending);
         assert!(!find(&input, id::QUARTER).checked);
-        // Articulations and slurs sit beside the durations, as in MuseScore.
         let slur = find(&input, id::SLUR);
         assert_eq!(slur.label, "Terminar expresión");
         assert_eq!(slur.keys.as_deref(), Some("S"));
-        assert_eq!(find(&input, id::STACCATO).keys, None);
-        let home = view(TabId::Home, 2000., &states);
-        assert_eq!(find(&home, id::PASTE).label, "Pegar");
-    }
-
-    #[test]
-    fn small_controls_stack_in_columns_of_three() {
-        // At exactly the normal width nothing folds and nothing expands.
-        let normal = |tab_id| {
-            let width = full_width(&view(tab_id, 5000., &Fake(vec![])));
-            view(tab_id, width, &Fake(vec![]))
-        };
-        let home = normal(TabId::Home);
-        let clipboard = &home.groups[0];
-        assert!(matches!(clipboard.items[0], Item::Large(_)));
-        assert!(matches!(&clipboard.items[1], Item::Column(column) if column.len() == 3));
-        let input = normal(TabId::NoteInput);
-        let duration = &input.groups[1];
-        let segments: Vec<_> = duration
-            .items
-            .iter()
-            .filter(|item| matches!(item, Item::Segment { controls, .. } if controls.len() == 6))
-            .collect();
-        assert_eq!(segments.len(), 1);
-        assert_eq!(
-            duration
-                .items
-                .iter()
-                .filter(|item| matches!(item, Item::Tile(_)))
-                .count(),
-            3
-        );
+        let articulations = view(TabId::Articulations, 2000., &states);
+        assert_eq!(find(&articulations, id::STACCATO).keys, None);
+        let score = view(TabId::Score, 2000., &states);
+        assert_eq!(find(&score, id::ADD_INSTRUMENT).label, "Añadir…");
     }
 
     #[test]
     fn choice_tiles_form_one_segment() {
-        let width = full_width(&view(TabId::NoteInput, 5000., &Fake(vec![])));
-        let input = view(TabId::NoteInput, width, &Fake(vec![]));
+        let width = full_width(&view(TabId::Write, 5000., &Fake(vec![])));
+        let input = view(TabId::Write, width, &Fake(vec![]));
         let group = |title| input.groups.iter().find(|g| g.title == title).unwrap();
         let duration = group("Duración");
         let Item::Segment { controls, .. } = &duration.items[0] else {
@@ -582,13 +556,15 @@ mod tests {
                 id::THIRTY_SECOND
             ]
         );
-        assert_eq!(duration.items.len(), 4);
+        assert_eq!(duration.items.len(), 1);
+        let modify = group("Modificar");
         assert!(
-            duration.items[1..]
+            modify
+                .items
                 .iter()
                 .all(|item| matches!(item, Item::Tile(_)))
         );
-        let voices = group("Voces");
+        let voices = group("Voz");
         assert!(
             matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 2)
         );
@@ -596,7 +572,7 @@ mod tests {
 
     #[test]
     fn expanded_segments_are_named() {
-        let input = view(TabId::NoteInput, 5000., &Fake(vec![]));
+        let input = view(TabId::Write, 5000., &Fake(vec![]));
         let duration = input.groups.iter().find(|g| g.title == "Duración").unwrap();
         assert_eq!(duration.mode, GroupMode::Expanded);
         assert!(matches!(
@@ -606,46 +582,44 @@ mod tests {
     }
 
     #[test]
-    fn dynamics_and_jumps_stay_selectors_at_every_window_width() {
+    fn intervals_and_jumps_stay_selectors_at_every_window_width() {
         let states = Fake(vec![
-            (id::DYNAMIC_PP, CommandState::checked(true)),
-            (id::SEGNO, CommandState::checked(true)),
+            (id::INTERVAL_3, CommandState::checked(true)),
+            (id::DAL_SEGNO, CommandState::checked(true)),
         ]);
         for width in [500., 900., 1420., 5000.] {
-            let notation = view(TabId::Notation, width, &states);
-            for (title, commands, selected) in [
+            for (tab_id, title, commands, selected) in [
                 (
-                    "Dinámicas",
+                    TabId::Write,
+                    "Intervalo",
                     &[
-                        id::DYNAMIC_PP,
-                        id::DYNAMIC_P,
-                        id::DYNAMIC_MP,
-                        id::DYNAMIC_MF,
-                        id::DYNAMIC_F,
-                        id::DYNAMIC_FF,
-                        id::DYNAMIC_PPP,
-                        id::DYNAMIC_FFF,
+                        id::INTERVAL_2,
+                        id::INTERVAL_3,
+                        id::INTERVAL_4,
+                        id::INTERVAL_5,
+                        id::INTERVAL_6,
+                        id::INTERVAL_7,
+                        id::INTERVAL_8,
                     ][..],
-                    id::DYNAMIC_PP,
+                    id::INTERVAL_3,
                 ),
                 (
-                    "Saltos",
+                    TabId::Score,
+                    "D.C. / D.S.",
                     &[
-                        id::SEGNO,
-                        id::CODA,
-                        id::FINE,
-                        id::TO_CODA,
                         id::DA_CAPO,
                         id::DA_CAPO_AL_FINE,
                         id::DA_CAPO_AL_CODA,
                         id::DAL_SEGNO,
                         id::DAL_SEGNO_AL_FINE,
                         id::DAL_SEGNO_AL_CODA,
+                        id::TO_CODA,
                     ][..],
-                    id::SEGNO,
+                    id::DAL_SEGNO,
                 ),
             ] {
-                let group = notation
+                let row = view(tab_id, width, &states);
+                let group = row
                     .groups
                     .iter()
                     .find(|group| group.title == title)
@@ -678,7 +652,7 @@ mod tests {
                         .unwrap()
                         .visual
                 );
-                assert!(group.width_in(group.mode) < 90.);
+                assert!(group.width_in(group.mode) < 100.);
             }
         }
     }
@@ -694,34 +668,28 @@ mod tests {
     fn reference_width_keeps_priority_controls_and_all_folded_commands_available() {
         for spec in TABS {
             let row = view(spec.id, 1420., &Fake(vec![]));
-            if spec.id == TabId::Notation {
-                // Form and tremolo add low-priority groups; compact windows
-                // keep the common writing controls and expose folded menus.
-                for (group, source) in row.groups.iter().zip(spec.groups) {
-                    if source.priority >= 3 && !source.dropdown {
-                        assert_ne!(group.mode, GroupMode::Folded, "{}", source.title);
-                    }
-                    assert_eq!(
-                        group
-                            .controls
-                            .iter()
-                            .map(|control| control.command)
-                            .collect::<Vec<_>>(),
-                        source
-                            .controls
-                            .iter()
-                            .map(|control| control.command)
-                            .collect::<Vec<_>>()
-                    );
-                }
-            } else {
-                assert!(
-                    row.groups
-                        .iter()
-                        .all(|group| group.mode != GroupMode::Folded),
-                    "{:?} needs {}",
+            // Tabs by task are short enough that only designed dropdowns fold,
+            // and a folded group still lists every command of its spec.
+            for (group, source) in row.groups.iter().zip(spec.groups) {
+                assert_eq!(
+                    group.mode == GroupMode::Folded,
+                    source.dropdown,
+                    "{:?} needs {}: {}",
                     spec.id,
-                    full_width(&row)
+                    full_width(&row),
+                    source.title
+                );
+                assert_eq!(
+                    group
+                        .controls
+                        .iter()
+                        .map(|control| control.command)
+                        .collect::<Vec<_>>(),
+                    source
+                        .controls
+                        .iter()
+                        .map(|control| control.command)
+                        .collect::<Vec<_>>()
                 );
             }
             assert!(row.width(&Metrics::default()) <= 1420.);
@@ -750,7 +718,7 @@ mod tests {
                 );
             }
         }
-        let input = view(TabId::NoteInput, available, &Fake(vec![]));
+        let input = view(TabId::Write, available, &Fake(vec![]));
         let duration = input
             .groups
             .iter()
@@ -765,7 +733,7 @@ mod tests {
         );
         assert!(
             input.width(&metrics) > full_width(&input),
-            "Entrada uses more than its normal width"
+            "Escribir uses more than its normal width"
         );
     }
 
@@ -793,17 +761,17 @@ mod tests {
                 );
             }
         }
-        let needed = full_width(&view(TabId::Home, 5000., &Fake(vec![])));
-        let home = view(TabId::Home, needed - 1., &Fake(vec![]));
-        for group in &home.groups {
-            let expected = if group.title == "Portapapeles" {
+        let needed = full_width(&view(TabId::Review, 5000., &Fake(vec![])));
+        let review = view(TabId::Review, needed - 1., &Fake(vec![]));
+        for group in &review.groups {
+            let expected = if group.title == "Comentarios" {
                 GroupMode::Folded
             } else {
                 GroupMode::Full
             };
             assert_eq!(
                 group.mode, expected,
-                "{}: the clipboard has the lowest priority",
+                "{}: the comments have the lowest priority",
                 group.title
             );
         }

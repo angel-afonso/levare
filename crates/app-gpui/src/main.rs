@@ -1763,12 +1763,13 @@ impl AppView {
                 self.reveal_selection = true;
             }
             id::FULL_SCREEN => window.toggle_fullscreen(),
-            id::TAB_HOME => self.show_tab(score_toolbar::TabId::Home),
-            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::NoteInput),
-            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Notation),
+            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::Write),
+            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Articulations),
+            id::TAB_DYNAMICS => self.show_tab(score_toolbar::TabId::Dynamics),
             id::TAB_TEXT => self.show_tab(score_toolbar::TabId::Text),
+            // Breaks moved to Partitura; the old Disposición shortcut follows them.
+            id::TAB_HOME | id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Score),
             id::TAB_PLAYBACK => self.show_tab(score_toolbar::TabId::Playback),
-            id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Layout),
             id::TAB_REVIEW => self.show_tab(score_toolbar::TabId::Review),
             id::TAB_VIEW => self.show_tab(score_toolbar::TabId::View),
             id::TOGGLE_RIBBON => {
