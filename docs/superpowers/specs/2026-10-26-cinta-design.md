@@ -30,8 +30,10 @@ fuente está en el plan). Este documento fija lo que la maqueta decide.
 
 ### Nombre y tecla visibles
 
-Cada control es una baldosa: glifo arriba (28px de alto) y debajo una línea con el nombre (10,5px,
-`SECONDARY`) y la tecla (10px, `MUTED`), p. ej. «Negra 4». Cuando falta ancho, el grupo pasa a modo
+Cada control es una baldosa: glifo arriba (28px de alto), debajo el nombre (10,5px, `SECONDARY`) y
+bajo el nombre la tecla (10px, `MUTED`), p. ej. «Negra» y «4». Nombre y tecla van en dos líneas para
+que la baldosa mida lo que el más ancho de los dos, no su suma: en una línea, Escribir no cabía a
+1440px. Donde el título del grupo ya da el contexto, el nombre es corto («Unión», «Arriba»). Cuando falta ancho, el grupo pasa a modo
 normal: glifo y tecla, sin nombre. Si aún falta, se pliega en su botón desplegable, como hoy. La
 ayuda al pasar el cursor muestra nombre, tecla y una frase de qué hace.
 
