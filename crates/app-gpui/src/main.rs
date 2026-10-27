@@ -2692,12 +2692,7 @@ impl AppView {
                 .and_then(|path| path.parent())
                 .map(|p| p.to_owned())
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            let name = self
-                .document
-                .editor
-                .score()
-                .title()
-                .replace(['/', '\\', ':'], "_");
+            let name = score_io::file_name(self.document.editor.score().title(), 80);
             cx.prompt_for_new_path(&directory, Some(&format!("{name}.partitura")))
         });
         let score = self.document.editor.score().clone();

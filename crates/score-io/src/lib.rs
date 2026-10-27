@@ -6,11 +6,13 @@ mod clef_tests;
 #[cfg(test)]
 mod comment_tests;
 pub mod musicxml;
+mod names;
 #[cfg(test)]
 mod range_tests;
 mod recent;
 mod recovery;
 mod replace;
+pub use names::file_name;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};
 pub use replace::persist;
