@@ -86,8 +86,8 @@ ver el conjunto de cinco instrumentos.
   el botón de eliminar. En **Mezcla** (tecla `M`; pulsarla otra vez vuelve a Lista), cada
   fila añade volumen y posición estéreo por parte (con varias partes, cada una parte de su
   sitio habitual en el escenario) y, para cuerda, madera y metal, **Sección | Solista**. Los
-  deslizadores responden a clic, arrastre y botones −/+, incluso durante la reproducción; sus
-  ajustes son de sesión, se conservan al cambiar de banco de sonidos y no se guardan en la
+  deslizadores responden a clic y arrastre, incluso durante la reproducción, y pulsar el valor
+  que muestran a su derecha lo devuelve al habitual; sus ajustes son de sesión, se conservan al cambiar de banco de sonidos y no se guardan en la
   partitura. Solista o Sección sí se guarda y se puede deshacer
   ([detalles](docs/sfz.md#solista-o-sección)). El pie dice qué parte está elegida y qué teclas
   cambian de parte (`⌥↑` `⌥↓`) o, en Mezcla, el volumen general. Aquí ya no se abren editores.
@@ -102,10 +102,14 @@ ver el conjunto de cinco instrumentos.
   la entrada de notas activa añade la alteración de las próximas notas. Un
   **silencio** es igual, sin altura. Con un **pasaje** muestra las partes y compases que abarca,
   cuántas notas, partes y marcas contiene, **Hacer con el pasaje** (subir o bajar un grado o una
-  octava, copiar, pasar a silencios, comprobar la selección) y **Marcas en el pasaje**, cada
+  octava, copiar, convertir en silencios, comprobar la selección) y **Marcas en el pasaje**, cada
   una con su compás y su ✕. Los editores de clave, tonalidad, métrica, tempo, texto, letra,
   cifrado e información de la partitura se abren en esta pestaña, con **Aplicar** y **Cancelar**
-  (`Esc`), y abrirlos desde la cinta, el menú o la tira superior muestra el panel y la pestaña.
+  (`Esc`), y abrirlos desde la cinta, el menú o la tira superior muestra el panel y la pestaña;
+  si un editor sigue abierto con el panel oculto o en otra pestaña, `Esc` primero lo muestra.
+  Cambiar la selección con un clic o con las teclas de navegación cierra los editores de texto,
+  letra, cifrado, tempo e información; los de clave, tonalidad y métrica siguen abiertos porque
+  siguen al compás del cursor.
   **Sonido** reúne la salida (volumen general y reverberación suave con cantidad, tamaño de sala
   y encendido/apagado), el sonido de la parte elegida (banco, sonido, interpretación natural o
   literal) y **Más sonidos**, que instala paquetes adicionales del catálogo con su licencia
@@ -113,8 +117,9 @@ ver el conjunto de cinco instrumentos.
   instrumento y comentarios. Las ayudas largas aparecen al pasar el cursor. Los botones de la
   cabecera muestran y ocultan cada panel, y la app recuerda cuáles estaban abiertos, la pestaña
   derecha, Lista o Mezcla y las familias plegadas (`paneles.json` en la carpeta de datos).
-  **Mezclador** (abre Mezcla a la izquierda) y **Sonidos** (abre la pestaña Sonido) están en la
-  cinta **Reproducción**; Mezclador también en el menú **Reproducción**.
+  **Mezcla** (abre Mezcla a la izquierda) y **Sonido** (abre la pestaña Sonido) están en la
+  cinta **Reproducción**; pulsarlos otra vez vuelve a Lista o a Selección. Mezcla también está
+  en el menú **Reproducción**.
 - **Tira de posición:** sobre la partitura, **Compás**, **Tiempo**, **Tempo**, **Métrica** y
   **Tonalidad** (estos tres abren su editor en el panel derecho), la parte y la voz activas y el
   resumen de la selección. Es el único sitio donde se lee dónde estás.

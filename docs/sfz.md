@@ -1,17 +1,17 @@
-# Bibliotecas SFZ en Sonidos
+# Bibliotecas SFZ en la pestaña Sonido
 
 Levare puede cargar varias bibliotecas SFZ locales con el mismo motor sfizz. Instala
 cada biblioteca y su manifiesto en una carpeta propia bajo `soundpacks/` junto al
 ejecutable, en alguno de sus directorios antecesores, o bajo la carpeta de datos de
 Levare (`soundpacks/`). La app descubre cada `manifest.json`, muestra los paquetes
-válidos en **Sonidos** y conserva los errores de los paquetes inválidos para que
+válidos en la pestaña **Sonido** del panel derecho y conserva los errores de los paquetes inválidos para que
 puedas corregirlos. GeneralUser GS sigue disponible como respaldo para instrumentos
 o teclas que un paquete no cubra. Las bibliotecas y sus licencias pertenecen a sus
 respectivos autores.
 
 ## Más sonidos
 
-**Sonidos › Más sonidos** instala paquetes del catálogo que viene dentro de la app,
+**Sonido › Más sonidos** instala paquetes del catálogo que viene dentro de la app,
 uno cada vez y en segundo plano, sin dejar de escribir. Cada paquete muestra su
 descarga, lo que ocupa instalado y su licencia; **Instalar…** enseña la licencia y
 **Aceptar e instalar** empieza. La descarga se comprueba con el SHA-256 publicado en el
@@ -113,8 +113,8 @@ del instrumento, y `second` los de su conjunto.
 
 ## Solista o sección
 
-Cada parte de cuerda, madera o metal tiene en **Mezclador › Intérpretes** la opción
-**Solista** o **Sección**. Por defecto, las cuerdas son secciones si la partitura tiene
+Cada parte de cuerda, madera o metal tiene en su fila de **Mezcla** (panel de partes, a la
+izquierda) el selector **Sección | Solista**. Por defecto, las cuerdas son secciones si la partitura tiene
 más de cuatro partes de cuerda y solistas en música de cámara; una parte llamada
 «solista» o «solo», y cualquier madera o metal, es solista. La elección se guarda en la
 partitura y se puede deshacer. Si dos partes del mismo instrumento tocan del mismo modo,
@@ -173,7 +173,7 @@ declaran y esas notas se reproducen con GeneralUser.
 
 Si hay dos o más paquetes, **Bibliotecas combinadas** elige el primero que tenga
 parche para cada instrumento; si ninguno cubre el ataque, se usa GeneralUser.
-Los botones de prioridad de Sonidos cambian ese orden. La lista se guarda en
+Los botones de prioridad de la pestaña Sonido cambian ese orden. La lista se guarda en
 `sonidos.json` de la carpeta de datos como `{"version":1,"priority":["vpo","vsco-ce"]}`;
 los paquetes nuevos no enumerados se añaden por identificador en orden alfabético.
 Cambiar de banco o de prioridad detiene la reproducción y no altera la partitura.

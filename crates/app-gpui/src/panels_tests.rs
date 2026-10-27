@@ -1,4 +1,5 @@
 use crate::panels::{PanelMemory, PartsMode, RightTab, load, save};
+use crate::ui::UiState;
 
 #[test]
 fn missing_file_gives_defaults() {
@@ -30,7 +31,7 @@ fn round_trip_keeps_every_field() {
         show_right: false,
         right: RightTab::Review,
         parts_mode: PartsMode::Mix,
-        folded: vec!["Cuerdas".into(), "Metales".into()],
+        folded: vec!["Cuerda".into(), "Metales".into()],
     };
     save(&path, &memory).unwrap();
     assert_eq!(load(&path), memory);
@@ -49,4 +50,20 @@ fn unknown_fields_are_ignored() {
     assert!(!memory.show_parts);
     assert_eq!(memory.right, RightTab::Sound);
     assert!(memory.show_right);
+}
+
+#[test]
+fn the_window_state_gives_back_what_it_restored() {
+    let memory = PanelMemory {
+        show_parts: false,
+        show_right: true,
+        right: RightTab::Sound,
+        parts_mode: PartsMode::Mix,
+        folded: vec!["Cuerda".into(), "Maderas".into()],
+    };
+    assert_eq!(UiState::restore(memory.clone()).panel_memory(), memory);
+    assert_eq!(
+        UiState::restore(PanelMemory::default()).panel_memory(),
+        PanelMemory::default()
+    );
 }

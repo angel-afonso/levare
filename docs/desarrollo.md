@@ -617,7 +617,9 @@ Los colores de la interfaz están en `ui/theme.rs`, con el contraste comprobado.
 ### Paneles laterales
 
 Diseño en `docs/superpowers/specs/2026-10-27-paneles-design.md`. Cada panel responde a una
-pregunta y nada se repite entre ellos ni con la cinta.
+pregunta y ningún panel repite lo que ya muestra otro. Con la cinta sí hay repeticiones a
+propósito: las acciones del pasaje y de la nota en Selección ejecutan los mismos comandos que
+sus botones de la cinta, a mano junto a lo que se mira.
 
 - **Izquierda, «¿qué hay en la partitura?»** (`ui/instrument_panel.rs`, `ui/parts_view.rs`,
   `ui/mixer.rs`). `parts_view` calcula sin GPUI las familias en orden de partitura, sus filas
@@ -630,7 +632,10 @@ pregunta y nada se repite entre ellos ni con la cinta.
   nota, silencio, pasaje o editor abierto; `ui/selection_panel.rs` lo dibuja y aloja los editores
   de clave, tonalidad, métrica, tempo, texto, letra, cifrado e información), Sonido
   (`ui/sound_panel.rs` con `ui/mixer.rs` para la salida) y Revisión (`ui/review.rs` y
-  `ui/comments.rs`). Abrir un editor muestra el panel y la pestaña Selección. Quitar una marca
+  `ui/comments.rs`). Abrir un editor muestra el panel y la pestaña Selección. Un clic en la
+  partitura o una tecla de navegación cierra, por el mismo camino que `Esc`
+  (`cancel_editor`), los editores para los que `EditorKind::survives_selection_move` es falso;
+  el avance propio de letra y cifrado no pasa por ahí. Quitar una marca
   desde su fila ✕ ejecuta el comando de la marca y se deshace como cualquier edición.
 - **Arriba** (`#score-readouts` en `ui.rs`): la única tira de posición (Compás, Tiempo, Tempo,
   Métrica, Tonalidad, Parte · Voz y resumen de la selección). Tempo, Métrica y Tonalidad abren su

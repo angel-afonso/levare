@@ -1181,6 +1181,33 @@ mod tests {
     }
 
     #[test]
+    fn part_names_match_part_name_for_every_part() {
+        let mut score = Score::new(
+            String::new(),
+            &[
+                Instrument::Flute,
+                Instrument::Violin,
+                Instrument::Violin,
+                Instrument::Viola,
+                Instrument::Violin,
+                Instrument::Cello,
+            ],
+            1,
+        )
+        .unwrap();
+        let viola = score.parts()[3].id();
+        score.part_mut(viola).unwrap().name = Some("Viola solista".into());
+        let one_by_one: Vec<_> = score
+            .parts()
+            .iter()
+            .map(|part| score.part_name(part.id()))
+            .collect();
+        assert_eq!(score.part_names(), one_by_one);
+        assert_eq!(one_by_one[4], format!("{} III", Instrument::Violin.name()));
+        assert_eq!(one_by_one[3], "Viola solista");
+    }
+
+    #[test]
     fn capacity_and_stable_ids_survive_removal() {
         let mut score = Score::default();
         let first = score.insert(0, 0, note()).unwrap();
