@@ -66,10 +66,12 @@ ver el conjunto de cinco instrumentos.
   Todos los controles se dibujan igual: sin fondo en reposo, en azul cuando están
   activos o elegidos, y las opciones que se excluyen (duración, alteración, voz) comparten
   una pista. Bajo cada símbolo van su nombre y su tecla, y cada grupo lleva su título
-  debajo. En ventanas estrechas los controles pierden el nombre y, si aún falta
-  sitio, los grupos menos usados se pliegan en un botón desplegable. A la derecha de
-  las pestañas, una pastilla dice qué se va a escribir («Escribiendo · Negra con
-  puntillo · Voz 2»), con un punto azul cuando la entrada de notas está activa.
+  debajo. En ventanas estrechas los controles pierden el nombre (el principal de cada
+  grupo lo conserva) y, si aún falta sitio, los grupos menos usados se pliegan en un
+  botón desplegable. A la derecha de las pestañas, una pastilla dice qué se va a
+  escribir («Escribiendo · Negra con puntillo · Voz 2»), con un punto azul cuando la
+  entrada de notas está activa; sin ella dice «Seleccionando» y la tecla para empezar
+  a escribir. Si no cabe, deja primero los modificadores y después se recorta.
   El portapapeles está en el menú **Edición** y en sus atajos; deshacer y rehacer, en
   la cabecera. No hay botones de «Quitar»: selecciona la nota en la partitura y vuelve
   a pulsar la marca activa para quitarla, o pulsa Backspace para borrar la selección.
@@ -305,7 +307,7 @@ Los cambios se colocan al comienzo de un compás.
   al deshacer; un arpegio entre manos separadas queda local donde hay un acorde.
 - **Shift + clic** o **Shift + ←/→** amplía la selección dentro del mismo
   pentagrama; **⌘A** selecciona todos sus elementos escritos.
-- **⌘C** copia, **⌘X** corta y **⌘V** pega. También están disponibles en la
+- **⌘C** copia, **⌘X** corta y **⌘V** pega. También están disponibles en el
   menú **Edición**, con los atajos configurables.
 - El pegado se coloca **después de la selección**, o en el cursor del compás
   vacío que elijas. Puedes cambiar de mano, instrumento o documento antes de pegar.
