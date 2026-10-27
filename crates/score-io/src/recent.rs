@@ -60,7 +60,8 @@ impl RecentFiles {
 
     /// Moves `file` to the front, without duplicates, keeping at most `LIMIT`.
     pub fn touch(&mut self, file: &Path) {
-        let file = file.canonicalize().unwrap_or_else(|_| file.to_owned());
+        // Plain `canonicalize` gives `\\?\C:\…` on Windows; dunce keeps `C:\…`.
+        let file = dunce::canonicalize(file).unwrap_or_else(|_| file.to_owned());
         self.files.retain(|existing| *existing != file);
         self.files.insert(0, file);
         self.files.truncate(Self::LIMIT);
@@ -89,7 +90,7 @@ mod tests {
         let file = |name: &str| {
             let path = directory.path().join(name);
             fs::write(&path, "{}").unwrap();
-            path.canonicalize().unwrap()
+            dunce::canonicalize(path).unwrap()
         };
         let mut recent = RecentFiles::new();
         let first = file("a.partitura");
@@ -124,7 +125,7 @@ mod tests {
         recent.save(&list).unwrap();
         fs::remove_file(&gone).unwrap();
         let loaded = RecentFiles::load(&list).unwrap();
-        assert_eq!(loaded.files(), [kept.canonicalize().unwrap()]);
+        assert_eq!(loaded.files(), [dunce::canonicalize(&kept).unwrap()]);
         fs::write(&list, r#"{"version": 7, "files": []}"#).unwrap();
         assert!(RecentFiles::load(&list).is_err());
     }

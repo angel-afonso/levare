@@ -445,10 +445,18 @@ pub fn recent_title(path: &std::path::Path) -> String {
 
 /// Folder of a recent score, with the home directory shortened to `~`.
 pub fn recent_folder(path: &std::path::Path) -> String {
-    let folder = path.parent().unwrap_or(path);
-    match dirs::home_dir().and_then(|home| folder.strip_prefix(home).ok().map(PathBuf::from)) {
+    folder_label(path.parent().unwrap_or(path), dirs::home_dir().as_deref())
+}
+
+/// Joined with the platform's own separator: `~/Partituras` on macOS and
+/// Linux, `~\Partituras` on Windows.
+fn folder_label(folder: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    match home.and_then(|home| folder.strip_prefix(home).ok()) {
         Some(relative) if relative.as_os_str().is_empty() => "~".into(),
-        Some(relative) => format!("~/{}", relative.display()),
+        Some(relative) => std::path::Path::new("~")
+            .join(relative)
+            .display()
+            .to_string(),
         None => folder.display().to_string(),
     }
 }
@@ -466,6 +474,25 @@ mod tests {
                 .nth(usize::from(digit))
                 .map(String::from)
         }
+    }
+
+    #[test]
+    fn recent_folders_shorten_home_with_the_platform_separator() {
+        let home = std::path::Path::new(std::path::MAIN_SEPARATOR_STR)
+            .join("Usuarios")
+            .join("ana");
+        let s = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            folder_label(&home.join("Partituras").join("Coro"), Some(&home)),
+            format!("~{s}Partituras{s}Coro")
+        );
+        assert_eq!(folder_label(&home, Some(&home)), "~");
+        let elsewhere = std::path::Path::new(std::path::MAIN_SEPARATOR_STR).join("Obras");
+        assert_eq!(
+            folder_label(&elsewhere, Some(&home)),
+            elsewhere.display().to_string()
+        );
+        assert_eq!(folder_label(&home, None), home.display().to_string());
     }
 
     #[test]
