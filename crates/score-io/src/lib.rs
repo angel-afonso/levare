@@ -11,7 +11,6 @@ mod names;
 mod range_tests;
 mod recent;
 mod recovery;
-pub use atomic_write::persist;
 pub use names::file_name;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};

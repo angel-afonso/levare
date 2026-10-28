@@ -1,11 +1,7 @@
 //! What the side panels remember between sessions (`paneles.json`).
 
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    io::{self, Write},
-    path::Path,
-};
+use std::{fs, io, path::Path};
 
 /// The tabs of the right panel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,8 +80,5 @@ pub fn load(path: &Path) -> PanelMemory {
 pub fn save(path: &Path, memory: &PanelMemory) -> io::Result<()> {
     let parent = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    temporary.write_all(&serde_json::to_vec_pretty(memory)?)?;
-    score_io::persist(temporary, path)?;
-    Ok(())
+    atomic_write::write(path, &serde_json::to_vec_pretty(memory)?)
 }
