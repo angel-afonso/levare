@@ -7,4 +7,4 @@ license.workspace = true
 [dependencies]
 score-core.workspace = true
 serde_json.workspace = true
-ttf-parser = "=0.25.1"
+ttf-parser.workspace = true

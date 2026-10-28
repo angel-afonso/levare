@@ -26,8 +26,10 @@ agent-tools = { path = "crates/agent-tools" }
 agent-host = { path = "crates/agent-host" }
 levare-update = { path = "crates/update" }
 atomic-write = { path = "crates/atomic-write" }
-serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+score-sound-vsco = { path = "crates/sound-vsco" }
+score-sound-store = { path = "crates/sound-store" }
+serde = { version = "=1.0.229", features = ["derive", "rc"] }
+serde_json = "=1.0.154"
 schemars = { version = "=1.2.3", features = ["derive"] }
 imbl = { version = "=7.0.2", features = ["serde"] }
 slotmap = { version = "=1.1.1", features = ["serde"] }
@@ -44,6 +46,23 @@ futures = "=0.3.34"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
 reqwest = { version = "=0.13.5", default-features = false }
 agent-client-protocol = "=3.5.0"
+# The client GPUI already builds, used blocking from a background thread.
+zed-reqwest = { version = "=0.12.15-zed", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# No backend by default: each crate picks one.
+flate2 = { version = "=1.1.5", default-features = false }
+sha2 = "=0.10.9"
+# Also pins libc for the whole workspace through score-sound-store, which uses it
+# directly: 0.2.190 dropped ENOATTR on Linux, which xattr 0.2.3 (under
+# gpui_http_client) needs to compile there.
+libc = "=0.2.189"
+dirs = "=6.0.0"
+dunce = "=1.0.5"
+roxmltree = "=0.20.0"
+ttf-parser = "=0.25.1"
+windows-sys = "=0.61.2"
+core-text = "=21.0.0"
+core-graphics = "=0.24.0"
 
 # Large orchestral scores must stay fluid with `cargo run`: light optimization
 # for our crates keeps rebuilds quick; dependencies (GPUI) are built once.

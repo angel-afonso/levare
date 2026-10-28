@@ -7,17 +7,17 @@ license.workspace = true
 [dependencies]
 # Linux updates come as .tar.gz and Windows updates as .zip; both are read
 # on every OS so the install tests run everywhere.
-flate2 = { version = "=1.1.5", default-features = false, features = ["zlib-rs"] }
+flate2 = { workspace = true, features = ["zlib-rs"] }
 minisign-verify = "=0.2.5"
 # The same HTTP client score-sound-store downloads packs with.
-reqwest = { package = "zed-reqwest", version = "=0.12.15-zed", default-features = false, features = ["blocking", "rustls-tls-native-roots"] }
+zed-reqwest.workspace = true
 semver = "=1.0.28"
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "=0.10.9"
+sha2.workspace = true
 tar = { version = "=0.4.46", default-features = false }
 thiserror = "=2.0.21"
-zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip.workspace = true
 
 [dev-dependencies]
 # Signs test archives with throwaway keys; the crate itself only verifies.

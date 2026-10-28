@@ -32,7 +32,7 @@ pub struct Updater {
     platform: String,
     max_archive_bytes: u64,
     manifest_timeout: Duration,
-    http: reqwest::blocking::Client,
+    http: zed_reqwest::blocking::Client,
 }
 
 impl Updater {
@@ -129,7 +129,7 @@ impl Updater {
         &self,
         url: &str,
         timeout: Option<Duration>,
-    ) -> Result<reqwest::blocking::Response, Error> {
+    ) -> Result<zed_reqwest::blocking::Response, Error> {
         check_secure(url)?;
         let mut request = self.http.get(url);
         if let Some(timeout) = timeout {
@@ -146,8 +146,8 @@ impl Updater {
     }
 }
 
-fn http_client(read_timeout: Duration) -> Result<reqwest::blocking::Client, Error> {
-    Ok(reqwest::blocking::Client::builder()
+fn http_client(read_timeout: Duration) -> Result<zed_reqwest::blocking::Client, Error> {
+    Ok(zed_reqwest::blocking::Client::builder()
         .user_agent(concat!("Levare/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
         // The blocking client applies this to each read, not the whole body.
@@ -159,7 +159,7 @@ fn http_client(read_timeout: Duration) -> Result<reqwest::blocking::Client, Erro
 /// tests.
 fn check_secure(url: &str) -> Result<(), Error> {
     let insecure = || Error::InsecureUrl(url.to_string());
-    let parsed = reqwest::Url::parse(url).map_err(|_| insecure())?;
+    let parsed = zed_reqwest::Url::parse(url).map_err(|_| insecure())?;
     match parsed.scheme() {
         "https" => Ok(()),
         "http" if matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")) => Ok(()),
@@ -491,7 +491,7 @@ mod tests {
         let server = release(&key, ARCHIVE);
         let updater = impatient(updater(&server, &key, "0.2.1"));
         let update = updater.check().unwrap().unwrap();
-        let path = reqwest::Url::parse(&update.asset.url).unwrap();
+        let path = zed_reqwest::Url::parse(&update.asset.url).unwrap();
         server.reply(path.path(), Reply::Stall(ARCHIVE.len()));
         let dir = tempdir::Dir::new();
         let target = dir.path().to_path_buf();
@@ -506,7 +506,7 @@ mod tests {
         let server = release(&key, ARCHIVE);
         let updater = impatient(updater(&server, &key, "0.2.1"));
         let update = updater.check().unwrap().unwrap();
-        let path = reqwest::Url::parse(&update.asset.url).unwrap();
+        let path = zed_reqwest::Url::parse(&update.asset.url).unwrap();
         // Longer in all than the timeout, with no gap as long as it.
         server.reply(
             path.path(),

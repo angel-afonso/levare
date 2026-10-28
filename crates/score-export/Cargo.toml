@@ -12,4 +12,4 @@ tempfile.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-roxmltree = "=0.20.0"
+roxmltree.workspace = true

@@ -6,7 +6,7 @@ pub enum Error {
     #[error("las actualizaciones deben llegar por https: {0}")]
     InsecureUrl(String),
     #[error("no se pudo contactar con el servidor de actualizaciones: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[from] zed_reqwest::Error),
     #[error("el servidor de actualizaciones respondió {status} para {url}")]
     Status { status: u16, url: String },
     #[error("el manifiesto de actualizaciones no es válido: {0}")]

@@ -259,7 +259,7 @@ fn download_path(downloads: &Path, entry: &Entry, index: usize) -> PathBuf {
 /// Stream `archive` to `path`, hashing as it arrives. A stalled connection
 /// fails after a minute without data; a large one never times out.
 fn download(archive: &Archive, path: &Path, progress: &Progress) -> Result<(), StoreError> {
-    let client = reqwest::blocking::Client::builder()
+    let client = zed_reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(60))
         .user_agent(concat!("Levare/", env!("CARGO_PKG_VERSION")))
@@ -495,7 +495,7 @@ fn io(cause: std::io::Error) -> StoreError {
     }
 }
 
-fn network(cause: reqwest::Error) -> StoreError {
+fn network(cause: zed_reqwest::Error) -> StoreError {
     error(format!("No se pudo descargar: {cause}"))
 }
 

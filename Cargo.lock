@@ -5736,7 +5736,6 @@ version = "0.2.0"
 dependencies = [
  "atomic-write",
  "dunce",
- "libc",
  "roxmltree",
  "score-core",
  "serde",

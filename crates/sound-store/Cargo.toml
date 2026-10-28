@@ -6,18 +6,17 @@ license.workspace = true
 
 [dependencies]
 atomic-write.workspace = true
-score-sound-vsco = { path = "../sound-vsco" }
+score-sound-vsco.workspace = true
 score-platform.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.10"
-libc = "0.2"
-zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# The client GPUI already builds, used blocking from a background thread.
-reqwest = { package = "zed-reqwest", version = "=0.12.15-zed", default-features = false, features = ["blocking", "rustls-tls-native-roots", "http2"] }
+sha2.workspace = true
+libc.workspace = true
+zip.workspace = true
+zed-reqwest = { workspace = true, features = ["http2"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 score-core.workspace = true
