@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppView;
 use crate::app_paths::data_path;
+use crate::autosave::autosave_now;
 
 /// The key the release workflow signs updates with; its secret half is the
 /// repository's UPDATE_SIGNING_KEY (see docs/releasing.md).
@@ -346,7 +347,16 @@ impl AppView {
 
     fn restart_now(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.playback.stop();
-        self.sync_quit_snapshot();
+        // Unsaved work comes back only through the autosave, so its last
+        // write must have reached the disk before Levare goes away.
+        if let Err(error) = autosave_now(self.quit_snapshot.as_ref(), self.unsaved_snapshot()) {
+            self.status = format!(
+                "Actualización instalada, pero Levare no se reinicia: no se pudo autoguardar la \
+                 partitura ({error}). Guárdala y vuelve a intentarlo."
+            );
+            self.set_update_status(Status::Installed { path }, cx);
+            return;
+        }
         if !self.document.is_dirty()
             && let (Some(score), Some(marker)) = (self.path.clone(), data_path("reabrir.json"))
         {

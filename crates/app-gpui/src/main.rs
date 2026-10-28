@@ -6,6 +6,7 @@ mod agent;
 mod agent_tests;
 mod app_icon;
 mod app_paths;
+mod autosave;
 mod clipboard;
 mod comments;
 mod connection_input;
@@ -416,11 +417,16 @@ impl AppView {
 
     fn sync_quit_snapshot(&self) {
         if let Some(recovery) = &self.quit_snapshot {
-            recovery.update(self.document.is_dirty().then(|| score_io::RecoveredScore {
-                score: self.document.editor.score().clone(),
-                original_path: self.path.clone(),
-            }));
+            recovery.update(self.unsaved_snapshot());
         }
+    }
+
+    /// What the autosave holds: the score while it has unsaved changes.
+    fn unsaved_snapshot(&self) -> Option<score_io::RecoveredScore> {
+        self.document.is_dirty().then(|| score_io::RecoveredScore {
+            score: self.document.editor.score().clone(),
+            original_path: self.path.clone(),
+        })
     }
 
     /// Says where the recovery file that could not be restored went, so the
