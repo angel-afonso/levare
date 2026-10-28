@@ -10,6 +10,8 @@ pub struct Document {
     /// The last displayed view. Most frames (playback, pointer, panels) leave
     /// the score untouched; comparing it is far cheaper than engraving again.
     view: Option<View>,
+    /// How many times a view was engraved rather than reused.
+    laid_out: usize,
     saved: Option<Score>,
 }
 
@@ -34,6 +36,7 @@ impl Document {
             editor: Editor::new(score.clone())?,
             layout: LayoutEngine::default(),
             view: None,
+            laid_out: 0,
             saved: Some(score),
         })
     }
@@ -59,21 +62,35 @@ impl Document {
         mode: score_layout::ViewMode,
         scale: f32,
     ) -> Rc<Layout> {
+        // Pages have their own printed width, so resizing the window or
+        // toggling a panel leaves them as they are.
+        let key_width = if mode == score_layout::ViewMode::Page {
+            0.
+        } else {
+            width
+        };
         let score = self.editor.score();
-        if let Some(view) = &self.view
-            && view.width == width
+        if let Some(view) = &mut self.view
+            && view.width == key_width
             && view.mode == mode
-            && view.scale == scale
             && view.score == *score
         {
+            // Zoom is applied when painting; the engraving stays the same.
+            if view.scale != scale {
+                let mut layout = Layout::clone(&view.layout);
+                layout.scale = scale;
+                view.layout = Rc::new(layout);
+                view.scale = scale;
+            }
             return view.layout.clone();
         }
+        self.laid_out += 1;
         let mut layout = self.layout.layout_view(score, width, mode);
         layout.scale = scale;
         let layout = Rc::new(layout);
         self.view = Some(View {
             score: score.clone(),
-            width,
+            width: key_width,
             mode,
             scale,
             layout: layout.clone(),
@@ -145,6 +162,33 @@ mod tests {
         check(&mut doc, 1100., ViewMode::Page, 0.7);
         check(&mut doc, 1100., ViewMode::SingleSystem, 0.7);
         check(&mut doc, 800., ViewMode::Continuous, 1.);
+    }
+
+    #[test]
+    fn resizing_and_zooming_a_page_view_reuses_its_engraving() {
+        use score_layout::ViewMode;
+        let mut doc = Document::default();
+        let page = doc.layout_view(800., ViewMode::Page, 1.);
+        // A window resize or a panel toggle changes the width only.
+        assert!(Rc::ptr_eq(
+            &page,
+            &doc.layout_view(1300., ViewMode::Page, 1.)
+        ));
+        let zoomed = doc.layout_view(1300., ViewMode::Page, 0.5);
+        assert_eq!(zoomed.scale, 0.5);
+        assert_eq!(doc.laid_out, 1);
+        let mut fresh =
+            LayoutEngine::default().layout_view(doc.editor.score(), 1300., ViewMode::Page);
+        fresh.scale = 0.5;
+        assert_eq!(format!("{zoomed:?}"), format!("{fresh:?}"));
+        // Fit to page asks for the page at another zoom; the canvas keeps it.
+        doc.layout_view(1000., ViewMode::Page, 1.);
+        doc.layout_view(1300., ViewMode::Page, 0.5);
+        assert_eq!(doc.laid_out, 1);
+        // Other views still follow the window.
+        doc.layout_view(800., ViewMode::Continuous, 0.5);
+        doc.layout_view(1300., ViewMode::Continuous, 0.5);
+        assert_eq!(doc.laid_out, 3);
     }
 
     #[test]

@@ -1921,9 +1921,11 @@ impl AppView {
             id::SINGLE_SYSTEM_VIEW => self.set_view_mode(score_layout::ViewMode::SingleSystem, cx),
             id::ZOOM_FIT => {
                 self.set_view_mode(score_layout::ViewMode::Page, cx);
-                let layout = self
-                    .document
-                    .layout_view(1000., score_layout::ViewMode::Page, 1.);
+                // Pages ignore the width and zoom only rescales them, so
+                // this reuses the canvas's engraving instead of replacing it.
+                let layout =
+                    self.document
+                        .layout_view(1000., score_layout::ViewMode::Page, self.ui.zoom);
                 let page = &layout.pages[0];
                 let viewport = self.viewport.scroll.bounds().size;
                 self.ui.zoom = ((f32::from(viewport.width) - 128.) / page.width)
