@@ -32,11 +32,7 @@ unsafe extern "C" {
 }
 
 pub fn export(score: &Score, path: &Path, part: bool) -> Result<usize, String> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let temp = atomic_write::temporary_for(path).map_err(|e| e.to_string())?;
     let url = CFURL::from_path(temp.path(), false).ok_or("Ruta de PDF inválida")?;
     let paper = painter::paper(score, part);
     let media = CGRect::new(&CGPoint::new(0., 0.), &CGSize::new(paper.0, paper.1));
@@ -83,7 +79,7 @@ pub fn export(score: &Score, path: &Path, part: bool) -> Result<usize, String> {
     if page_count(temp.path()) != Some(layout.pages.len()) {
         return Err("El PDF no contiene todas las páginas".into());
     }
-    temp.persist(path).map_err(|e| e.to_string())?;
+    atomic_write::persist(temp, path).map_err(|e| e.to_string())?;
     Ok(layout.pages.len())
 }
 

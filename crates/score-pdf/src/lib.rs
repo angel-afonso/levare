@@ -98,6 +98,26 @@ mod tests {
     }
 
     #[test]
+    fn a_read_only_pdf_is_kept_and_explained_in_spanish() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Protegida.pdf");
+        std::fs::write(&path, b"previous").unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions.clone()).unwrap();
+        let error = export(&score_core::Score::default(), &path).unwrap_err();
+        assert!(
+            error.starts_with("«Protegida.pdf» es de solo lectura"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"previous");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    #[test]
     fn failed_export_does_not_replace_an_existing_destination() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("previous.pdf");

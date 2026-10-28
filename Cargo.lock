@@ -5776,6 +5776,7 @@ dependencies = [
 name = "score-pdf"
 version = "0.2.0"
 dependencies = [
+ "atomic-write",
  "core-foundation 0.10.0",
  "core-graphics 0.24.0",
  "core-text",

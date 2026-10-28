@@ -12,18 +12,11 @@ use krilla::{
     text::{Font, GlyphId, KrillaGlyph},
 };
 use score_core::Score;
-use std::{io::Write, path::Path};
+use std::path::Path;
 
 pub fn export(score: &Score, path: &Path, part: bool) -> Result<usize, String> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     let (bytes, pages) = render(score, part)?;
-    temp.write_all(&bytes).map_err(|e| e.to_string())?;
-    temp.as_file().sync_all().map_err(|e| e.to_string())?;
-    temp.persist(path).map_err(|e| e.to_string())?;
+    atomic_write::write(path, &bytes).map_err(|e| e.to_string())?;
     Ok(pages)
 }
 
