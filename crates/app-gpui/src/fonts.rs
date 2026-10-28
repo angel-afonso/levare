@@ -22,6 +22,11 @@ pub const MONO: &str = "Consolas";
 pub const MONO: &str = "Liberation Mono";
 
 /// Registers the bundled fonts the families above need.
+///
+/// On Linux it also adds Cantarell, which is in GPUI's fallback list. The interface
+/// asks for `.SystemUIFont`; GPUI maps that to IBM Plex Sans and, when that is
+/// missing, takes the first installed font from its fallback list, panicking if
+/// there is none. With Cantarell registered there always is one.
 pub fn register(cx: &App) {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -29,9 +34,14 @@ pub fn register(cx: &App) {
             .iter()
             .map(|font| std::borrow::Cow::Borrowed(*font))
             .collect();
-        fonts.push(std::borrow::Cow::Borrowed(include_bytes!(
-            "../../../assets/fonts/LiberationMono-Bold.ttf"
-        )));
+        fonts.extend(
+            [
+                include_bytes!("../../../assets/fonts/LiberationMono-Bold.ttf").as_slice(),
+                include_bytes!("../../../assets/fonts/Cantarell-Regular.ttf").as_slice(),
+                include_bytes!("../../../assets/fonts/Cantarell-Bold.ttf").as_slice(),
+            ]
+            .map(std::borrow::Cow::Borrowed),
+        );
         if let Err(error) = cx.text_system().add_fonts(fonts) {
             eprintln!("No se pudieron cargar las fuentes incluidas: {error}");
         }
@@ -61,6 +71,13 @@ mod tests {
             )),
             "Liberation Mono"
         );
+        // Cantarell must keep a name from GPUI's fallback list.
+        for font in [
+            include_bytes!("../../../assets/fonts/Cantarell-Regular.ttf").as_slice(),
+            include_bytes!("../../../assets/fonts/Cantarell-Bold.ttf").as_slice(),
+        ] {
+            assert_eq!(family(font), "Cantarell");
+        }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             assert_eq!(super::SERIF, "Liberation Serif");

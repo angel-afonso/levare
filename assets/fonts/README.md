@@ -35,3 +35,18 @@ estimates hold for both. It is used for:
 
 Liberation Mono Bold draws the bar counter on Linux. It is the only mono weight the app
 uses.
+
+## Cantarell
+
+Sans-serif interface font from GNOME.
+
+- Source: <https://github.com/google/fonts/tree/main/ofl/cantarell>.
+- Files: `Cantarell-Regular.ttf`, `Cantarell-Bold.ttf`, and `OFL.txt` as
+  `Cantarell-OFL.txt`.
+- License: SIL Open Font License 1.1.
+
+On Linux the interface asks GPUI for the system font. GPUI maps it to IBM Plex Sans and,
+when that is missing, to the first installed family in its fallback list (Ubuntu,
+Adwaita Sans, Cantarell, Noto Sans, DejaVu Sans…). With none of them installed, GPUI
+panics on the first text it draws. Registering Cantarell means that list always finds a
+font.
