@@ -118,3 +118,38 @@ fn restore_selection_keeps_the_current_one_when_the_marked_is_gone() {
     assert_eq!(editor.cursor(), cursor);
     assert!(editor.selected_ids().len() <= 1);
 }
+
+#[test]
+fn the_revision_names_the_score_through_edits_undo_redo_rollback_and_squash() {
+    let mut editor = Editor::default();
+    let opened = editor.revision();
+    assert_ne!(Editor::default().revision(), opened);
+    editor.execute(Command::Write(event(Step::G))).unwrap();
+    let written = editor.revision();
+    assert_ne!(written, opened);
+    editor.navigate(false);
+    assert_eq!(editor.revision(), written);
+    assert!(editor.undo());
+    assert_eq!(editor.revision(), opened);
+    assert!(editor.redo());
+    assert_eq!(editor.revision(), written);
+
+    let mark = editor.mark();
+    write_three(&mut editor);
+    assert_ne!(editor.revision(), written);
+    editor.rollback(&mark);
+    assert_eq!(editor.revision(), written);
+
+    editor.execute(Command::ToggleRehearsalMark).unwrap();
+    assert_ne!(editor.revision(), written);
+    editor.execute(Command::ToggleRehearsalMark).unwrap();
+    assert!(!editor.squash(&mark));
+    assert_eq!(editor.revision(), written);
+
+    write_three(&mut editor);
+    let squashed = editor.revision();
+    assert!(editor.squash(&mark));
+    assert_eq!(editor.revision(), squashed);
+    assert!(editor.undo());
+    assert_eq!(editor.revision(), written);
+}

@@ -149,6 +149,8 @@ pub enum Command {
 #[derive(Clone)]
 struct Snapshot {
     score: Score,
+    /// See `Editor::revision`.
+    revision: u64,
     cursor: Cursor,
     selection: Option<ElementId>,
     range_anchor: Option<ElementId>,
@@ -176,6 +178,13 @@ impl Default for Editor {
     }
 }
 
+/// Revisions are unique across editors, so a cache keyed on one cannot
+/// mistake a newly opened score for the one it replaced.
+fn new_revision() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Editor {
     pub fn new(mut score: Score) -> Result<Self, ScoreError> {
         score.validate()?;
@@ -184,6 +193,7 @@ impl Editor {
         Ok(Self {
             state: Snapshot {
                 score,
+                revision: new_revision(),
                 cursor: Cursor {
                     staff: score_core::StaffId::Upper,
                     part: first_part,
@@ -202,6 +212,14 @@ impl Editor {
     }
     pub fn score(&self) -> &Score {
         &self.state.score
+    }
+    /// Names the score as it is now. Every edit that changes it gives a new
+    /// revision, and undo, redo and rollback bring the old one back, so an
+    /// unchanged revision means an unchanged score and per-frame work can
+    /// skip comparing whole scores. The reverse does not hold: editing a
+    /// note and then editing it back gives a new revision.
+    pub fn revision(&self) -> u64 {
+        self.state.revision
     }
     pub fn cursor(&self) -> Cursor {
         self.state.cursor
@@ -1382,6 +1400,7 @@ impl Editor {
         self.undo.truncate(mark.undo_len);
         self.redo.clear();
         if self.state.score == mark.snapshot.score {
+            self.state.revision = mark.snapshot.revision;
             return false;
         }
         self.undo.push(mark.snapshot.clone());
@@ -1444,7 +1463,11 @@ impl Editor {
         }
     }
 
-    fn commit(&mut self, next: Snapshot) {
+    fn commit(&mut self, mut next: Snapshot) {
+        // A command that leaves the score as it was keeps its revision.
+        if next.score != self.state.score {
+            next.revision = new_revision();
+        }
         self.undo.push(std::mem::replace(&mut self.state, next));
         self.redo.clear();
         if let Some(pitch) = self.selected_pitch() {

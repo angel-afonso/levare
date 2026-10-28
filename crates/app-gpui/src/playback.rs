@@ -56,6 +56,9 @@ pub struct Playback {
     recovered_at: Option<Instant>,
     /// When the default output device was last checked.
     device_checked_at: Option<Instant>,
+    /// The timeline behind the playhead on each frame, with the score
+    /// revision, tempo and form it was built for.
+    frame_timeline: Option<((u64, Tempo, bool), score_playback::Timeline)>,
 }
 
 impl Playback {
@@ -94,6 +97,7 @@ impl Playback {
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
             recovered_at: None,
             device_checked_at: None,
+            frame_timeline: None,
         };
         playback.connect();
         playback
@@ -285,12 +289,35 @@ impl Playback {
         Ok(())
     }
     pub fn position(&self, score: &Score, cursor: score_edit::Cursor) -> crate::playhead::Position {
+        self.position_on(score, cursor, &self.timeline(score))
+    }
+    /// `position` in the editor's score for the frame being drawn. Building
+    /// the timeline costs about as much as comparing two large scores, so
+    /// it is kept until an edit, the tempo or the form changes it.
+    pub fn frame_position(&mut self, editor: &score_edit::Editor) -> crate::playhead::Position {
+        let key = (editor.revision(), self.tempo, self.follow_repeats);
+        if self
+            .frame_timeline
+            .as_ref()
+            .is_none_or(|(built, _)| *built != key)
+        {
+            self.frame_timeline = Some((key, self.timeline(editor.score())));
+        }
+        let (_, timeline) = self.frame_timeline.as_ref().expect("timeline just built");
+        self.position_on(editor.score(), editor.cursor(), timeline)
+    }
+    fn position_on(
+        &self,
+        score: &Score,
+        cursor: score_edit::Cursor,
+        timeline: &score_playback::Timeline,
+    ) -> crate::playhead::Position {
         if self.clock.is_none()
             && let Some(tick) = self.seek_tick
         {
-            return crate::playhead::position_at_tick(score, tick as f64, &self.timeline(score));
+            return crate::playhead::position_at_tick(score, tick as f64, timeline);
         }
-        crate::playhead::position(score, cursor, self.clock, &self.timeline(score))
+        crate::playhead::position(score, cursor, self.clock, timeline)
     }
     /// Musical to audio time at the current tempo, fermatas included.
     pub fn timeline(&self, score: &Score) -> score_playback::Timeline {
@@ -679,6 +706,7 @@ mod tests {
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
             recovered_at: None,
             device_checked_at: None,
+            frame_timeline: None,
         }
     }
 
@@ -711,6 +739,43 @@ mod tests {
         playback.stop();
         assert!(!playback.has_ruler_position());
         assert_eq!(playback.position(&score, cursor).tick, 0.);
+    }
+
+    #[test]
+    fn the_frame_position_follows_edits_undo_tempo_and_repeats() {
+        let mut editor = score_edit::Editor::default();
+        let mut playback = offline();
+        playback.seek(editor.score(), 432).unwrap();
+        let fresh = |playback: &Playback, editor: &score_edit::Editor| {
+            playback.position(editor.score(), editor.cursor()).seconds
+        };
+        let written = playback.frame_position(&editor).seconds;
+        assert_eq!(written, fresh(&playback, &editor));
+        let mark = score_core::TempoMark {
+            bpm: 60,
+            ..Default::default()
+        };
+        editor
+            .execute(score_edit::Command::SetTempoAt(0, mark))
+            .unwrap();
+        let slower = playback.frame_position(&editor).seconds;
+        assert_eq!(slower, fresh(&playback, &editor));
+        assert!(slower > written);
+        assert!(editor.undo());
+        assert_eq!(playback.frame_position(&editor).seconds, written);
+        playback
+            .set_half_speed(true, editor.score(), editor.cursor())
+            .unwrap();
+        assert_eq!(playback.frame_position(&editor).seconds, written * 2.);
+        playback
+            .set_half_speed(false, editor.score(), editor.cursor())
+            .unwrap();
+        playback.follow_repeats = false;
+        playback.frame_position(&editor);
+        assert_eq!(
+            playback.frame_timeline.as_ref().unwrap().0,
+            (editor.revision(), playback.tempo, false)
+        );
     }
 
     #[test]

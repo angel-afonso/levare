@@ -306,8 +306,7 @@ impl AppView {
                         }
                         if view.playback.tick() {
                             let cursor = view.document.editor.cursor();
-                            let score = view.document.editor.score();
-                            let position = view.playback.position(score, cursor);
+                            let position = view.playback.frame_position(&view.document.editor);
                             view.viewport.follow(
                                 &view.layout,
                                 view.playback
@@ -3583,7 +3582,7 @@ impl AppView {
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.remember_panels();
-        self.review.refresh(self.document.editor.score());
+        self.review.follow(&self.document.editor);
         self.comments.refresh(self.document.editor.score());
         if self
             .range_editor
@@ -3648,9 +3647,7 @@ impl Render for AppView {
             self.hover = None;
         }
         self.layout = layout;
-        self.position = self
-            .playback
-            .position(self.document.editor.score(), self.document.editor.cursor());
+        self.position = self.playback.frame_position(&self.document.editor);
         let title = self
             .path
             .as_ref()

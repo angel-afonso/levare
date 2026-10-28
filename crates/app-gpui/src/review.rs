@@ -10,6 +10,8 @@ pub struct ReviewState {
     pub show_ranges: bool,
     pub issues: Vec<ReviewIssue>,
     checked_score: Option<Score>,
+    /// The editor revision `follow` last refreshed for.
+    followed: Option<u64>,
     pub selection_scope: bool,
     pub stale: bool,
     pub filter: Option<PartId>,
@@ -24,6 +26,7 @@ impl Default for ReviewState {
             show_ranges: true,
             issues: Vec::new(),
             checked_score: None,
+            followed: None,
             selection_scope: false,
             stale: false,
             filter: None,
@@ -47,6 +50,15 @@ impl ReviewState {
         self.current = None;
         self.page = 0;
         self.reveal_bar = None;
+    }
+
+    /// `refresh` once per editor revision: the canvas calls it on every
+    /// frame, and most frames leave the score as it was.
+    pub fn follow(&mut self, editor: &score_edit::Editor) {
+        if self.followed != Some(editor.revision()) {
+            self.refresh(editor.score());
+            self.followed = Some(editor.revision());
+        }
     }
 
     /// Whole-score reports update after edits. Selection reports expire because

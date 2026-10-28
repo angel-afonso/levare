@@ -124,3 +124,21 @@ fn targets_select_the_exact_chord_tone_and_global_mark_in_the_correct_voice() {
     assert_eq!(editor.cursor().measure, 0);
     assert!(editor.selection().is_none());
 }
+
+#[test]
+fn a_full_report_follows_the_editor_through_edits_and_undo() {
+    let (score, ids) = score_with_notes(2);
+    let mut editor = score_edit::Editor::new(score).unwrap();
+    let mut review = ReviewState::default();
+    review.check(editor.score(), None);
+    assert_eq!(review.issues.len(), 2);
+    review.follow(&editor);
+    assert_eq!(review.issues.len(), 2);
+    editor.select(ids[0]);
+    editor.execute(score_edit::Command::Transpose(14)).unwrap();
+    review.follow(&editor);
+    assert_eq!(review.issues.len(), 1);
+    assert!(editor.undo());
+    review.follow(&editor);
+    assert_eq!(review.issues.len(), 2);
+}

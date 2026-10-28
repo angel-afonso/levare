@@ -8,15 +8,16 @@ pub struct Document {
     pub editor: Editor,
     layout: LayoutEngine,
     /// The last displayed view. Most frames (playback, pointer, panels) leave
-    /// the score untouched; comparing it is far cheaper than engraving again.
+    /// the score untouched, which its revision tells without comparing it.
     view: Option<View>,
     /// How many times a view was engraved rather than reused.
     laid_out: usize,
-    saved: Option<Score>,
+    /// The editor's revision when the score was last opened or saved.
+    saved: Option<u64>,
 }
 
 struct View {
-    score: Score,
+    revision: u64,
     width: f32,
     mode: score_layout::ViewMode,
     scale: f32,
@@ -32,22 +33,25 @@ impl Document {
     pub fn new(mut score: Score) -> Result<Self, ScoreError> {
         score.validate()?;
         score.arrange_parts();
+        let editor = Editor::new(score)?;
         Ok(Self {
-            editor: Editor::new(score.clone())?,
+            saved: Some(editor.revision()),
+            editor,
             layout: LayoutEngine::default(),
             view: None,
             laid_out: 0,
-            saved: Some(score),
         })
     }
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {
         self.editor.execute(command)
     }
+    /// Whether the score changed since it was opened or saved. Undo back to
+    /// that point clears it; editing a note and then editing it back does not.
     pub fn is_dirty(&self) -> bool {
-        self.saved.as_ref() != Some(self.editor.score())
+        self.saved != Some(self.editor.revision())
     }
     pub fn mark_saved(&mut self) {
-        self.saved = Some(self.editor.score().clone());
+        self.saved = Some(self.editor.revision());
     }
     pub fn recover(score: Score) -> Result<Self, ScoreError> {
         let mut document = Self::new(score)?;
@@ -69,11 +73,11 @@ impl Document {
         } else {
             width
         };
-        let score = self.editor.score();
+        let revision = self.editor.revision();
         if let Some(view) = &mut self.view
             && view.width == key_width
             && view.mode == mode
-            && view.score == *score
+            && view.revision == revision
         {
             // Zoom is applied when painting; the engraving stays the same.
             if view.scale != scale {
@@ -85,11 +89,11 @@ impl Document {
             return view.layout.clone();
         }
         self.laid_out += 1;
-        let mut layout = self.layout.layout_view(score, width, mode);
+        let mut layout = self.layout.layout_view(self.editor.score(), width, mode);
         layout.scale = scale;
         let layout = Rc::new(layout);
         self.view = Some(View {
-            score: score.clone(),
+            revision,
             width: key_width,
             mode,
             scale,
@@ -206,6 +210,13 @@ mod tests {
         doc.editor.undo();
         assert!(doc.is_dirty());
         doc.editor.redo();
+        assert!(!doc.is_dirty());
+        // An abandoned drag or agent turn rolls the score back to the save.
+        let mark = doc.editor.mark();
+        doc.execute(Command::Insert(doc.editor.note(Step::A)))
+            .unwrap();
+        assert!(doc.is_dirty());
+        doc.editor.rollback(&mark);
         assert!(!doc.is_dirty());
         assert_eq!(doc.layout(900.).measures.len(), 8); // Four bars on each piano hand.
     }
