@@ -170,21 +170,19 @@ fn persist_pending(
         reported: false,
     };
 }
-#[cfg(unix)]
+/// Exclusive and non-blocking, on a separate `.lock` file so the recovery file
+/// itself can still be replaced and removed while the lock is held (Windows
+/// refuses to rename over a file that is open with a lock). The OS releases it
+/// when the handle closes, including when the process crashes.
 fn lock_file(file: &File) -> Result<(), FileError> {
-    use std::os::fd::AsRawFd;
-    // Advisory lock is released by the OS even if the process crashes.
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(error(
-            "Otra ventana de Levare está usando la recuperación de esta sesión",
-        ));
+    match file.try_lock() {
+        Ok(()) => Ok(()),
+        Err(std::fs::TryLockError::WouldBlock) => Err(error(IN_USE)),
+        Err(std::fs::TryLockError::Error(failure)) => Err(error(failure)),
     }
-    Ok(())
 }
-#[cfg(not(unix))]
-fn lock_file(_file: &File) -> Result<(), FileError> {
-    Err(error("Recuperación no disponible en esta plataforma"))
-}
+/// Shown after «Recuperación no disponible: ».
+const IN_USE: &str = "otra ventana de Levare ya está usando el autoguardado";
 fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
     let document = serde_json::from_slice(&encode(&value.score)?).map_err(error)?;
     let bytes = serde_json::to_vec(&Envelope {
@@ -196,7 +194,7 @@ fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(error)?;
     temp.write_all(&bytes).map_err(error)?;
     temp.as_file().sync_all().map_err(error)?;
-    temp.persist(path).map_err(error)?;
+    crate::persist(temp, path).map_err(error)?;
     Ok(())
 }
 pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
@@ -240,7 +238,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("recovery.partitura");
         let writer = Recovery::open(&path).unwrap();
-        assert!(Recovery::open(&path).is_err());
+        let second = Recovery::open(&path).err().expect("one writer at a time");
+        assert_eq!(second.to_string(), IN_USE);
         let mut score = Score::default();
         for _ in 0..20 {
             score.append_measure().unwrap();
@@ -299,10 +298,15 @@ mod tests {
             restored.score.measures().len(),
             Score::default().measures().len() + 1
         );
-        assert!(
-            Recovery::open(&path).is_ok(),
-            "crash releases recovery ownership"
-        );
+        // Windows may release a dead process's locks a moment after it exits.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let reopened = loop {
+            match Recovery::open(&path) {
+                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(30)),
+                result => break result,
+            }
+        };
+        assert!(reopened.is_ok(), "crash releases recovery ownership");
     }
     #[test]
     fn legacy_recovery_and_write_failures_preserve_the_previous_file() {

@@ -500,7 +500,7 @@ pub fn export(path: &Path, score: &Score) -> Result<(), FileError> {
     let mut file = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
     file.write_all(&bytes).map_err(error)?;
     file.as_file().sync_all().map_err(error)?;
-    file.persist(path).map_err(error)?;
+    crate::persist(file, path).map_err(error)?;
     Ok(())
 }
 

@@ -6,6 +6,7 @@ mod app_paths;
 mod clipboard;
 mod comments;
 mod connection_input;
+mod file_dialogs;
 mod follow;
 mod ghost;
 mod keyboard;
@@ -160,17 +161,17 @@ impl AppView {
     fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
-        quit_snapshot: QuitSnapshot,
+        recovery: Result<score_io::Recovery, String>,
         mut shortcuts: Shortcuts,
     ) -> Self {
-        let recovered = if quit_snapshot.is_some() {
-            recovery_path()
+        let recovered = match &recovery {
+            Ok(_) => recovery_path()
                 .map(|path| score_io::load_recovery(&path).map_err(|e| e.to_string()))
                 .transpose()
-                .map(|value| value.flatten())
-        } else {
-            Err("No se pudo abrir el autoguardado; puede haber otra sesión activa".to_owned())
+                .map(|value| value.flatten()),
+            Err(reason) => Err(reason.clone()),
         };
+        let quit_snapshot: QuitSnapshot = recovery.ok();
         let nothing_recovered = matches!(recovered, Ok(None));
         let (mut document, path, status) = match recovered {
             Ok(Some(recovered)) => match Document::recover(recovered.score) {
@@ -2475,8 +2476,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (None, Some(picker)) => match picker.await {
                     Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                    Ok(Err(error)) => Err(error.to_string()),
-                    Err(error) => Err(error.to_string()),
+                    Ok(Err(error)) => Err(file_dialogs::dialog_error(error)),
+                    Err(error) => Err(file_dialogs::dialog_error(error)),
                 },
                 (None, None) => Ok(None),
             };
@@ -2637,12 +2638,7 @@ impl AppView {
         self.export_picker = None;
         self.confirming = false;
         self.busy = true;
-        let directory = self
-            .path
-            .as_ref()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_owned())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let directory = file_dialogs::start_folder(self.path.as_deref());
         let score = self.document.editor.score().clone();
         let suggested = score_export::folder_name(score.title());
         let picker = cx.prompt_for_new_path(&directory, Some(&suggested));
@@ -2658,8 +2654,14 @@ impl AppView {
                         .await,
                 ),
                 Ok(Ok(None)) => None,
-                Ok(Err(error)) => Some(Err(error.to_string())),
-                Err(error) => Some(Err(error.to_string())),
+                Ok(Err(error)) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
+                Err(error) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
             };
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
@@ -2692,18 +2694,8 @@ impl AppView {
         self.busy = true;
         let existing = if save_as { None } else { self.path.clone() };
         let picker = existing.is_none().then(|| {
-            let directory = self
-                .path
-                .as_ref()
-                .and_then(|path| path.parent())
-                .map(|p| p.to_owned())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            let name = self
-                .document
-                .editor
-                .score()
-                .title()
-                .replace(['/', '\\', ':'], "_");
+            let directory = file_dialogs::start_folder(self.path.as_deref());
+            let name = score_io::file_name(self.document.editor.score().title(), 80);
             cx.prompt_for_new_path(&directory, Some(&format!("{name}.partitura")))
         });
         let score = self.document.editor.score().clone();
@@ -2712,8 +2704,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (_, Some(picker)) => picker
                     .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|result| result.map_err(|e| e.to_string())),
+                    .map_err(file_dialogs::dialog_error)
+                    .and_then(|result| result.map_err(file_dialogs::dialog_error)),
                 _ => Ok(None),
             };
             let result = match path {
@@ -3547,15 +3539,13 @@ fn main() {
         app_icon::install();
         // App-level ownership survives window/view teardown during a native
         // Dock quit. GPUI's Context::on_app_quit would only hold a weak view.
-        let quit_snapshot =
-            recovery_path().and_then(|path| match score_io::Recovery::open(&path) {
-                Ok(recovery) => Some(recovery),
-                Err(error) => {
-                    eprintln!("Recuperación no disponible: {error}");
-                    None
-                }
-            });
-        let pending = quit_snapshot.clone();
+        let recovery = recovery_path()
+            .ok_or_else(|| "no se encontró la carpeta de datos de Levare".to_owned())
+            .and_then(|path| score_io::Recovery::open(&path).map_err(|e| e.to_string()));
+        if let Err(error) = &recovery {
+            eprintln!("Recuperación no disponible: {error}");
+        }
+        let pending = recovery.as_ref().ok().cloned();
         cx.on_app_quit(move |_| {
             if let Some(recovery) = &pending
                 && let Err(error) = recovery.flush()
@@ -3579,7 +3569,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),
+            |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
         )
         .expect("open Levare window");
         cx.on_window_closed(|cx| {

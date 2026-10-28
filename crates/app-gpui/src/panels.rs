@@ -86,6 +86,6 @@ pub fn save(path: &Path, memory: &PanelMemory) -> io::Result<()> {
     fs::create_dir_all(parent)?;
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
     temporary.write_all(&serde_json::to_vec_pretty(memory)?)?;
-    temporary.persist(path).map_err(|failure| failure.error)?;
+    score_io::persist(temporary, path)?;
     Ok(())
 }

@@ -1,0 +1,18 @@
+# Text files are checked out with LF on every platform, so generated files
+# such as docs/atajos.md compare equal on Windows too.
+* text=auto eol=lf
+
+# Binaries.
+*.otf binary
+*.ttf binary
+*.png binary
+*.icns binary
+*.ico binary
+*.sf2 binary
+*.wav binary
+*.flac binary
+*.zip binary
+*.pdf binary
+
+# A third-party license kept byte for byte as it was distributed (CRLF).
+assets/sounds/LICENSE.txt -text
