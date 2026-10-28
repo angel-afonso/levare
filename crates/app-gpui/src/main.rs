@@ -3581,6 +3581,9 @@ fn main() {
                 // Linux: Levare's title bar replaces the compositor's, when it
                 // agrees (`ui::window_frame`). macOS and Windows ignore it.
                 window_decorations: Some(WindowDecorations::Client),
+                // The macOS bundle id: Linux desktops match the window to
+                // Levare's desktop entry and icon by it.
+                app_id: Some("dev.partitura.editor".into()),
                 ..Default::default()
             },
             |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),
