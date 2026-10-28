@@ -131,11 +131,11 @@ name = "score-toolbar"
 version_group = "levare"
 changelog_update = false
 
-# Groups the commits by their conventional type; merge commits repeat the
-# pull request's own commits, so they are left out.
+# Groups the commits by their conventional type; merge commits (from pull
+# requests or local merges) repeat their branch's commits, so they are left out.
 [changelog]
 commit_parsers = [
-    { message = "^Merge (pull request|branch)", skip = true },
+    { message = "^Merge ", skip = true },
     { message = "^chore: (publica|release)", skip = true },
     { message = "^feat", group = "Added" },
     { message = "^fix", group = "Fixed" },

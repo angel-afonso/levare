@@ -52,17 +52,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 - *(agent)* stop every agent process when a session ends on Windows
 - *(agent)* find Claude, Codex and Gemini on Windows and Linux
 - *(agent)* start agent sessions on Windows
-- *(sonidos)* instala paquetes en Linux y Windows sin comprobar el espacio libre a ciegas
-- compila las dependencias y el panel de agente en Linux y Windows
+- *(sounds)* check the free space before installing sound packs on Linux and Windows
 - *(playback)* keep the playhead in time with the sound
 - *(sounds)* load SFZ sound packs on Windows and Linux
 
 ### Other
 
-- Merge portable PDF export and Linux fonts
-- Merge window, title bar and icon fixes for Windows and Linux
-- Merge file, autosave and export fixes for Windows and Linux
-- Merge audio and sound pack fixes for Windows and Linux
 - *(platform)* drop the unused MIDI library
 
 ### Performance
