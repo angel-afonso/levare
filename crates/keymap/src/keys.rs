@@ -324,19 +324,44 @@ impl Keystroke {
         }
     }
 
+    /// Only the modifiers, for gestures held with the pointer: `⌥⌘` on macOS,
+    /// `Ctrl+Alt` elsewhere.
+    pub fn modifiers_label_for(&self, platform: Platform) -> String {
+        let names = self.modifier_names(platform);
+        if platform == Platform::MacOs {
+            names.concat()
+        } else {
+            names.join("+")
+        }
+    }
+
+    /// Modifier names in the order the platform writes them: ⌃⌥⇧⌘ on macOS,
+    /// Ctrl, Mayús, Alt elsewhere.
+    fn modifier_names(&self, platform: Platform) -> Vec<&'static str> {
+        let order = if platform == Platform::MacOs {
+            vec![
+                (self.ctrl, Modifier::Ctrl),
+                (self.alt, Modifier::Alt),
+                (self.shift, Modifier::Shift),
+                (self.secondary, Modifier::Secondary),
+            ]
+        } else {
+            vec![
+                (self.ctrl || self.secondary, Modifier::Ctrl),
+                (self.shift, Modifier::Shift),
+                (self.alt, Modifier::Alt),
+            ]
+        };
+        order
+            .into_iter()
+            .filter(|(on, _)| *on)
+            .map(|(_, modifier)| modifier.label_for(platform))
+            .collect()
+    }
+
     /// ⌃⌥⇧⌘ glyphs followed by the key, as macOS menus write it.
     fn mac_label(&self) -> String {
-        let mut label = String::new();
-        for (on, modifier) in [
-            (self.ctrl, Modifier::Ctrl),
-            (self.alt, Modifier::Alt),
-            (self.shift, Modifier::Shift),
-            (self.secondary, Modifier::Secondary),
-        ] {
-            if on {
-                label.push_str(modifier.label_for(Platform::MacOs));
-            }
-        }
+        let mut label = self.modifier_names(Platform::MacOs).concat();
         let key = match self.key.as_str() {
             "space" => "Espacio".to_owned(),
             "enter" => "↩".to_owned(),
@@ -369,15 +394,7 @@ impl Keystroke {
     /// Modifier names joined with `+`, as Windows and Linux write them, in
     /// Spanish like the rest of the interface.
     fn pc_label(&self, platform: Platform) -> String {
-        let mut parts: Vec<&str> = [
-            (self.ctrl || self.secondary, Modifier::Ctrl),
-            (self.shift, Modifier::Shift),
-            (self.alt, Modifier::Alt),
-        ]
-        .into_iter()
-        .filter(|(on, _)| *on)
-        .map(|(_, modifier)| modifier.label_for(platform))
-        .collect();
+        let mut parts = self.modifier_names(platform);
         let key = match self.key.as_str() {
             "space" => "Espacio".to_owned(),
             "enter" => "Intro".to_owned(),

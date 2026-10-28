@@ -301,3 +301,13 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `⌥⌘7` | `Ctrl+Mayús+7` | Pestaña Revisión |  |
 | `⌥⌘8` | `Ctrl+Mayús+8` | Pestaña Vista |  |
 | — | — | Plegar o desplegar la cinta |  |
+
+## Mouse
+
+Hold these keys and drag from one note to another of the same voice. Linux uses Ctrl because Xfce, Cinnamon and MATE move the window on Alt+drag.
+
+| macOS | Windows | Linux | Line |
+|---|---|---|---|
+| `⌥` | `Alt` | `Ctrl` | Ligadura de expresión |
+| `⌥⌘` | `Ctrl+Alt` | `Ctrl+Alt` | Crescendo |
+| `⌥⇧⌘` | `Ctrl+Mayús+Alt` | `Ctrl+Mayús+Alt` | Diminuendo |

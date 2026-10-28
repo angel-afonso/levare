@@ -2,7 +2,8 @@
 //! the documentation cannot drift from the code.
 
 use crate::{
-    Category, Keymap, Layout, Platform, Profile, Registry, UserKeymap, commands::Status, id,
+    Category, Keymap, Layout, LineDrag, Platform, Profile, Registry, UserKeymap, commands::Status,
+    id,
 };
 
 /// One keymap per platform, from the default profile and no user changes.
@@ -78,6 +79,24 @@ pub fn markdown(registry: &Registry, keymaps: &[Keymap; 3]) -> String {
                 }
             ));
         }
+    }
+    text.push_str(
+        "\n## Mouse\n\n\
+         Hold these keys and drag from one note to another of the same voice. Linux uses Ctrl \
+         because Xfce, Cinnamon and MATE move the window on Alt+drag.\n\n\
+         | macOS | Windows | Linux | Line |\n|---|---|---|---|\n",
+    );
+    for line in LineDrag::ALL {
+        let [on_macos, on_windows, on_linux] =
+            Platform::ALL.map(|platform| line.label_for(platform));
+        text.push_str(&format!(
+            "| `{on_macos}` | `{on_windows}` | `{on_linux}` | {} |\n",
+            match line {
+                LineDrag::Slur => "Ligadura de expresión",
+                LineDrag::Crescendo => "Crescendo",
+                LineDrag::Diminuendo => "Diminuendo",
+            }
+        ));
     }
     text
 }

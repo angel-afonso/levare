@@ -1,6 +1,6 @@
 //! Pointer selection uses the existing continuous, single-staff passage model.
 use super::*;
-use score_keymap::Modifier;
+use score_keymap::{LineDrag, Modifier, Platform};
 use score_layout::{Layout, Point as ScorePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -618,9 +618,9 @@ impl AppView {
         cx.notify();
     }
 
-    /// A press on a handle of the picked line stretches it; Alt on a note draws
-    /// a slur from it, Alt with the secondary key (⌘ on macOS, Ctrl elsewhere)
-    /// a crescendo, and with Shift too a diminuendo.
+    /// A press on a handle of the picked line stretches it; a press on a note
+    /// with the modifiers of `LineDrag` draws a slur, crescendo or diminuendo
+    /// from it.
     fn begin_line_drag(
         &mut self,
         event: &MouseDownEvent,
@@ -644,19 +644,25 @@ impl AppView {
             cx.notify();
             return true;
         }
-        if !event.modifiers.alt {
+        let modifiers = event.modifiers;
+        let Some(line) = LineDrag::from_modifiers(
+            Platform::current(),
+            modifiers.alt,
+            modifiers.shift,
+            modifiers.secondary(),
+        ) else {
             return false;
-        }
+        };
         let Some((id, pitch, _)) = self
             .layout
             .hit_pitch_with_position(point, self.document.editor.cursor().voice)
         else {
             return false;
         };
-        let kind = match (event.modifiers.secondary(), event.modifiers.shift) {
-            (false, _) => ConnectionKind::Slur,
-            (true, false) => ConnectionKind::Crescendo,
-            (true, true) => ConnectionKind::Diminuendo,
+        let kind = match line {
+            LineDrag::Slur => ConnectionKind::Slur,
+            LineDrag::Crescendo => ConnectionKind::Crescendo,
+            LineDrag::Diminuendo => ConnectionKind::Diminuendo,
         };
         self.clicked_mark = None;
         self.ui.note_entry = false;

@@ -850,7 +850,11 @@ impl AppView {
             return;
         }
         let Some(id) = self.document.editor.selection() else {
-            self.status = "Selecciona una nota para la ligadura de expresión".into();
+            self.status = format!(
+                "Selecciona una nota para la ligadura de expresión, o arrastra de una nota a otra \
+                 con {}",
+                score_keymap::LineDrag::Slur.label()
+            );
             cx.notify();
             return;
         };

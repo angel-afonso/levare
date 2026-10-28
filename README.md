@@ -514,8 +514,11 @@ Las ligaduras de expresión y los reguladores se escriben de cuatro maneras:
   recién escrita. La marca se alarga con cada nota nueva y en un silencio espera a la
   siguiente nota. Pulsa la misma tecla otra vez, o Esc, para terminarla. Deshacer la
   última nota devuelve la marca a su final anterior.
-- **Con ⌥ y el ratón:** mantén `⌥` y arrastra desde una nota hasta otra de la misma voz
-  para una ligadura; `⌥⌘` dibuja un crescendo y `⌥⇧⌘` un diminuendo. Mientras arrastras,
+- **Con el ratón:** mantén `⌥` (`Alt` en Windows, `Ctrl` en Linux) y arrastra desde una
+  nota hasta otra de la misma voz para una ligadura; `⌥⌘` (`Ctrl+Alt`) dibuja un crescendo
+  y `⌥⇧⌘` (`Ctrl+Mayús+Alt`) un diminuendo. En Linux no se usa Alt solo porque Xfce,
+  Cinnamon y MATE mueven la ventana con Alt+arrastre; la tabla completa está en
+  [docs/atajos.md](docs/atajos.md#mouse). Mientras arrastras,
   la partitura muestra el resultado; si el final no es válido, la barra de estado
   explica por qué y al soltar no cambia nada.
 - **Estirar una existente:** haz clic sobre una ligadura o un regulador; aparecen dos
