@@ -105,6 +105,51 @@ pub fn install(
     engine: &Path,
     progress: &Progress,
 ) -> Result<PathBuf, StoreError> {
+    prepare_install(entry, root, engine, progress)?.finish()
+}
+
+/// A pack downloaded, unpacked and validated beside the soundpacks, ready
+/// to take the place of `root/<id>`.
+#[derive(Debug)]
+#[must_use = "the pack is installed only by `finish`"]
+pub struct Prepared {
+    staging: PathBuf,
+    target: PathBuf,
+    previous: PathBuf,
+}
+
+impl Prepared {
+    /// Swap the new pack in. Playback must have let go of the old one
+    /// first: Windows cannot move a folder whose files are open.
+    pub fn finish(self) -> Result<PathBuf, StoreError> {
+        let Self {
+            staging,
+            target,
+            previous,
+        } = self;
+        let _ = remove_dir_all(&previous);
+        if target.exists() {
+            retry(|| fs::rename(&target, &previous)).map_err(io)?;
+        }
+        if let Err(cause) = retry(|| fs::rename(&staging, &target)) {
+            let _ = retry(|| fs::rename(&previous, &target));
+            return Err(io(cause));
+        }
+        // The staging folder was hidden; the pack is not.
+        set_hidden(&target, false);
+        let _ = remove_dir_all(&previous);
+        Ok(target)
+    }
+}
+
+/// Everything but the swap of [`install`], which may take minutes: the old
+/// version keeps playing meanwhile.
+pub fn prepare_install(
+    entry: &Entry,
+    root: &Path,
+    engine: &Path,
+    progress: &Progress,
+) -> Result<Prepared, StoreError> {
     let valid_id = !entry.id.is_empty()
         && entry
             .id
@@ -141,21 +186,14 @@ pub fn install(
         let _ = fs::remove_file(download_path(&downloads, entry, index));
     }
     if let Err(cause) = result {
-        let _ = fs::remove_dir_all(&staging);
+        let _ = remove_dir_all(&staging);
         return Err(cause);
     }
-    let target = root.join(&entry.id);
-    let previous = root.join(format!(".antiguo-{}", entry.id));
-    let _ = fs::remove_dir_all(&previous);
-    if target.exists() {
-        fs::rename(&target, &previous).map_err(io)?;
-    }
-    if let Err(cause) = fs::rename(&staging, &target) {
-        let _ = fs::rename(&previous, &target);
-        return Err(io(cause));
-    }
-    let _ = fs::remove_dir_all(&previous);
-    Ok(target)
+    Ok(Prepared {
+        staging,
+        target: root.join(&entry.id),
+        previous: root.join(format!(".antiguo-{}", entry.id)),
+    })
 }
 
 fn prepare(
@@ -165,9 +203,11 @@ fn prepare(
     engine: &Path,
     progress: &Progress,
 ) -> Result<(), StoreError> {
-    let _ = fs::remove_dir_all(staging);
+    let _ = remove_dir_all(staging);
     fs::create_dir_all(staging).map_err(io)?;
+    set_hidden(staging, true);
     fs::create_dir_all(downloads).map_err(io)?;
+    set_hidden(downloads, true);
     progress
         .total
         .store(entry.download_size(), Ordering::Relaxed);
@@ -337,8 +377,67 @@ pub fn uninstall(id: &str, root: &Path) -> Result<(), StoreError> {
             "Solo se pueden quitar desde Levare los paquetes instalados desde Levare",
         ));
     }
-    fs::remove_dir_all(&path).map_err(io)
+    remove_dir_all(&path).map_err(io)
 }
+
+/// On Windows, Defender, the search indexer or a backup client may hold a
+/// file of a pack for a moment after it is written or read; renaming or
+/// removing its folder then fails with access denied or a sharing violation.
+/// Try again a few times before giving up. Elsewhere, once.
+fn retry<T>(mut operation: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let waits: &[u64] = if cfg!(windows) {
+        &[50, 100, 200, 400, 800]
+    } else {
+        &[]
+    };
+    for wait in waits {
+        match operation() {
+            Err(cause) if transient(&cause) => std::thread::sleep(Duration::from_millis(*wait)),
+            done => return done,
+        }
+    }
+    operation()
+}
+
+/// Access denied, a sharing or lock violation, or a folder still emptying.
+fn transient(cause: &std::io::Error) -> bool {
+    cause.kind() == std::io::ErrorKind::PermissionDenied
+        || cause.kind() == std::io::ErrorKind::DirectoryNotEmpty
+        || (cfg!(windows) && matches!(cause.raw_os_error(), Some(32 | 33)))
+}
+
+fn remove_dir_all(path: &Path) -> std::io::Result<()> {
+    retry(|| match fs::remove_dir_all(path) {
+        Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        done => done,
+    })
+}
+
+/// Scratch folders start with a dot, hidden on macOS and Linux; Windows
+/// needs the attribute, and keeps it through a rename.
+#[cfg(windows)]
+fn set_hidden(path: &Path, hidden: bool) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_HIDDEN, GetFileAttributesW, INVALID_FILE_ATTRIBUTES, SetFileAttributesW,
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: a NUL-terminated wide path; failure only changes the look.
+    unsafe {
+        let attributes = GetFileAttributesW(wide.as_ptr());
+        if attributes != INVALID_FILE_ATTRIBUTES {
+            let attributes = if hidden {
+                attributes | FILE_ATTRIBUTE_HIDDEN
+            } else {
+                attributes & !FILE_ATTRIBUTE_HIDDEN
+            };
+            SetFileAttributesW(wide.as_ptr(), attributes);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_hidden(_: &Path, _: bool) {}
 
 #[cfg(unix)]
 fn free_space(path: &Path) -> Option<u64> {
@@ -356,8 +455,27 @@ fn free_space(path: &Path) -> Option<u64> {
     available.checked_mul(stats.f_frsize)
 }
 
-/// Unknown elsewhere for now, so the install goes ahead without the check.
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn free_space(path: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut available = 0u64;
+    // SAFETY: a NUL-terminated wide path, one writable u64, two nulls the
+    // function accepts.
+    let done = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut available,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    (done != 0).then_some(available)
+}
+
+/// Unknown elsewhere, so the install goes ahead without the check.
+#[cfg(not(any(unix, windows)))]
 fn free_space(_: &Path) -> Option<u64> {
     None
 }
@@ -372,7 +490,10 @@ pub fn size_label(bytes: u64) -> String {
 }
 
 fn io(cause: std::io::Error) -> StoreError {
-    if cause.raw_os_error() == Some(libc::ENOSPC) {
+    if matches!(
+        cause.kind(),
+        std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded
+    ) {
         error("No queda espacio en el disco")
     } else {
         error(cause.to_string())
@@ -381,4 +502,26 @@ fn io(cause: std::io::Error) -> StoreError {
 
 fn network(cause: reqwest::Error) -> StoreError {
     error(format!("No se pudo descargar: {cause}"))
+}
+
+#[cfg(test)]
+mod disk_tests {
+    use super::*;
+
+    #[test]
+    fn a_full_disk_is_named_on_every_system() {
+        for kind in [
+            std::io::ErrorKind::StorageFull,
+            std::io::ErrorKind::QuotaExceeded,
+        ] {
+            assert_eq!(io(kind.into()).0, "No queda espacio en el disco");
+        }
+        assert!(free_space(&std::env::temp_dir()).is_some_and(|free| free > 0));
+    }
+
+    #[test]
+    fn a_folder_already_gone_counts_as_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(remove_dir_all(&dir.path().join("nada")).is_ok());
+    }
 }

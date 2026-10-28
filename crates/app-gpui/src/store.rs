@@ -117,11 +117,30 @@ impl AppView {
             progress: progress.clone(),
         });
         self.status = format!("Instalando {}…", entry.name);
-        let task = cx
-            .background_executor()
-            .spawn(async move { score_sound_store::install(&entry, &root, &engine, &progress) });
+        let id = entry.id.clone();
+        let task = cx.background_executor().spawn(async move {
+            score_sound_store::prepare_install(&entry, &root, &engine, &progress)
+        });
         cx.spawn(async move |view, cx| {
-            let result = task.await;
+            // The old version plays on during the download; it is let go
+            // only for the swap, which Windows refuses while files are open.
+            let chosen = match task.await {
+                Ok(prepared) => Ok((
+                    prepared,
+                    view.update(cx, |view, _| view.release_pack(&id))
+                        .ok()
+                        .flatten(),
+                )),
+                Err(error) => Err(error),
+            };
+            let result = match chosen {
+                Ok((prepared, chosen)) => cx
+                    .background_executor()
+                    .spawn(async move { prepared.finish() })
+                    .await
+                    .map(|_| chosen),
+                Err(error) => Err(error),
+            };
             let _ = view.update(cx, |view, cx| {
                 let name = view
                     .store
@@ -130,8 +149,14 @@ impl AppView {
                     .and_then(|job| view.store.catalog.entry(&job.id).map(|e| e.name.clone()))
                     .unwrap_or_default();
                 match result {
-                    Ok(_) => {
+                    Ok(chosen) => {
                         view.refresh_packs();
+                        // The bank that was playing the old version comes back.
+                        if let Some(index) = chosen.and_then(|id| {
+                            crate::sound_banks::index_by_id(&view.playback.banks, &id)
+                        }) {
+                            view.choose_sound(Some(index), cx);
+                        }
                         view.status = format!("{name} instalado · elígelo en Fuente de sonido");
                     }
                     Err(error) => {
@@ -157,11 +182,8 @@ impl AppView {
         let Some(root) = root() else {
             return;
         };
-        // Samples stream from disk: let the pack go before deleting it.
         self.playback.stop();
-        if self.playback.uses_pack(id) {
-            self.choose_sound(None, cx);
-        }
+        self.release_pack(id);
         let name = self
             .store
             .catalog
@@ -175,6 +197,26 @@ impl AppView {
             Err(error) => error.0,
         };
         cx.notify();
+    }
+
+    /// Samples stream from disk: before pack `id` is moved or deleted, the
+    /// bank playing from it gives way to the built-in sounds. Returns that
+    /// bank's id, to choose it again after a reinstall.
+    fn release_pack(&mut self, id: &str) -> Option<String> {
+        if !self.playback.uses_pack(id) {
+            return None;
+        }
+        let chosen = self
+            .playback
+            .selected_bank
+            .and_then(|index| self.playback.banks.get(index))
+            .map(|bank| bank.id().to_owned());
+        let score = self.document.editor.score();
+        let part = self.document.editor.cursor().part;
+        if let Err(error) = self.playback.choose_sound(None, score, part) {
+            self.playback.sound_error = Some(error);
+        }
+        chosen
     }
 
     /// Reread the installed packs and the banks they provide.
