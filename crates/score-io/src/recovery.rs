@@ -4,7 +4,7 @@ use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread,
@@ -191,11 +191,7 @@ fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
         document,
     })
     .map_err(error)?;
-    let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap()).map_err(error)?;
-    temp.write_all(&bytes).map_err(error)?;
-    temp.as_file().sync_all().map_err(error)?;
-    crate::persist(temp, path).map_err(error)?;
-    Ok(())
+    atomic_write::write(path, &bytes).map_err(error)
 }
 pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
     let mut bytes = Vec::new();

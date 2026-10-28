@@ -1,9 +1,16 @@
-//! Replacing a file with a finished temporary copy written beside it.
+//! Replacing a file Levare writes (a score, an export, a settings file) with a
+//! finished temporary copy written beside it, so a failed write never leaves
+//! a truncated file behind.
 //!
 //! On Windows the rename fails for a moment while another program (OneDrive,
 //! Defender, the search indexer) has the target open, so it is retried a few
 //! times. Elsewhere it behaves like a plain `NamedTempFile::persist`.
-use std::{io, path::Path, thread, time::Duration};
+use std::{
+    io::{self, Write},
+    path::Path,
+    thread,
+    time::Duration,
+};
 use tempfile::NamedTempFile;
 
 /// Waits between attempts on Windows: about two thirds of a second in all.
@@ -14,6 +21,18 @@ const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_millis(200),
     Duration::from_millis(400),
 ];
+
+/// Writes `bytes` to `path` in one step: into a temporary file beside it,
+/// flushed to disk, then renamed over it by [`persist`].
+pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut temporary = NamedTempFile::new_in(directory_of(path)).map_err(|e| explain(e, path))?;
+    temporary.write_all(bytes).map_err(|e| explain(e, path))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|e| explain(e, path))?;
+    persist(temporary, path)
+}
 
 /// Replaces `path` with `temporary`. A read-only target is refused on every
 /// platform, so a protected score is never overwritten. Errors carry a
@@ -42,10 +61,19 @@ pub fn persist(temporary: NamedTempFile, path: &Path) -> io::Result<()> {
     }
 }
 
+/// Whether `error` is Windows saying another program holds the file for
+/// now, which waiting can fix. Always false elsewhere.
+pub fn is_transient(error: &io::Error) -> bool {
+    transient_on(error, cfg!(windows))
+}
+
+fn transient_on(error: &io::Error, windows: bool) -> bool {
+    windows && error.raw_os_error().is_some_and(is_windows_transient)
+}
+
 /// How long to wait before attempt `attempt + 1`, or `None` to give up.
 fn retry_delay(error: &io::Error, attempt: usize, windows: bool) -> Option<Duration> {
-    let transient = windows && error.raw_os_error().is_some_and(is_windows_transient);
-    transient
+    transient_on(error, windows)
         .then(|| RETRY_DELAYS.get(attempt).copied())
         .flatten()
 }
@@ -59,6 +87,13 @@ fn is_windows_transient(code: i32) -> bool {
         code,
         ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION
     )
+}
+
+/// The folder a relative name such as `obra.partitura` lives in.
+fn directory_of(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
 }
 
 fn is_read_only(path: &Path) -> bool {
@@ -90,7 +125,6 @@ fn explain(error: io::Error, path: &Path) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn temporary_with(directory: &Path, text: &str) -> NamedTempFile {
         let mut temporary = NamedTempFile::new_in(directory).unwrap();
@@ -124,6 +158,16 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "uno");
         persist(temporary_with(directory.path(), "dos"), &path).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "dos");
+    }
+
+    #[test]
+    fn writes_bytes_without_leaving_temporary_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("atajos.json");
+        write(&path, b"{}").unwrap();
+        write(&path, b"{\"version\": 1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"version\": 1}");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]

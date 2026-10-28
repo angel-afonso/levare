@@ -6,7 +6,6 @@ use score_core::*;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Write as _,
-    io::Write as _,
     path::Path,
 };
 mod import;
@@ -493,15 +492,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
 /// Flush and replace atomically, leaving an existing destination intact on error.
 pub fn export(path: &Path, score: &Score) -> Result<(), FileError> {
     let bytes = encode(score)?;
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
-    file.write_all(&bytes).map_err(error)?;
-    file.as_file().sync_all().map_err(error)?;
-    crate::persist(file, path).map_err(error)?;
-    Ok(())
+    atomic_write::write(path, &bytes).map_err(error)
 }
 
 fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {

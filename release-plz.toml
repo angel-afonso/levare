@@ -29,6 +29,7 @@ changelog_path = "CHANGELOG.md"
 changelog_include = [
     "agent-host",
     "agent-tools",
+    "atomic-write",
     "levare-update",
     "score-core",
     "score-document",
@@ -53,6 +54,11 @@ changelog_update = false
 
 [[package]]
 name = "agent-tools"
+version_group = "levare"
+changelog_update = false
+
+[[package]]
+name = "atomic-write"
 version_group = "levare"
 changelog_update = false
 

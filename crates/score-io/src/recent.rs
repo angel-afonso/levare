@@ -4,7 +4,7 @@ use crate::{FileError, error};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{ErrorKind, Write},
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -50,12 +50,8 @@ impl RecentFiles {
     pub fn save(&self, path: &Path) -> Result<(), FileError> {
         let parent = path.parent().unwrap_or(Path::new("."));
         fs::create_dir_all(parent).map_err(error)?;
-        let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
-        temporary
-            .write_all(&serde_json::to_vec_pretty(self).map_err(error)?)
-            .map_err(error)?;
-        crate::persist(temporary, path).map_err(error)?;
-        Ok(())
+        let bytes = serde_json::to_vec_pretty(self).map_err(error)?;
+        atomic_write::write(path, &bytes).map_err(error)
     }
 
     /// Moves `file` to the front, without duplicates, keeping at most `LIMIT`.

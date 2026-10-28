@@ -11,19 +11,13 @@ mod names;
 mod range_tests;
 mod recent;
 mod recovery;
-mod replace;
+pub use atomic_write::persist;
 pub use names::file_name;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};
-pub use replace::persist;
 use score_core::Score;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt,
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fmt, fs::File, io::Read, path::Path};
 
 pub const SCHEMA_VERSION: u32 = 29;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
@@ -340,15 +334,7 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
 /// never truncates the previous document.
 pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
     let bytes = encode(score)?;
-    let parent = path
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(error)?;
-    temporary.write_all(&bytes).map_err(error)?;
-    temporary.as_file().sync_all().map_err(error)?;
-    persist(temporary, path).map_err(error)?;
-    Ok(())
+    atomic_write::write(path, &bytes).map_err(error)
 }
 
 #[cfg(test)]
