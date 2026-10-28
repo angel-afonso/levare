@@ -1,1362 +1,1402 @@
-# Desarrollo de Levare
+# Levare development
 
-Primera entrega iniciada el 2026-10-17 a partir de `herramientas.md`.
+First delivery started on 2026-10-17 from `herramientas.md`.
 
-## Objetivo de esta entrega
+The sections follow the order of the deliveries. Schema and clipboard version numbers
+are the ones each delivery introduced; today the native schema is 29
+(`score-io::SCHEMA_VERSION`) and the clipboard format is 6. Shortcuts are written with
+the macOS glyphs; on Windows and Linux ⌘ is Ctrl and ⌥ is Alt, and
+[atajos.md](atajos.md) lists every default per platform.
 
-Cerrar el recorrido mínimo de trabajo: abrir la aplicación, escribir una melodía,
-seleccionar y corregir notas, deshacer y guardar/abrir el documento.
-macOS es la plataforma inicial por el entorno disponible; la arquitectura mantiene
-el núcleo independiente para futuras plataformas.
+## Goal of this delivery
 
-## Límites entre módulos
+Close the minimum working loop: open the application, write a melody, select and
+correct notes, undo, and save/open the document. Levare is built, tested and released
+for macOS, Windows and Linux alike; the core crates have no platform code, and the
+platform code in the app sits behind `cfg(target_os = …)` with a branch for each
+system.
+
+## Module boundaries
 
 ```text
-partitura (GPUI, entrada, pintado, diálogos, tareas de archivo)
- ├─ score-toolbar (modelo de presentación de la cinta y Archivo; sin GPUI)
+levare (crates/app-gpui: GPUI, input, painting, dialogs, file tasks)
+ ├─ score-toolbar (presentation model of the ribbon and Archivo; no GPUI)
  │   └─ score-keymap
- ├─ score-keymap (comandos, perfiles y atajos; sin GPUI)
- ├─ score-document (sesión y estado guardado)
- │   ├─ score-edit (comandos transaccionales e historial)
- │   │   └─ score-core (modelo e invariantes)
- │   └─ score-layout (geometría y caché por compás)
+ ├─ score-keymap (commands, profiles and shortcuts; no GPUI)
+ ├─ score-document (session and saved state)
+ │   ├─ score-edit (transactional commands and history)
+ │   │   └─ score-core (model and invariants)
+ │   └─ score-layout (geometry and per-bar cache)
  │       └─ score-core
- └─ score-io (esquema nativo versionado y escritura atómica)
-     └─ score-core
-
-La interfaz también coordina `score-playback` (planes inmutables y tempo) y
-`score-platform` (sintetizador, cola y salida del dispositivo). El hilo de audio
-nunca recibe el documento editable ni una referencia a GPUI.
+ ├─ score-export (score and parts as PDF and MusicXML)
+ │   ├─ score-pdf (print layout through Quartz or krilla)
+ │   └─ score-io
+ └─ score-io (.levare container, versioned native schema, MusicXML, recovery)
+     ├─ score-core
+     └─ atomic-write (safe file replacement, shared by every writer)
 ```
 
-GPUI se usa exclusivamente en `crates/app-gpui`. Se elimina la dependencia
-`score-io → score-playback`: cuando llegue MIDI, se definirá un intercambio de
-eventos que no requiera cargar el motor de reproducción.
-
-## Decisiones implementadas
-
-- **Tiempo musical entero.** La redonda ocupa 192 unidades, evitando errores de
-  coma flotante. Las duraciones actuales llegan a semicorchea; tuplets y puntillos
-  necesitarán ampliar esta representación antes de implementarse.
-- **Identidad.** `slotmap 1.1.1` asigna claves generacionales dentro de cada compás.
-  La referencia completa es `(ID de parte, pentagrama, índice de compás, clave)`. Las partes
-  tienen IDs persistentes que no cambian al quitar otra parte. Agregar compases al final
-  y borrar notas conserva las referencias de los otros elementos. Insertar,
-  borrar o reordenar compases requerirá identificadores estables para compases.
-- **Instantáneas.** `imbl 7.0.1` comparte la secuencia de compases y sus índices.
-  Cada compás comparte su almacén de eventos mediante `Arc`; al editar se copia
-  solo ese pequeño almacén. Deshacer restaura partitura, cursor y selección.
-  El historial vive en memoria y se libera al abrir/crear un documento.
-- **Comandos atómicos.** Un error no publica cambios ni altera el historial.
-  Editar después de deshacer descarta la rama de rehacer.
-- **Layout.** Geometría independiente, medidas en unidades lógicas, hasta cuatro
-  compases por sistema y anchuras mínimas según densidad. Espaciado inicial
-  proporcional a la raíz de la duración. Una caché compara contenido y anchura
-  de cada compás; un cambio de reparto puede invalidar otros compases.
-  El agrupado y la colocación de sistemas aún recorren la partitura completa.
-  Ligaduras y reguladores localizan sus notas en un índice construido una vez por
-  layout, no recorriendo todos los compases. `Document` recuerda la última vista
-  (partitura, anchura, modo y escala) y la comparte sin copiarla mientras no
-  cambien: la reproducción y el puntero no vuelven a grabar la obra. La posición
-  de reproducción se calcula una vez por fotograma y la usan regla, transporte
-  y lienzo. El lienzo solo pinta lo que alcanza la
-  zona visible (compases, ligaduras, reguladores, etiquetas, llaves y conectores).
-  Referencia: la orquesta de 32 partes y 84 compases dibuja a 60 fps también con
-  `cargo run`, cuyo perfil optimiza ligeramente el workspace y del todo las
-  dependencias.
-- **Tipografía.** Bravura 1.392 y sus metadatos están incluidos con la OFL.
-  Grosores, anchura de cabezas y extensión de líneas adicionales vienen del JSON.
-  `ttf-parser 0.25.1` extrae y cachea los contornos originales SMuFL, que se pintan
-  como trazados GPUI con relleno de winding no nulo. Esto evita una limitación de
-  GPUI 0.2.2 en macOS: rechaza fuentes que no contengan la letra latina `m`.
-  Sus glifos compuestos resuelven plicas y banderas iniciales. Cada glifo se tesela
-  una vez por tamaño y orientación con el mismo lyon y opciones que GPUI; pintar una
-  instancia solo traslada sus triángulos.
-  La cinta y el panel derecho comparten estos contornos para dinámicas, alteraciones,
-  articulaciones, figuras, puntillo, tresillo, calderón y reguladores. Los controles
-  centran la caja de tinta real (incluidas las dinámicas compuestas), conservan los
-  atajos en la fuente de interfaz y usan cursiva editorial para `pizz.` y `arco`.
-  Los menús nativos de macOS usan el mismo archivo Bravura para dinámicas,
-  articulaciones, reguladores y alteraciones (incluidas las de las tonalidades).
-  Sus títulos combinan texto nativo con glifos de caja de tinta acotada para evitar
-  las grandes métricas verticales de SMuFL. Los símbolos se dibujan a la resolución
-  de pantalla y toman el color del estado del menú; las acciones, atajos y etiquetas
-  accesibles conservan sus nombres originales. El formato se reaplica al cambiar
-  las asignaciones de teclado.
-  El repertorio de `music_font` es común al grabado, la UI y los menús. Los textos
-  mixtos convierten alteraciones Unicode a glifos Bravura y heredan tamaño y color
-  del texto; letras, nombres, números de voz y términos como `pizz.` mantienen su
-  tipografía de texto. Las llaves usan las variantes originales de Bravura y los
-  corchetes sus terminales; líneas extensibles, ligaduras y reguladores usan las
-  métricas de grabado de la fuente. Las pruebas recorren todas las marcas, las
-  30 tonalidades, cada grupo musical de la cinta y los ejemplos de partituras
-  para detectar símbolos sin contorno cargado o sustituciones por iconos genéricos.
-- **Archivos.** `.partitura` contiene JSON con `format`, `version` y `score`.
-  Se valida el esquema y las invariantes antes de abrir; versiones desconocidas
-  se rechazan. Escritura temporal en el mismo directorio, sincronización del
-  archivo y reemplazo atómico. Límite inicial: 16 MiB y 4096 compases.
-  El esquema 7 añade marcas por evento y ligaduras con extremos estables al esquema 6,
-  que guarda partes, instrumentos, pentagramas, conjuntos de alturas, alteraciones y
-  una tonalidad inicial. El esquema 11 añade mapas de cambios de métrica y tonalidad
-  por índice de compás; los esquemas anteriores conservan sus valores iniciales sin
-  cambios intermedios. El esquema 12 añade tempo inicial y marcadores por compás;
-  los anteriores usan negra = 120 sin cambios. Los formatos 1–6 se abren sin marcas de expresión; 1–5 usan
-  Do mayor para conservar el sonido previo. El formato 4 migra con alturas naturales.
-  El esquema 3 migra cada nota a una lista de una altura y cada silencio a una
-  lista vacía, conservando sus IDs. Al abrir el esquema 1
-  se crea una parte de piano; al abrir el 2 se conserva cada instrumento. Ambos
-  mantienen las notas originales de piano en `Upper` y añaden `Lower` vacío.
-  El esquema 15 añade el segundo orden de eventos por compás y la división de partes;
-  los esquemas 1–14 se abren con una voz y sin división. La migración no modifica
-  el archivo original. ZIP sigue pendiente.
-- **Interfaz.** Controles pequeños con primitivas GPUI; `gpui-component` queda para
-  cuando hagan falta paneles, formularios y paletas. Guardar/abrir usa diálogos
-  nativos y realiza la lectura/escritura fuera del hilo de interfaz. Mientras hay
-  una operación pendiente se bloquea la edición para guardar una versión coherente.
-- **Recuperación.** `score-io::Recovery` posee un escritor serial y un bloqueo
-  del sistema sobre el directorio de sesión. Las ediciones encolan instantáneas
-  compartidas; debounce de 750 ms con máximo de 3 s. Escribe un sobre versionado
-  con documento nativo y ruta original mediante temporal, sincronización y
-  reemplazo atómico. Guardar/descartar encola la limpieza en el mismo escritor;
-  ninguna escritura anterior puede resucitar una copia descartada. El callback
-  de aplicación conserva un handle y espera al escritor al salir del Dock.
-  Al iniciar se admite también la antigua recuperación nativa sin sobre y se
-  restaura como documento modificado. Los errores se muestran en la interfaz;
-  el archivo original solo cambia al guardar explícitamente.
-- **Desarrollo macOS.** La característica `runtime-shaders` está activa por defecto
-  porque el equipo tiene Xcode pero no Metal Toolchain. La compilación anticipada
-  queda disponible con `--no-default-features --features vsco` al instalar ese
-  componente. La característica `vsco` (adaptador de VSCO CE) también está activa
-  por defecto; sin muestras instaladas no aparece y no cambia el sonido.
-
-Las versiones se fijan con `Cargo.lock`. Los objetivos de latencia de
-`herramientas.md` siguen siendo propuestas: todavía no están medidos.
-
-## Partitura de conjunto
-
-`Score` conserva una secuencia de partes con identidad estable e instrumento.
-Cada parte tiene pentagramas con identidad `Upper`/`Lower`; el piano conserva los
-dos y los demás instrumentos solo `Upper`. Todos tienen la misma cantidad de
-compases. Los IDs de nota incluyen el pentagrama para distinguir claves locales
-idénticas en las dos manos. Añadir o quitar una parte es una edición transaccional,
-con cursor, selección e historial. La interfaz permite elegirla por la lista de partes,
-por clic en sus notas/pentagrama y por ⌥↑/⌥↓ (pentagrama vecino). Al cambiar de parte se muestra su
-pentagrama. No se permite quitar la última parte.
-
-El grabado comparte una rejilla de comienzos y finales musicales por compás entre
-todas las partes. Las notas que empiezan en el mismo instante se alinean por tiempo,
-no por índice de nota; también se centran las cabezas de distinta anchura. Las claves de sol, do y fa sitúan las alturas reales, con
-nombres a la izquierda y una línea que une los pentagramas de cada sistema. El
-ancho se adapta a la ventana; las partes de un compás conservan la misma anchura.
-La caché incluye ID de parte, contenido, clave, rejilla y anchura. Cambiar una
-altura no recalcula las demás partes; cambiar el ritmo puede afectar la rejilla
-compartida. El gran pentagrama de piano tiene claves de sol/fa, llave y barras
-unidas; su caché incluye la identidad del pentagrama. Las armaduras se calculan por parte mediante `written_key_at`.
-
-El plan de audio mantiene intervalos por pentagrama, canales por instrumento y un
-reloj común. Las dos manos comparten canal y timbre. Los unísonos superpuestos se
-convierten en una sola pulsación hasta el último final, evitando ataques dobles y
-NoteOff de una mano que corte la otra. La búsqueda de notas sostenidas se prepara
-en el control y se entrega en un array fijo de hasta 448 notas (28 pentagramas × 2 voces × 8 alturas); no recorre la
-partitura en el callback. Las notas restauradas se deduplican por canal/tecla.
-La polifonía se reserva al crear el sintetizador para 256 voces, el máximo de RustySynth, incluyendo capas
-de muestras y colas de liberación; con grandes conjuntos puede haber robo de voces. La duración total es el máximo de los finales de todas las partes. Al
-iniciar desde una selección, también se atacan las notas de otras partes que
-atraviesan ese instante y se liberan en su final original. Esto conserva su
-duración restante; aún no reconstruye el punto previo de la envolvente del sonido.
-Se resaltan simultáneamente las notas de todas las partes. El seguimiento muestra
-el conjunto si cabe verticalmente; en partituras altas sigue la parte desde la que
-se está trabajando y usa otra parte activa durante sus huecos. Antes de seguir
-un único pentagrama intenta mantener juntas las dos manos del piano activo. La lista de partes y el clic
-actualizan la parte que se sigue sin reiniciar el transporte.
-
-## Acordes
-
-`Event` conserva una duración y `Pitches`, un conjunto ordenado de hasta ocho
-posiciones diatónicas distintas en almacenamiento fijo. Una lista vacía representa
-un silencio. Añadir o quitar la altura más aguda conserva el ID, la duración y el
-cursor; los comandos son transaccionales y reversibles. La transposición afecta
-al acorde entero. La selección del evento conserva un índice de altura en el historial para
-aplicar alteraciones a una nota individual. Cada pentagrama admite dos voces rítmicas independientes.
-
-El grabado usa cabezas SMuFL independientes, una plica común y bandera según
-duración. Las segundas alternan el lado de las cabezas y reservan espacio en la
-rejilla compartida. La selección y el seguimiento abarcan todas sus cabezas.
-El plan programa cada altura en el mismo instante y conserva la deduplicación de
-unísonos entre manos. La audición entrega hasta ocho teclas en un comando fijo;
-el inicio desde selección restaura todas las alturas sostenidas sin asignaciones
-en el callback. El formato 10 abre también los formatos 1–9.
-
-## Alteraciones
-
-`Pitch` conserva su escritura diatónica y un `Option<Accidental>`: sostenido,
-bemol o becuadro. `None` sigue la armadura vigente; `Natural` fuerza la altura natural con becuadro
-explícito, incluso si la armadura altera ese grado. La conversión MIDI aplica ±1 semitono;
-la transposición diatónica conserva la alteración. Los acordes permiten una sola
-nota por posición diatónica y admiten enarmonías entre posiciones distintas.
-Los unísonos enarmónicos se deduplican tanto en el plan como en la audición.
-
-El grabado resuelve signos por compás y pentagrama. La altura efectiva se resuelve con la armadura y el signo propio. Después de una
-alteración individual se imprime la restitución apropiada si la siguiente nota
-vuelve a la armadura en esa posición. Los signos explícitos se conservan incluso si son reiteraciones.
-Las columnas dejan separación vertical de 35 unidades y la rejilla reserva
-espacio antes de cada comienzo, también delante del primero. El seguimiento
-incluye sus glifos. La selección distingue cabezas por su altura y marca la nota
-que recibe la alteración, sin cambiar la selección rítmica de reproducción.
-El selector de entrada es independiente del comando que altera la nota elegida.
-
-## Métrica y armadura por compás
-
-`KeySignature` valida de −7 a 7 quintas y distingue modo mayor/menor; las relativas
-comparten alteraciones. El valor por defecto es Do mayor. Un signo propio de
-`Pitch` prevalece sobre la armadura; `None` hereda el grado en todas las octavas.
-Cambiar la tonalidad reinterpreta las notas que heredan, conserva las escrituras
-explícitas y no transpone sus posiciones. `SetKeySignatureAt` y `SetTimeSignatureAt`
-participan en el historial sin modificar IDs, cursores, selección ni índice de nota
-del acorde. Los mapas privados `key_changes` y `time_changes` guardan marcadores
-posteriores al compás cero; `key_signature_at` y `time_at` resuelven la herencia.
-Cada cambio afecta a todas las partes hasta el siguiente marcador. El compás cero
-conserva los campos iniciales de los archivos anteriores.
-
-`measure_start_tick`, `measure_at_tick` y `total_ticks` comparten el cálculo de
-posiciones con el editor, portapapeles, audio y transporte. Un cambio de métrica
-valida la capacidad en cada pentagrama antes de modificar el documento. Si algún
-compás rebasa la duración nueva, falla de forma atómica. Las conexiones se
-revalidan al cambiar el ritmo o la altura efectiva de sus extremos. Al pegar,
-las notas se dividen según la métrica local y conservan su sonido entre armaduras.
-
-`Pitches::in_key` resuelve una copia fija sin asignaciones. El plan de audio
-resuelve tanto sus mensajes como los intervalos sostenidos; la audición aplica
-el mismo método antes de convertir a MIDI. El callback recibe alturas preparadas.
-La notación empieza cada compás con el estado de la armadura y dibuja los signos
-de restitución cuando cambia una alteración propia. La clave y armadura se repiten
-al comenzar cada sistema. El espacio reservado precede a la indicación de compás
-y a la primera nota, y la caché incluye la tonalidad incluso al cambiar entre
-dos armaduras de igual anchura. Los cambios intermedios reservan espacio para
-la nueva indicación y los becuadros de cancelación de la armadura anterior, incluso
-al coincidir con un salto de sistema. Se admiten sol, do y fa en altura real.
-
-La interfaz ofrece 15 tonalidades por modo, un editor en el panel derecho y un menú
-nativo. **Armadura** es la entrada sin alteración propia; **Seguir armadura** la
-restaura en la nota elegida. Los nombres de las notas seleccionadas muestran su
-altura efectiva. Ambos selectores permiten aplicar desde el inicio o desde el
-compás elegido y quitar un marcador. `T` abre la métrica y `K` la tonalidad. No hay
-armaduras diferentes por parte ni elevaciones automáticas de menor armónica/melódica.
-
-Las pruebas de cambios de firma cubren herencia, cambios iniciales que preservan
-marcadores posteriores, rechazo atómico de compases demasiado llenos, historial,
-ligaduras entre tonalidades, portapapeles, compatibilidad del esquema 10, grabado
-en ambas manos y saltos de sistema, tiempos de audio con calderón y búsqueda en
-un último compás de 1/16. La comprobación en ventana confirmó el panel de métrica
-y la armadura inicial; el control automatizado de clics fue intermitente y no
-permitió completar la secuencia manual de cambios intermedios.
-
-## Indicaciones de tempo
-
-`score-core::TempoMark` conserva texto de una línea (máximo 80 caracteres), figura
-de referencia y BPM (20–400). `TempoBeat` admite blanca, negra y corchea, con o sin
-puntillo. El tempo inicial y `tempo_changes` se heredan por compás en todas las
-partes. `SetTempoAt` y `RemoveTempoChange` son transacciones del historial que
-conservan notas, IDs, cursor y selección. El esquema 12 valida y conserva estos
-marcadores; los esquemas anteriores se abren con negra = 120.
-
-El grabado reserva una franja superior y anchura para cada indicación explícita.
-`Layout.tempos` queda fuera de la geometría local en caché; sus posiciones siguen
-las traslaciones de los sistemas y páginas. La figura se pinta con Bravura; el
-texto conserva tipografía de texto y distribuye sus posibles símbolos musicales
-al mismo repertorio Bravura. El hit testing permite abrir el selector desde la
-indicación escrita.
-
-`Timeline` integra segmentos de segundos por tick, separados en cambios de tempo
-y extremos de calderones. `frame_at`, `seconds_at` y `tick_at` comparten este mapa.
-La figura de referencia fija la duración de cada pulso; el argumento `Tempo` de
-la API de audio actúa como velocidad relativa (120 = respetar la escritura).
-Los reguladores se subdividen en esas mismas fronteras para conservar su pendiente
-musical. El callback de audio sigue recibiendo un plan preparado sin asignaciones.
-
-La cabecera y el transporte abren el compás mostrado; Texto → Tempo abre el
-compás del cursor. El selector fija ese destino mientras se escribe, y permite
-cambiar al inicio sin perder el destino original. Los botones −/+ editan el tempo
-mostrado y conservan el tick al detener el plan anterior. Los campos de texto
-usan el manejador nativo de GPUI con selección, portapapeles, IME y desplazamiento
-horizontal; sus teclas no ejecutan comandos de escritura musical.
-
-En una sesión gráfica aislada se escribió «Andante cantabile» y 84 BPM en los
-campos nativos, se aplicó con Enter y se comprobó la indicación Bravura sobre el
-pentagrama. Se guardó un archivo temporal y se verificaron su versión 12, texto,
-figura y BPM. Las pruebas cubren reapertura y compatibilidad, cambios por compás,
-historial, figuras con puntillo, calderones, inversiones del reloj y crescendos
-sobre notas ligadas que atraviesan distintos tempi.
-
-Para pruebas gráficas aisladas, `LEVARE_DATA_DIR` puede indicar un directorio
-absoluto alternativo para recuperación, recientes y atajos, sin cambiar archivos
-de partituras ni los datos de la sesión habitual. `PARTITURA_DATA_DIR` se conserva
-como alias para los scripts anteriores.
-
-## Reproducción integrada
-
-La segunda entrega permite escuchar la escritura y reproducir la partitura:
-
-- **Entrada:** después de una inserción o transposición válida suena una audición
-  de 250 ms con el instrumento activo; conserva su cola natural de liberación. Silencios y comandos
-  rechazados no disparan notas. Se puede desactivar la audición.
-- **Transporte:** Espacio o el botón inicia desde la nota/silencio seleccionado,
-  o desde el comienzo si no hay selección. Espacio alterna pausa/continuación;
-  Esc o Detener cancelan el transporte conservando la selección. Mientras está
-  detenido, Esc quita la selección. Editar, deshacer, cambiar tempo, abrir o crear
-  un documento detiene el plan anterior y descarta la pausa.
-- **Pausa y selección:** los intervalos del plan conservan posiciones absolutas.
-  El inicio seleccionado se busca antes de encolar Play; el callback omite los
-  mensajes anteriores a esa frontera. Durante la pausa emite ceros y congela
-  tanto el reloj musical como el estado completo del sintetizador, incluido su
-  bloque de muestras, fase y envolventes. La continuación no necesita reconstruir
-  el plan ni volver a disparar la nota. La pausa también funciona si Play todavía
-  está en cola. Stop invalida el transporte pausado, incluso con la cola llena.
-  Cambiar la selección en pausa no mueve su posición: para saltar a otra nota
-  se detiene y se inicia otra vez.
-- **Ritmo:** `score-playback` convierte las unidades musicales a posiciones de
-  muestras mediante aritmética entera, usando negras por minuto. Mantiene los
-  huecos de compases incompletos interiores y omite los compases vacíos finales.
-  Incluye intervalos para resaltar notas y silencios sin alterar la selección.
-  En una misma frontera temporal, NoteOff precede a NoteOn.
-- **Sonido:** `rustysynth 1.3.7` y el banco original GeneralUser GS 2.0.3,
-  revisión y SHA-256 en `assets/sounds/README.md`. Se conserva su licencia propia.
-  El catálogo de 49 perfiles selecciona programas General MIDI y notas de percusión.
-  Hasta 48 partes usan rutas independientes de 128 canales internos, repartidas
-  en ocho sintetizadores preasignados. Se omiten los canales locales 9/15 para
-  las partes; el canal anfitrión 15 queda para audición. MIDI externo sigue pendiente.
-- **Dispositivo:** `cpal 0.16.0` abre la salida predeterminada y adapta la mezcla
-  estéreo a su frecuencia y formato. Soporta flotantes de 32/64 bits y enteros
-  de 16/32 bits, mono/estéreo y canales adicionales silenciados. Sin dispositivo
-  o tras un error, la edición continúa y se ofrece reconectar el audio.
-- **Tiempo real:** `rtrb 0.4.0` transporta comandos en una cola fija. El callback
-  posee su sintetizador y buffers; no bloquea, abre archivos ni hace trabajo de
-  interfaz. Los planes se preparan fuera del callback y el control conserva una
-  referencia fuerte hasta que el audio libera la suya, para que la destrucción
-  de los vectores también ocurra fuera del callback. Los propietarios se deduplican
-  cuando se vuelve a usar el mismo plan. Stop cambia una generación atómica y
-  cancela incluso los inicios que aún están en una cola llena.
-- **Comprobación:** `assert_no_alloc 1.1.2` intercepta asignaciones y liberaciones
-  en los tests del callback real con el banco incluido: reproducción, audición,
-  finalización, planes obsoletos, saturación, órdenes concurrentes y conversión
-  de salida. También compara muestra por muestra la continuación de una nota
-  pausada contra una reproducción sin interrupciones, y comprueba la pausa
-  antes del primer callback, dentro de un silencio y su cancelación por Stop.
-  El ejemplo `audio_smoke` verificó la salida real a 44 100 Hz, el inicio desde
-  una nota seleccionada, el reloj congelado durante la pausa, su continuación
-  y finalización. No se han medido aún latencia física ni underruns.
-- **Controles:** 120 BPM iniciales, rango 30–240, volumen y audición configurables
-  durante la sesión. Cambiar tempo detiene el plan; cambiar volumen se aplica en
-  el siguiente bloque. Estas opciones aún no forman parte del archivo nativo.
-
-La vista sigue automáticamente la nota o silencio activo en ambos ejes, con margen
-para el resaltado, las plicas y las banderas. Solo desplaza el lienzo cuando el
-elemento sale del área visible. Usa el origen real pintado del lienzo y el área
-del contenedor desplazable, por lo que incluye el título, el relleno y los cambios
-de tamaño sin depender de alturas fijas. Compensa cambios de desplazamiento entre
-fotogramas para evitar avances duplicados. Pausar o detener libera el desplazamiento
-manual; continuar vuelve a mostrar la nota activa. Este seguimiento no modifica la
-selección ni el documento. Los tests cubren renglones sucesivos, retorno a una nota
-anterior, compases anchos, alturas extremas, silencios y límites de la vista.
-
-La interfaz consulta el reloj de muestras cada 16 ms para actualizar el resaltado
-y el seguimiento de la vista. Ese temporizador no programa ni genera audio.
-
-`app-gpui::playhead` convierte ese reloj absoluto a ticks, compás y tiempo para
-compartir una posición entre partitura, regla y contador. El layout conserva la
-rejilla rítmica compartida e interpola entre sus anclas, también en huecos sin
-eventos. El cabezal y su línea fina se pintan antes de la tinta musical y reemplazan
-los dos indicadores anteriores. El seguimiento horizontal sigue esa posición;
-la pausa conserva el reloj y permite desplazamiento manual. Las notas y silencios
-activos cambian de color sin fondos individuales; las plicas identifican su evento
-para compartir el color, mientras pentagramas y líneas adicionales quedan neutros.
-La regla comparte su geometría de ocho píxeles de margen con la detección de clics
-y ajusta la posición al tiempo de denominador más cercano. El último extremo elige
-el último tiempo reproducible. `Playback` conserva ese tick al estar detenido sin
-alterar el cursor de edición ni la selección; el plan del transporte incluye los
-silencios implícitos hasta el final de la regla. `Control::play_from_frame` utiliza
-el mismo inicio preparado que la reproducción desde selección, recuperando las
-notas sostenidas y la expresión. Un salto mantiene el estado de reproducción o pausa;
-detener o editar descarta la posición elegida en la regla.
-La liberación natural del piano
-puede continuar brevemente cuando termina la última figura. Los eventos se
-entregan al sintetizador en las fronteras calculadas, con la granularidad interna
-de su bloque de 64 muestras.
-
-## Duraciones con puntillo y tresillo
-
-`Duration` contiene `NoteValue` (redonda a semicorchea) y dos modificadores booleanos:
-un puntillo y tresillo 3:2. La redonda ocupa 192 ticks y la negra 48, por lo que
-ambas modificaciones y su combinación se resuelven sin fracciones ni redondeo.
-El valor mínimo es 8 ticks (semicorchea de tresillo). La capacidad máxima de 16/1
-permite 384 eventos y el límite de validación se deriva de estos valores.
-Los fotogramas se calculan desde el tick absoluto, evitando deriva acumulada en
-cadenas largas de tresillos. Las partituras anteriores conservan sus tiempos reales.
-
-Las duraciones sencillas mantienen su cadena JSON anterior; las modificadas usan
-`{value, dotted, triplet}` con campos y tipos validados. El esquema 10 abre 1–9;
-el formato nativo no guarda ticks, de modo que cambiar la resolución no requiere
-reescribir compases, enlaces ni IDs. El portapapeles 4 sí convierte los offsets de
-1–3 multiplicándolos por tres; esos formatos antiguos rechazan modificadores nuevos.
-La capa de aplicación normaliza al leer y el editor también acepta pasajes antiguos.
-
-`SetDotted` y `SetTriplet` actúan sobre todo el rango seleccionado de forma atómica,
-conservan el rango y actualizan la capacidad mediante `Score::set_duration`.
-Los ajustes de entrada conservan los modificadores cuando cambia la figura base.
-El pegado mantiene las figuras sin dividir; al cruzar barras usa una tabla acotada
-de descomposición para figuras rectas o de tresillo compatibles, con uniones y
-marcas en sus extremos correspondientes. Los huecos usan la paleta completa.
-Una frontera no representable produce un error y no deja eventos ni compases
-parciales. No se usan duraciones ocultas ni redondeos para hacer caber el pasaje.
-
-El grabado añade glifos Bravura de puntillo y número 3. Los puntos de acordes usan
-una columna con espacios verticales distintos, sin caer sobre líneas; el espaciado
-reserva su anchura. Los grupos locales reúnen hasta tres figuras consecutivas del
-mismo valor modificado; un compás nuevo o un cambio de figura los separa y los grupos
-incompletos permanecen visibles. Los corchetes se sitúan sobre la tinta original de
-las notas y marcas, sin realimentarse con corchetes anteriores. Se conservan huecos
-entre grupos densos, límites de tinta, caché, hit testing, zoom y seguimiento.
-No se modelan aún grupos anidados ni tresillos con figuras de distinto valor.
-
-Validación de esta entrega: 149 tests aprobados del workspace, formato y Clippy sin
-errores. Se comprobaron ratios exactos, historia atómica, conservación de rangos,
-acordes/silencios, cadenas ligadas, ausencia de deriva en 96 compases de tresillos,
-portapapeles antiguo/nuevo, fronteras no representables sin efectos parciales,
-codec de duraciones y guardado del compás máximo de 384 eventos. Los tests de
-grabado incluyen puntos de acordes con segundas y ocho grupos densos sin escalones
-ni contacto entre corchetes. En una aplicación temporal sin recuperación de sesión
-se verificaron el dibujo, los atajos de puntillo y tresillo, el menú, deshacer/rehacer
-y el archivo guardado en esquema 10. La prueba CoreAudio a 44.100 Hz alineó dos
-compases mixtos con la mano izquierda, con pausa/continuación. La revisión final
-no dejó problemas importantes.
-
-## Barras de unión automáticas
-
-`score-layout::beaming` deriva los grupos del ritmo escrito y la métrica, sin
-modificar el modelo, el esquema nativo 10, el portapapeles 4 ni el plan de audio.
-Cada pentagrama se procesa por separado. Los compases simples agrupan por unidad
-del denominador; los compuestos, por tres unidades. Los compases cortos irregulares
-usan 5/8 = 3+2 y 7/8 = 2+2+3; la edición manual de estas subdivisiones queda pendiente.
-Los silencios, figuras largas, notas que atraviesan un pulso y límites de compás
-interrumpen las barras. Los tresillos reutilizan los grupos de figuras iguales
-del grabado rítmico y nunca se unen con el grupo contiguo.
-
-El plan fija una dirección de plica común antes de desplazar las segundas de los
-acordes. El grabado sustituye los glifos completos por cabezas y plicas que llegan
-a una barra de pendiente limitada, dejando espacio sobre todo el acorde. Las
-semicorcheas generan barras secundarias completas o parciales. GPUI pinta los
-polígonos con los colores de selección y reproducción; los límites de tinta,
-articulaciones, dinámicas, ligaduras y seguimiento incluyen las nuevas plicas y
-barras. Un tresillo completo con una sola barra común muestra el número 3 sin
-corchete redundante; los grupos incompletos o con silencios conservan el corchete.
-
-La caché existente ya incluye figuras y métrica, por lo que una edición recompone
-el grupo correspondiente. Los tests cubren ambos pentagramas, compases simples,
-compuestos e irregulares, ritmos mixtos con puntillo, silencios, tresillos, acordes
-con segundas, claves sol/do/fa, ligaduras, selección y seguimiento con zoom.
-El ejemplo `examples/barras.partitura` reúne estos ritmos para inspección visual.
-
-Validación: 157 tests del workspace aprobados, formato y Clippy sin errores.
-La revisión independiente no encontró problemas importantes. En una aplicación
-temporal sin recuperación de sesión se comprobó el dibujo de corcheas,
-semicorcheas, ritmos mixtos con puntillo y tresillos con barras simples y dobles,
-incluyendo plicas ascendentes y descendentes y ambas manos del piano.
-
-## Reguladores y curvas de dinámica
-
-`ConnectionKind::{Crescendo, Diminuendo}` comparte los extremos estables del
-modelo de ligaduras. Admite notas, acordes o silencios de un mismo pentagrama,
-ordenados en el tiempo; los intervalos de reguladores no se pueden solapar y
-pueden tocarse. Borrar un extremo elimina el enlace; el historial lo restaura.
-El esquema 9 conserva estos tipos y migra desde 8 sin cambiar las conexiones.
-Los reguladores se incorporaron en el portapapeles 3; el formato 4 actual sigue
-leyendo 1–3, copia reguladores internos y remapea
-su final al primer fragmento si la nota final se divide al pegar. Los reguladores
-externos no se copian, como las ligaduras; su dinámica inicial se aproxima a la
-marca más cercana. El contexto al insertar usa el límite izquierdo de la curva.
-
-`score-core::DynamicEnvelope` prepara segmentos lineales por pentagrama entre
-las marcas escritas. Sin marca de llegada, el objetivo es dos posiciones de
-`Dynamic::ALL` por encima/debajo de la última marca del regulador, limitado a
-ppp–fff. El nivel final persiste. Las marcas interiores son anclas y las marcas
-explícitas prevalecen sobre la dirección gráfica.
-
-`score-playback::dynamics` calibra la velocidad de cada ataque al máximo de su
-intervalo sonoro y calcula CC11 como `nivel / referencia * 127`. Fuera de las
-curvas, esto conserva exactamente la velocidad y la expresión completa anteriores.
-Un crescendo sostenido reserva solo la amplitud que necesitará antes de liberar la
-nota; las articulaciones mantienen su refuerzo. Los tiempos de cada transición de
-CC se obtienen invirtiendo la pendiente original, antes de limitarla a 127, para
-que los silencios y gates de staccato no estiren artificialmente la curva.
-El plan recupera expresión actual y ataque original al empezar dentro de una unión.
-Pausa congela la curva, las envolventes y el reloj del sintetizador.
-
-Los dos pentagramas de piano, arpa, celesta y órgano con reguladores usan rutas
-internas separadas. Cada grupo de 14 partes ocupa 32 canales: la ruta principal
-salta el canal local 9 y la inferior añade 16. Ocho bancos cubren las 48 partes
-sin reutilizar canales. Los bancos comparten reloj, se reinician
-al detener y se mezclan sin reservar memoria en el callback. Al comenzar un plan
-se restaura CC11 de todas las rutas para evitar volumen residual de otra partitura.
-
-El grabado produce dos trazos por segmento de regulador, con abertura continua
-entre sistemas, por debajo de notas, ligaduras y dinámicas. La reserva de espacio
-se calcula por fila sin invalidar el grabado local de compases. El seguimiento
-incluye el regulador de la nota activa y funciona con el zoom. Cinta,
-menús y los atajos H/Shift+H comparten comandos; se puede crear desde una selección
-de pasaje o marcando inicio/final en dos pasos.
-
-Validación de esta entrega: 139 tests aprobados del workspace, formato y Clippy sin
-errores. Los tests verifican audio de acordes sostenidos y ligados, crescendos y
-diminuendos, restitución del volumen y timbre fuera de la curva, referencias de
-ganancia a través de silencios/staccato, inicio desde selección, pausa exacta y
-28 rutas de manos en 14 pianos. En la aplicación temporal sin recuperación de
-sesión se comprobaron los trazos, creación en dos pasos con H, creación sobre un
-pasaje con Shift+H, eliminación, deshacer/rehacer y guardado; el archivo conservó
-los extremos en esquema 9. La prueba CoreAudio a 44.100 Hz reprodujo violonchelo
-ligado con crescendo, diminuendo y pausa/continuación. La revisión final no dejó problemas importantes.
-
-## Técnicas de cuerda
-
-`Notation.technique: Option<PlayingTechnique>` guarda `Pizzicato` y `Arco` en notas,
-acordes o silencios. Solo los instrumentos de la familia `Strings` aceptan estas
-marcas. El esquema 8 conserva la técnica; la migración desde 7 deja las marcas
-vacías y mantiene el sonido original. El setter y la validación de archivos e
-inserciones comparten esta restricción. El historial conserva cada edición.
-
-El plan resuelve la técnica por pentagrama y prepara cambios de programa antes de
-los ataques: pizzicato usa el preset GM 45 (base cero), arco restaura el preset del
-instrumento. Los cambios no consumen canales adicionales. Las notas ligadas
-conservan el programa y la velocidad de su ataque original, incluidos los inicios
-desde selección. Los mensajes se ordenan liberación → programa → ataque. El callback
-solo recibe datos preparados y no reserva memoria. La audición usa la técnica
-vigente. Los tests comprueban el preset real del banco, diferencias de sonido,
-continuación exacta tras pausa, aislamiento por parte y las cuatro cuerdas.
-
-El grabado utiliza etiquetas de texto serif en cursiva, con espacio horizontal y
-límites de tinta propios por encima de plicas y articulaciones. Las ligaduras de
-expresión siguen el contorno exterior de estas etiquetas. El portapapeles versión
-2 conserva la técnica heredada y coloca la marca únicamente en la primera figura
-cuando se divide al pegar; sigue leyendo la versión 1 con arco por defecto. Un
-pegado en un instrumento incompatible falla antes de modificar el documento.
-
-Validación de esta entrega: 127 tests del workspace, Clippy y formato sin errores.
-En una aplicación temporal sin recuperación de sesión se comprobó el cuarteto,
-las etiquetas en cursiva y el cambio a arco desde el menú nativo; el archivo guardado
-conservó `Arco` en esquema 8. La salida CoreAudio se comprobó a 44.100 Hz con
-pizzicato de violonchelo, pausa/continuación y regreso a arco. La revisión de código
-no encontró problemas importantes ni críticos.
-
-## Portapapeles musical y selección de pasajes
-
-`score-edit::selection` mantiene un ancla y un foco estables por pentagrama dentro
-de la instantánea del editor. Clic y navegación normal vuelven a una selección
-simple; Shift+clic/flechas amplía el intervalo y Seleccionar todo recorre el
-pentagrama activo. Cortar y Eliminar notas y su tiempo quitan el intervalo; Delete
-convierte las notas en silencios conservando el tiempo. El historial
-restaura el ancla, el foco y los eventos.
-
-`app-gpui::selection` convierte un arrastre de al menos cinco píxeles en el mismo
-intervalo del editor. Puede comenzar en una nota o en espacio de un compás escrito;
-un clic breve conserva la selección individual y el cursor de entrada anteriores.
-El destino se aproxima por renglón y tiempo dentro del pentagrama de origen,
-independientemente de la altura de las notas o de otros instrumentos. El zoom y el
-origen desplazado del lienzo se consideran al buscar extremos. Soltar el botón o
-ejecutar un comando termina el gesto. La pintura reúne compases contiguos en una
-franja por renglón, incluidos compases vacíos intermedios, y la barra de selección
-muestra el recuento con acciones Copiar/Cortar. Los menús incluyen las acciones
-de portapapeles y Seleccionar todo con sus atajos actuales.
-
-`score-edit::clipboard` expone un pasaje portable versionado: eventos con offsets
-en ticks, armadura de origen, dinámica vigente e índices de ligaduras internas.
-No contiene IDs del documento. El pegado clona la instantánea, conserva las alturas
-al cambiar de tonalidad, materializa huecos como silencios y divide las figuras
-que cruzan barras creando uniones. Los extremos de las ligaduras se remapean a
-las figuras nuevas. Las dinámicas/acento quedan al inicio de una figura dividida;
-staccato/tenuto se colocan al final. La reproducción aplica el gate final a la
-cadena completa para conservar el sonido original. Solo se confirma la operación
-cuando toda la música y sus enlaces son válidos; una colisión de capacidad o enlace
-no deja compases añadidos ni ediciones parciales.
-
-La capa GPUI usa `ClipboardItem` con resumen textual y metadatos JSON propios,
-limitados a 16 MiB y validados antes del pegado. No conserva un portapapeles interno
-que pudiera pegar datos antiguos después de copiar texto de otra aplicación.
-Cortar verifica la lectura del contenido escrito antes de borrar las notas.
-Las acciones comparten registro, menús, cinta y atajos configurables. No actúan
-sobre la partitura mientras Preferencias está abierto.
-
-## Orden y agrupación del score
-
-`InstrumentFamily` y `Instrument::score_order` comparten el criterio de presentación
-entre editor, lista de partes y grabador. `Score::arrange_parts` ordena partes completas de
-forma estable: conserva IDs, voces de ambas manos, eventos y conexiones. La sesión
-normaliza el orden al abrir y la edición lo aplica al añadir instrumentos. La
-instantánea guardada usa ese mismo orden para evitar un indicador de cambios falso.
-No se modificó el esquema de archivo: la secuencia de partes ya era serializable.
-
-El grabador calcula los límites de cada familia por sistema después de colocar
-los pentagramas. Genera un corchete por grupo y prolonga las barras de compás solo
-dentro de esa familia; la barra inicial recorre el sistema. Las llaves de piano se
-mantienen separadas de los corchetes. Los contornos se pintan con coordenadas de
-presentación escaladas y las posiciones de las notas conservan su hit testing.
-
-Eliminar desde la lista de partes ejecuta el mismo comando registrado que el menú nativo.
-Se conserva al menos una parte y se selecciona la vecina al eliminar. El historial
-recupera la parte completa y sus ligaduras. La reproducción se detiene al editar
-y reconstruye su mapa de canales/timbres desde el nuevo orden.
-
-## Interfaz de referencia
-
-`app-gpui::ui` concentra la presentación: paleta oscura, componentes comunes,
-cinta por pestañas, panel de partes (izquierda), panel Selección · Sonido · Revisión
-(derecha), tira de posición, hoja, transporte y barra de estado. `ui::icons` dibuja los iconos como vectores nativos. El archivo
-`main.rs` conserva las acciones, los diálogos, el estado del documento y sus
-salvaguardas. La apariencia toma la referencia proporcionada por el usuario;
-los controles sin función musical disponible se identifican como «Pendiente».
-Los colores de la interfaz están en `ui/theme.rs`, con el contraste comprobado.
-
-### Paneles laterales
-
-Diseño en `docs/superpowers/specs/2026-10-27-paneles-design.md`. Cada panel responde a una
-pregunta y ningún panel repite lo que ya muestra otro. Con la cinta sí hay repeticiones a
-propósito: las acciones del pasaje y de la nota en Selección ejecutan los mismos comandos que
-sus botones de la cinta, a mano junto a lo que se mira.
-
-- **Izquierda, «¿qué hay en la partitura?»** (`ui/instrument_panel.rs`, `ui/parts_view.rs`,
-  `ui/mixer.rs`). `parts_view` calcula sin GPUI las familias en orden de partitura, sus filas
-  (nombre y nota de claves y transposición) y el filtro de búsqueda, que no distingue
-  mayúsculas ni acentos y muestra las familias desplegadas. Lista y Mezcla comparten las
-  filas; Mezcla añade `mixer::part_controls` (volumen y posición, de sesión; Sección | Solista
-  como `Command::SetPlayers`, que se guarda y se deshace).
-- **Derecha, «¿qué tengo seleccionado y qué le cambio?»**. Pestañas `RightTab`: Selección
-  (`ui/selection_view.rs` calcula sin GPUI qué hay seleccionado a partir del editor: partitura,
-  nota, silencio, pasaje o editor abierto; `ui/selection_panel.rs` lo dibuja y aloja los editores
-  de clave, tonalidad, métrica, tempo, texto, letra, cifrado e información), Sonido
-  (`ui/sound_panel.rs` con `ui/mixer.rs` para la salida) y Revisión (`ui/review.rs` y
-  `ui/comments.rs`). Abrir un editor muestra el panel y la pestaña Selección. Un clic en la
-  partitura o una tecla de navegación cierra, por el mismo camino que `Esc`
-  (`cancel_editor`), los editores para los que `EditorKind::survives_selection_move` es falso;
-  el avance propio de letra y cifrado no pasa por ahí. Quitar una marca
-  desde su fila ✕ ejecuta el comando de la marca y se deshace como cualquier edición.
-- **Arriba** (`#score-readouts` en `ui.rs`): la única tira de posición (Compás, Tiempo, Tempo,
-  Métrica, Tonalidad, Parte · Voz y resumen de la selección). Tempo, Métrica y Tonalidad abren su
-  editor en el panel derecho.
-- **Abajo** (`ui/status_bar.rs`): `status_bar(&Facts)` devuelve solo lo que la barra dice
-  (mensaje de estado, navegación de páginas en vista Página, zoom, autoguardado y estado de
-  guardado); un test nombra todos los campos para que voz, tonalidad, métrica, instrumentos o modo
-  de vista no vuelvan a aparecer sin que se note.
-- **Memoria** (`panels.rs`): `paneles.json` en la carpeta de datos guarda los paneles abiertos
-  (`show_parts`, `show_right`), la pestaña derecha (`right`), Lista o Mezcla (`parts_mode`) y las
-  familias plegadas (`folded`). `panels::load` devuelve los valores por defecto si el archivo falta o
-  está dañado (los campos ausentes también los toman); `panels::save` escribe de forma atómica y
-  solo se invoca cuando algo recordado cambia respecto a la última escritura.
-
-Los atajos siguen el perfil de Sibelius descrito en **Motor de atajos**; las
-etiquetas de la cinta, de los paneles y de los menús se leen del mapa activo.
-
-El layout mantiene su geometría y caché en coordenadas musicales. `Layout.scale`
-se aplica al pintar, seleccionar, colocar el cursor y seguir la reproducción;
-no se copian ni reescriben todos los compases al cambiar de escala. El modo
-compacto de `LayoutEngine` calcula límites verticales con las cajas reales de
-Bravura, plicas y líneas adicionales; los guarda junto a la caché y reserva un
-margen entre pentagramas. El modo estándar conserva su espaciado anterior.
-`score-layout::views` añade tres presentaciones sobre el mismo grabado. Continua
-adapta el ancho de los sistemas a la ventana; Pentagrama elimina los saltos y usa
-anchuras naturales para todos los compases. Página conserva un ancho de 1000
-unidades y proporción de hoja √2, con cabecera inicial, márgenes, número y separación
-entre hojas. Un sistema indivisible más ancho o alto amplía todas las hojas del
-documento de forma consistente. La paginación conserva las dos manos del piano y
-las familias completas.
-
-`Layout.systems` registra intervalos de compases y límites verticales; `pages`
-registra las hojas y sus intervalos. La traslación mueve notas, etiquetas, llaves,
-corchetes y barras desde sus posiciones originales en una sola pasada. Las curvas
-y reguladores se recalculan después con los sistemas finales. La caché conserva
-la geometría local sin incorporar la posición de página. La cabecera usa la misma
-escala que la partitura. El lienzo pinta solo los compases que cruzan el área visible.
-
-En la aplicación se verificaron el selector sin TODO, Continua, el cambio a Página
-con su contador y Pentagrama con cinco instrumentos alineados. El control de
-ventana falló de forma intermitente al probar el ajuste completo de la hoja; esa
-interacción manual quedó sin confirmar. La distribución, selección y navegación
-entre varias páginas a 28 %, 70 % y 150 % están cubiertas por pruebas automáticas.
-
-Las vistas son estado de interfaz: no cambian el documento, historial, IDs,
-selección, cursor o reloj de audio. La navegación de páginas centra las hojas que
-caben y alinea al margen superior las grandes, con límites de desplazamiento.
-`⌘0` activa Página y calcula el ajuste de la hoja a la ventana. Las pruebas cubren
-saltos, hojas grandes, traducción de adornos, hit testing con zoom, conexiones
-entre hojas, cambio de vista y navegación de ida y vuelta sin acumular deriva.
-
-El reloj visible se actualiza desde la posición ya publicada por el control de
-audio; la interfaz no consulta ni modifica el sintetizador para dibujarlo.
-
-## Barra de herramientas
-
-El panel de partes vive en `ui/instrument_panel.rs` (lo que lista, en `ui/parts_view.rs`) y el diálogo de alta, en el mismo archivo. El diálogo mantiene un
-borrador de cantidades por instrumento, limitado a las plazas disponibles de las
-48 partes; ni seleccionar ni cancelar modifica el documento. Confirmar ejecuta
-`Command::AddParts` como una transacción: si falla un alta, no se guarda ninguna,
-y Deshacer retira el conjunto completo. El contexto modal bloquea la entrada de
-notas y los comandos globales hasta confirmar o cancelar.
-El botón de la parte elegida elimina por `PartId` mediante `RemovePartById`, conservando el pasaje y
-la nota elegidos cuando pertenecen a otra parte. Si se elimina la parte activa se
-elige su vecina; Deshacer recupera los pentagramas y conexiones originales.
-
-La cinta y el menú Archivo siguen capas con dependencias hacia abajo:
+The interface also coordinates `score-playback` (immutable plans and tempo) and
+`score-platform` (synthesizer, queue and device output). The audio thread never
+receives the editable document or a reference to GPUI. The agent panel lives in
+`agent-host` and `agent-tools`, updates in `levare-update`, and sound packs in
+`score-sound-vsco` and `score-sound-store`.
+
+GPUI is used only in `crates/app-gpui`. The `score-io → score-playback` dependency is
+gone: when MIDI arrives, an event exchange will be defined that doesn't require
+loading the playback engine.
+
+## Decisions implemented
+
+- **Integer musical time.** A whole note takes 192 units, avoiding floating-point
+  errors. Durations go from the whole note to the thirty-second note, with a single dot
+  and the 3:2 triplet (see *Dotted and triplet durations*).
+- **Identity.** `slotmap 1.1.1` assigns generational keys inside each bar. The full
+  reference is `(part ID, staff, bar index, key)`. Parts have persistent IDs that don't
+  change when another part is removed. Appending bars and deleting notes keep the
+  references of the other elements. Inserting and deleting bars (`score-core::measure_edit`,
+  the `InsertMeasure` and `DeleteMeasures` commands) remaps every reference that holds a
+  bar index in one operation: connections, piano arpeggios, comments and the per-bar
+  maps. Bars have no identity of their own, so reordering them would need one; there is
+  no command to reorder bars.
+- **Snapshots.** `imbl 7.0.2` shares the sequence of bars and their indices. Each bar
+  shares its event store through `Arc`; an edit copies only that small store. Undo
+  restores score, cursor and selection. The history lives in memory and is freed when
+  a document is opened or created.
+- **Atomic commands.** An error publishes no changes and doesn't alter the history.
+  Editing after undo discards the redo branch.
+- **Layout.** Independent geometry, measured in logical units, up to four bars per
+  system (six in part views) and minimum widths by density. Initial spacing
+  proportional to the square root of the duration. A cache compares each bar's content
+  and width; a change in distribution can invalidate other bars. Grouping and placing
+  systems still walk the whole score. Slurs and hairpins find their notes in an index
+  built once per layout, not by walking every bar; the same index of slur lanes serves
+  spacing and hairpins. The editor gives each state of the score a revision, and
+  `Document` keeps the last view by revision, mode and scale (and width, except in page
+  view, whose width is the printed one). It shares that view without copying it while
+  they don't change: playback and the pointer don't engrave the work again, and a zoom
+  step rescales the engraving instead of laying it out. Playback keeps the frame's
+  timeline until the revision, the tempo or the repeat mode changes; the playback
+  position is computed once per frame and the ruler, transport and canvas use it. The
+  canvas only paints what reaches the visible area (bars, slurs, hairpins, labels,
+  braces and connectors). Reference: the 32-part, 84-bar orchestra draws at 60 fps also
+  with `cargo run`, whose profile lightly optimizes the workspace and fully optimizes
+  the dependencies.
+- **Typography.** Bravura 1.392 and its metadata are included with the OFL. Thicknesses,
+  notehead width and ledger line extension come from the JSON. `ttf-parser 0.25.1`
+  extracts and caches the original SMuFL outlines, which are painted as GPUI paths with
+  non-zero winding fill. This avoids a GPUI 0.2.2 limitation on macOS: it refuses fonts
+  that lack the Latin letter `m`. Its composite glyphs resolve stems and initial flags.
+  Each glyph is tessellated once per size and orientation with the same lyon and
+  options as GPUI; painting an instance only translates its triangles.
+  The ribbon and the right panel share these outlines for dynamics, accidentals,
+  articulations, note values, dot, triplet, fermata and hairpins. The controls center
+  the real ink box (compound dynamics included), keep the shortcuts in the interface
+  font and use editorial italics for `pizz.` and `arco`.
+  The native macOS menus use the same Bravura file for dynamics, articulations, hairpins
+  and accidentals (including those of the key signatures). Their titles combine native
+  text with glyphs whose ink box is clipped, to avoid SMuFL's large vertical metrics. The
+  symbols are drawn at screen resolution and take the color of the menu state; actions,
+  shortcuts and accessible labels keep their original names. The formatting is applied
+  again when the key assignments change.
+  The `music_font` repertoire is shared by engraving, UI and menus. Mixed texts convert
+  Unicode accidentals to Bravura glyphs and inherit the text's size and color; letters,
+  names, voice numbers and terms such as `pizz.` keep their text typeface. Braces use
+  Bravura's original variants and brackets their terminals; extensible lines, slurs and
+  hairpins use the font's engraving metrics. The tests walk every mark, the 30 key
+  signatures, each musical group of the ribbon and the example scores to catch symbols
+  without a loaded outline or replaced by generic icons.
+  Score text is set in Times New Roman on macOS and Windows and in the bundled Liberation
+  Serif on Linux, which rarely has Times and whose font matching wants exact names; both
+  have the same widths, so layout estimates hold (`app-gpui::fonts`). The bar counter
+  uses Menlo, Consolas or the bundled Liberation Mono. On Linux Levare also registers
+  Cantarell, so GPUI always finds an interface font from its fallback list.
+- **Files.** Save and Save As write a `.levare` file (`score-io::container`): a ZIP
+  whose first entry, `mimetype`, is stored uncompressed and reads
+  `application/vnd.levare.score`, so the file identifies itself, followed by
+  `score.json`, deflated. `score.json` holds the versioned JSON envelope (`format`,
+  `version` and `score`), written compact: indentation alone made orchestral scores four
+  times larger. An 84-bar orchestral score goes from about 3 MB to under 20 KB. Unknown
+  entries are ignored, so later versions can add to the container.
+  Files are recognized by their contents, not their extension (`score-io::open`): a ZIP
+  whose `mimetype` names Levare is a `.levare`; a file whose first non-blank character
+  is `{` is the JSON of an older `.partitura`; anything else goes to the MusicXML
+  importer, including compressed MXL, whose `mimetype` names MusicXML. Reading caps the
+  file at 64 MiB, the decompressed `score.json` at 256 MiB whatever the ZIP headers
+  claim, and the container at 64 entries. Plain JSON is capped at 256 MiB, enough for
+  the largest score the model allows (48 parts of 4096 bars). `.partitura` files keep
+  opening and Save never overwrites them: saving a score that came from a `.partitura`
+  file or from a MusicXML import asks for a new `.levare` beside it, named after the
+  original. A name typed without an extension gets `.levare` (a dot inside a title such
+  as «Op. 2» doesn't count as one). The schema and the invariants are validated before
+  opening; a file written by a newer Levare is refused with a message that asks to
+  update. File errors have a kind (not found, no permission, read-only, damaged or not a
+  score, newer version, too large, disk full, other) and a Spanish message; the
+  technical cause goes to the log.
+  Scores, exports, the recovery file and the settings files (shortcuts, panels, recent
+  files, updates, sound priority) are replaced through the `atomic-write` crate: a
+  temporary file in the same folder, flushed to disk, then renamed over the target. The copy takes the replaced
+  file's permissions, a symbolic link is written through and stays a link, the folder is
+  flushed after the rename on Unix, and on Windows the rename is retried for about two
+  thirds of a second while another program (OneDrive, Defender, the indexer) holds the
+  file. A read-only target is refused.
+  Schema 7 adds per-event marks and slurs with stable endpoints to schema 6, which
+  stores parts, instruments, staves, pitch sets, accidentals and an initial key
+  signature. Schema 11 adds maps of meter and key changes by bar index; earlier schemas
+  keep their initial values with no changes in between. Schema 12 adds an initial tempo
+  and per-bar markers; earlier ones use quarter = 120 with no changes. Formats 1–6 open
+  without expression marks; 1–5 use C major to keep their previous sound. Format 4
+  migrates with natural pitches. Schema 3 migrates each note to a list of one pitch and
+  each rest to an empty list, keeping their IDs. Opening schema 1 creates a piano part;
+  opening schema 2 keeps each instrument. Both keep the original piano notes in `Upper`
+  and add an empty `Lower`. Schema 15 adds the second event order per bar and divided
+  parts; schemas 1–14 open with one voice and no division. Migration never modifies the
+  original file.
+- **Interface.** Small controls built from GPUI primitives; `gpui-component` waits until
+  panels, forms and palettes need it. Save/open use the system's file dialogs (on Linux,
+  through xdg-desktop-portal; without one, Levare says so in Spanish) and do the reading
+  and writing off the interface thread. While an operation is pending, editing is
+  blocked so a consistent version is saved.
+- **Recovery.** `score-io::Recovery` owns a serial writer and a system lock
+  (`File::try_lock`) on `recovery.lock`, a separate file beside the recovery file, so
+  the recovery file can still be replaced while the lock is held (Windows refuses to
+  rename over a locked file). The system releases the lock when the process ends,
+  crashes included; a second Levare window finds it taken and runs without autosave.
+  Edits queue shared snapshots; 750 ms debounce with a 3 s maximum. The writer keeps
+  `recovery.partitura` in the data folder: a versioned envelope with the native
+  document and the original path, through `atomic-write`. The document is the same
+  compact JSON as `score.json`, not compressed. Save/discard queue the cleanup on the
+  same writer; no earlier write can resurrect a discarded copy. On start, the old
+  native recovery without an envelope is also accepted and restored as a modified
+  document. Errors show in the interface; the original file only changes on an explicit
+  save.
+  When the recovery file can't be read or restored, it moves aside before the first edit
+  autosaves over it: to `Recuperación sin abrir <date>.partitura` in the same folder, a
+  name nothing in Levare writes to, and a window («No se pudo recuperar la partitura sin
+  guardar») says where it is and can show it. If it can't be moved, autosave stays off
+  for the session so the file is left alone.
+  A quit from outside the window (the Dock, logging out) skips the question about
+  unsaved changes, and GPUI 0.2.2 can't cancel it: `on_app_quit` runs once the quit is
+  decided. The app callback holds a handle to the writer, writes the autosave one last
+  time and waits for it (`app-gpui::autosave`). When that fails, or there is no
+  autosave, the unsaved score is saved as `Copia de emergencia <date>.levare` in the data
+  folder, never over another file, and added to «Abrir reciente». Restarting into an
+  update also writes the autosave and waits for it; if it fails, the update stays for
+  the next start and the status line asks the musician to save first. Dates in these
+  names are UTC, as `2026-10-28 15-30-12`, without the colons Windows forbids.
+- **Log and crash reports** (`app-gpui::diagnostics`). Release builds have no console on
+  Windows, and a Mac app opened from Finder only reaches the unified log, so warnings
+  and failures go to `registro.log` in the data folder as well as to stderr: one
+  timestamped UTC line each, from any thread, never failing or panicking. Past 1 MiB the
+  log becomes `registro.1.log`, replacing the previous one. A panic hook, installed
+  before GPUI starts, writes a crash report, `fallo-<Unix seconds>.txt`, with version,
+  system, thread, location, message and backtrace, and keeps the ten newest. On the
+  next start Levare says once that it closed unexpectedly («Levare se cerró
+  inesperadamente»), after any other question it asks at startup, and can show the
+  report; `fallos.json` remembers the newest report already announced. If the window
+  can't open (no usable GPU, a broken driver), the reason is logged and reported,
+  Windows shows a message box, and Levare exits with an error. Autosave, recovery,
+  emergency copy and file errors are logged too. Under `cfg(test)` the log only writes
+  to stderr, so tests that walk these failure paths leave the musician's log alone.
+- **macOS development.** The `runtime-shaders` feature is on by default because the
+  machine has Xcode but not the Metal Toolchain. Ahead-of-time compilation is available
+  with `--no-default-features --features vsco` once that component is installed. The
+  `vsco` feature (the VSCO CE adapter) is also on by default; without installed samples
+  it doesn't appear and doesn't change the sound.
+
+Versions are pinned in `Cargo.lock`. The latency targets in `herramientas.md` are
+still proposals: they haven't been measured yet.
+
+## Ensemble score
+
+`Score` keeps a sequence of parts with stable identity and instrument. Each part has
+staves with identity `Upper`/`Lower`; the piano keeps both and the other instruments
+only `Upper`. All of them have the same number of bars. Note IDs include the staff to
+tell apart identical local keys in the two hands. Adding or removing a part is a
+transactional edit, with cursor, selection and history. The interface lets the musician
+choose it from the parts list, by clicking its notes or staff, and with ⌥↑/⌥↓
+(neighboring staff). Changing part shows its staff. The last part can't be removed.
+
+Engraving shares a grid of musical starts and ends per bar across all parts. Notes that
+start at the same instant align by time, not by note index; noteheads of different
+widths are also centered. Treble, alto and bass clefs place the real pitches, with names
+on the left and a line joining the staves of each system. The width adapts to the
+window; the parts of a bar keep the same width. The cache includes part ID, content,
+clef, grid and width. Changing a pitch doesn't recompute the other parts; changing the
+rhythm can affect the shared grid. The piano grand staff has treble/bass clefs, a brace
+and joined barlines; its cache includes the staff's identity. Key signatures are
+computed per part through `written_key_at`.
+
+The audio plan keeps intervals per staff, channels per instrument and a common clock.
+Both hands share channel and timbre. Overlapping unisons become a single keypress until
+the last end, avoiding double attacks and a NoteOff from one hand cutting the other. The
+search for sustained notes is prepared in the control and delivered in a fixed array of
+up to 1,536 notes (96 staves × 2 voices × 8 pitches, `MAX_SOUNDING_NOTES`); it doesn't
+walk the score in the callback. Restored notes are deduplicated by channel/key.
+Polyphony is reserved when the synthesizer is created for 256 voices, RustySynth's
+maximum, including sample layers and release tails; with large ensembles voices may be
+stolen. The total duration is the latest end among all parts. When starting from a
+selection, notes of other parts that span that instant are also attacked and released
+at their original end. This keeps their remaining duration; it doesn't yet rebuild the
+previous point of the sound's envelope. Notes of all parts are highlighted at the same
+time. Following shows the whole ensemble if it fits vertically; in tall scores it
+follows the part being worked on and uses another active part during its gaps. Before
+following a single staff it tries to keep both hands of the active piano together. The
+parts list and clicks update the followed part without restarting the transport.
+
+## Chords
+
+`Event` keeps a duration and `Pitches`, an ordered set of up to eight distinct diatonic
+positions in fixed storage. An empty list is a rest. Adding or removing the highest
+pitch keeps the ID, the duration and the cursor; the commands are transactional and
+reversible. Transposition affects the whole chord. The event selection keeps a pitch
+index in the history to apply accidentals to a single note. Each staff accepts two
+independent rhythmic voices.
+
+Engraving uses independent SMuFL noteheads, a shared stem and a flag by duration.
+Seconds alternate the side of the noteheads and reserve room in the shared grid.
+Selection and following cover all their noteheads. The plan schedules each pitch at the
+same instant and keeps the deduplication of unisons between hands. Audition delivers up
+to eight keys in a fixed command; starting from a selection restores every sustained
+pitch without allocations in the callback. Format 10 also opens formats 1–9.
+
+## Accidentals
+
+`Pitch` keeps its diatonic spelling and an `Option<Accidental>`: sharp, flat or natural.
+`None` follows the current key signature; `Natural` forces the natural pitch with an
+explicit natural sign, even if the key signature alters that degree. MIDI conversion
+applies ±1 semitone; diatonic transposition keeps the accidental. Chords allow one note
+per diatonic position and accept enharmonics between different positions. Enharmonic
+unisons are deduplicated both in the plan and in audition.
+
+Engraving resolves signs per bar and staff. The effective pitch is resolved with the
+key signature and the note's own sign. After a single accidental, the right
+cancellation is printed if the next note returns to the key signature at that position.
+Explicit signs are kept even when they repeat. The columns leave 35 units of vertical
+separation and the grid reserves room before each start, also before the first. Following
+includes their glyphs. Selection tells noteheads apart by pitch and marks the note that
+takes the accidental, without changing the rhythmic selection used for playback. The
+input selector is independent from the command that alters the chosen note.
+
+## Meter and key signature per bar
+
+`KeySignature` validates −7 to 7 fifths and tells major from minor mode; relatives share
+accidentals. The default is C major. A `Pitch`'s own sign prevails over the key
+signature; `None` inherits the degree in every octave. Changing the key reinterprets the
+notes that inherit, keeps explicit spellings and doesn't transpose their positions.
+`SetKeySignatureAt` and `SetTimeSignatureAt` take part in the history without changing
+IDs, cursors, selection or the chord's note index. The private maps `key_changes` and
+`time_changes` keep markers after bar zero; `key_signature_at` and `time_at` resolve the
+inheritance. Each change affects every part up to the next marker. Bar zero keeps the
+initial fields of older files.
+
+`measure_start_tick`, `measure_at_tick` and `total_ticks` share the position arithmetic
+with the editor, clipboard, audio and transport. A meter change validates the capacity
+of every staff before modifying the document. If any bar exceeds the new duration, it
+fails atomically. Connections are validated again when the rhythm or the effective pitch
+of their endpoints changes. When pasting, notes are split by the local meter and keep
+their sound across key signatures.
+
+`Pitches::in_key` resolves a fixed copy without allocations. The audio plan resolves both
+its messages and the sustained intervals; audition applies the same method before
+converting to MIDI. The callback receives prepared pitches. The notation starts each bar
+with the state of the key signature and draws cancellation signs when a note's own
+accidental changes. Clef and key signature repeat at the start of each system. The
+reserved space comes before the time signature and the first note, and the cache
+includes the key even when switching between two key signatures of the same width.
+Intermediate changes reserve room for the new signature and the naturals that cancel the
+previous key signature, also when they coincide with a system break. Treble, alto and
+bass clefs are supported at concert pitch.
+
+The interface offers 15 keys per mode, an editor in the right panel and a native menu.
+**Armadura** is the input with no accidental of its own; **Seguir armadura** restores it
+on the chosen note. The names of the selected notes show their effective pitch. Both
+selectors can apply from the start or from the chosen bar and remove a marker. `T` opens
+the meter and `K` the key. There are no different key signatures per part nor automatic
+raised degrees for harmonic/melodic minor.
+
+The signature change tests cover inheritance, initial changes that keep later markers,
+atomic refusal of overfull bars, history, ties across keys, clipboard, schema 10
+compatibility, engraving in both hands and across system breaks, audio timing with a
+fermata, and search in a last bar of 1/16. The check in the window confirmed the meter
+panel and the initial key signature; automated click control was intermittent and didn't
+allow completing the manual sequence of intermediate changes.
+
+## Tempo markings
+
+`score-core::TempoMark` keeps one-line text (at most 80 characters), a reference note
+value and BPM (20–400). `TempoBeat` accepts half, quarter and eighth, dotted or not. The
+initial tempo and `tempo_changes` are inherited per bar in every part. `SetTempoAt` and
+`RemoveTempoChange` are history transactions that keep notes, IDs, cursor and selection.
+Schema 12 validates and keeps these markers; earlier schemas open with quarter = 120.
+
+Engraving reserves a top band and width for each explicit marking. `Layout.tempos` stays
+outside the cached local geometry; its positions follow the translations of systems and
+pages. The note value is painted with Bravura; the text keeps its text typeface and hands
+any musical symbols to the same Bravura repertoire. Hit testing lets the musician open
+the selector from the written marking.
+
+`Timeline` integrates segments of seconds per tick, split at tempo changes and at the
+ends of fermatas. `frame_at`, `seconds_at` and `tick_at` share this map. The reference
+note value sets the duration of each beat; the `Tempo` argument of the audio API acts as
+a relative speed (120 = follow what is written). Hairpins are subdivided at those same
+boundaries to keep their musical slope. The audio callback still receives a prepared
+plan without allocations.
+
+The header and the transport open the bar shown; Texto → Tempo opens the cursor's bar.
+The selector fixes that target while typing, and lets the musician switch to the start
+without losing the original target. The −/+ buttons edit the tempo shown and keep the
+tick when stopping the previous plan. Text fields use GPUI's native handler with
+selection, clipboard, IME and horizontal scrolling; their keys don't run music-writing
+commands.
+
+In an isolated graphical session, «Andante cantabile» and 84 BPM were typed in the native
+fields, applied with Enter, and the Bravura marking above the staff was checked. A
+temporary file was saved and its version 12, text, note value and BPM were verified. The
+tests cover reopening and compatibility, per-bar changes, history, dotted note values,
+fermatas, inversions of the clock and crescendos over tied notes that cross different
+tempi.
+
+For isolated graphical tests, `LEVARE_DATA_DIR` can name an alternative absolute folder
+for recovery, recent files, shortcuts, panels, the log and crash reports, without
+changing score files or the usual session's data. `PARTITURA_DATA_DIR` is kept as an
+alias for older scripts.
+
+## Built-in playback
+
+The second delivery lets the musician hear what they write and play the score:
+
+- **Input:** after a valid insertion or transposition, a 250 ms audition sounds with the
+  active instrument; it keeps its natural release tail. Rests and refused commands
+  trigger no notes. Audition can be turned off.
+- **Transport:** Space or the button starts from the selected note/rest, or from the
+  beginning if there is no selection. Space toggles pause/resume; Esc or Detener cancel
+  the transport and keep the selection. While stopped, Esc clears the selection. Editing,
+  undoing, changing tempo, opening or creating a document stops the previous plan and
+  discards the pause.
+- **Pause and selection:** the plan's intervals keep absolute positions. The selected
+  start is found before Play is queued; the callback skips messages before that
+  boundary. During the pause it outputs zeros and freezes both the musical clock and the
+  whole synthesizer state, including its sample block, phase and envelopes. Resuming
+  doesn't need to rebuild the plan nor to trigger the note again. Pause also works while
+  Play is still queued. Stop invalidates the paused transport, even with a full queue.
+  Changing the selection while paused doesn't move its position: to jump to another
+  note, stop and start again.
+- **Rhythm:** `score-playback` converts musical units to sample positions with integer
+  arithmetic, using quarter notes per minute. It keeps the gaps of incomplete inner bars
+  and leaves out empty trailing bars. It includes intervals to highlight notes and rests
+  without changing the selection. At the same time boundary, NoteOff comes before NoteOn.
+- **Sound:** `rustysynth 1.3.7` and the original GeneralUser GS 2.0.3 bank, with revision
+  and SHA-256 in `assets/sounds/README.md`. Its own license is kept. The catalog of 54
+  profiles selects General MIDI programs and percussion notes. Up to 48 parts use
+  independent routes of 128 internal channels, spread over eight preallocated
+  synthesizers. Local channels 9/15 are skipped for parts; host channel 15 is kept for
+  audition. External MIDI is still pending.
+- **Device:** `cpal 0.16.0` opens the default output and adapts the stereo mix to its
+  rate and format. It supports 32/64-bit floats and 16/32-bit integers, mono/stereo and
+  extra muted channels. Without a device or after an error, editing goes on and
+  reconnecting the audio is offered. A recoverable stream error (ALSA after a suspend,
+  say) gets one reopen on the same renderer, keeping the sounds and the place. On
+  Windows, which keeps a stream on the device that was default when it opened, Levare
+  moves to a new default output while nothing plays; macOS and Linux follow the
+  system's choice by themselves. The `audio_thread_priority`
+  feature gives the audio thread real-time priority on every system (Linux reaches it
+  through D-Bus). The playhead subtracts the output latency the device reports, so it
+  stays with the sound.
+- **Real time:** `rtrb 0.4.0` carries commands in a fixed queue. The callback owns its
+  synthesizer and buffers; it doesn't block, open files or do interface work. Plans are
+  prepared outside the callback, and the control keeps a strong reference until the
+  audio releases its own, so that destroying the vectors also happens outside the
+  callback. Owners are deduplicated when the same plan is used again. Stop changes an
+  atomic generation and cancels even starts still in a full queue.
+- **Checking:** `assert_no_alloc 1.1.2` intercepts allocations and frees in the tests of
+  the real callback with the bundled bank: playback, audition, completion, stale plans,
+  saturation, concurrent commands and output conversion. It also compares sample by
+  sample the resumption of a paused note against uninterrupted playback, and checks the
+  pause before the first callback, inside a rest, and its cancellation by Stop. The
+  `audio_smoke` example verified the real output at 44,100 Hz, starting from a selected
+  note, the clock frozen during the pause, its resumption and completion. Physical
+  latency and underruns haven't been measured yet.
+- **Controls:** 120 BPM initially, range 30–240, volume and audition configurable during
+  the session. Changing tempo stops the plan; changing volume applies on the next block.
+  These options aren't part of the native file yet.
+
+The view automatically follows the active note or rest on both axes, with a margin for
+the highlight, stems and flags. It only scrolls the canvas when the element leaves the
+visible area. It uses the canvas's real painted origin and the area of the scrollable
+container, so it includes the title, the padding and size changes without relying on
+fixed heights. It compensates scroll changes between frames to avoid double advances.
+Pausing or stopping releases manual scrolling; resuming shows the active note again.
+This following doesn't modify the selection or the document. The tests cover successive
+lines, returning to an earlier note, wide bars, extreme pitches, rests and the limits of
+the view.
+
+The interface queries the sample clock every 16 ms to update the highlight and the view
+following. That timer neither schedules nor generates audio.
+
+`app-gpui::playhead` converts that absolute clock to ticks, bar and time to share one
+position between score, ruler and counter. The layout keeps the shared rhythmic grid and
+interpolates between its anchors, also in gaps without events. The playhead and its thin
+line are painted before the musical ink and replace the two earlier indicators.
+Horizontal following tracks that position; the pause keeps the clock and allows manual
+scrolling. Active notes and rests change color without individual backgrounds; stems
+identify their event to share the color, while staves and ledger lines stay neutral. The
+ruler shares its eight-pixel margin geometry with click detection and snaps the position
+to the nearest denominator beat. The far end picks the last playable beat. `Playback`
+keeps that tick while stopped without changing the editing cursor or the selection; the
+transport's plan includes the implicit rests up to the end of the ruler.
+`Control::play_from_frame` uses the same prepared start as playback from a selection,
+recovering sustained notes and expression. A jump keeps the playing or paused state;
+stopping or editing discards the position chosen on the ruler. The piano's natural
+release may carry on briefly when the last note ends. Events reach the synthesizer at the
+computed boundaries, with the internal granularity of its 64-sample block.
+
+## Dotted and triplet durations
+
+`Duration` holds a `NoteValue` (whole to thirty-second note) and two booleans: one dot
+and the 3:2 triplet. The whole note takes 192 ticks and the quarter 48, so both
+modifications and their combination resolve without fractions or rounding. The minimum
+value is 4 ticks (`Duration::MIN_TICKS`, a thirty-second triplet). The maximum capacity of
+16/1 allows 768 events per voice (`MAX_EVENTS_PER_MEASURE`), and the validation limit
+derives from these values. Frames are computed from the absolute tick, avoiding drift
+accumulated over long chains of triplets. Older scores keep their real timing.
+
+Plain durations keep their earlier JSON string; modified ones use
+`{value, dotted, triplet}` with validated fields and types. Schema 10 opened 1–9; the
+native format doesn't store ticks, so changing the resolution doesn't require rewriting
+bars, links or IDs. Clipboard 4 does convert the offsets of 1–3 by multiplying them by
+three; those old formats refuse the new modifiers. The application layer normalizes on
+reading and the editor also accepts old passages.
+
+`SetDotted` and `SetTriplet` act on the whole selected range atomically, keep the range
+and update the capacity through `Score::set_duration`. The input settings keep the
+modifiers when the base note value changes. Pasting keeps note values unsplit; when
+crossing barlines it uses a bounded decomposition table for compatible plain or triplet
+values, with ties and marks at their corresponding ends. Gaps use the full palette. A
+boundary that can't be represented produces an error and leaves no partial events or
+bars. No hidden durations or rounding are used to make the passage fit.
+
+Engraving adds Bravura dot and number-3 glyphs. Chord dots use a column with distinct
+vertical spaces, never on a line; spacing reserves their width. Local groups gather up to
+three consecutive notes of the same modified value; a new bar or a change of value
+separates them and incomplete groups stay visible. Brackets sit over the original ink of
+the notes and marks, without feeding back on earlier brackets. Gaps between dense
+groups, ink bounds, cache, hit testing, zoom and following are kept. Nested groups and
+triplets with mixed values aren't modeled yet.
+
+Validation of this delivery: 149 workspace tests passed, format and Clippy without
+errors. Exact ratios, atomic history, range preservation, chords/rests, tied chains, no
+drift over 96 bars of triplets, old/new clipboard, unrepresentable boundaries without
+partial effects, the duration codec and saving the maximum bar of that time (384 events,
+with sixteenth notes as the shortest value) were checked. The engraving tests include
+chord dots with seconds and eight dense groups without steps or contact between
+brackets. In a temporary app without session recovery, the drawing, the dot and triplet
+shortcuts, the menu, undo/redo and the file saved in schema 10 were verified. The
+CoreAudio test at 44,100 Hz aligned two mixed bars with the left hand, with
+pause/resume. The final review left no important problems.
+
+## Automatic beams
+
+`score-layout::beaming` derives the groups from the written rhythm and the meter,
+without modifying the model, native schema 10, clipboard 4 or the audio plan. Each staff
+is processed separately. Simple meters group by the denominator unit; compound ones by
+three units. The short irregular meters use 5/8 = 3+2 and 7/8 = 2+2+3; editing these
+subdivisions by hand is pending. Rests, long values, notes that cross a beat and
+barlines interrupt beams. Triplets reuse the groups of equal values from rhythmic
+engraving and are never joined with the neighboring group.
+
+The plan fixes a common stem direction before shifting the seconds of chords. Engraving
+replaces the full glyphs with noteheads and stems that reach a beam of limited slope,
+leaving room above the whole chord. Sixteenth notes generate full or partial secondary
+beams. GPUI paints the polygons with the selection and playback colors; ink bounds,
+articulations, dynamics, slurs and following include the new stems and beams. A complete
+triplet under one shared beam shows the number 3 without a redundant bracket; incomplete
+groups or groups with rests keep the bracket.
+
+The existing cache already includes note values and meter, so an edit rebuilds the
+corresponding group. The tests cover both staves, simple, compound and irregular meters,
+mixed dotted rhythms, rests, triplets, chords with seconds, treble/alto/bass clefs, ties,
+selection and following with zoom. The example `examples/barras.partitura` gathers these
+rhythms for visual inspection.
+
+Validation: 157 workspace tests passed, format and Clippy without errors. The
+independent review found no important problems. In a temporary app without session
+recovery, the drawing of eighths, sixteenths, mixed dotted rhythms and triplets with
+single and double beams was checked, including up and down stems and both piano hands.
+
+## Hairpins and dynamic curves
+
+`ConnectionKind::{Crescendo, Diminuendo}` shares the stable endpoints of the slur model.
+It accepts notes, chords or rests on one staff, ordered in time; hairpin intervals can't
+overlap and may touch. Deleting an endpoint removes the link; the history restores it.
+Schema 9 keeps these kinds and migrates from 8 without changing the connections.
+Hairpins entered the clipboard in format 3; the current format 4 still reads 1–3, copies
+inner hairpins and remaps their end to the first fragment if the end note is split when
+pasting. Outer hairpins aren't copied, like slurs; their starting dynamic is
+approximated by the nearest mark. The context on insertion uses the curve's left
+boundary.
+
+`score-core::DynamicEnvelope` prepares linear segments per staff between the written
+marks. Without an arrival mark, the target is two positions of `Dynamic::ALL` above/below
+the hairpin's last mark, limited to ppp–fff. The final level persists. Inner marks are
+anchors and explicit marks prevail over the graphic direction.
+
+`score-playback::dynamics` calibrates the velocity of each attack to the maximum of its
+sounding interval and computes CC11 as `level / reference * 127`. Outside the curves,
+this keeps exactly the earlier velocity and full expression. A sustained crescendo
+reserves only the amplitude it will need before releasing the note; articulations keep
+their boost. The times of each CC transition are obtained by inverting the original
+slope, before limiting it to 127, so that rests and staccato gates don't artificially
+stretch the curve. The plan recovers the current expression and the original attack when
+starting inside a tie. Pause freezes the curve, the envelopes and the synthesizer's
+clock.
+
+The two staves of piano, harp, celesta and organ with hairpins use separate internal
+routes. Each group of 14 parts takes 32 channels: the main route skips local channel 9
+and the lower one adds 16. Eight banks cover the 48 parts without reusing channels. The
+banks share a clock, reset on stop and are mixed without allocating memory in the
+callback. When a plan starts, CC11 of every route is restored to avoid leftover volume
+from another score.
+
+Engraving produces two strokes per hairpin segment, with a continuous opening across
+systems, below notes, slurs and dynamics. The reserved room is computed per row without
+invalidating the local engraving of bars. Following includes the active note's hairpin
+and works with zoom. Ribbon, menus and the H/Shift+H shortcuts share commands; a hairpin
+can be created from a passage selection or by marking start/end in two steps.
+
+Validation of this delivery: 139 workspace tests passed, format and Clippy without
+errors. The tests verify audio of sustained and tied chords, crescendos and diminuendos,
+restoring volume and timbre outside the curve, gain references across rests/staccato,
+starting from a selection, exact pause and 28 hand routes in 14 pianos. In the temporary
+app without session recovery, the strokes, creation in two steps with H, creation over a
+passage with Shift+H, removal, undo/redo and saving were checked; the file kept the
+endpoints in schema 9. The CoreAudio test at 44,100 Hz played a tied cello with
+crescendo, diminuendo and pause/resume. The final review left no important problems.
+
+## String techniques
+
+`Notation.technique: Option<PlayingTechnique>` stores `Pizzicato` and `Arco` on notes,
+chords or rests. Only instruments of the `Strings` family accept these marks. Schema 8
+keeps the technique; migrating from 7 leaves the marks empty and keeps the original
+sound. The setter and the validation of files and insertions share this restriction. The
+history keeps each edit.
+
+The plan resolves the technique per staff and prepares program changes before the
+attacks: pizzicato uses GM preset 45 (zero-based), arco restores the instrument's preset.
+The changes take no extra channels. Tied notes keep the program and velocity of their
+original attack, starts from a selection included. Messages are ordered release →
+program → attack. The callback only receives prepared data and doesn't allocate.
+Audition uses the current technique. The tests check the bank's real preset, sound
+differences, exact resumption after a pause, isolation per part and the four strings.
+
+Engraving uses italic serif text labels, with horizontal room and ink bounds of their
+own above stems and articulations. Slurs follow the outer outline of these labels.
+Clipboard version 2 keeps the inherited technique and places the mark only on the first
+note when it's split on paste; it still reads version 1 with arco by default. A paste
+into an incompatible instrument fails before modifying the document.
+
+Validation of this delivery: 127 workspace tests, Clippy and format without errors. In a
+temporary app without session recovery, the quartet, the italic labels and the switch to
+arco from the native menu were checked; the saved file kept `Arco` in schema 8. The
+CoreAudio output was checked at 44,100 Hz with cello pizzicato, pause/resume and return
+to arco. The code review found no important or critical problems.
+
+## Musical clipboard and passage selection
+
+`score-edit::selection` keeps a stable anchor and focus per staff inside the editor's
+snapshot. Clicking and normal navigation go back to a simple selection; Shift+click/arrows
+extend the range and Seleccionar todo walks the active staff. Cortar and «Eliminar notas
+y su tiempo» remove the range; Delete turns the notes into rests and keeps the time. The
+history restores anchor, focus and events.
+
+`app-gpui::selection` turns a drag of at least five pixels into the same editor range. It
+can start on a note or on the space of a written bar; a brief click keeps the earlier
+single selection and input cursor. The target is approximated by line and time inside
+the source staff, regardless of the pitch of the notes or of other instruments. Zoom and
+the canvas's shifted origin are taken into account when finding the ends. Releasing the
+button or running a command ends the gesture. Painting joins contiguous bars into one
+band per line, empty bars in between included, and the selection bar shows the count
+with Copiar/Cortar actions. The menus include the clipboard actions and Seleccionar todo
+with their current shortcuts.
+
+`score-edit::clipboard` exposes a portable, versioned passage: events with offsets in
+ticks, source key signature, current dynamic and indices of inner slurs. It contains no
+document IDs. Pasting clones the snapshot, keeps the pitches across a change of key,
+turns gaps into rests and splits the notes that cross barlines, creating ties. The ends
+of slurs are remapped to the new notes. Dynamics/accent stay at the start of a split
+note; staccato/tenuto go at the end. Playback applies the final gate to the whole chain
+to keep the original sound. The operation is only committed when all the music and its
+links are valid; a capacity or link collision leaves no added bars or partial edits.
+
+The GPUI layer uses `ClipboardItem` with a text summary and Levare's own JSON metadata,
+limited to 16 MiB and validated before pasting. It keeps no internal clipboard that could
+paste old data after copying text from another application. Cut verifies that the
+written content reads back before deleting the notes, except on Wayland, which answers
+with the previous offer: there Cut only checks that a Levare window has focus, since
+GPUI's Wayland client writes the clipboard only then. The actions share
+registry, menus, ribbon and configurable shortcuts. They don't act on the score while
+Preferencias is open.
+
+## Score order and grouping
+
+`InstrumentFamily` and `Instrument::score_order` share the presentation order between
+editor, parts list and engraver. `Score::arrange_parts` sorts whole parts stably: it keeps
+IDs, the voices of both hands, events and connections. The session normalizes the order
+on opening and editing applies it when adding instruments. The saved snapshot uses that
+same order to avoid a false changes indicator. The file schema wasn't modified: the
+sequence of parts was already serializable.
+
+The engraver computes the limits of each family per system after placing the staves. It
+generates one bracket per group and extends barlines only within that family; the
+opening barline runs through the system. Piano braces stay separate from brackets. The
+outlines are painted with scaled display coordinates and note positions keep their hit
+testing.
+
+Removing from the parts list runs the same registered command as the native menu. At
+least one part is kept and the neighbor is selected after removing. The history recovers
+the whole part and its slurs. Playback stops on edit and rebuilds its map of
+channels/timbres from the new order.
+
+## Reference interface
+
+`app-gpui::ui` holds the presentation: dark palette, shared components, tabbed ribbon,
+parts panel (left), Selección · Sonido · Revisión panel (right), position strip, sheet,
+transport and status bar. `ui::icons` draws the icons as native vectors. `main.rs` keeps
+the actions, the dialogs, the document state and its safeguards. The look follows the
+reference the user provided; controls without an available musical function are marked
+«Pendiente». The interface colors are in `ui/theme.rs`, with their contrast checked.
+
+### Side panels
+
+Design in `docs/superpowers/specs/2026-10-27-paneles-design.md`. Each panel answers one
+question and no panel repeats what another already shows. With the ribbon there is
+repetition on purpose: the passage and note actions in Selección run the same commands as
+their ribbon buttons, at hand next to what is being looked at.
+
+- **Left, «what is in the score?»** (`ui/instrument_panel.rs`, `ui/parts_view.rs`,
+  `ui/mixer.rs`). `parts_view` computes without GPUI the families in score order, their
+  rows (name and a note on clefs and transposition) and the search filter, which ignores
+  case and accents and shows the families unfolded. Lista and Mezcla share the rows;
+  Mezcla adds `mixer::part_controls` (volume and pan, per session; Sección | Solista as
+  `Command::SetPlayers`, which is saved and undone).
+- **Right, «what do I have selected and what do I change on it?»**. `RightTab` tabs:
+  Selección (`ui/selection_view.rs` computes without GPUI what is selected from the
+  editor: score, note, rest, passage or open editor; `ui/selection_panel.rs` draws it and
+  hosts the clef, key, meter, tempo, text, lyrics, chord symbol and information editors),
+  Sonido (`ui/sound_panel.rs` with `ui/mixer.rs` for the output) and Revisión
+  (`ui/review.rs` and `ui/comments.rs`). Opening an editor shows the panel and the
+  Selección tab. A click on the score or a navigation key closes, through the same path
+  as `Esc` (`cancel_editor`), the editors for which `EditorKind::survives_selection_move`
+  is false; the own advance of lyrics and chord symbols doesn't go through there.
+  Removing a mark from its ✕ row runs the mark's command and is undone like any edit.
+- **Top** (`#score-readouts` in `ui.rs`): the only position strip (Compás, Tiempo, Tempo,
+  Métrica, Tonalidad, Parte · Voz and a summary of the selection). Tempo, Métrica and
+  Tonalidad open their editor in the right panel.
+- **Bottom** (`ui/status_bar.rs`): `status_bar(&Facts)` returns only what the bar says
+  (status message, page navigation in Página view, zoom, autosave and save state); a test
+  names every field so that voice, key, meter, instruments or view mode don't come back
+  unnoticed.
+- **Memory** (`panels.rs`): `paneles.json` in the data folder keeps the open panels
+  (`show_parts`, `show_right`), the right tab (`right`), Lista or Mezcla (`parts_mode`)
+  and the folded families (`folded`). `panels::load` returns the defaults if the file is
+  missing or damaged (missing fields take them too); `panels::save` writes through
+  `atomic-write` and is only called when something remembered changed since the last
+  write.
+
+Shortcuts follow the Sibelius profile described in **Shortcut engine**; the labels of the
+ribbon, the panels and the menus are read from the active map.
+
+The layout keeps its geometry and cache in musical coordinates. `Layout.scale` applies
+when painting, selecting, placing the cursor and following playback; bars aren't copied
+or rewritten when the scale changes. The compact mode of `LayoutEngine` computes vertical
+bounds with the real boxes of Bravura, stems and ledger lines; it keeps them with the
+cache and reserves a margin between staves. The standard mode keeps its earlier spacing.
+`score-layout::views` adds three presentations on the same engraving. Continua adapts the
+width of the systems to the window; Pentagrama removes the breaks and uses natural widths
+for every bar. Página keeps a width of 1000 units and a √2 sheet ratio, with an opening
+header, margins, page number and space between sheets. An indivisible system that is
+wider or taller enlarges every sheet of the document consistently. Pagination keeps both
+piano hands and whole families together.
+
+`Layout.systems` records bar ranges and vertical bounds; `pages` records the sheets and
+their ranges. The translation moves notes, labels, braces, brackets and barlines from
+their original positions in a single pass. Curves and hairpins are recomputed afterwards
+with the final systems. The cache keeps the local geometry without the page position.
+The header uses the same scale as the score. The canvas paints only the bars that cross
+the visible area.
+
+In the app, the selector without TODO, Continua, the switch to Página with its counter and
+Pentagrama with five aligned instruments were verified. Window control failed
+intermittently when testing the full sheet fit; that manual interaction stayed
+unconfirmed. The distribution, selection and navigation across several pages at 28 %,
+70 % and 150 % are covered by automated tests.
+
+Views are interface state: they don't change the document, history, IDs, selection,
+cursor or audio clock. Page navigation centers the sheets that fit and aligns large ones
+to the top margin, with scroll limits. `⌘0` switches to Página and fits the sheet to the
+window. The tests cover breaks, large sheets, translation of ornaments, hit testing with
+zoom, connections across sheets, view changes and back-and-forth navigation without
+accumulated drift.
+
+The visible clock is updated from the position already published by the audio control;
+the interface neither queries nor modifies the synthesizer to draw it.
+
+## Toolbar
+
+The parts panel lives in `ui/instrument_panel.rs` (what it lists, in `ui/parts_view.rs`)
+and the add dialog in the same file. The dialog keeps a draft of quantities per
+instrument, limited to the free places among the 48 parts; neither selecting nor
+cancelling modifies the document. Confirming runs `Command::AddParts` as one
+transaction: if one addition fails, none is kept, and Undo takes the whole set back. The
+modal context blocks note input and global commands until confirming or cancelling.
+The button of the chosen part removes by `PartId` through `RemovePartById`, keeping the
+chosen passage and note when they belong to another part. If the active part is removed,
+its neighbor is chosen; Undo recovers the original staves and connections.
+
+The ribbon and the Archivo menu follow layers with dependencies pointing down:
 
 ```text
-ui/toolbar.rs (GPUI)  pinta ToolbarView y MenuRow; cada clic emite un comando
+ui/toolbar.rs (GPUI)  paints ToolbarView and MenuRow; each click emits a command
    ▼
-score-toolbar         TABS y FILE_MENU (datos) · project() · fit() · project_menu()
+score-toolbar         TABS and FILE_MENU (data) · project() · fit() · project_menu()
    ▼
-score-keymap          registro (etiquetas, pendientes) y mapa activo (teclas)
-AppView::run          punto único de ejecución · ui/command_state.rs implementa CommandStates
+score-keymap          registry (labels, pending) and active map (keys)
+AppView::run          single point of execution · ui/command_state.rs implements CommandStates
 ```
 
-- **Descripción** (`spec.rs`): ocho pestañas por tarea (`TabId`: Escribir,
-  Articulaciones, Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), sus
-  grupos y controles. Cada control es un `CommandId` con tamaño (grande o baldosa),
-  una función (`Role`: elección, interruptor o acción), un glifo, un nombre corto y
-  una ayuda. No contiene textos de estado ni teclas.
-- **Estado** (`CommandStates`): la única pregunta que el modelo hace a la app: si un
-  comando está activo, habilitado o con una etiqueta temporal («Terminar», «Pausar»),
-  nunca más ancha que el nombre del control: la baldosa mide su nombre y no se mueve.
-  La app la responde en `ui/command_state.rs`; los tests usan un falso.
-- **Proyección** (`project`): une descripción, registro, mapa y estado. Cada control es
-  una baldosa: glifo y, debajo, su nombre y su tecla. Mide con valores fijos
-  (`Metrics`, anchos por carácter que cubren el texto más ancho de la cinta). Con
-  sitio, un grupo se amplía y muestra los nombres; si falta, `fit` los quita (glifo y
-  tecla; el control grande de un grupo conserva el suyo) y después pliega grupos por prioridad (el de menor prioridad y, a igualdad,
-  el de la derecha) hasta que la fila cabe. La cinta nunca hace scroll; un grupo
-  plegado es un botón con desplegable.
-- **Ayuda al pasar el cursor**: los controles de la cinta y los comandos del
-  panel derecho muestran una ayuda breve con su nombre y la asignación activa después
-  de la espera de GPUI (500 ms). Los desplegables y Preferencias conservan las teclas
-  como referencia; los paneles ya no repiten la lista completa de atajos.
-- **Archivo** (`FILE_MENU`): una misma lista genera el desplegable de la ventana y el
-  menú nativo de macOS, con el submenú «Abrir reciente».
-- **Recientes** (`score-io::RecentFiles`): `recientes.json` en la carpeta de datos,
-  máximo 10, sin duplicados, el más reciente primero; olvida los archivos que ya no
-  existen. Se actualiza al abrir y guardar.
-
-Los tests cubren que cada control apunte a un comando registrado, que las etiquetas,
-teclas, estado y pendientes salgan de su fuente, que todas las pestañas quepan sin
-plegar a 1420 px, el orden de plegado, el menú Archivo, la persistencia de recientes
-y que la fuente musical tenga precargados todos los glifos de la cinta.
-
-## Motor de atajos
-
-`score-keymap` no depende de GPUI y concentra todo lo que antes estaba repartido
-entre `bind_keys`, un traductor de teclas propio, etiquetas fijas en la cinta, el
-panel de atajos, los menús y el README:
-
-- **Registro de comandos** (`commands.rs`). Cada comando tiene un ID estable
-  (`"entrada.nota.c"`), categoría, etiqueta, ámbito, si se repite al mantener la
-  tecla y estado *listo* o *pendiente*. Las constantes de `id::` se usan en el
-  perfil, en la interfaz y en el único `match` de `AppView::run`, así que un ID mal
-  escrito no compila. Las extensiones futuras pueden registrar comandos propios.
-- **Teclas** (`keys.rs`). Modelo propio de pulsación y secuencia, con nombres
-  reservados para el bloque numérico (`numpad4`, `numpadenter`) aunque GPUI 0.2.2
-  no los distingue. `Layout` traduce `⇧1`–`⇧9` al carácter que produce la
-  distribución activa, porque GPUI informa ⇧2 como `"` (español) o `@` (EE. UU.) y
-  descarta Shift. La app lee esos caracteres de macOS con `UCKeyTranslate` y vuelve
-  a instalar los atajos al cambiar de distribución.
-- **Perfil** (`profile.rs`). *Sibelius · portátil*: el conjunto *Notebook* de Sibelius,
-  que funciona igual con o sin bloque numérico. Se verificó contra el tutorial
-  oficial de Sibelius 2018.4 (3 corchea, 4 negra, 5 blanca, 7/8/9 ♮/♯/♭, 0 silencio,
-  `.` puntillo, ↩ unión, F7–F12 distribuciones, ⇧1–9 intervalos en el modo portátil);
-  el resto de teclas de una letra sigue la lista de SibAccess (Berklee). Las teclas
-  sin función en Levare quedan reservadas como *pendientes*.
-- **Cambios del usuario** (`user.rs`). `atajos.json` en la carpeta de datos
-  (`~/Library/Application Support/Levare` en macOS) guarda, por comando, la
-  lista completa que sustituye a la del perfil; una lista vacía lo deja sin atajo.
-  Si existe la carpeta anterior `Partitura` y todavía no existe `Levare`, la app
-  sigue usando aquella para conservar atajos, recientes, paneles y recuperación.
-  En la misma carpeta, `paneles.json` recuerda los paneles (ver *Paneles laterales*).
-  Escritura atómica y número de versión.
-- **Resolución** (`keymap.rs`). Perfil + cambios + distribución dan los atajos
-  activos. Los del usuario ganan; los conflictos, IDs desconocidos y teclas que no
-  se pueden detectar se informan en Preferencias en vez de fallar.
-- **Documentación** (`docs.rs`). [docs/atajos.md](atajos.md) se genera desde el
-  registro y un test falla si queda desactualizado.
-
-En la app, `shortcuts.rs` traduce cada atajo a un `KeyBinding` de GPUI con una sola
-acción `Run(CommandId)` y un predicado de contexto: `Levare` para ⌘…, `Levare
-&& !Modal && !TextInput` para las teclas sueltas y `Levare && Modal` para cerrar
-Preferencias. La raíz añade `Modal` mientras Preferencias está abierto. Los menús
-nativos solo muestran combinaciones con ⌘/⌃ (`MenuRun` para el resto, con la tecla
-en el texto), porque un equivalente de una sola tecla dejaría que macOS disparase el
-menú antes que los contextos y el grabador de Preferencias. Un interceptor de GPUI
-ve cada pulsación antes que los atajos: marca las repeticiones automáticas (los
-comandos que alternan no se repiten) y entrega la combinación al grabador.
-
-**Preferencias de atajos** (⌘, o el botón *Atajos*) lista los comandos por
-categoría con sus teclas, estado y si están modificados. Permite cambiar, añadir,
-quitar y restablecer uno o todos. Al grabar una tecla ocupada pregunta si debe
-reasignarse. No hay buscador de texto: GPUI 0.2.2 no trae campo de texto y añadir
-`gpui-component` queda para cuando haga falta en más pantallas.
-
-Pendiente: perfil *Sibelius · escritorio* con bloque numérico (requiere que GPUI
-distinga esas teclas), distribuciones F7–F12 del teclado numérico en pantalla,
-secuencias de varias pulsaciones en el grabador y un buscador en Preferencias.
-
-## Expresión musical
-
-`score-core::expression` define `Notation` (dinámica y articulación opcionales) y
-`Connection` (unión/expresión con dos `ElementId` serializables). Una unión exige
-consecutividad musical, ausencia de huecos y el mismo conjunto de posiciones y
-semitonos resueltos; ♮ explícito e implícito equivalen. Las frases se ordenan y no
-se solapan dentro de un pentagrama. Se validan archivos y se eliminan enlaces
-invalidados por ediciones, preservando las instantáneas de deshacer.
-
-`score-layout::expression` graba marcas Bravura fuera de cabezas y plicas y genera
-curvas por sistema. Reserva carriles para curvas y espacio bajo la línea de unión
-para los ascendentes de forte. La geometría de curvas se calcula después de colocar
-los compases; las marcas locales siguen la caché incremental. Los extremos siguen
-la identidad musical al redistribuir renglones o cambiar el zoom.
-
-`score-playback` conserva los `Span` escritos para selección y seguimiento, y genera
-intervalos sonoros distintos para staccato y cadenas ligadas. Cada pentagrama tiene
-su dinámica persistente. Las uniones conservan un único ataque; los unísonos entre
-manos se combinan antes de calcular los intervalos de ataque por canal/tecla. La
-recuperación desde selección usa la intensidad de ese ataque efectivo, incluso
-si el evento original terminó antes de los unísonos posteriores. La pausa conserva
-el estado del sintetizador y no introduce asignaciones en el callback.
-
-La UI ofrece controles en cinta y menú nativo, y las quita desde la pestaña Selección. ↩ alterna únicamente la
-unión saliente; S marca inicio/fin de frase y Esc cancela. El estado provisional
-se limpia al editar, deshacer, rehacer, crear o abrir otro documento. Las cuatro
-articulaciones no tienen tecla por defecto (como en Sibelius portátil) y se pueden
-asignar en Preferencias. Quedan pendientes las uniones de alturas individuales
-dentro de acordes distintos.
-
-### Catálogo de marcas
-
-`score-core::marks` describe cada marca una sola vez. `MarkKind` enumera las 19
-marcas (cuatro articulaciones, calderón, ocho dinámicas, pizz./arco, unión, expresión,
-crescendo y diminuendo) con su nombre corto y largo, su familia (`MarkFamily`), su
-glifo Bravura, el símbolo de botón y el lado del pentagrama (`Placement`). Una nota
-lleva como mucho una marca de cada familia puntual; `set_point_mark` sustituye la de
-su familia y `Command::ToggleMark` escribe, cambia o quita la de la selección.
-
-`MarkRef` identifica una marca escrita (la nota de una marca puntual o la conexión
-de una ligadura o regulador) para seleccionarla, borrarla (`Command::RemoveMark`) o
-cambiarla (`Command::ReplaceConnection`). `score-layout` genera un `MarkBox` por marca
-puntual, ajustado a las cajas de Bravura, y `Layout::hit` elige entre nota y marca.
-
-`score-toolbar::marks` es la única tabla marca ↔ comando. La cinta (`spec::mark`), la
-pestaña Selección, el menú **Expresión**, los símbolos de los menús, el estado resaltado y el
-despacho de la app (`apply_mark`) la recorren en lugar de repetir cada marca. Un test
-exige que cada marca tenga un comando propio, listo y con su nombre en la etiqueta.
-
-Para añadir una marca puntual: su variante en `MarkKind` (y el campo en `Notation`
-si es una familia nueva, con `serde(default)` para no cambiar el formato), su
-comando en `score-keymap` y `score-toolbar::marks`, su colocación en
-`score-layout::expression::marks` y, si suena distinto, su regla en `score-playback`.
-
-### Calderón
-
-`Notation.fermata` se guarda solo cuando está activo, así que los archivos anteriores
-se abren sin migración. Admite notas y silencios, independiente de la articulación;
-al pegar una figura que se divide queda en el último fragmento. Se dibuja centrado
-sobre la nota, por fuera de la articulación, y desplaza hacia arriba la técnica.
-
-En reproducción, `score-playback::Timeline` convierte tiempo musical en audio: el
-tramo de cada calderón dura `FERMATA_HOLD` (el doble) para **todas** las partes, y
-lo que sigue empieza después. Los calderones simultáneos de varias partes se unen en
-un solo tramo. El plan, los reguladores, los saltos de la regla, el reloj y los
-segundos del transporte usan la misma línea de tiempo (`tick_at` es su inversa).
-
-## Verificación
-
-El portapapeles se comprobó en una aplicación temporal con el ejemplo de piano:
-Shift+flecha seleccionó dos acordes ligados de blanca; se copiaron con ⌘C y se
-pegaron en un noveno compás de la mano izquierda. Se cortaron, se deshizo/rehízo
-el corte y se pegaron otra vez. El archivo guardado conservó C4/E4/G4 en ambos
-acordes, su dinámica mp y la unión entre los IDs nuevos. Se comprobó también el
-rechazo de un destino ocupado sin modificar el score. El filtro de atajos permite
-repetir Pegar para pegados consecutivos. Las pruebas automatizadas cubren selección
-inversa, historial de pasajes, huecos, crecimiento alineado, compases cruzados,
-ligaduras, conservación de sonido entre tonalidades, dinámica vigente, rechazo de
-contenido externo y rollback. La reproducción de una figura staccato dividida
-coincide en ataques, intensidad y tiempos MIDI con el original. La revisión
-independiente no encontró problemas importantes.
-
-
-La agrupación del score se comprobó con un archivo temporal deliberadamente
-invertido de `cuarteto-en-sol.partitura`: al abrir se mostraron flauta, violines,
-viola y violonchelo con corchetes independientes de maderas y cuerdas. La ventana
-mostró el control persistente «Eliminar seleccionado». Desde el menú nativo se
-añadió un oboe y C4, se eliminó la parte y se deshizo/rehízo su eliminación. El
-archivo guardado confirmó el oboe con su nota, situado después de la flauta.
-Los tests cubren orden estable, identidad de eventos y conexiones, deshacer partes,
-normalización y guardado, corchetes por sistema, cortes de barra entre familias,
-llaves de piano y selección espacial. La revisión independiente no encontró
-problemas concretos.
-
-
-La entrega de expresión se comprobó visualmente con `examples/piano-expresion.partitura`:
-curvas, tres uniones de un acorde, dinámicas en ambas manos y las cuatro articulaciones.
-En una aplicación temporal se escribió un noveno compás C4–C4–E4, se añadieron
-una unión y una frase con T/L, staccato con S y ff desde el menú nativo. Tras
-deshacer/rehacer la dinámica, el archivo guardado conservó las tres notas, las
-marcas y ambos extremos de las ligaduras en formato 7. Los tests cubren rechazo
-transaccional, restauración de enlaces con historial, lectura de esquemas 1–6,
-curvas entre sistemas, espacio bajo forte, ausencia de nuevos ataques en cadenas,
-unísonos entre manos y recuperación de intensidad. La continuidad de audio con
-pausa se compara muestra por muestra sin asignaciones en el callback. La revisión
-independiente comprobó las correcciones y no encontró problemas importantes.
-`audio_smoke` completó ligaduras, dinámicas y articulaciones junto a las dos manos,
-flauta y violonchelo en la salida real a 44 100 Hz, con selección, pausa y continuación.
-
-
-La interfaz de referencia se comprobó en una aplicación temporal independiente,
-con `examples/cuarteto-en-sol.partitura`: cinco pentagramas visibles, nombres de
-instrumentos repetidos, paneles, cinta y transporte. La entrada con
-N desactivada no añadió notas; al activarla, 5 produjo un acorde de semicorchea
-y 4 un silencio de corchea. El diálogo nativo guardó estos datos, incluido un
-bemol individual. Tras corregir la interpretación del carácter de teclado,
-`=` aplicó y guardó un becuadro en la nota seleccionada. Los tests comprueban
-también la selección y el seguimiento con zoom, la separación de acordes extremos
-en el espaciado compacto y las nuevas duraciones. La revisión independiente no
-encontró defectos importantes.
-
-La armadura de Sol mayor se comprobó visualmente con su ejemplo de piano:
-sostenido en ambas claves, espacio antes del compás y cancelación/restitución
-en las notas de Fa. En una sesión temporal se eligió Mi♭ mayor en el menú nativo,
-se deshizo y rehízo el cambio, y se escribieron acordes en un quinto compás. El
-diálogo nativo guardó formato 6, tres bemoles, C4/E4/G4 sin alteración propia en
-la derecha y D3/F3/B♮3 en la izquierda. La lectura del archivo confirmó tonalidad,
-IDs y el becuadro individual. Las capturas de la herramienta quedaron desactualizadas
-tras las interacciones; la armadura modificada se verificó por el archivo y los
-tests de grabado. `audio_smoke` completó Re mayor con ambas manos, flauta y
-violonchelo, selección, pausa y continuación en la salida real a 44 100 Hz.
-Los tests cubren las 30 tonalidades, todas las octavas, sol/do/fa, repetición por
-sistema, restitución, caché, historial, validación, migración 1–5 y notas sostenidas.
-La revisión independiente no encontró defectos concretos.
-
-La entrega de alteraciones se comprobó con `examples/piano-alteraciones.partitura`:
-sostenidos, bemoles, becuadros de cancelación, signos en acordes y columnas para
-segundas. En una sesión temporal se escribió un quinto compás en ambas manos y se
-usaron ⌥S/⌥F/⌥N, ⌥← y ⌥0 para alterar notas individuales, además de deshacer y
-rehacer. El diálogo nativo guardó C♯4/E♭4/G♮4 y C3/E♯3/G♭3 con sus respectivas
-alteraciones. La revisión independiente no encontró defectos concretos. Las
-pruebas cubren la selección individual, cancelaciones por compás y pentagrama,
-columnas densas, seguimiento, formato 5 con migración de versiones anteriores,
-semitonos MIDI, enarmonías y continuidad exacta del audio sin asignaciones. La
-salida real a 44 100 Hz completó la prueba de acordes alterados, selección, pausa
-y continuación.
-
-La entrega de acordes se comprobó con `examples/piano-acordes.partitura`: cabezas,
-plicas compartidas, segundas desplazadas y las dos manos. En una sesión temporal
-se escribió Do–Mi–Sol en el quinto compás de cada mano, mediante Shift+letras en
-la derecha y modo Acorde en la izquierda. El diálogo nativo guardó dos acordes de
-negra, C4/E4/G4 y C3/E3/G3, en sus pentagramas. La vista mostró el nuevo sistema.
-`audio_smoke` verificó acordes de ambas manos junto a flauta y violonchelo en la
-salida real a 44 100 Hz, con inicio seleccionado, pausa y continuación. Las pruebas
-automatizadas cubren límites, duplicados, historial, migración y guardado, plicas,
-segundas, selección, seguimiento, unísonos y continuación exacta del audio sin
-asignaciones ni liberaciones en el callback.
-
-El gran pentagrama se verificó con `examples/piano-dos-manos.partitura`: claves
-de sol/fa, llave, barras compartidas, alineación y selección de mano izquierda
-con ⌥2. En una sesión temporal se añadió un quinto compás, se escribió C3 en la
-izquierda y E4 en la derecha con ⌥1, y se guardó mediante el diálogo nativo. El
-archivo resultante conservó las dos notas en sus respectivos pentagramas.
-`audio_smoke` comprobó ambas manos junto a flauta y violonchelo en la salida real
-a 44 100 Hz, con inicio seleccionado, pausa, continuación y finalización.
-Los tests incluyen identidad por pentagrama, historial, migración de los esquemas
-1/2, archivos mal formados, unísonos, separación de posiciones y 14 pianos con
-28 manos activas. El callback mantiene la comprobación de cero asignaciones.
-
-La entrega de conjunto añade pruebas de identidad entre partes, crecimiento de
-compases, selección y deshacer de instrumentos, migración del esquema 1, guardado
-del esquema 2, claves, alineación entre duraciones, espacios mínimos, canales
-independientes y comienzo durante notas sostenidas de otras partes. Los 13 timbres
-del catálogo tienen un preset verificado en el banco y producen audio distinto.
-La pausa de un conjunto se compara muestra por muestra con la reproducción sin
-interrupción, bajo la comprobación de cero asignaciones/liberaciones del callback.
-
-Se comprobó visualmente `examples/trio.partitura`, con el panel de instrumentos,
-pentagramas alineados, claves de sol/fa y resaltado simultáneo de las tres partes.
-`audio_smoke` verificó piano, flauta y violonchelo sobre la salida real a 44 100 Hz,
-incluyendo inicio seleccionado, pausa, continuación y finalización.
-
-Los tests cubren capacidad de compás, notas fuera de rango, referencias estables,
-aislamiento de instantáneas, transposición entre octavas, historial, rechazo
-transaccional de cambios, secuencias de edición/deshacer/rehacer, estado de guardado,
-archivos inválidos y futuros, guardado real en disco, selección espacial y
-reutilización del layout. El flujo macOS de CI ejecuta formato, tests y Clippy.
-
-Comprobación manual de la entrega:
-
-1. Ejecutar `cargo run`; introducir `C D E F G` y comprobar el salto de compás.
-2. Elegir corchea con `3`, introducir `A B`, insertar silencio con `0`.
-3. Seleccionar una nota con clic, transponer con flechas y deshacer/rehacer.
-4. Guardar, crear una partitura nueva y abrir el archivo guardado.
-5. Intentar cerrar con cambios y comprobar que cancelar conserva el documento.
-
-Se verificaron visualmente la entrada de notas y silencios, el salto de compás,
-la tipografía, el guardado con diálogo nativo, la creación de un nuevo documento,
-la reapertura del ejemplo y la cancelación del aviso de cambios sin guardar.
-La selección espacial y el historial se verifican mediante tests. Falta completar
-la prueba manual específica de salir desde el Dock y recuperar al reiniciar.
-
-En la entrega de audio se verificaron en la ventana la escritura con audición,
-el inicio con Espacio, el resaltado durante la reproducción, la finalización
-automática y la parada mediante Esc. `audio_smoke` comprobó además el avance y
-finalización del stream sobre la salida real del equipo a 44 100 Hz.
-
-Para el seguimiento se comprobó visualmente una partitura temporal de 32 compases:
-iniciar desde una selección fuera de pantalla mostró la nota activa y el avance
-hacia renglones posteriores mantuvo visible el resaltado. La selección permaneció
-en su posición original. Las comprobaciones de desplazamiento manual durante la
-pausa y de límites horizontales están cubiertas por tests; la herramienta de
-control de ventanas no permitió completar esas interacciones manuales.
-
-## Bloque MVP: edición, recuperación y PDF
-
-`score-core::measure_edit` concentra las ediciones estructurales: inserción y
-eliminación sobre todos los pentagramas, reasignación de índices de eventos y
-mapas de métrica/armadura/tempo, conexiones y arpegios de piano. Al borrar cambios
-locales se conserva el estado efectivo de la primera música retenida. Borrar todo
-crea un único compás vacío. El editor guarda cada operación en una instantánea.
-`set_durations` valida los totales finales y solo después actualiza duraciones y
-depura conexiones, evitando pérdidas por estados intermedios del pasaje.
-
-Clic en nota desactiva entrada. A–G reemplaza el tono elegido conservando identidad
-y duración; las figuras actúan sobre la selección. Delete borra sonido conservando
-tiempo y las marcas válidas para silencios. La operación de eliminación con
-reducción de tiempo sigue disponible para Cortar y el menú Edición.
-
-`score-pdf` es un adaptador sin GPUI: construye `ViewMode::Page`, transforma cada
-hoja a A4 y dibuja líneas, barrado, curvas con métricas de Bravura, reguladores,
-textos y contornos originales de la fuente mediante Quartz/CoreText. Los textos
-musicales comparten `score-layout::repertoire` con pantalla y menús; el texto
-ordinario se forma en tramos completos para conservar Unicode. Se valida la
-cantidad de páginas antes del reemplazo atómico. El destino exige extensión PDF
-y la interfaz impide reemplazar el documento abierto. La exportación en segundo
-plano conserva la instantánea y el estado de guardado. No se implementa empaquetado.
-
-Pruebas: reemplazo de tono/colisiones, borrado conservando tiempo y reducción de
-tiempo, duración que desborda, inserción/eliminación con cambios locales y
-ligaduras, deshacer, escritura de recuperación, exclusión de sesiones, limpieza
-ordenada, errores que preservan la copia anterior y proceso hijo terminado por
-fuerza antes de reabrir. PDF verifica documentos de piano, cuerdas y varias
-páginas, además de destinos inválidos y preservación de archivos. Comprobación
-visual mediante Poppler: piano con arpegios entre manos y cuarteto de dos páginas.
-
-## Dos voces y divisi
-
-`Voice::{One, Two}` identifica dos secuencias por compás con un almacén común de
-`EventId`. `order` conserva la voz original y `second_order` añade la segunda sin
-cambiar IDs antiguos. `timed_iter` calcula el inicio dentro de cada voz; la
-capacidad del compás es el máximo de sus duraciones, no la suma. La validación
-rechaza IDs duplicados entre secuencias y desbordes de cada voz. El cursor,
-selección de rango, portapapeles, entrada, borrado y navegación conservan la voz.
-Las conexiones rítmicas y ligaduras deben unir eventos de una misma voz; las frases
-de voces distintas pueden solaparse.
-
-El grabado usa una rejilla temporal compartida, plicas opuestas, barrado y tresillos
-por voz, silencios separados y desplazamiento horizontal de segundas coincidentes.
-Las alteraciones se resuelven cronológicamente para todo el pentagrama. Al pulsar
-cabezas de unísono coincidentes se prefiere la voz activa. Las articulaciones y
-calderones inferiores usan sus glifos originales de Bravura. Los textos y dinámicas
-reservan espacio frente a las plicas de ambas voces.
-
-`Part::divisi_changes` (esquema 17) guarda fronteras por compás y tick local.
-La migración del esquema 16 convierte cada cambio de compás en un cambio de tick
-cero. `DivisiPoint` normaliza el final del compás al comienzo del siguiente; los
-rangos son semiabiertos y terminan al finalizar la última nota seleccionada.
-`div.`/`unis.` y los comandos de pasaje usan estas mismas posiciones. El borrado e
-inserción de compases remapean mapas completos sin perder sus offsets internos;
-la eliminación conserva el estado inicial del primer compás retenido.
-
-El documento conserva sus voces, figuras e identidades. En cada compás con un
-intervalo divisi se muestran las voces 1 y 2 en pentagramas completos separados;
-«div.» y «unis.» se colocan en sus ticks reales. La presentación por compás evita
-saltos de línea, continuaciones artificiales y ligaduras diagonales para notas
-sostenidas. `display_source`, `displayed_staff` y `VoiceRegion` comparten ese
-criterio para el grabado, el cursor, la inserción, la selección y el seguimiento.
-Las fronteras temporales permanecen en el mapa del documento y no afectan al audio.
-La caché conserva las regiones y las fronteras escritas, también cuando una marca
-no cambia el estado. No se requiere una copia temporal con figuras fragmentadas.
-Los cortes siguen validándose sobre la cuadrícula rítmica disponible antes de
-confirmar la operación; las ligaduras y reguladores originales conservan sus IDs.
-
-Los cambios de divisi no fuerzan saltos de sistema: una fila puede contener
-compases con uno o dos pentagramas. Cada entrada de la fila inferior reserva
-su clave y armadura; los compases inactivos no crean celdas ni destinos de clic.
-La maquetación de conjuntos de tres o más partes usa un pentagrama de unos 5,3 mm
-en A4. Los compases reservan anchura según la tinta de las indicaciones, incluidos
-matices largos. Los reguladores comparten la altura de las dinámicas cuando cabe,
-respetan las notas graves y dejan huecos horizontales alrededor de los matices.
-
-Las indicaciones de evento heredadas se limpian al establecer un pasaje para que
-no reaparezcan al sobrescribir o quitar fronteras. Los esquemas 1–16 mantienen la
-presentación anterior. Las partes legacy con `Part::divided` conservan sus dos
-pentagramas físicos; al editar un pasaje se normalizan a las dos voces, remapeando
-selección y extremos en una transacción. Rechaza reunir más de dos voces y
-convertir un piano. Dinámicas, reguladores y técnicas siguen compartidos por la
-sección; las manos del piano mantienen su expresión independiente.
-
-El plan de reproducción crea una pista por voz con sus propios intervalos, ataques
-y sostenidos, alineados en el reloj común. La preparación de expresión considera
-sonidos simultáneos y preserva los rangos por pista; los grupos que se solapan
-reservan margen común. Hasta 56 pistas y 448 alturas sostenidas caben en buffers
-fijos. La prueba de división compara todos los mensajes programados antes de
-dividir, después de dividir y después de reunir, incluidas técnica, dinámica y
-regulador. También se prueban edición/deshacer, capacidad por voz, copia con dinámica
-simultánea, coincidencias de cabezas, alteraciones cronológicas, carga/recuperación y
-exportación de los ejemplos `voces-y-divisi` y `divisi-dos-pentagramas`.
-
-## Entregas siguientes
-
-1. **Edición musical:** enarmonía y dobles alteraciones, voces 3–4 y edición de grupos irregulares generales.
-2. **Seguridad del trabajo:** más pruebas con `proptest`,
-   fixtures de documentos e importadores sometidos a fuzzing.
-3. **Grabado:** refinamiento de curvas y colisiones,
-   saltos de sistema/página manuales y snapshots visuales. Añadir `kurbo`, `rstar` y `rayon`
-   cuando existan las operaciones que justifican su uso.
-4. **Intercambio:** MIDI con `midly`, partes transpuestas y opciones de papel; ampliar la compatibilidad MusicXML existente.
-5. **Sonido:** ampliar la reproducción ya implementada con repeticiones y MIDI externo con
-   `midir`, pedal de piano, percusión y pruebas de desconexión/cambio de dispositivo.
-6. **Medición y distribución:** benchmarks representativos antes de reclamar
-   presupuestos de rendimiento, perfilado, firma y empaquetado de macOS;
-   validación de Windows y Linux.
-
-Se han incorporado Bravura y GeneralUser GS, con sus licencias originales. No se
-han copiado datos de instrumentos de MuseScore ni de LilyPond. Tampoco se ha
-creado un repositorio Git: el directorio inicial no tiene `.git`.
-
-
-## Arpegios
-
-`Notation.arpeggio` admite `Normal`, `Up` y `Down` en acordes de al menos dos
-alturas. Es una marca del catálogo, con referencia estable, selección, borrado,
-reemplazo y transacción del historial. Quitar la última nota adicional también
-quita la marca; los snapshots la recuperan al deshacer. El esquema 13 conserva
-arpegios y abre esquemas anteriores con acordes simultáneos. El portapapeles los
-conserva en el primer fragmento de una figura dividida.
-
-El grabado compone los segmentos Bravura `wiggleArpeggiatoUp/Down` y sus flechas
-(EAA9/EAAA/EAAD/EAAE), usando `repeatOffset` y avances originales. `Glyph.rotated`
-gira el conjunto 90 grados sin deformar contornos. Las métricas de tinta, el hit
-testing, la caché, el seguimiento y la separación rítmica incluyen esa geometría.
-Los controles usan los símbolos completos de Bravura E63C/E634/E635.
-
-El plan y la audición comparten una secuencia acotada: alturas MIDI ordenadas,
-unísonos enarmónicos deduplicados, 30 ms por intervalo, máximo 120 ms y media
-puerta sonora. Los sonidos de una cadena ligada solo se atacan una vez. El seek
-recupera exclusivamente los sonidos ya atacados. El renderer divide bloques en
-los ataques pendientes de la audición, con almacenamiento fijo; reemplazar,
-reproducir o detener cancela los ataques pendientes anteriores.
-
-
-## Arpegio entre manos del piano
-
-El esquema 14 añade `Score.piano_arpeggios`, conexiones de dos IDs estables
-(superior e inferior) y dirección. Solo une ataques simultáneos de la misma parte
-Piano, incluidos intervalos con una nota por mano. Se edita desde cualquiera de
-los extremos; sustituye marcas locales y se poda si una edición desplaza o borra
-un extremo. Deshacer restaura la relación. El portapapeles, que copia un solo
-pentagrama, convierte la indicación compartida en una local cuando copia un
-acorde; no exporta referencias a notas ausentes del pasaje.
-
-`Layout.piano_arpeggios` se calcula tras colocar los pentagramas y se vuelve a
-calcular tras paginar. Sus segmentos Bravura, caja seleccionable y seguimiento
-usan coordenadas finales. La cuadrícula reserva espacio en ambas manos. El plan
-ordena conjuntamente hasta 16 alturas con los límites anteriores; cada mano
-conserva sus niveles, técnicas y finales, y las continuaciones ligadas no añaden
-ataques. La audición dispone de 16 ranuras fijas con intención y final por nota;
-el callback divide bloques en cada ataque y liberación sin asignar memoria.
-
-### Armónicos naturales y artificiales
-
-`Notation::harmonic` es una marca puntual independiente de `PlayingTechnique`.
-`Harmonic::Natural` se escribe a altura sonora con `stringsHarmonic` (E614).
-`Artificial` conserva una sola nota pisada: `harmonic_touch` calcula la posición
-y alteración de su cuarta justa, y `sounding_pitches` resuelve la tonalidad antes
-de subir dos octavas. La cabeza `noteheadDiamondWhite` (E0DD) es derivada: tiene
-selección propia como `MarkRef::Harmonic`, nunca identidad de nota ni ataque MIDI.
-Los dobles bemoles de la cuarta derivada se graban sin ampliar el modelo de
-alteraciones de entrada. Su estado local se cancela en las notas siguientes.
-
-El núcleo valida instrumento, presencia de notas y rango antes de insertar,
-editar o abrir documentos. Los cambios de un pasaje se validan y aplican juntos,
-conservando las ligaduras válidas en el resultado final. Borrar sonido quita el
-armónico; copiar una nota larga lo conserva en todos sus fragmentos ligados.
-El formato nativo es 19, con migración desde 18, y el portapapeles es 6 para
-impedir que una app anterior pierda silenciosamente las nuevas marcas.
-Plan, audición y recuperación de notas sostenidas comparten la altura sonora.
-`NoteEvent::harmonic` conserva la intención desde el plan o audición hasta el
-proveedor, incluidas las notas sostenidas al buscar una posición. El motor
-integrado genera el timbre mediante síntesis aditiva a la altura ya resuelta:
-fundamental dominante, parciales superiores escasos, ruido leve de arco y
-envolventes distintas para arco y pizzicato. No utiliza el programa de armónicos
-de guitarra de General MIDI ni vuelve a transponer la nota.
-
-`platform::sound_engine::harmonics` prepara tabla seno, frecuencias y 512 voces
-antes del callback. Los parciales se atenúan antes de Nyquist; las notas al arco
-se sostienen y las pulsadas decaen aunque sigan escritas. CC7/10/11, silencios,
-pausa, búsqueda y reverberación utilizan el contrato común. No hay asignaciones
-ni carga de archivos en los ataques o el renderizado. VSCO CE rechaza estos
-ataques porque no tiene muestras específicas; el motor integrado los cubre.
-Un proveedor futuro puede interpretar `NoteEvent::harmonic` con grabaciones.
-La síntesis es una aproximación de timbre, no una grabación orquestal.
-
-Los unísonos se fusionan por canal, altura y clase de timbre (normal/armónico),
-para que las dos voces o un divisi conserven ambos sonidos. `HarmonicOff` y
-`SoundEngine::harmonic_off` liberan únicamente la voz armónica; la nota normal
-usa el `NoteOff` habitual. Los proveedores que acepten armónicos deben implementar
-esa liberación independiente; el valor predeterminado es inerte para proveedores
-sin esas muestras. Las curvas cuadráticas de velocidad y CC11 conservan la
-calibración de una dinámica cuando un regulador reserva margen de volumen.
-
-
-## Importación de MusicXML
-
-`score-io::open` detecta documentos nativos, XML partwise/timewise y contenedores
-MXL por contenido. Devuelve `OpenedScore` con el indicador `imported` y avisos;
-`load` conserva su contrato nativo para recuperación y herramientas existentes.
-El lector `musicxml/import` posiciona los eventos con divisions, backup y forward;
-el constructor traduce esas posiciones a voces, rellena huecos y divide figuras
-con ligaduras cuando hace falta. `Score::new` construye instrumentos y compases
-vacíos mediante la API del dominio, sin depender de la representación serializada.
-
-La entrada y el XML descomprimido se limitan a 16 MiB; container.xml a 64 KiB y el
-árbol a un millón de nodos. No se extraen archivos ni se descargan DTD o entidades
-externas. ZIP solo habilita DEFLATE. Los errores conservan el documento abierto.
-La interfaz importa con `Document::recover` y sin ruta nativa, presenta los avisos
-y utiliza el flujo normal de Guardar como. El XML original no es destino del
-autoguardado. Las pruebas cubren MXL, timewise, voces y acordes externos,
-transposición, anacrusas, expresiones y el recorrido exportar/importar de los
-22 ejemplos comparando ataques, alturas, duraciones, armónicos y técnicas.
-
-
-## Exportación de partitura y partes
-
-`score-export` coordina la selección de documentos (score completo y `PartId`
-individuales) y formatos PDF/MusicXML. `Score::extract_part` crea una copia con
-identificadores estables y conserva la parte completa: pentagramas, voces,
-divisi, marcas, conexiones y arpegios de piano pertinentes. Los cambios globales
-de métrica, tonalidad y tempo permanecen en la copia. Un nombre de parte opcional,
-con valor por defecto para documentos anteriores, conserva la identidad «Violín II»
-cuando el instrumento queda solo; `part_name` comparte ese nombre entre grabado y
-MusicXML. La extracción no transforma alturas ni modifica la partitura original.
-
-El diálogo de exportación usa el estado modal existente, bloquea la edición,
-detiene el audio y ofrece selección de todos/ninguno, score y partes individuales,
-y PDF/MusicXML simultáneos. Enter continúa y Esc cancela. El destino es una carpeta
-nueva: se preparan todos los archivos en un directorio temporal junto al destino,
-y solo después se crea la carpeta final. `create_dir` impide reemplazar conjuntos
-anteriores incluso si aparecen durante el renderizado. Ante un fallo al publicar,
-se retiran los archivos publicados por esa operación. Cancelar el destino o fallar
-la exportación devuelve la misma selección con una explicación cuando procede.
-Los nombres están ordenados y limitados por bytes UTF-8; los separadores y controles
-se sustituyen. La operación no toca la ruta, el historial ni el estado de guardado
-del documento.
-
-Las pruebas comparan la extracción de todas las partes de los ejemplos con el
-original, incluidas voces, cambios globales, divisi, conexiones y arpegios de piano.
-También verifican nombres y orden de secciones, subconjuntos, formato nativo,
-MusicXML de cada parte, selección inválida, protección de destinos existentes y
-la entrega conjunta de PDF/MusicXML del Menuetto.
-
-
-## Clic para situar la reproducción y arrastre de alturas
-
-`playhead::score_tick` traduce coordenadas del lienzo a tiempo musical sobre la
-misma cuadrícula rítmica que dibuja el cabezal: una cabeza/silencio usa su onset
-exacto, incluido un tresillo; el espacio usa pulsos del denominador local. Acepta
-las tres vistas, zoom, voces, divisi y compases vacíos. Los clics normales llaman
-al transporte `seek` existente, manteniendo reproducción o pausa; no fuerzan un
-desplazamiento de la vista mientras comienza un posible gesto de ratón. Shift
-mantiene la posición del transporte y sigue ampliando el pasaje.
-
-`NoteDrag` distingue el movimiento vertical inicial del horizontal con el umbral
-de cinco píxeles de selección. El vertical edita una sola cabeza del acorde;
-el horizontal inicia el movimiento temporal de la figura completa y Shift
-conserva `PassageDrag`. Una copia persistente de `Score`
-permite previsualizar la altura sin tocar documento, historial ni recuperación.
-El grabado usa un `LayoutEngine` propio del gesto y la altura tentativa para el
-resaltado. `layout_pitch_preview` conserva sistemas, anchos, cuadrícula rítmica y
-orígenes de todos los pentagramas del layout inicial: la cabeza sigue al ratón
-aunque aumente su envolvente de tinta. Solo al confirmar se reserva espacio
-y se repagina de nuevo. El movimiento usa medio espacio del pentagrama por paso diatónico y
-compensa el origen desplazado del lienzo. Se conservan las alteraciones explícitas;
-la armadura determina las notas sin alteración explícita. Las colisiones de cabezas
-y los límites de armónicos se rechazan con explicación.
-
-Al soltar, `ReplacePitch` aplica una sola edición, con audición si está activa.
-Deshacer restaura también las conexiones eliminadas por incompatibilidad de altura.
-Volver a la altura original no crea historial. Escape, pérdida de foco, soltar fuera
-de la ventana u otro comando cancelan la vista previa. Empezar el arrastre de altura
-detiene el audio; seleccionar/clicar sin arrastrar conserva su estado.
-
-Las pruebas verifican resolución de gesto, zoom, desplazamiento, acordes, límites,
-armónicos y un único deshacer/rehacer con estado de guardado correcto. Los clics se
-comparan con los onsets grabados de todos los eventos de piano, Menuetto y divisi
-interno en las tres vistas y cuatro escalas; también se prueban compases vacíos con
-cambios de métrica y coordenadas fuera de la partitura.
-
-
-## Arrastre horizontal entre tiempos y compases
-
-`Score::move_event` modifica una copia y publica solo tras validar. Conserva
-onsets de las figuras vecinas y la voz/pentagrama de origen. Rellena huecos con
-silencios representables (descomposición mínima por programación dinámica),
-recorta silencios de destino sin indicaciones e intercambia figuras completas
-si la ocupación tiene igual duración. Rechaza solapamientos, destinos fuera de
-capacidad, silencios con marcas y huecos no representables sin tocar el original.
-Los IDs de elementos que permanecen en el compás se conservan; al cruzar de compás
-se reasignan solo los IDs desplazados y se remapean sus enlaces antes de depurar
-los incompatibles. Los arpegios entre manos que pierden simultaneidad pasan a
-marcas locales cuando hay acordes. Las alturas se reescriben entre armaduras
-para conservar su sonido. Compases, tempo, tonalidad, divisi, otras voces e
-instrumentos conservan sus posiciones.
-
-`MoveSelectedEvent` actualiza selección/cursor y crea una sola entrada en el
-historial. `NoteDrag` fija el eje al superar cinco píxeles: vertical cambia una
-cabeza, horizontal mueve la figura completa. Calcula el destino sobre el layout
-inicial, compensando zoom, scroll y distancia del punto agarrado a la cuadrícula
-rítmica. Se ajusta a la cuadrícula de semicorcheas o tresillos según la duración,
-y a los onsets de la voz original. Comprueba el movimiento en una copia y dibuja
-una figura azul con Bravura y un indicador en destino; no usa el layout de
-previsualización de alturas para duraciones/onsets cambiados. Escape, pérdida de
-foco o soltar fuera cancelan. Shift no arma `NoteDrag` y conserva la selección.
-
-Las pruebas cubren tiempos libres, intercambio de acordes y marcas, silencios
-partidos, movimiento solapado con la propia posición anterior, rechazo atómico,
-armaduras, voces y manos independientes, enlaces, una acción de deshacer/rehacer
-y destinos del ratón en las tres vistas, con zoom, scroll y voz de divisi proyectada.
-
-
-## Orquesta y transposición
-
-`Instrument` reúne 49 perfiles y una plantilla `ORCHESTRA` de 34 partes. El selector
-ordena por `score_order` y admite cantidades para cada instrumento.
-`Part::transposition` es el intervalo de altura escrita a sonora (pasos diatónicos y
-semitonos). Los eventos almacenan alturas escritas; la tonalidad global permanece en
-altura real. `written_key_at` deriva la armadura para cada parte; `sounding_pitches`
-resuelve la armadura escrita, los armónicos y después el intervalo instrumental.
-Audio, audición y búsqueda de notas sostenidas consumen ese resultado.
-
-El esquema 19 usa intervalo cero por defecto al leer documentos antiguos; no cambia
-sus notas ni sonido. Las partes nuevas reciben el intervalo del catálogo.
-El portapapeles 6 conserva el intervalo de origen y convierte por altura real al
-pegar en otro instrumento. MusicXML exporta alturas y armaduras escritas junto con
-`transpose`, incluyendo octavas, y agrupa canales mediante `midi-device`/`port`.
-La importación resuelve primero a altura real y convierte al perfil escrito de destino,
-conservando el intervalo explícito inicial. Las armaduras enarmónicas se limitan a
-siete alteraciones; las notas que exigirían dobles alteraciones se reescriben con una
-enarmonía simple equivalente. La percusión sin altura usa su nota General MIDI fija,
-clave Bravura E069, posición central y banco 128 independiente en cada ruta.
-
-Las pruebas de orquesta cubren 48 rutas, catálogo completo, cambios de tonalidad,
-compatibilidad de archivos 18, MusicXML externo y exportado, copiado entre perfiles,
-las tres vistas y la ausencia de recorte al imprimir sistemas altos.
-
-Para orquestas de 12 partes o más, la vista de página adapta también su anchura al sistema más alto, evitando una columna estrecha al reducir todo el score. El PDF general usa A3; las partes y conjuntos pequeños conservan A4.
-
-El selector reserva un ancho flexible para el nombre y mantiene los segmentos de texto musical en una sola línea, con alturas de fila estables y controles de cantidad fuera del área de texto.
+- **Description** (`spec.rs`): eight tabs by task (`TabId`: Escribir, Articulaciones,
+  Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), their groups and controls.
+  Each control is a `CommandId` with a size (large or tile), a function (`Role`: choice,
+  toggle or action), a glyph, a short name and a hint. It contains no status texts or
+  keys.
+- **State** (`CommandStates`): the only question the model asks the app: whether a
+  command is active, enabled or has a temporary label («Terminar», «Pausar»), never wider
+  than the control's name: the tile measures its name and doesn't move. The app answers
+  it in `ui/command_state.rs`; the tests use a fake.
+- **Projection** (`project`): joins description, registry, map and state. Each control is
+  a tile: glyph and, below, its name and its key. It measures with fixed values
+  (`Metrics`, widths per character that cover the widest text of the ribbon). With room,
+  a group widens and shows the names; without it, `fit` removes them (glyph and key; the
+  large control of a group keeps its own) and then folds groups by priority (the lowest
+  priority and, on a tie, the rightmost) until the row fits. The ribbon never scrolls; a
+  folded group is a button with a dropdown.
+- **Hover hint**: the ribbon's controls and the right panel's commands show a short hint
+  with their name and the active assignment after GPUI's delay (500 ms). The dropdowns
+  and Preferencias keep the keys as a reference; the panels no longer repeat the whole
+  list of shortcuts.
+- **Archivo** (`FILE_MENU`): one list generates the window's dropdown and the native
+  macOS menu, with the «Abrir reciente» submenu. GPUI doesn't draw native menus on
+  Windows and Linux, so there the dropdown also lists the update commands, Preferencias
+  and, last, Salir de Levare; the other commands that only live in native menus are
+  reached through the command search.
+- **Recent files** (`score-io::RecentFiles`): `recientes.json` in the data folder, at most
+  10, without duplicates, newest first; it forgets files that no longer exist. It is
+  updated on opening and saving, and when Levare keeps an emergency copy.
+
+The tests cover that each control points to a registered command, that labels, keys,
+state and pending flags come from their source, that every tab fits unfolded at 1420 px,
+the folding order, the Archivo menu, the persistence of recent files and that the music
+font has every ribbon glyph preloaded.
+
+## Shortcut engine
+
+`score-keymap` doesn't depend on GPUI and gathers everything that was previously spread
+over `bind_keys`, a hand-made key translator, fixed labels in the ribbon, the shortcuts
+panel, the menus and the README:
+
+- **Command registry** (`commands.rs`). Each command has a stable ID
+  (`"entrada.nota.c"`), category, label, scope, whether it repeats when the key is held
+  and a *ready* or *pending* status. The `id::` constants are used in the profile, in the
+  interface and in the single `match` of `AppView::run`, so a mistyped ID doesn't compile.
+  Future extensions can register commands of their own.
+- **Keys** (`keys.rs`). Its own model of keystroke and sequence, with names reserved for
+  the numeric keypad (`numpad4`, `numpadenter`) although GPUI 0.2.2 doesn't tell them
+  apart. A shortcut is stored with `secondary` (⌘ on macOS, Ctrl elsewhere) and labeled
+  per platform: `⇧⌘Z` on macOS, `Ctrl+Mayús+Z` elsewhere. `Layout` translates `⇧1`–`⇧9`
+  to the character the active layout produces, because GPUI reports ⇧2 as `"` (Spanish)
+  or `@` (US) and drops Shift. The app asks the system for those characters
+  (`UCKeyTranslate` on macOS, `ToUnicodeEx` on Windows; on Linux, where GPUI keeps its xkb
+  state to itself, a table of common layouts by name, with US as the fallback) and
+  installs the shortcuts again when the layout changes.
+- **Profile** (`profile.rs`). *Sibelius · portátil*: Sibelius' *Notebook* set, which works
+  the same with or without a numeric keypad. It was checked against the official
+  Sibelius 2018.4 tutorial (3 eighth, 4 quarter, 5 half, 7/8/9 ♮/♯/♭, 0 rest, `.` dot,
+  ↩ tie, F7–F12 layouts, ⇧1–9 intervals in laptop mode); the other single-letter keys
+  follow the SibAccess list (Berklee). Keys without a function in Levare are reserved as
+  *pending*. Defaults differ per platform only where conventions do: macOS keeps
+  Sibelius' ⌥⌘ combinations, while Windows and Linux use Ctrl+Mayús instead, because
+  Ctrl+Alt is AltGr on Windows and often a desktop shortcut on Linux; full screen is F11
+  there, and Linux replays with Alt+Mayús+Space, since desktops keep Alt+Space.
+- **User changes** (`user.rs`). `atajos.json` in the data folder
+  (`~/Library/Application Support/Levare` on macOS, `%LOCALAPPDATA%\Levare` on Windows,
+  `~/.local/share/Levare` on Linux) keeps, per command, the full list that replaces the
+  profile's; an empty list leaves it without a shortcut. A shortcut saved with ⌘ on macOS
+  uses Ctrl elsewhere; one with Ctrl+Alt and a character is refused when recording on
+  Windows and Linux and skipped there when loading, and Preferencias says so. If the
+  older `Partitura` folder exists and `Levare` doesn't yet, the app keeps using the older
+  one to preserve shortcuts, recent files, panels and recovery. In the same folder,
+  `paneles.json` remembers the panels (see *Side panels*). Atomic writing and a version
+  number.
+- **Resolution** (`keymap.rs`). Profile + changes + layout give the active shortcuts.
+  The user's win; conflicts, unknown IDs and keys that can't be detected are reported in
+  Preferencias instead of failing.
+- **Documentation** (`docs.rs`). [docs/atajos.md](atajos.md) is generated from the
+  registry and a test fails if it goes stale.
+
+In the app, `shortcuts.rs` turns each shortcut into a GPUI `KeyBinding` with a single
+action, `Run(CommandId)`, and the context predicate of the command's scope: `Levare` for
+global commands, `Levare && !Modal && !TextInput` for score commands (the single keys)
+and `Levare && Modal` to close Preferencias. The root adds `Modal` while Preferencias is
+open. The native macOS menus only show combinations with ⌘/⌃ (`MenuRun` for the rest,
+with the key in the text), because a single-key equivalent would let macOS fire the menu
+before the contexts and the Preferencias recorder. A GPUI interceptor sees each
+keystroke before the shortcuts: it marks automatic repeats (commands that toggle don't
+repeat) and hands the combination to the recorder.
+
+**Shortcut preferences** (⌘, or the *Atajos* button) list the commands by category with
+their keys, status and whether they were changed. They allow changing, adding, removing
+and restoring one or all. Recording a key that is taken asks whether to reassign it.
+There is no text search yet. (When this was written GPUI 0.2.2 had no text field; Levare
+now has its own, `ui/text_input.rs`.)
+
+Pending: a *Sibelius · escritorio* profile with numeric keypad (requires GPUI to tell
+those keys apart), the F7–F12 layouts of the on-screen keypad, multi-keystroke sequences
+in the recorder and a search in Preferencias.
+
+## Musical expression
+
+`score-core::expression` defines `Notation` (optional dynamic and articulation) and
+`Connection` (tie/slur with two serializable `ElementId`s). A tie requires musical
+adjacency, no gaps and the same set of positions and resolved semitones; an explicit and
+an implicit ♮ are equivalent. Phrases are ordered and don't overlap within a staff.
+Files are validated, and links invalidated by edits are removed, preserving the undo
+snapshots.
+
+`score-layout::expression` engraves Bravura marks outside noteheads and stems and
+generates curves per system. It reserves lanes for curves and room under the tie line for
+the ascenders of forte. The curve geometry is computed after placing the bars; local
+marks follow the incremental cache. The ends follow the musical identity when lines are
+redistributed or the zoom changes.
+
+`score-playback` keeps the written `Span`s for selection and following, and generates
+distinct sounding intervals for staccato and tied chains. Each staff has its persistent
+dynamic. Ties keep a single attack; unisons between hands are combined before computing
+the attack intervals per channel/key. Recovery from a selection uses the intensity of
+that effective attack, even if the original event ended before the later unisons. The
+pause keeps the synthesizer's state and introduces no allocations in the callback.
+
+The UI offers controls in the ribbon and native menu, and removes them from the
+Selección tab. ↩ toggles only the outgoing tie; S marks the start/end of a phrase and Esc
+cancels. The provisional state is cleared on edit, undo, redo, or when creating or
+opening another document. The four articulations have no default key (as in Sibelius
+laptop) and can be assigned in Preferencias. Ties between single pitches inside
+different chords are still pending.
+
+### Mark catalog
+
+`score-core::marks` describes each mark once. `MarkKind` lists the 19 marks (four
+articulations, fermata, eight dynamics, pizz./arco, tie, slur, crescendo and diminuendo)
+with their short and long name, their family (`MarkFamily`), their Bravura glyph, the
+button symbol and the staff side (`Placement`). A note carries at most one mark of each
+point family; `set_point_mark` replaces the one of its family and `Command::ToggleMark`
+writes, changes or removes the selection's.
+
+`MarkRef` identifies a written mark (the note of a point mark or the connection of a
+slur or hairpin) to select it, delete it (`Command::RemoveMark`) or change it
+(`Command::ReplaceConnection`). `score-layout` generates a `MarkBox` per point mark, fitted
+to the Bravura boxes, and `Layout::hit` chooses between note and mark.
+
+`score-toolbar::marks` is the only mark ↔ command table. The ribbon (`spec::mark`), the
+Selección tab, the **Expresión** menu, the menu symbols, the highlighted state and the
+app's dispatch (`apply_mark`) walk it instead of repeating each mark. A test requires
+each mark to have its own command, ready and with its name in the label.
+
+To add a point mark: its variant in `MarkKind` (and the field in `Notation` if it is a
+new family, with `serde(default)` so the format doesn't change), its command in
+`score-keymap` and `score-toolbar::marks`, its placement in
+`score-layout::expression::marks` and, if it sounds different, its rule in
+`score-playback`.
+
+### Fermata
+
+`Notation.fermata` is only stored when active, so older files open without migration. It
+accepts notes and rests, independent of the articulation; when pasting a note that is
+split it stays on the last fragment. It is drawn centered above the note, outside the
+articulation, and pushes the technique up.
+
+In playback, `score-playback::Timeline` turns musical time into audio: the stretch of
+each fermata lasts `FERMATA_HOLD` (twice as long) for **every** part, and what follows
+starts afterwards. Simultaneous fermatas of several parts merge into one stretch. The
+plan, the hairpins, the ruler's jumps, the clock and the transport's seconds use the same
+timeline (`tick_at` is its inverse).
+
+## Verification
+
+The clipboard was checked in a temporary app with the piano example: Shift+arrow
+selected two tied half-note chords; they were copied with ⌘C and pasted into a ninth bar
+of the left hand. They were cut, the cut was undone/redone and they were pasted again.
+The saved file kept C4/E4/G4 in both chords, their mp dynamic and the tie between the new
+IDs. Refusing an occupied target without modifying the score was also checked. The
+shortcut filter allows repeating Pegar for consecutive pastes. The automated tests cover
+reverse selection, passage history, gaps, aligned growth, crossed bars, slurs, keeping
+the sound across keys, current dynamic, refusing external content and rollback. Playback
+of a split staccato note matches the original in attacks, intensity and MIDI timing. The
+independent review found no important problems.
+
+Score grouping was checked with a deliberately reversed temporary copy of
+`cuarteto-en-sol.partitura`: on opening, flute, violins, viola and cello showed with
+separate woodwind and string brackets. The window showed the persistent «Eliminar
+seleccionado» control. From the native menu an oboe and C4 were added, the part was
+removed and its removal undone/redone. The saved file confirmed the oboe with its note,
+placed after the flute. The tests cover stable order, identity of events and
+connections, undoing parts, normalization and saving, brackets per system, barline
+breaks between families, piano braces and spatial selection. The independent review
+found no concrete problems.
+
+The expression delivery was checked visually with `examples/piano-expresion.partitura`:
+curves, three ties of a chord, dynamics in both hands and the four articulations. In a
+temporary app a ninth bar C4–C4–E4 was written, a tie and a phrase were added with T/L,
+staccato with S and ff from the native menu. After undoing/redoing the dynamic, the saved
+file kept the three notes, the marks and both ends of the slurs in format 7. The tests
+cover transactional refusal, restoring links with history, reading schemas 1–6, curves
+across systems, room under forte, no new attacks in chains, unisons between hands and
+intensity recovery. Audio continuity with pause is compared sample by sample without
+allocations in the callback. The independent review checked the fixes and found no
+important problems. `audio_smoke` completed slurs, dynamics and articulations together
+with both hands, flute and cello on the real output at 44,100 Hz, with selection, pause
+and resumption.
+
+The reference interface was checked in a separate temporary app, with
+`examples/cuarteto-en-sol.partitura`: five visible staves, repeated instrument names,
+panels, ribbon and transport. With N off, input added no notes; with it on, 5 produced a
+sixteenth chord and 4 an eighth rest. The native dialog saved this data, including a
+single flat. After fixing how the keyboard character was read, `=` applied and saved a
+natural on the selected note. The tests also check selection and following with zoom,
+the separation of extreme chords in compact spacing and the new durations. The
+independent review found no important defects.
+
+The G major key signature was checked visually with its piano example: a sharp in both
+clefs, room before the time signature and cancellation/restoration on the F notes. In a
+temporary session E♭ major was chosen from the native menu, the change was undone and
+redone, and chords were written in a fifth bar. The native dialog saved format 6, three
+flats, C4/E4/G4 without their own accidental in the right hand and D3/F3/B♮3 in the left.
+Reading the file confirmed key, IDs and the single natural. The tool's screenshots went
+stale after the interactions; the modified key signature was verified through the file
+and the engraving tests. `audio_smoke` completed D major with both hands, flute and cello,
+selection, pause and resumption on the real output at 44,100 Hz. The tests cover the 30
+key signatures, every octave, treble/alto/bass, repetition per system, restoration,
+cache, history, validation, migration of 1–5 and sustained notes. The independent review
+found no concrete defects.
+
+The accidentals delivery was checked with `examples/piano-alteraciones.partitura`:
+sharps, flats, cancelling naturals, signs in chords and columns for seconds. In a
+temporary session a fifth bar was written in both hands and ⌥S/⌥F/⌥N, ⌥← and ⌥0 were
+used to alter single notes, besides undo and redo. The native dialog saved C♯4/E♭4/G♮4
+and C3/E♯3/G♭3 with their accidentals. The independent review found no concrete defects.
+The tests cover single selection, cancellations per bar and staff, dense columns,
+following, format 5 with migration of earlier versions, MIDI semitones, enharmonics and
+exact audio continuity without allocations. The real output at 44,100 Hz completed the
+test of altered chords, selection, pause and resumption.
+
+The chords delivery was checked with `examples/piano-acordes.partitura`: noteheads,
+shared stems, shifted seconds and both hands. In a temporary session C–E–G was written
+in the fifth bar of each hand, with Shift+letters in the right hand and Acorde mode in
+the left. The native dialog saved two quarter-note chords, C4/E4/G4 and C3/E3/G3, on
+their staves. The view showed the new system. `audio_smoke` verified chords in both
+hands together with flute and cello on the real output at 44,100 Hz, with a selected
+start, pause and resumption. The automated tests cover limits, duplicates, history,
+migration and saving, stems, seconds, selection, following, unisons and exact
+resumption of the audio without allocations or frees in the callback.
+
+The grand staff was verified with `examples/piano-dos-manos.partitura`: treble/bass
+clefs, brace, shared barlines, alignment and selecting the left hand with ⌥2. In a
+temporary session a fifth bar was added, C3 was written in the left hand and E4 in the
+right with ⌥1, and it was saved through the native dialog. The resulting file kept both
+notes on their staves. `audio_smoke` checked both hands together with flute and cello on
+the real output at 44,100 Hz, with a selected start, pause, resumption and completion.
+The tests include identity per staff, history, migration of schemas 1/2, malformed
+files, unisons, separation of positions and 14 pianos with 28 active hands. The callback
+keeps the zero-allocation check.
+
+The ensemble delivery adds tests for identity between parts, growth of bars, selecting
+and undoing instruments, migration of schema 1, saving schema 2, clefs, alignment across
+durations, minimum spaces, independent channels and starting during sustained notes of
+other parts. The 13 timbres of the catalog of that time have a verified preset in the
+bank and produce different audio. The pause of an ensemble is compared sample by sample
+with uninterrupted playback, under the callback's zero allocations/frees check.
+
+`examples/trio.partitura` was checked visually, with the instruments panel, aligned
+staves, treble/bass clefs and simultaneous highlighting of the three parts. `audio_smoke`
+verified piano, flute and cello on the real output at 44,100 Hz, including a selected
+start, pause, resumption and completion.
+
+The tests cover bar capacity, out-of-range notes, stable references, isolation of
+snapshots, transposition across octaves, history, transactional refusal of changes,
+edit/undo/redo sequences, save state, invalid and future files, real saving to disk,
+spatial selection and reuse of the layout. CI runs format, tests and Clippy on macOS,
+Windows and Linux, and opens the app on all three.
+
+Manual check of the delivery:
+
+1. Run `cargo run`; enter `C D E F G` and check the bar break.
+2. Choose an eighth with `3`, enter `A B`, insert a rest with `0`.
+3. Select a note with a click, transpose with the arrows and undo/redo.
+4. Save, create a new score and open the saved file.
+5. Try to close with changes and check that cancelling keeps the document.
+
+Note and rest input, the bar break, the typography, saving with the native dialog,
+creating a new document, reopening the example and cancelling the unsaved-changes
+prompt were verified visually. Spatial selection and history are verified by tests. The
+specific manual test of quitting from the Dock and recovering on restart is still to be
+done.
+
+In the audio delivery, writing with audition, starting with Space, highlighting during
+playback, automatic completion and stopping with Esc were verified in the window.
+`audio_smoke` also checked the progress and completion of the stream on the machine's
+real output at 44,100 Hz.
+
+For following, a temporary 32-bar score was checked visually: starting from an
+off-screen selection showed the active note, and the advance to later lines kept the
+highlight visible. The selection stayed in its original position. The checks of manual
+scrolling during the pause and of horizontal limits are covered by tests; the window
+control tool didn't allow completing those manual interactions.
+
+## MVP block: editing, recovery and PDF
+
+`score-core::measure_edit` holds the structural edits: insertion and deletion across all
+staves, reassigning event indices and the meter/key/tempo maps, connections and piano
+arpeggios. When deleting local changes, the effective state of the first retained music
+is kept. Deleting everything creates a single empty bar. The editor stores each operation
+in a snapshot. `set_durations` validates the final totals and only then updates
+durations and prunes connections, avoiding losses from intermediate states of the
+passage.
+
+Clicking a note turns input off. A–G replaces the chosen pitch, keeping identity and
+duration; note values act on the selection. Delete removes the sound, keeping the time
+and the marks valid for rests. The deletion that shortens the time is still available
+for Cortar and the Edición menu.
+
+`score-pdf` is an adapter without GPUI: it builds `ViewMode::Page`, maps each sheet to A4
+and draws lines, beams, curves with Bravura metrics, hairpins, texts and the font's
+original outlines through one painter. macOS prints through Quartz/CoreText with the
+system's Times New Roman; Windows and Linux use the portable writer (`krilla`) with the
+bundled Liberation Serif, which has the same widths, so the pages match. Musical texts
+share `score-layout::repertoire` with screen and menus; ordinary text is shaped in whole
+runs to keep Unicode. The number of pages is validated before the atomic replacement
+through `atomic-write`. The target requires a PDF extension and the interface prevents
+replacing the open document. Background export keeps the snapshot and the save state.
+Packaging the app wasn't part of this block; [releasing.md](releasing.md) describes it.
+
+Tests: pitch replacement/collisions, deletion keeping time and deletion shortening time,
+overflowing duration, insertion/deletion with local changes and slurs, undo, recovery
+writing, session exclusion, ordered cleanup, errors that keep the previous copy and a
+child process killed by force before reopening. PDF checks piano, strings and multi-page
+documents, as well as invalid targets and preserving files. Visual check through
+Poppler: piano with arpeggios across hands and a two-page quartet.
+
+## Two voices and divisi
+
+`Voice::{One, Two}` identifies two sequences per bar with a common store of `EventId`.
+`order` keeps the original voice and `second_order` adds the second without changing old
+IDs. `timed_iter` computes the start within each voice; the bar's capacity is the maximum
+of its durations, not the sum. Validation refuses duplicate IDs between sequences and
+overflows of each voice. Cursor, range selection, clipboard, input, deletion and
+navigation keep the voice. Rhythmic connections and ties must join events of the same
+voice; phrases of different voices can overlap.
+
+Engraving uses a shared time grid, opposite stems, beams and triplets per voice,
+separate rests and horizontal shifting of coinciding seconds. Accidentals are resolved
+chronologically for the whole staff. When clicking coinciding unison noteheads the active
+voice is preferred. Lower articulations and fermatas use their original Bravura glyphs.
+Texts and dynamics reserve room in front of the stems of both voices.
+
+`Part::divisi_changes` (schema 17) stores boundaries by bar and local tick. Migrating
+schema 16 turns each bar change into a change at tick zero. `DivisiPoint` normalizes the
+end of the bar to the start of the next one; ranges are half-open and end when the last
+selected note finishes. `div.`/`unis.` and the passage commands use these same positions.
+Deleting and inserting bars remap whole maps without losing their inner offsets; the
+deletion keeps the initial state of the first retained bar.
+
+The document keeps its voices, note values and identities. In each bar with a divisi
+interval, voices 1 and 2 are shown on separate full staves; «div.» and «unis.» are placed
+at their real ticks. Presentation per bar avoids line breaks, artificial continuations
+and diagonal ties for sustained notes. `display_source`, `displayed_staff` and
+`VoiceRegion` share that criterion for engraving, cursor, insertion, selection and
+following. Time boundaries stay in the document's map and don't affect the audio. The
+cache keeps the regions and the written boundaries, also when a mark doesn't change the
+state. No temporary copy with fragmented note values is needed. Cuts are still validated
+on the available rhythmic grid before the operation is committed; the original slurs and
+hairpins keep their IDs.
+
+Divisi changes don't force system breaks: a row can hold bars with one or two staves.
+Each entry of the lower row reserves its clef and key signature; inactive bars create no
+cells or click targets. The layout of ensembles of three or more parts uses a staff of
+about 5.3 mm on A4. Bars reserve width according to the ink of the markings, long
+dynamics included. Hairpins share the height of the dynamics when it fits, respect low
+notes and leave horizontal gaps around the dynamics.
+
+Inherited event markings are cleared when setting a passage so they don't come back when
+overwriting or removing boundaries. Schemas 1–16 keep the earlier presentation. Legacy
+parts with `Part::divided` keep their two physical staves; editing a passage normalizes
+them to the two voices, remapping selection and endpoints in one transaction. It refuses
+to merge more than two voices and to convert a piano. Dynamics, hairpins and techniques
+stay shared by the section; the piano's hands keep their independent expression.
+
+The playback plan creates one track per voice with its own intervals, attacks and
+sustains, aligned on the common clock. Preparing the expression considers simultaneous
+sounds and keeps the ranges per track; groups that overlap reserve a common margin. The
+active elements of up to 192 tracks (`MAX_STAVES` × 2 voices) and up to 1,536 sustained
+pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test compares every
+scheduled message before dividing, after dividing and after joining, including
+technique, dynamic and hairpin. Edit/undo, capacity per voice, copying with a
+simultaneous dynamic, coinciding noteheads, chronological accidentals, loading/recovery
+and export of the `voces-y-divisi` and `divisi-dos-pentagramas` examples are tested too.
+
+## Next deliveries
+
+1. **Musical editing:** enharmonics and double accidentals, voices 3–4 and editing of
+   general irregular groups.
+2. **Safety of the work:** more tests with `proptest`, document fixtures and fuzzed
+   importers.
+3. **Engraving:** refining curves and collisions, and visual snapshots. Add `kurbo`,
+   `rstar` and `rayon` when the operations that justify them exist.
+4. **Interchange:** MIDI with `midly` and paper options; widen the existing MusicXML
+   compatibility.
+5. **Sound:** external MIDI (the library is still to be chosen) and tests of device
+   disconnection and change.
+6. **Measurement and distribution:** representative benchmarks before claiming
+   performance budgets, and profiling; a Windows installer with a code signature, and
+   manual testing on Windows and Linux. [portability-audit.md](portability-audit.md)
+   tracks what is still open on those two systems.
+
+Bravura, GeneralUser GS, Liberation Serif, Liberation Mono and Cantarell are included
+with their original licenses. No instrument data has been copied from MuseScore or
+LilyPond.
+
+
+## Arpeggios
+
+`Notation.arpeggio` accepts `Normal`, `Up` and `Down` on chords of at least two pitches.
+It is a catalog mark, with stable reference, selection, deletion, replacement and a
+history transaction. Removing the last extra note also removes the mark; snapshots bring
+it back on undo. Schema 13 keeps arpeggios and opens earlier schemas with simultaneous
+chords. The clipboard keeps them on the first fragment of a split note.
+
+Engraving composes the Bravura segments `wiggleArpeggiatoUp/Down` and their arrows
+(EAA9/EAAA/EAAD/EAAE), using the original `repeatOffset` and advances. `Glyph.rotated`
+turns the whole by 90 degrees without distorting outlines. Ink metrics, hit testing,
+cache, following and rhythmic separation include that geometry. The controls use the
+complete Bravura symbols E63C/E634/E635.
+
+The plan and audition share a bounded sequence: sorted MIDI pitches, deduplicated
+enharmonic unisons, 30 ms per step, at most 120 ms and half a sounding gate. The sounds
+of a tied chain are attacked only once. Seeking recovers only the sounds already
+attacked. The renderer splits blocks at the audition's pending attacks, with fixed
+storage; replacing, playing or stopping cancels the earlier pending attacks.
+
+
+## Arpeggio across piano hands
+
+Schema 14 adds `Score.piano_arpeggios`, connections of two stable IDs (upper and lower)
+and a direction. It only joins simultaneous attacks of the same Piano part, intervals
+with one note per hand included. It is edited from either end; it replaces local marks
+and is pruned if an edit moves or deletes an end. Undo restores the relationship. The
+clipboard, which copies a single staff, turns the shared marking into a local one when it
+copies a chord; it exports no references to notes missing from the passage.
+
+`Layout.piano_arpeggios` is computed after placing the staves and computed again after
+pagination. Its Bravura segments, selectable box and following use final coordinates.
+The grid reserves room in both hands. The plan sorts up to 16 pitches together with the
+earlier limits; each hand keeps its levels, techniques and ends, and tied continuations
+add no attacks. Audition has 16 fixed slots with intention and end per note; the
+callback splits blocks at each attack and release without allocating memory.
+
+### Natural and artificial harmonics
+
+`Notation::harmonic` is a point mark independent of `PlayingTechnique`.
+`Harmonic::Natural` is written at sounding pitch with `stringsHarmonic` (E614).
+`Artificial` keeps a single stopped note: `harmonic_touch` computes the position and
+accidental of its perfect fourth, and `sounding_pitches` resolves the key before raising
+two octaves. The `noteheadDiamondWhite` notehead (E0DD) is derived: it has its own
+selection as `MarkRef::Harmonic`, never a note identity or a MIDI attack. The double flats
+of the derived fourth are engraved without widening the model of input accidentals.
+Their local state is cancelled on the following notes.
+
+The core validates instrument, presence of notes and range before inserting, editing or
+opening documents. The changes of a passage are validated and applied together, keeping
+the slurs that are valid in the final result. Deleting the sound removes the harmonic;
+copying a long note keeps it on all its tied fragments. The native format was then 19,
+with migration from 18, and the clipboard 6, to prevent an earlier app from silently
+losing the new marks. Plan, audition and recovery of sustained notes share the sounding
+pitch. `NoteEvent::harmonic` keeps the intention from the plan or audition to the
+provider, sustained notes included when seeking a position. The built-in engine
+generates the timbre through additive synthesis at the already resolved pitch: a
+dominant fundamental, few upper partials, light bow noise and distinct envelopes for
+arco and pizzicato. It doesn't use General MIDI's guitar harmonics program nor transpose
+the note again.
+
+`platform::sound_engine::harmonics` prepares a sine table, frequencies and 512 voices
+before the callback. Partials fade out before Nyquist; bowed notes sustain and plucked
+ones decay even while they are still written. CC7/10/11, rests, pause, seek and reverb
+use the common contract. There are no allocations or file loads in attacks or rendering.
+VSCO CE refuses these attacks because it has no specific samples; the built-in engine
+covers them. A future provider can interpret `NoteEvent::harmonic` with recordings. The
+synthesis is an approximation of the timbre, not an orchestral recording.
+
+Unisons merge by channel, pitch and timbre class (normal/harmonic), so that the two
+voices or a divisi keep both sounds. `HarmonicOff` and `SoundEngine::harmonic_off` release
+only the harmonic voice; the normal note uses the usual `NoteOff`. Providers that accept
+harmonics must implement that independent release; the default is inert for providers
+without those samples. The quadratic velocity and CC11 curves keep a dynamic's
+calibration when a hairpin reserves volume headroom.
+
+
+## MusicXML import
+
+`score-io::open` detects `.levare` documents, older native JSON, partwise/timewise XML
+and MXL containers by their contents. It returns `OpenedScore` with the `imported` flag
+and warnings; `load` keeps its native contract for recovery and existing tools. The
+`musicxml/import` reader positions events with divisions, backup and forward; the
+builder turns those positions into voices, fills gaps and splits notes with ties when
+needed. `Score::new` builds instruments and empty bars through the domain API, without
+depending on the serialized representation.
+
+The input and the decompressed XML are limited to 16 MiB; container.xml to 64 KiB, the
+MXL to 4096 entries and the tree to a million nodes. No files are extracted and no DTDs
+or external entities are downloaded. A document that declares entities in an internal
+DOCTYPE subset is refused, since the parser would expand them in full. ZIP only enables
+DEFLATE. Errors keep the open document. The interface imports with `Document::recover`
+and without a native path, presents the warnings and uses the normal Save As flow, which
+writes a new `.levare`. The original XML is never the autosave's target. The tests cover
+MXL, timewise, external voices and chords, transposition, pickups, expressions and the
+export/import round trip of the 22 examples of that time, comparing attacks, pitches,
+durations, harmonics and techniques.
+
+
+## Exporting score and parts
+
+`score-export` coordinates the choice of documents (full score and individual `PartId`s)
+and the PDF/MusicXML formats. `Score::extract_part` creates a copy with stable
+identifiers and keeps the whole part: staves, voices, divisi, marks, connections and the
+relevant piano arpeggios. Global meter, key and tempo changes remain in the copy. An
+optional part name, with a default value for earlier documents, keeps the «Violín II»
+identity when the instrument stands alone; `part_name` shares that name between
+engraving and MusicXML. Extraction doesn't transform pitches or modify the original
+score.
+
+The export dialog uses the existing modal state, blocks editing, stops the audio and
+offers selecting all/none, the score and individual parts, and PDF/MusicXML at once.
+Enter continues and Esc cancels. The target is a new folder: all files are prepared in a
+temporary folder beside the target, and only afterwards is the final folder created.
+`create_dir` prevents replacing earlier sets even if they appear during rendering. If
+publishing fails, the files published by that operation are removed. Cancelling the
+target or a failed export returns the same selection with an explanation when there is
+one. Names are sorted and built by `score-io::file_name`, with the same rules on every
+system: separators, control characters and the characters Windows forbids (`<>:"|?*`)
+become `_`, leading and trailing spaces and dots are trimmed, names Windows reserves for
+devices (`CON`, `NUL`, `COM1`…) get a `_`, and the name is cut to a number of UTF-16
+units (as Windows counts its 260-character path limit) and never beyond 255 UTF-8 bytes.
+The
+operation doesn't touch the document's path, history or save state.
+
+The tests compare the extraction of every part of the examples with the original, voices,
+global changes, divisi, connections and piano arpeggios included. They also verify names
+and order of sections, subsets, native format, MusicXML of each part, invalid selection,
+protection of existing targets and the joint PDF/MusicXML delivery of the Menuetto.
+
+
+## Click to place playback and pitch drag
+
+`playhead::score_tick` translates canvas coordinates to musical time on the same rhythmic
+grid that draws the playhead: a notehead/rest uses its exact onset, a triplet included;
+empty space uses beats of the local denominator. It accepts the three views, zoom,
+voices, divisi and empty bars. Normal clicks call the existing transport `seek`, keeping
+playback or pause; they don't force a view scroll while a possible mouse gesture starts.
+Shift keeps the transport's position and keeps extending the passage.
+
+`NoteDrag` tells the initial vertical movement from the horizontal one with the
+selection's five-pixel threshold. The vertical one edits a single notehead of the chord;
+the horizontal one starts the time movement of the whole note and Shift keeps
+`PassageDrag`. A persistent copy of `Score` lets the pitch be previewed without touching
+document, history or recovery. Engraving uses a `LayoutEngine` of the gesture's own and
+the tentative pitch for the highlight. `layout_pitch_preview` keeps the systems, widths,
+rhythmic grid and origins of every staff of the initial layout: the notehead follows the
+mouse even if its ink envelope grows. Only on confirming is room reserved and the score
+paginated again. The movement uses half a staff space per diatonic step and compensates
+the canvas's shifted origin. Explicit accidentals are kept; the key signature decides the
+notes without an explicit accidental. Notehead collisions and harmonic limits are
+refused with an explanation.
+
+On release, `ReplacePitch` applies a single edit, with audition if it is on. Undo also
+restores the connections removed for pitch incompatibility. Returning to the original
+pitch creates no history. Escape, loss of focus, releasing outside the window or another
+command cancel the preview. Starting the pitch drag stops the audio; selecting/clicking
+without dragging keeps its state.
+
+The tests verify gesture resolution, zoom, scroll, chords, limits, harmonics and a single
+undo/redo with the right save state. Clicks are compared with the engraved onsets of every
+event of the piano, the Menuetto and inner divisi in the three views and four scales;
+empty bars with meter changes and coordinates outside the score are tested too.
+
+
+## Horizontal drag between beats and bars
+
+`Score::move_event` modifies a copy and only publishes after validating. It keeps the
+onsets of the neighboring notes and the source voice/staff. It fills gaps with
+representable rests (minimal decomposition by dynamic programming), trims target rests
+without markings and swaps whole notes if the occupied stretch has the same duration. It
+refuses overlaps, targets beyond capacity, rests with marks and unrepresentable gaps
+without touching the original. The IDs of elements that stay in the bar are kept; when
+crossing a bar only the moved IDs are reassigned and their links remapped before pruning
+the incompatible ones. Arpeggios across hands that lose simultaneity become local marks
+when there are chords. Pitches are rewritten across key signatures to keep their sound.
+Bars, tempo, key, divisi, other voices and instruments keep their positions.
+
+`MoveSelectedEvent` updates selection/cursor and creates a single history entry.
+`NoteDrag` fixes the axis after five pixels: vertical changes a notehead, horizontal moves
+the whole note. It computes the target on the initial layout, compensating zoom, scroll
+and the distance from the grabbed point to the rhythmic grid. It snaps to the grid of
+sixteenths or triplets according to the duration, and to the onsets of the original
+voice. It checks the move on a copy and draws a blue note with Bravura and a marker at
+the target; it doesn't use the pitch-preview layout for changed durations/onsets. Escape,
+loss of focus or releasing outside cancel. Shift doesn't arm `NoteDrag` and keeps the
+selection.
+
+The tests cover free beats, swapping chords and marks, split rests, a move overlapping
+its own earlier position, atomic refusal, key signatures, independent voices and hands,
+links, a single undo/redo action and mouse targets in the three views, with zoom, scroll
+and a projected divisi voice.
+
+
+## Orchestra and transposition
+
+`Instrument` gathers 54 profiles and an `ORCHESTRA` template of 34 parts. The selector
+sorts by `score_order` and accepts quantities for each instrument.
+`Part::transposition` is the interval from written to sounding pitch (diatonic steps and
+semitones). Events store written pitches; the global key stays at concert pitch.
+`written_key_at` derives the key signature for each part; `sounding_pitches` resolves the
+written key signature, the harmonics and then the instrument's interval. Audio, audition
+and the search for sustained notes consume that result.
+
+Schema 19 uses a zero interval by default when reading old documents; it doesn't change
+their notes or sound. New parts get the catalog's interval. Clipboard 6 keeps the source
+interval and converts by concert pitch when pasting into another instrument. MusicXML
+exports written pitches and key signatures together with `transpose`, octaves included,
+and groups channels through `midi-device`/`port`. Import resolves first to concert pitch
+and converts to the target's written profile, keeping the initial explicit interval.
+Enharmonic key signatures are limited to seven accidentals; notes that would need double
+accidentals are rewritten with an equivalent simple enharmonic. Unpitched percussion
+uses its fixed General MIDI note, Bravura clef E069, a central position and an
+independent bank 128 on each route.
+
+The orchestra tests cover 48 routes, the full catalog, key changes, compatibility with
+files of schema 18, external and exported MusicXML, copying between profiles, the three
+views and no clipping when printing tall systems.
+
+For orchestras of 12 parts or more, page view also adapts its width to the tallest
+system, avoiding a narrow column when the whole score is reduced. The full-score PDF uses
+A3; parts and small ensembles keep A4.
+
+The selector reserves a flexible width for the name and keeps the segments of musical
+text on a single line, with stable row heights and quantity controls outside the text
+area.
