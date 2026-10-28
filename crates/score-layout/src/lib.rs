@@ -929,7 +929,7 @@ impl Metrics {
 pub struct LayoutEngine {
     cache: HashMap<(PartId, StaffId, usize), CacheEntry>,
     metrics: Metrics,
-    orchestra_page: Option<(Score, f32)>,
+    orchestra_page: Option<views::OrchestraPage>,
     pub recomputed_measures: usize,
 }
 impl Default for LayoutEngine {

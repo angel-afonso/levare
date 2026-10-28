@@ -35,6 +35,13 @@ pub struct Page {
     pub last_measure: usize,
 }
 
+/// The page width resolved for a large orchestra, with what decided it.
+pub(crate) struct OrchestraPage {
+    staves: Vec<(PartId, usize)>,
+    width: f32,
+    tallest: f32,
+}
+
 const PAGE_WIDTH: f32 = 1000.;
 // Printed staff sizes are independent of display zoom.
 const ENSEMBLE_PAGE_WIDTH: f32 = 1600.;
@@ -63,11 +70,24 @@ impl LayoutEngine {
         part: bool,
     ) -> Layout {
         let orchestra_page = !part && score.parts().len() >= 12;
-        let page_width = if orchestra_page {
-            self.orchestra_page
-                .as_ref()
-                .filter(|(cached, _)| cached == score)
-                .map_or(ENSEMBLE_PAGE_WIDTH, |(_, width)| *width)
+        let staves = if orchestra_page && mode == ViewMode::Page {
+            score
+                .parts()
+                .iter()
+                .map(|p| (p.id(), p.staves().len()))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Resolving the width from scratch engraves every bar at two or more
+        // widths; after an edit, start from the width the same parts had.
+        let resolved = self
+            .orchestra_page
+            .as_ref()
+            .filter(|resolved| orchestra_page && resolved.staves == staves)
+            .map(|resolved| (resolved.width, resolved.tallest));
+        let mut page_width = if orchestra_page {
+            resolved.map_or(ENSEMBLE_PAGE_WIDTH, |(width, _)| width)
         } else if part {
             PART_PAGE_WIDTH
         } else if score.parts().len() >= 3 {
@@ -91,26 +111,43 @@ impl LayoutEngine {
         spacing::compact(&mut layout, &self.metrics);
         // A large orchestra needs a proportional writing area: extending only
         // the height would shrink a narrow column into the center of the PDF.
+        let tallest = |layout: &Layout| {
+            layout
+                .systems
+                .iter()
+                .map(|s| s.bottom - s.top)
+                .fold(0., f32::max)
+        };
         if mode == ViewMode::Page && orchestra_page {
+            // The tallest system decides the width. When an edit changes it,
+            // resolve from the start as a fresh layout (PDF export, reopening)
+            // would, so the page does not depend on the order of the edits.
+            if resolved.is_some_and(|(_, height)| tallest(&layout) != height) {
+                page_width = ENSEMBLE_PAGE_WIDTH;
+                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
+                layout.mode = mode;
+                spacing::compact(&mut layout, &self.metrics);
+            }
             loop {
-                let tallest = layout
-                    .systems
-                    .iter()
-                    .map(|s| s.bottom - s.top)
-                    .fold(0., f32::max);
-                let orchestra_width = (tallest + HEADER + MARGIN) / std::f32::consts::SQRT_2;
+                let orchestra_width =
+                    (tallest(&layout) + HEADER + MARGIN) / std::f32::consts::SQRT_2;
                 if orchestra_width <= layout.width + 0.5 {
                     break;
                 }
                 // Merging bars can combine high and low registers into a taller
                 // system. Resolve the final width before retaining its geometry.
-                layout = self.layout_with_spacing(score, orchestra_width, true, false, None, false);
+                page_width = orchestra_width;
+                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
                 layout.mode = mode;
                 spacing::compact(&mut layout, &self.metrics);
             }
-        }
-        if mode == ViewMode::Page && orchestra_page {
-            self.orchestra_page = Some((score.clone(), layout.width));
+            // The width asked for, not the engraved one: they can differ by a
+            // rounding error, which would move every bar on the next layout.
+            self.orchestra_page = Some(OrchestraPage {
+                staves,
+                width: page_width,
+                tallest: tallest(&layout),
+            });
         }
         if mode == ViewMode::Page {
             let page_after: std::collections::BTreeSet<usize> = if part {

@@ -106,6 +106,79 @@ fn large_orchestra_page_reuses_the_resolved_width_without_reengraving_unchanged_
 }
 
 #[test]
+fn one_note_edit_on_a_large_orchestra_page_engraves_only_that_bar_again() {
+    let mut score = Score::new("Edición".into(), &Instrument::ORCHESTRA, 16).unwrap();
+    let parts: Vec<_> = score.parts().iter().map(|p| p.id()).collect();
+    let mut edited = None;
+    for &part in &parts {
+        for bar in 0..16 {
+            for (index, step) in [Step::C, Step::E, Step::G, Step::E].into_iter().enumerate() {
+                let id = score
+                    .insert_on(
+                        part,
+                        StaffId::Upper,
+                        bar,
+                        index,
+                        Event {
+                            pitches: Pitches::single(Pitch::new(step, 4)),
+                            duration: Duration::Quarter,
+                            notation: Notation::default(),
+                        },
+                    )
+                    .unwrap();
+                if part == parts[parts.len() - 3] && bar == 9 && index == 1 {
+                    edited = Some(id);
+                }
+            }
+        }
+    }
+    let mut engine = LayoutEngine::default();
+    engine.layout_view(&score, 1000., ViewMode::Page);
+    score.transpose(edited.unwrap(), 1).unwrap();
+    let layout = engine.layout_view(&score, 1000., ViewMode::Page);
+    let staves: usize = score
+        .parts()
+        .iter()
+        .map(|p| p.display_staves(9).count())
+        .sum();
+    assert!(
+        (1..=staves).contains(&engine.recomputed_measures),
+        "one edited note engraved {} bars again; bar 10 has {staves} staves",
+        engine.recomputed_measures
+    );
+    // Starting from the width already resolved gives the page a fresh
+    // layout, such as the PDF export's, would give.
+    let fresh = LayoutEngine::default().layout_view(&score, 1000., ViewMode::Page);
+    assert_eq!(format!("{layout:?}"), format!("{fresh:?}"));
+}
+
+#[test]
+fn an_edit_that_shrinks_the_tallest_system_gives_back_the_narrower_page() {
+    let mut score = Score::new("Registros".into(), &Instrument::ORCHESTRA, 8).unwrap();
+    let violin = score.parts()[score.parts().len() - 5].id();
+    let high = score
+        .insert_on(
+            violin,
+            StaffId::Upper,
+            2,
+            0,
+            Event {
+                pitches: Pitches::single(Pitch::new(Step::C, 8)),
+                duration: Duration::Whole,
+                notation: Notation::default(),
+            },
+        )
+        .unwrap();
+    let mut engine = LayoutEngine::default();
+    let tall = engine.layout_view(&score, 1000., ViewMode::Page);
+    score.transpose(high, -21).unwrap();
+    let layout = engine.layout_view(&score, 1000., ViewMode::Page);
+    let fresh = LayoutEngine::default().layout_view(&score, 1000., ViewMode::Page);
+    assert!(fresh.width < tall.width);
+    assert_eq!(format!("{layout:?}"), format!("{fresh:?}"));
+}
+
+#[test]
 fn dense_orchestra_resolves_extreme_register_reflow_on_the_first_page_layout() {
     let mut score = Score::new("Registros".into(), &[Instrument::Violin; 34], 8).unwrap();
     let parts: Vec<_> = score.parts().iter().map(|p| p.id()).collect();
