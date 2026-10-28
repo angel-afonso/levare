@@ -110,7 +110,8 @@ struct Manifest {
     format: u32,
     kind: String,
     samples: PathBuf,
-    engine: Option<PathBuf>,
+    // An `engine` field, which older manifests carry, is ignored: a pack
+    // never chooses the native library Levare loads.
     id: Option<String>,
     name: Option<String>,
     license: Option<PathBuf>,
@@ -180,8 +181,21 @@ pub fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
     load_manifest_with(path, bundled_engine())
 }
 
-/// `engine` serves manifests that name none, as packs installed from the
-/// catalog must: they never bring code of their own.
+/// Whether `id` can name a pack: letters, digits, `-` and `_`, and never the
+/// id of the combined bank. Ids become folder names in the soundpacks folder.
+pub fn valid_pack_id(id: &str) -> bool {
+    !id.is_empty()
+        && id != COMBINED_ID
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// The id of the bank that combines every pack.
+pub(crate) const COMBINED_ID: &str = "sfz-combinadas";
+
+/// `engine` is the sfizz library every pack plays through. Packs never bring
+/// code of their own: whatever library a manifest names is ignored.
 pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSpec, AudioError> {
     let data = std::fs::read(path).map_err(error)?;
     let raw: Manifest = serde_json::from_slice(&data).map_err(error)?;
@@ -198,12 +212,7 @@ pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSp
         )
     } else {
         let id = raw.id.ok_or_else(|| error("Falta id del paquete SFZ"))?;
-        if id.is_empty()
-            || id == "sfz-combinadas"
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
+        if !valid_pack_id(&id) {
             return Err(error(format!("Id de paquete SFZ no válido: {id}")));
         }
         let name = raw
@@ -223,10 +232,7 @@ pub fn load_manifest_with(path: &Path, engine: Option<PathBuf>) -> Result<PackSp
         (id, name, instruments)
     };
     let root = parent.join(raw.samples);
-    let engine = match raw.engine {
-        Some(engine) => parent.join(engine),
-        None => engine.ok_or_else(|| error("Falta el motor SFZ de Levare (sfizz)"))?,
-    };
+    let engine = engine.ok_or_else(|| error("Falta el motor SFZ de Levare (sfizz)"))?;
     if !engine.is_file() {
         return Err(error(format!("Falta motor SFZ: {}", engine.display())));
     }
@@ -282,21 +288,21 @@ pub fn engine_file_name() -> String {
 }
 
 /// The sfizz library Levare ships: next to the executable on Windows and
-/// Linux, in the app bundle's `Contents/Frameworks` on macOS. In development,
-/// the one installed with VSCO next to an ancestor of the executable.
-/// `LEVARE_SFIZZ` overrides them all.
+/// Linux, in the app bundle's `Contents/Frameworks` on macOS. In debug
+/// builds, also the one installed with VSCO next to an ancestor of the
+/// executable. `LEVARE_SFIZZ` overrides them all.
 pub fn bundled_engine() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("LEVARE_SFIZZ") {
         return Some(PathBuf::from(path));
     }
     let executable = std::env::current_exe().ok()?;
-    engine_candidates(&executable)
+    engine_candidates(&executable, cfg!(debug_assertions))
         .into_iter()
         .find(|path| path.is_file())
 }
 
 /// Where [`bundled_engine`] looks, in order, for an executable at `executable`.
-pub(crate) fn engine_candidates(executable: &Path) -> Vec<PathBuf> {
+pub(crate) fn engine_candidates(executable: &Path, development: bool) -> Vec<PathBuf> {
     let name = engine_file_name();
     let directory = executable.parent();
     let mut candidates: Vec<PathBuf> = directory.map(|dir| dir.join(&name)).into_iter().collect();
@@ -307,12 +313,16 @@ pub(crate) fn engine_candidates(executable: &Path) -> Vec<PathBuf> {
                 .map(|contents| contents.join("Frameworks").join(&name)),
         );
     }
-    candidates.extend(
-        executable
-            .ancestors()
-            .skip(1)
-            .map(|dir| dir.join("soundpacks").join("vsco-ce").join(&name)),
-    );
+    // Any folder above an installed app may be writable by others, so only
+    // development builds look there.
+    if development {
+        candidates.extend(
+            executable
+                .ancestors()
+                .skip(1)
+                .map(|dir| dir.join("soundpacks").join("vsco-ce").join(&name)),
+        );
+    }
     candidates
 }
 

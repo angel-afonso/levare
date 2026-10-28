@@ -165,7 +165,11 @@ mod tests {
         fs::write(dir.join("engine.dylib"), "").unwrap();
         fs::write(dir.join("violin.sfz"), "<region> key=60 sample=a.wav").unwrap();
         fs::write(dir.join("manifest.json"), format!(r#"{{"format":2,"kind":"sfz","id":"{id}","name":"{id}","samples":".","engine":"engine.dylib","instruments":{{"Violin":{{"sustain":"violin.sfz"}}}}}}"#)).unwrap();
-        score_sound_vsco::SfzPack::load(&dir.join("manifest.json")).unwrap()
+        score_sound_vsco::SfzPack::load_with_engine(
+            &dir.join("manifest.json"),
+            &dir.join("engine.dylib"),
+        )
+        .unwrap()
     }
 
     #[test]

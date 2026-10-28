@@ -39,8 +39,9 @@ struct Api {
 
 impl Api {
     fn open(path: &Path) -> Result<Arc<Self>, AudioError> {
-        // SAFETY: the optional pack explicitly supplies a sfizz library. Every
-        // symbol is checked before use, with types from the pinned sfizz.h.
+        // SAFETY: `path` is Levare's own sfizz (or the developer's
+        // LEVARE_SFIZZ), never a library a pack names. Every symbol is
+        // checked before use, with types from the pinned sfizz.h.
         unsafe {
             let library = load(path).map_err(error)?;
             macro_rules! symbol {

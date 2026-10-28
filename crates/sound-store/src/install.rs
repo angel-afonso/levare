@@ -150,12 +150,8 @@ pub fn prepare_install(
     engine: &Path,
     progress: &Progress,
 ) -> Result<Prepared, StoreError> {
-    let valid_id = !entry.id.is_empty()
-        && entry
-            .id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-    if !valid_id {
+    // The same rule the pack's manifest must pass once it is installed.
+    if !score_sound_vsco::valid_pack_id(&entry.id) {
         return Err(error(format!(
             "Identificador de paquete no válido: {}",
             entry.id

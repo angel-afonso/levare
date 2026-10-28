@@ -1,7 +1,13 @@
-use super::manifest::{DynamicsMode, Seat, load_manifest, patch_for, vsco_instruments};
+use super::manifest::{
+    DynamicsMode, PackSpec, Seat, load_manifest_with, patch_for, vsco_instruments,
+};
+use crate::AudioError;
 use score_core::{Instrument, Players, Score};
 use std::collections::BTreeSet;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 fn write(path: &Path, value: &str) {
     if let Some(parent) = path.parent() {
@@ -10,7 +16,19 @@ fn write(path: &Path, value: &str) {
     fs::write(path, value).unwrap();
 }
 
-fn format_two(root: &Path) -> std::path::PathBuf {
+/// Stands in for the sfizz Levare ships.
+fn levare_engine(dir: &Path) -> PathBuf {
+    let engine = dir.join("levare-sfizz");
+    write(&engine, "");
+    engine
+}
+
+fn load_manifest(path: &Path) -> Result<PackSpec, AudioError> {
+    load_manifest_with(path, Some(levare_engine(path.parent().unwrap())))
+}
+
+/// A pack that names an engine of its own, `engine.dylib`.
+fn format_two(root: &Path) -> PathBuf {
     write(&root.join("engine.dylib"), "");
     write(&root.join("LICENSE"), "test license");
     write(
@@ -32,7 +50,7 @@ fn format_two_manifest_loads_paths_and_cc1() {
     let pack = load_manifest(&path).unwrap();
     assert_eq!(pack.id, "test");
     assert_eq!(pack.name, "Test SFZ");
-    assert_eq!(pack.engine, dir.path().join("engine.dylib"));
+    assert_eq!(pack.engine, dir.path().join("levare-sfizz"));
     assert_eq!(pack.license, Some(dir.path().join("LICENSE")));
     let patch = patch_for(&pack, Instrument::Violin, Seat::default()).unwrap();
     assert_eq!(patch.dynamics, DynamicsMode::Cc1);
@@ -121,6 +139,12 @@ fn unsupported_guitar_has_no_patch() {
     assert!(patch_for(&pack, Instrument::Guitar, Seat::default()).is_none());
 }
 
+/// The packs in `dir`, played through an engine outside it.
+fn discover(dir: &Path) -> (Vec<crate::SfzPack>, Vec<String>) {
+    let engine = levare_engine(dir);
+    crate::discover_in_roots(BTreeSet::from([dir.to_path_buf()]), Some(engine))
+}
+
 fn package(dir: &Path, folder: &str, id: &str, instrument: &str) {
     let root = dir.join(folder);
     let path = format_two(&root);
@@ -136,7 +160,7 @@ fn discovery_finds_two_distinct_packages() {
     let dir = tempfile::tempdir().unwrap();
     package(dir.path(), "a", "a", "Violin");
     package(dir.path(), "b", "b", "Flute");
-    let (packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
+    let (packs, errors) = discover(dir.path());
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(
         packs
@@ -153,7 +177,7 @@ fn one_broken_manifest_does_not_hide_a_good_package() {
     package(dir.path(), "a", "a", "Violin");
     package(dir.path(), "b", "b", "Flute");
     fs::remove_file(dir.path().join("b/samples/violin.sfz")).unwrap();
-    let (packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
+    let (packs, errors) = discover(dir.path());
     assert_eq!(packs.len(), 1);
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("violin.sfz"));
@@ -164,7 +188,7 @@ fn combined_priority_selects_the_first_package_with_a_patch() {
     let dir = tempfile::tempdir().unwrap();
     package(dir.path(), "a", "a", "Violin");
     package(dir.path(), "b", "b", "Violin");
-    let (mut packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
+    let (mut packs, errors) = discover(dir.path());
     assert!(errors.is_empty());
     assert_eq!(
         crate::first_pack_with(&packs, Instrument::Violin, Seat::default())
@@ -295,7 +319,7 @@ fn hidden_folders_in_progress_are_not_packages() {
     let dir = tempfile::tempdir().unwrap();
     package(dir.path(), "a", "a", "Violin");
     package(dir.path(), ".instalando-b", "b", "Violin");
-    let (packs, errors) = crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]));
+    let (packs, errors) = discover(dir.path());
     assert!(errors.is_empty());
     assert_eq!(packs.len(), 1);
 }
@@ -311,7 +335,7 @@ fn sfizz_is_looked_for_next_to_the_executable_under_this_system_s_name() {
     assert_eq!(name, "libsfizz.dylib");
     let root = Path::new("levare");
     let executable = root.join("target").join("debug").join("levare");
-    let candidates = super::manifest::engine_candidates(&executable);
+    let candidates = super::manifest::engine_candidates(&executable, true);
     assert_eq!(candidates[0], root.join("target").join("debug").join(&name));
     let mut rest = candidates[1..].iter();
     if cfg!(target_os = "macos") {
@@ -325,4 +349,64 @@ fn sfizz_is_looked_for_next_to_the_executable_under_this_system_s_name() {
     assert_eq!(rest.next(), Some(&vsco(&root.join("target").join("debug"))));
     assert_eq!(rest.next(), Some(&vsco(&root.join("target"))));
     assert_eq!(rest.next(), Some(&vsco(root)));
+}
+
+#[test]
+fn an_installed_app_looks_for_sfizz_only_in_its_own_folder() {
+    let name = super::manifest::engine_file_name();
+    let app = Path::new("apps").join("Levare");
+    let candidates = super::manifest::engine_candidates(&app.join("bin").join("levare"), false);
+    let mut expected = vec![app.join("bin").join(&name)];
+    if cfg!(target_os = "macos") {
+        expected.push(app.join("Frameworks").join(&name));
+    }
+    assert_eq!(candidates, expected);
+}
+
+#[test]
+fn a_pack_never_chooses_the_engine_levare_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    package(dir.path(), "a", "a", "Violin");
+    // An absolute path to a library that exists, as a planted pack would name.
+    let planted = dir.path().join("a").join("engine.dylib");
+    let path = dir.path().join("a").join("manifest.json");
+    let text = fs::read_to_string(&path).unwrap().replace(
+        r#""engine":"engine.dylib""#,
+        &format!(r#""engine":{}"#, serde_json::to_string(&planted).unwrap()),
+    );
+    write(&path, &text);
+    let (packs, errors) = discover(dir.path());
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(packs[0].library, dir.path().join("levare-sfizz"));
+    let (packs, errors) =
+        crate::discover_in_roots(BTreeSet::from([dir.path().to_path_buf()]), None);
+    assert!(packs.is_empty());
+    assert!(errors[0].contains("sfizz"), "{errors:?}");
+}
+
+#[test]
+fn an_installed_app_looks_for_packs_only_in_its_own_folders() {
+    let app = Path::new("apps").join("Levare");
+    let executable = app.join("bin").join("levare");
+    #[cfg(target_os = "macos")]
+    let own = app.join("Resources").join("soundpacks");
+    #[cfg(not(target_os = "macos"))]
+    let own = app.join("bin").join("soundpacks");
+    assert_eq!(
+        crate::pack_roots(&executable, false),
+        std::slice::from_ref(&own)
+    );
+    let development = crate::pack_roots(&executable, true);
+    assert_eq!(development[0], own);
+    assert!(development.contains(&Path::new("apps").join("soundpacks")));
+}
+
+#[test]
+fn pack_ids_are_plain_folder_names_and_never_the_combined_bank() {
+    for id in ["vsco-ce", "Virtual_Playing-Orchestra3"] {
+        assert!(super::manifest::valid_pack_id(id), "{id}");
+    }
+    for id in ["", "sfz-combinadas", "..", "a/b", "a\\b", "con espacio"] {
+        assert!(!super::manifest::valid_pack_id(id), "{id}");
+    }
 }

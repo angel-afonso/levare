@@ -200,6 +200,16 @@ fn a_pack_never_brings_its_own_engine_or_executables() {
 }
 
 #[test]
+fn a_catalog_entry_cannot_take_the_combined_bank_s_id() {
+    let setup = setup();
+    let (mut entry, _) = hosted(&good_files(), 1);
+    entry.id = "sfz-combinadas".into();
+    let failure = install(&entry, &setup.root, &setup.engine, &Progress::default()).unwrap_err();
+    assert!(failure.0.contains("Identificador"), "{failure}");
+    assert!(!setup.root.join("sfz-combinadas").exists());
+}
+
+#[test]
 fn a_cancelled_install_leaves_nothing_behind() {
     let setup = setup();
     let (entry, _) = hosted(&good_files(), 1);

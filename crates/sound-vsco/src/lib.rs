@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod installed_tests;
 mod manifest;
-pub use manifest::bundled_engine;
+pub use manifest::{bundled_engine, valid_pack_id};
 #[cfg(test)]
 mod manifest_tests;
 #[cfg(test)]
@@ -42,7 +42,7 @@ impl SfzPack {
         Self::from_spec(manifest::load_manifest(path)?)
     }
 
-    /// Like `load`, with `engine` for a manifest that names none.
+    /// Like `load`, playing through `engine` instead of Levare's own sfizz.
     pub fn load_with_engine(path: &Path, engine: &Path) -> Result<Self, AudioError> {
         Self::from_spec(manifest::load_manifest_with(path, Some(engine.into()))?)
     }
@@ -55,33 +55,63 @@ impl SfzPack {
         })
     }
 
-    /// Portable app bundles and development binaries both search their ancestors.
+    /// The legacy VSCO CE pack in one of Levare's own soundpacks folders.
     pub fn discover() -> Option<Self> {
         let executable = std::env::current_exe().ok()?;
-        executable.ancestors().find_map(|directory| {
-            Self::load(&directory.join("soundpacks/vsco-ce/manifest.json")).ok()
-        })
+        pack_roots(&executable, cfg!(debug_assertions))
+            .into_iter()
+            .find_map(|root| Self::load(&root.join("vsco-ce").join("manifest.json")).ok())
     }
 
     pub fn license_path(&self) -> Option<&Path> {
         self.spec.license.as_deref()
     }
 
-    /// Examine immediate package folders in each soundpacks directory. One bad
-    /// manifest is reported but never hides another library.
+    /// Examine immediate package folders in Levare's own soundpacks folders
+    /// and in `extra_dirs`. One bad manifest is reported but never hides
+    /// another library.
     pub fn discover_all(extra_dirs: &[PathBuf]) -> (Vec<Self>, Vec<String>) {
         let mut roots = BTreeSet::new();
         if let Ok(executable) = std::env::current_exe() {
-            for parent in executable.ancestors() {
-                roots.insert(parent.join("soundpacks"));
-            }
+            roots.extend(pack_roots(&executable, cfg!(debug_assertions)));
         }
         roots.extend(extra_dirs.iter().cloned());
-        discover_in_roots(roots)
+        discover_in_roots(roots, manifest::bundled_engine())
     }
 }
 
-fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
+/// The soundpacks folders that ship with the app at `executable`: inside the
+/// bundle's `Contents/Resources` on macOS, next to the executable elsewhere.
+/// A `development` build also searches every ancestor, so `cargo run` finds
+/// the repository's `soundpacks`; an installed app never does, since a folder
+/// above it (`C:\`, `/Applications`) may be writable by anyone.
+pub(crate) fn pack_roots(executable: &Path, development: bool) -> Vec<PathBuf> {
+    let directory = executable.parent();
+    let mut roots = Vec::new();
+    #[cfg(target_os = "macos")]
+    roots.extend(
+        directory
+            .and_then(Path::parent)
+            .map(|contents| contents.join("Resources").join("soundpacks")),
+    );
+    #[cfg(not(target_os = "macos"))]
+    roots.extend(directory.map(|directory| directory.join("soundpacks")));
+    if development {
+        roots.extend(
+            executable
+                .ancestors()
+                .skip(1)
+                .map(|directory| directory.join("soundpacks")),
+        );
+    }
+    roots
+}
+
+/// Every pack found plays through `engine`, whatever its manifest says.
+fn discover_in_roots(
+    roots: BTreeSet<PathBuf>,
+    engine: Option<PathBuf>,
+) -> (Vec<SfzPack>, Vec<String>) {
     let mut manifests = BTreeSet::new();
     let mut errors = Vec::new();
     for root in roots {
@@ -111,7 +141,8 @@ fn discover_in_roots(roots: BTreeSet<PathBuf>) -> (Vec<SfzPack>, Vec<String>) {
     }
     let (mut packs, mut ids) = (Vec::new(), BTreeSet::new());
     for path in manifests {
-        match SfzPack::load(&path) {
+        let spec = manifest::load_manifest_with(&path, engine.clone());
+        match spec.and_then(SfzPack::from_spec) {
             Ok(pack) if ids.insert(pack.id().to_owned()) => packs.push(pack),
             Ok(pack) => errors.push(format!(
                 "Id SFZ duplicado {}: {}",
@@ -173,7 +204,7 @@ pub(crate) fn seats(score: &Score) -> Vec<(score_core::PartId, manifest::Seat)> 
 
 impl SoundBank for CombinedPack {
     fn id(&self) -> &str {
-        "sfz-combinadas"
+        manifest::COMBINED_ID
     }
     fn name(&self) -> &str {
         "Bibliotecas combinadas"
