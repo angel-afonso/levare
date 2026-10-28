@@ -3492,7 +3492,7 @@ impl Render for AppView {
                 if self.document.is_dirty() { " •" } else { "" }
             ),
         );
-        div()
+        let root = div()
             .size_full()
             .flex()
             .flex_col()
@@ -3531,7 +3531,8 @@ impl Render for AppView {
                     this.choose_key(action.0, cx)
                 }),
             )
-            .child(ui::workspace(self, title, cx))
+            .child(ui::workspace(self, title, cx));
+        ui::window_frame::frame(&self.ui.frame, root)
     }
 }
 
@@ -3574,6 +3575,9 @@ fn main() {
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(16.), px(16.))),
                 }),
+                // Linux: Levare's title bar replaces the compositor's, when it
+                // agrees (`ui::window_frame`). macOS and Windows ignore it.
+                window_decorations: Some(WindowDecorations::Client),
                 ..Default::default()
             },
             |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),

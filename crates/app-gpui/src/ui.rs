@@ -470,7 +470,12 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                     tab.child(div().text_color(rgb(BLUE)).child("●"))
                 }),
         )
-        .child(window_frame::drag_area().flex_1().min_w_0().h_full())
+        .child(
+            window_frame::drag_area(view, cx)
+                .flex_1()
+                .min_w_0()
+                .h_full(),
+        )
         .child(command_search::search_box(view, cx))
         .child(
             command_button(
@@ -542,7 +547,7 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .bg(rgb(TEXT))
             .text_color(rgb(FIELD)),
         )
-        .children(window_frame::window_controls(view));
+        .children(window_frame::window_controls(view, cx));
     window_frame::titlebar_frame(view, bar)
 }
 const MUSIC_SYMBOL_PADDING: f32 = 4.;
