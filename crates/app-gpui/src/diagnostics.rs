@@ -4,6 +4,8 @@
 //! Finder only reaches the unified log, so stderr alone loses every failure.
 //! Lines also go to stderr for whoever does have a terminal.
 use crate::app_paths::data_path;
+use gpui::{AnyWindowHandle, App, AppContext, PromptLevel};
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs::{self, OpenOptions},
@@ -21,10 +23,17 @@ const LOG_LIMIT: u64 = 1024 * 1024;
 const REPORT_PREFIX: &str = "fallo-";
 const REPORT_SUFFIX: &str = ".txt";
 const KEPT_REPORTS: usize = 10;
+/// The newest report the musician was already told about.
+const SEEN: &str = "fallos.json";
 
 /// Rotation and appending happen under it, so lines from several threads
 /// never interleave and two threads never rotate at once.
 static LOG_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Serialize, Deserialize)]
+struct Seen {
+    visto: u64,
+}
 
 /// Writes a timestamped line to the log and stderr. Never fails or panics:
 /// a log that cannot be written must not take Levare down with it.
@@ -88,6 +97,45 @@ pub fn window_failed(error: impl Display) -> ! {
     #[cfg(not(target_os = "windows"))]
     let _ = report;
     std::process::exit(1);
+}
+
+/// Tells the musician once about a crash report newer than the last one they
+/// were told about, and offers to show it.
+pub fn announce_unseen_crash(window: AnyWindowHandle, cx: &mut App) {
+    let Some(directory) = directory() else {
+        return;
+    };
+    let seen = fs::read_to_string(directory.join(SEEN))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Seen>(&text).ok())
+        .map(|seen| seen.visto);
+    let Some(time) = unseen(&report_times(&directory), seen) else {
+        return;
+    };
+    // Marked before asking, so a crash while the prompt is open does not
+    // bring the same report back.
+    if let Ok(text) = serde_json::to_string_pretty(&Seen { visto: time }) {
+        let _ = fs::write(directory.join(SEEN), text + "\n");
+    }
+    let report = directory.join(report_name(time));
+    let _ = cx.update_window(window, |_, window, cx| {
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            "Levare se cerró inesperadamente",
+            Some(
+                "Se guardó un informe del fallo en la carpeta de datos de Levare. Si vuelve \
+                 a ocurrir, envíalo con una descripción de lo que estabas haciendo.",
+            ),
+            &["Mostrar el informe", "Cerrar"],
+            cx,
+        );
+        cx.spawn(async move |cx| {
+            if answer.await == Ok(0) {
+                let _ = cx.update(|cx| cx.reveal_path(&report));
+            }
+        })
+        .detach();
+    });
 }
 
 fn directory() -> Option<PathBuf> {
@@ -202,6 +250,12 @@ fn to_prune(mut times: Vec<u64>, keep: usize) -> Vec<u64> {
     times.split_off(keep.min(times.len()))
 }
 
+/// The newest report, when the musician has not been told about it yet.
+fn unseen(times: &[u64], seen: Option<u64>) -> Option<u64> {
+    let newest = times.iter().copied().max()?;
+    seen.is_none_or(|seen| newest > seen).then_some(newest)
+}
+
 /// `2026-03-01 14:05:09 UTC`, without a date library: days to a civil date
 /// as in Howard Hinnant's `civil_from_days`.
 fn utc(time: u64) -> String {
@@ -276,6 +330,16 @@ mod tests {
     fn only_the_newest_reports_are_kept() {
         assert_eq!(to_prune(vec![3, 1, 4, 5, 2], 3), vec![2, 1]);
         assert_eq!(to_prune(vec![1, 2], 10), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn a_report_is_announced_once() {
+        assert_eq!(unseen(&[], None), None);
+        assert_eq!(unseen(&[5, 9, 7], None), Some(9));
+        assert_eq!(unseen(&[5, 9, 7], Some(7)), Some(9));
+        assert_eq!(unseen(&[5, 9, 7], Some(9)), None);
+        // Pruning never brings back an older report.
+        assert_eq!(unseen(&[5], Some(9)), None);
     }
 
     #[test]

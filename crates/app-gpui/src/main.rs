@@ -3750,6 +3750,7 @@ fn main() {
             async {}
         })
         .detach();
+        diagnostics::announce_unseen_crash(window.into(), cx);
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
