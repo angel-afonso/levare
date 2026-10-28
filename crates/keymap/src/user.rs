@@ -75,9 +75,7 @@ impl UserKeymap {
         }
         let text = serde_json::to_string_pretty(self)
             .map_err(|error| UserError::Format(path.to_owned(), error))?;
-        let temporary = path.with_extension("json.tmp");
-        fs::write(&temporary, text + "\n").map_err(io_error)?;
-        fs::rename(&temporary, path).map_err(io_error)
+        atomic_write::write(path, (text + "\n").as_bytes()).map_err(io_error)
     }
 
     pub fn is_overridden(&self, command: CommandId) -> bool {
@@ -119,6 +117,24 @@ mod tests {
         assert_eq!(loaded, keymap);
         assert_eq!(loaded.overrides["expresion.staccato"], vec!["alt-s"]);
         assert!(loaded.overrides["expresion.ligadura-expresion"].is_empty());
+    }
+
+    /// Dotfile managers keep `atajos.json` as a link into their own folder.
+    #[cfg(unix)]
+    #[test]
+    fn saving_through_a_symbolic_link_keeps_the_link() {
+        let directory = tempfile::tempdir().unwrap();
+        let dotfiles = directory.path().join("dotfiles");
+        fs::create_dir(&dotfiles).unwrap();
+        let real = dotfiles.join("atajos.json");
+        UserKeymap::new().save(&real).unwrap();
+        let path = directory.path().join("atajos.json");
+        std::os::unix::fs::symlink(&real, &path).unwrap();
+        let mut keymap = UserKeymap::new();
+        keymap.set(id::STACCATO, &[KeySequence::parse("alt-s").unwrap()]);
+        keymap.save(&path).unwrap();
+        assert!(fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(UserKeymap::load(&real).unwrap(), keymap);
     }
 
     #[test]

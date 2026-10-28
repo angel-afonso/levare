@@ -5758,6 +5758,7 @@ dependencies = [
 name = "score-keymap"
 version = "0.2.0"
 dependencies = [
+ "atomic-write",
  "serde",
  "serde_json",
  "tempfile",
