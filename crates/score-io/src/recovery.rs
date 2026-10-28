@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -228,9 +228,110 @@ pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
     }))
 }
 
+/// Moves a recovery file that could not be restored out of the writer's way,
+/// before the next autosave replaces it or opening a score deletes it: it may
+/// be the only copy of unsaved work. It stays in the same folder, under a dated
+/// name nothing in Levare writes to.
+pub fn set_aside_recovery(path: &Path) -> Result<PathBuf, FileError> {
+    let folder = path
+        .parent()
+        .ok_or_else(|| error("Ruta de recuperación inválida"))?;
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("partitura");
+    let stamp = timestamp(SystemTime::now());
+    let kept = (1..)
+        .map(|copy| {
+            folder.join(dated_name(
+                "Recuperación sin abrir",
+                &stamp,
+                copy,
+                extension,
+            ))
+        })
+        .find(|candidate| !candidate.exists())
+        .expect("an unused name");
+    std::fs::rename(path, &kept)?;
+    Ok(kept)
+}
+
+fn dated_name(label: &str, stamp: &str, copy: u32, extension: &str) -> String {
+    match copy {
+        1 => format!("{label} {stamp}.{extension}"),
+        copy => format!("{label} {stamp} ({copy}).{extension}"),
+    }
+}
+
+/// UTC, as `2026-10-28 15-30-12`: colons are not allowed in Windows file names.
+fn timestamp(now: SystemTime) -> String {
+    let seconds = now
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let (days, time) = ((seconds / 86_400) as i64, seconds % 86_400);
+    // Howard Hinnant's civil_from_days.
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}-{:02}-{:02}",
+        time / 3_600,
+        time / 60 % 60,
+        time % 60
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_unreadable_recovery_is_kept_aside_from_the_next_autosave() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recovery.partitura");
+        let unreadable = br#"{"recovery_version": 1, "document": {"#.to_vec();
+        std::fs::write(&path, &unreadable).unwrap();
+        let writer = Recovery::open(&path).unwrap();
+        assert!(load_recovery(&path).is_err());
+        let kept = set_aside_recovery(&path).unwrap();
+        assert_eq!(kept.parent(), Some(dir.path()));
+        // The first edit autosaves, and opening a score clears the autosave.
+        writer.update(Some(RecoveredScore {
+            score: Score::default(),
+            original_path: None,
+        }));
+        writer.flush().unwrap();
+        assert_eq!(
+            load_recovery(&path).unwrap().unwrap().score,
+            Score::default()
+        );
+        writer.update(None);
+        writer.flush().unwrap();
+        assert_eq!(std::fs::read(&kept).unwrap(), unreadable);
+        std::fs::write(&path, b"{").unwrap();
+        let second = set_aside_recovery(&path).unwrap();
+        assert_ne!(second, kept);
+        assert_eq!(std::fs::read(&kept).unwrap(), unreadable);
+        assert_eq!(std::fs::read(&second).unwrap(), b"{");
+    }
+    #[test]
+    fn set_aside_names_carry_the_utc_date_and_time() {
+        assert_eq!(timestamp(UNIX_EPOCH), "1970-01-01 00-00-00");
+        let later = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        assert_eq!(timestamp(later), "2023-11-14 22-13-20");
+        let leap_day = UNIX_EPOCH + Duration::from_secs(951_782_400);
+        assert_eq!(timestamp(leap_day), "2000-02-29 00-00-00");
+    }
     #[test]
     fn debounced_writer_recovers_and_clear_cannot_resurrect_an_old_snapshot() {
         let dir = tempfile::tempdir().unwrap();

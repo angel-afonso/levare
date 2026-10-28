@@ -170,16 +170,19 @@ impl AppView {
         recovery: Result<score_io::Recovery, String>,
         mut shortcuts: Shortcuts,
     ) -> Self {
+        let recovery_file = recovery_path();
         let recovered = match &recovery {
-            Ok(_) => recovery_path()
-                .map(|path| score_io::load_recovery(&path).map_err(|e| e.to_string()))
+            Ok(_) => recovery_file
+                .as_deref()
+                .map(|path| score_io::load_recovery(path).map_err(|e| e.to_string()))
                 .transpose()
                 .map(|value| value.flatten()),
             Err(reason) => Err(reason.clone()),
         };
-        let quit_snapshot: QuitSnapshot = recovery.ok();
+        let mut quit_snapshot: QuitSnapshot = recovery.ok();
         let nothing_recovered = matches!(recovered, Ok(None));
-        let (mut document, path, status) = match recovered {
+        let mut unrestored = None;
+        let (mut document, path, mut status) = match recovered {
             Ok(Some(recovered)) => match Document::recover(recovered.score) {
                 Ok(document) => (
                     document,
@@ -187,23 +190,54 @@ impl AppView {
                     "Partitura recuperada. Revisa los cambios y guárdala para conservarlos."
                         .to_owned(),
                 ),
-                Err(error) => (
-                    Document::default(),
-                    None,
-                    format!("No se pudo recuperar: {error}"),
-                ),
+                Err(error) => {
+                    unrestored = Some(error.to_string());
+                    (Document::default(), None, String::new())
+                }
             },
             Ok(None) => (
                 Document::default(),
                 None,
                 "Escribe tu primera nota con las teclas A–G".into(),
             ),
+            Err(error) if quit_snapshot.is_some() => {
+                unrestored = Some(error);
+                (Document::default(), None, String::new())
+            }
             Err(error) => (
                 Document::default(),
                 None,
                 format!("Recuperación no disponible: {error}"),
             ),
         };
+        // The file that failed may be the only copy of unsaved work: it moves
+        // aside before the first edit autosaves over it.
+        let mut kept_recovery = None;
+        if let Some(error) = unrestored {
+            let set_aside = recovery_file
+                .as_deref()
+                .map(|path| score_io::set_aside_recovery(path).map_err(|e| e.to_string()))
+                .unwrap_or_else(|| Err("no se encontró la carpeta de datos de Levare".into()));
+            status = match set_aside {
+                Ok(kept) => {
+                    let name = kept.file_name().unwrap_or_default().to_string_lossy();
+                    let message = format!(
+                        "No se pudo recuperar: {error}. El archivo de recuperación se guardó \
+                         aparte como «{name}»."
+                    );
+                    kept_recovery = Some(kept);
+                    message
+                }
+                Err(why) => {
+                    eprintln!("No se pudo apartar la recuperación: {why}");
+                    quit_snapshot = None;
+                    format!(
+                        "No se pudo recuperar: {error}. El autoguardado queda desactivado para \
+                         no reemplazar el archivo de recuperación."
+                    )
+                }
+            };
+        }
         let recent_path = data_path("recientes.json");
         let recent = recent_path
             .as_deref()
@@ -233,6 +267,12 @@ impl AppView {
             })
             .unwrap_or(true)
         });
+
+        if let Some(kept) = kept_recovery {
+            cx.defer_in(window, move |view, window, cx| {
+                view.show_kept_recovery(kept, window, cx)
+            });
+        }
 
         let updates = updates::Updates::new();
         updates::start(&updates, cx);
@@ -381,6 +421,36 @@ impl AppView {
                 original_path: self.path.clone(),
             }));
         }
+    }
+
+    /// Says where the recovery file that could not be restored went, so the
+    /// musician can keep it or send it on instead of wondering about the work.
+    fn show_kept_recovery(&mut self, kept: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirming = true;
+        let name = kept.file_name().unwrap_or_default().to_string_lossy();
+        let folder = kept.parent().unwrap_or(&kept).display();
+        let detail = format!(
+            "Levare guardó el archivo de recuperación aparte, sin cambios, como «{name}» en \
+             {folder}."
+        );
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            "No se pudo recuperar la partitura sin guardar",
+            Some(&detail),
+            &["Mostrar el archivo", "Aceptar"],
+            cx,
+        );
+        cx.spawn_in(window, async move |view, cx| {
+            let reveal = answer.await == Ok(0);
+            let _ = view.update(cx, |view, cx| {
+                view.confirming = false;
+                if reveal {
+                    cx.reveal_path(&kept);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Every catalog mark, from the ribbon, a menu or a shortcut. Point marks
