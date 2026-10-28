@@ -10,6 +10,7 @@ runtime-shaders = ["gpui/runtime_shaders"]
 vsco = ["dep:score-sound-vsco", "dep:score-sound-store"]
 
 [dependencies]
+atomic-write.workspace = true
 gpui.workspace = true
 # The tessellator GPUI 0.2.2 itself uses; glyphs are tessellated once and reused.
 lyon = "=1.0.19"

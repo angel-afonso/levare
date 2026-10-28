@@ -137,9 +137,8 @@ fn save_priority_at(path: &std::path::Path, priority: &[String]) -> Result<(), S
     }
     let data = serde_json::json!({"version":1,"priority":priority});
     let text = serde_json::to_string_pretty(&data).map_err(|cause| cause.to_string())? + "\n";
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, text).map_err(|cause| format!("{}: {cause}", path.display()))?;
-    std::fs::rename(&temporary, path).map_err(|cause| format!("{}: {cause}", path.display()))
+    atomic_write::write(path, text.as_bytes())
+        .map_err(|cause| format!("{}: {cause}", path.display()))
 }
 
 #[cfg(all(test, feature = "vsco"))]
@@ -178,6 +177,21 @@ mod tests {
         save_priority_at(&path, &ids).unwrap();
         assert_eq!(read_priority_at(&path).unwrap(), ids);
         assert!(!path.with_extension("json.tmp").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Dotfile managers keep `sonidos.json` as a link into their own folder.
+    #[cfg(unix)]
+    #[test]
+    fn saving_the_priority_through_a_symbolic_link_keeps_the_link() {
+        let root = fixture();
+        let real = root.join("dotfiles/sonidos.json");
+        save_priority_at(&real, &["vpo".into()]).unwrap();
+        let path = root.join("sonidos.json");
+        std::os::unix::fs::symlink(&real, &path).unwrap();
+        save_priority_at(&path, &["vsco-ce".into()]).unwrap();
+        assert!(fs::symlink_metadata(&path).unwrap().is_symlink());
+        assert_eq!(read_priority_at(&real).unwrap(), vec!["vsco-ce".to_owned()]);
         fs::remove_dir_all(root).unwrap();
     }
 

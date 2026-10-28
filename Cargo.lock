@@ -3587,6 +3587,7 @@ version = "0.2.0"
 dependencies = [
  "agent-host",
  "agent-tools",
+ "atomic-write",
  "block",
  "cocoa 0.26.0",
  "core-graphics 0.24.0",
