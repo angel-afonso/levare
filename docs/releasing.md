@@ -63,6 +63,23 @@ Studio from Git Bash on Windows). Its licenses go into `licenses/sfizz`. The wor
 caches each system's build on the script's hash, so sfizz is only rebuilt when the
 script changes.
 
+### Licenses
+
+Every download carries a `licenses/` folder: `Levare.app/Contents/Resources/licenses`
+on macOS, next to the executable on Windows and Linux. The Licenses job writes it with
+`.github/scripts/collect-licenses.sh`, and sfizz's notices are added to it:
+
+| Path | What |
+| --- | --- |
+| `Levare-LICENSE.txt` | Levare's MIT license (`LICENSE`). |
+| `THIRD_PARTY_NOTICES.html` | Every Rust crate built into Levare with its license, from [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `about.toml` and `about.hbs`. |
+| `fonts/` | Bravura, Cantarell and Liberation (SIL OFL 1.1) and `assets/fonts/README.md`. |
+| `GeneralUser-GS/` | The bundled SoundFont's license and origin. |
+| `sfizz/` | sfizz's license and its dependencies' notices. |
+
+cargo-about fails the job when a crate's license is not in `about.toml`'s `accepted`
+list; add one only after checking it allows shipping Levare as it is.
+
 ## Repository secrets
 
 Settings → Secrets and variables → Actions.

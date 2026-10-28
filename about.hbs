@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Levare: licencias de las bibliotecas de Rust</title>
+<style>
+:root { color-scheme: light dark; --text: #1d1d1f; --muted: #5f5f66; --rule: #d9d9de; --code: #f4f4f6; --link: #2a5db0; }
+@media (prefers-color-scheme: dark) {
+  :root { --text: #ececf0; --muted: #a3a3ad; --rule: #3a3a40; --code: #1f1f24; --link: #8db4ff; }
+}
+body { margin: 0; background: Canvas; color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+main { max-width: 52rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+h1 { font-size: 1.6rem; margin: 0 0 .5rem; }
+h2 { font-size: 1.15rem; margin: 2.5rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+p, li { color: var(--muted); }
+a { color: var(--link); }
+ul.crates { columns: 16rem; padding-left: 1.2rem; }
+pre { background: var(--code); padding: 1rem; overflow-x: auto; white-space: pre-wrap; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Licencias de las bibliotecas de Rust</h1>
+<p>Levare incluye estas bibliotecas de código abierto. Cada licencia se reproduce
+con las bibliotecas que la usan. Las de las fuentes, los sonidos y el motor sfizz
+están en esta misma carpeta.</p>
+<ul>
+{{#each overview}}
+<li><a href="#{{id}}">{{name}}</a></li>
+{{/each}}
+</ul>
+{{#each licenses}}
+<section>
+<h2 id="{{id}}">{{name}}</h2>
+<ul class="crates">
+{{#each used_by}}
+{{#if crate.source}}
+<li><a href="{{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}}">{{crate.name}} {{crate.version}}</a></li>
+{{/if}}
+{{/each}}
+</ul>
+<pre>{{text}}</pre>
+</section>
+{{/each}}
+</main>
+</body>
+</html>

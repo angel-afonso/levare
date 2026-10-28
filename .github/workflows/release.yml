@@ -128,6 +128,31 @@ jobs:
           path: sfizz/
           if-no-files-found: error
 
+  # The licenses every download ships besides sfizz's: Levare's, the Rust
+  # crates' notices (cargo-about) and the bundled fonts' and SoundFont's.
+  licenses:
+    name: Licenses
+    needs: version
+    if: needs.version.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: rustup toolchain install
+
+      - name: cargo-about
+        run: cargo install --locked cargo-about@0.9.3 --features cli
+
+      - name: Collect
+        run: .github/scripts/collect-licenses.sh licenses
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: licenses
+          path: licenses/
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.target }})
     needs: version
@@ -170,7 +195,7 @@ jobs:
   # with lipo into a universal binary, which macOS runs natively on either.
   macos-universal:
     name: macOS universal app
-    needs: [version, sfizz, build]
+    needs: [version, sfizz, licenses, build]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -184,6 +209,11 @@ jobs:
         with:
           name: sfizz-macOS
           path: sfizz
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: licenses
+          path: licenses
 
       - name: Universal binary
         run: |
@@ -206,7 +236,8 @@ jobs:
           echo "ARCHIVE=levare-$version-universal-apple-darwin" >> "$GITHUB_ENV"
 
       # The same bundle scripts/bundle_macos.py makes locally: the binary, the
-      # icon, sfizz in Frameworks, and Info.plist with this version.
+      # icon, sfizz in Frameworks, and Info.plist with this version; plus the
+      # licenses in Resources/licenses.
       - name: App bundle
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -216,6 +247,7 @@ jobs:
           cp levare "$app/Contents/MacOS/levare"
           cp assets/branding/levare/Levare.icns "$app/Contents/Resources/Levare.icns"
           cp sfizz/libsfizz.dylib "$app/Contents/Frameworks/libsfizz.dylib"
+          cp -R licenses/. "$app/Contents/Resources/licenses/"
           cp -R sfizz/licenses/sfizz "$app/Contents/Resources/licenses/sfizz"
           plist="$app/Contents/Info.plist"
           cp packaging/macos/Info.plist "$plist"
@@ -331,7 +363,7 @@ jobs:
   # as the archive users download and the in-app updater installs.
   package:
     name: Build (${{ matrix.target }})
-    needs: [version, sfizz]
+    needs: [version, sfizz, licenses]
     strategy:
       fail-fast: false
       matrix:
@@ -415,6 +447,11 @@ jobs:
           name: sfizz-${{ runner.os }}
           path: ${{ env.WORKSPACE }}/sfizz
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: licenses
+          path: ${{ env.WORKSPACE }}/licenses
+
       - name: Archive name
         env:
           TAG: ${{ needs.version.outputs.tag }}
@@ -434,6 +471,7 @@ jobs:
           # Rust's release profile keeps the standard library's symbols.
           strip "$folder/levare"
           cp sfizz/libsfizz.so "$folder/libsfizz.so"
+          cp -R licenses/. "$folder/licenses/"
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
           cp packaging/linux/dev.partitura.editor.desktop packaging/linux/install.sh packaging/linux/README.txt "$folder/"
           convert assets/branding/levare/icon-macos-v2.png -resize 256x256 "$folder/levare.png"
@@ -460,6 +498,7 @@ jobs:
           mkdir -p "$folder/licenses" dist
           cp target/${{ matrix.target }}/release/levare.exe "$folder/levare.exe"
           cp sfizz/sfizz.dll "$folder/sfizz.dll"
+          cp -R licenses/. "$folder/licenses/"
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
           (cd stage && 7z a -tzip -mx=9 "../dist/$ARCHIVE.zip" Levare >/dev/null)
           7z l "dist/$ARCHIVE.zip"
