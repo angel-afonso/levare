@@ -30,7 +30,9 @@ pub fn markdown(registry: &Registry, keymaps: &[Keymap; 3]) -> String {
          Default profile: **{}**. {}\n\n\
          Change them in **Archivo › Preferencias de atajos…** (`{}` on macOS, `{}` on Windows \
          and Linux). Your changes are kept apart, in `atajos.json` in the app's data folder, \
-         and work on every platform: a shortcut saved with ⌘ on macOS uses Ctrl elsewhere.\n\n\
+         and work on every platform: a shortcut saved with ⌘ on macOS uses Ctrl elsewhere. \
+         One with ⌥⌘ and a letter, digit or symbol is left out on Windows and Linux, where \
+         Ctrl+Alt is AltGr or a desktop shortcut; Preferences says so and suggests Ctrl+Mayús.\n\n\
          *Pending* commands already have their key and show a notice until the feature \
          exists.\n\n\
          > Generated from `crates/keymap`. To update it: \

@@ -2426,7 +2426,14 @@ impl AppView {
         let Some(spec) = self.shortcuts.spec(recording.command).copied() else {
             return;
         };
-        if keys.to_platform(&self.shortcuts.layout).is_none() {
+        if keys.is_altgr_for(score_keymap::Platform::current()) {
+            preferences.message = Some(format!(
+                "{} no sirve como atajo: Ctrl+Alt es AltGr en Windows, que escribe @ o #, y un \
+                 atajo del escritorio en Linux; prueba con {}",
+                keys.label(),
+                keys.without_altgr().label()
+            ));
+        } else if keys.to_platform(&self.shortcuts.layout).is_none() {
             preferences.message = Some(format!(
                 "{} no se puede detectar en este teclado",
                 keys.label()

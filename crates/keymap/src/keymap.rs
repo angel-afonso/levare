@@ -34,6 +34,11 @@ pub enum Problem {
         command: CommandId,
         keys: KeySequence,
     },
+    /// Ctrl+Alt with a character off macOS: see `Keystroke::is_altgr_for`.
+    AltGr {
+        command: CommandId,
+        keys: KeySequence,
+    },
     Conflict {
         keys: KeySequence,
         kept: CommandId,
@@ -52,6 +57,13 @@ impl fmt::Display for Problem {
                 f,
                 "{} («{command}») no se puede detectar con este teclado",
                 keys.label()
+            ),
+            Self::AltGr { command, keys } => write!(
+                f,
+                "{} («{command}») se ignoró: Ctrl+Alt es AltGr en Windows y un atajo del \
+                 escritorio en Linux; prueba con {}",
+                keys.label(),
+                keys.without_altgr().label()
             ),
             Self::Conflict {
                 keys,
@@ -126,6 +138,13 @@ impl Keymap {
         let mut accepted = vec![None; candidates.len()];
         for index in order {
             let (keys, spec, origin) = &candidates[index];
+            if keys.is_altgr_for(platform) {
+                problems.push(Problem::AltGr {
+                    command: spec.id,
+                    keys: keys.clone(),
+                });
+                continue;
+            }
             let typed = keys.to_platform_for(layout, platform);
             if typed.is_none() {
                 problems.push(Problem::Unsupported {
@@ -490,6 +509,40 @@ mod tests {
         }
         let (keymap, _) = resolve(&user);
         assert_eq!(typed(&keymap, id::STACCATO), Some("shift-cmd-k"));
+    }
+
+    #[test]
+    fn a_command_key_and_option_shortcut_from_macos_is_skipped_elsewhere() {
+        // ⌥⌘K saved on macOS is Ctrl+Alt+K elsewhere: AltGr on Windows.
+        let mut user = UserKeymap::new();
+        user.set(
+            id::STACCATO,
+            &[
+                KeySequence::parse("alt-secondary-k").unwrap(),
+                KeySequence::parse("alt-s").unwrap(),
+            ],
+        );
+        let (keymap, problems) = resolve(&user);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(keymap.label(id::STACCATO).as_deref(), Some("⌥⌘K"));
+        for platform in [Windows, Linux] {
+            let (keymap, problems) = resolve_on(platform, &user);
+            assert_eq!(
+                problems,
+                vec![Problem::AltGr {
+                    command: id::STACCATO,
+                    keys: KeySequence::parse("alt-secondary-k").unwrap(),
+                }],
+                "{platform:?}"
+            );
+            assert_eq!(keymap.label(id::STACCATO).as_deref(), Some("Alt+S"));
+            assert!(
+                keymap
+                    .bindings()
+                    .iter()
+                    .all(|binding| !binding.keys.is_altgr_for(platform))
+            );
+        }
     }
 
     #[test]

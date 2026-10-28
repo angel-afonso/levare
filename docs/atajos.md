@@ -2,7 +2,7 @@
 
 Default profile: **Sibelius · portátil**. Atajos de Sibelius para teclados sin bloque numérico; también funcionan con él.
 
-Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl+,` on Windows and Linux). Your changes are kept apart, in `atajos.json` in the app's data folder, and work on every platform: a shortcut saved with ⌘ on macOS uses Ctrl elsewhere.
+Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl+,` on Windows and Linux). Your changes are kept apart, in `atajos.json` in the app's data folder, and work on every platform: a shortcut saved with ⌘ on macOS uses Ctrl elsewhere. One with ⌥⌘ and a letter, digit or symbol is left out on Windows and Linux, where Ctrl+Alt is AltGr or a desktop shortcut; Preferences says so and suggests Ctrl+Mayús.
 
 *Pending* commands already have their key and show a notice until the feature exists.
 

@@ -228,6 +228,17 @@ impl Keystroke {
         self.key.starts_with("numpad")
     }
 
+    /// Off macOS, Ctrl+Alt with a key that types a character is AltGr on
+    /// Windows, where AltGr+2 types @ on a Spanish keyboard instead of
+    /// reaching the shortcut, and a desktop shortcut on Linux. A ⌥⌘ shortcut
+    /// saved on macOS turns into exactly that elsewhere.
+    pub fn is_altgr_for(&self, platform: Platform) -> bool {
+        platform != Platform::MacOs
+            && self.alt
+            && (self.ctrl || self.secondary)
+            && self.key.chars().count() == 1
+    }
+
     fn digit(&self) -> Option<u8> {
         let mut chars = self.key.chars();
         match (chars.next(), chars.next()) {
@@ -413,6 +424,28 @@ impl KeySequence {
         Self(vec![stroke])
     }
 
+    pub fn is_altgr_for(&self, platform: Platform) -> bool {
+        self.0.iter().any(|stroke| stroke.is_altgr_for(platform))
+    }
+
+    /// What to suggest instead of an AltGr combination: Shift in place of
+    /// Alt, as the Windows and Linux profiles use Ctrl+Mayús for macOS' ⌥⌘.
+    pub fn without_altgr(&self) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|stroke| {
+                    let mut stroke = stroke.clone();
+                    if stroke.is_altgr_for(Platform::Windows) {
+                        stroke.alt = false;
+                        stroke.shift = true;
+                    }
+                    stroke
+                })
+                .collect(),
+        )
+    }
+
     pub fn text(&self) -> String {
         self.0
             .iter()
@@ -571,6 +604,42 @@ mod tests {
         assert_eq!(
             tab.to_platform_for(&Spanish, Windows).as_deref(),
             Some("ctrl-\"")
+        );
+    }
+
+    #[test]
+    fn ctrl_alt_with_a_character_is_altgr_off_macos() {
+        let tab = KeySequence::parse("alt-secondary-2").unwrap();
+        assert!(!tab.is_altgr_for(MacOs));
+        assert!(tab.is_altgr_for(Windows) && tab.is_altgr_for(Linux));
+        assert!(
+            KeySequence::parse("ctrl-alt-k")
+                .unwrap()
+                .is_altgr_for(Windows)
+        );
+        assert!(
+            KeySequence::parse("secondary-k alt-secondary-,")
+                .unwrap()
+                .is_altgr_for(Linux)
+        );
+        for free in [
+            "alt-2",
+            "shift-secondary-2",
+            "alt-secondary-left",
+            "alt-secondary-f4",
+        ] {
+            assert!(
+                !KeySequence::parse(free).unwrap().is_altgr_for(Windows),
+                "{free}"
+            );
+        }
+        assert_eq!(tab.without_altgr().label_for(Windows), "Ctrl+Mayús+2");
+        assert_eq!(
+            KeySequence::parse("alt-shift-secondary-t")
+                .unwrap()
+                .without_altgr()
+                .text(),
+            "shift-secondary-t"
         );
     }
 
