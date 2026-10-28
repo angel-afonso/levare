@@ -1,163 +1,167 @@
-# Levare: herramientas e integraciones
+# Levare: tools and integrations
 
-Inventario de las piezas necesarias para que Levare sea una alternativa sólida a Sibelius:
-capacidades completas, alta estabilidad y, sobre todo, velocidad.
+An inventory of the pieces Levare needs to be a solid alternative to Sibelius: complete
+features, high stability and, above all, speed.
 
-> **Estado:** inventario de reconocimiento (2026-10-17). La primera entrega ya está
-> implementada; ver [desarrollo.md](desarrollo.md) para el alcance, las versiones
-> fijadas y las siguientes etapas. Las secciones siguientes conservan la visión completa.
+> **Status:** reconnaissance inventory (2026-10-17). The first delivery is already
+> implemented; see [desarrollo.md](desarrollo.md) for its scope, the pinned versions
+> and the next stages. The sections below keep the full vision.
 >
-> **★** = no existe librería que lo resuelva; hay que construirlo.
+> **★** = no library solves it; it has to be built.
 
 ---
 
-## 0. Punto de partida
+## 0. Starting point
 
-El workspace empezó como un esqueleto. Estado tras la primera entrega (foto fija;
-el estado actual está en [desarrollo.md](desarrollo.md)):
+The workspace began as a skeleton. State after the first delivery (a snapshot; the
+current state is in [desarrollo.md](desarrollo.md)):
 
-| Crate | Rol previsto | Estado |
+| Crate | Intended role | State |
 |---|---|---|
-| `levare` (`crates/app-gpui`) | Aplicación GPUI | Interfaz oscura con cinta, orden automático por familias, eliminación visible de instrumentos, inspector, transporte, zoom y controles pendientes |
-| `score-core` | Modelo musical | Partes, pentagramas, instrumentos, acordes de hasta ocho notas, sostenidos/bemoles/becuadros, armaduras mayores/menores, ligaduras de unión/expresión, dinámicas, reguladores de crescendo/diminuendo, articulaciones, pizzicato/arco, silencios, duraciones con puntillo y tresillo 3:2, compases e IDs |
-| `score-edit` | Comandos y deshacer/rehacer | Selección de pasajes, copiar/cortar/pegar con ligaduras y marcas, ediciones transaccionales e instantáneas persistentes |
-| `score-document` | Documento/sesión | Editor, caché de layout y estado de guardado |
-| `score-layout` | Motor de grabado/posicionamiento | Barras de unión automáticas por pulso y tresillo, barras dobles/parciales, corchetes de familia, barras de compás agrupadas, llaves de piano, marcas Bravura y curvas entre sistemas, escala de presentación y espaciado compacto por límites de tinta, armaduras por sistema, alteraciones en columnas, acordes con plica común, gran pentagrama de piano, pentagramas alineados, claves sol/do/fa y caché por pentagrama/compás |
-| `score-playback` | Interpretación → eventos MIDI | Puntillos y tresillos con reloj entero exacto, reguladores con expresión continua y manos de piano independientes, pizzicato/arco persistente, dinámicas persistentes, staccato/acentos, cadenas ligadas, línea de tiempo común, canales por parte y recuperación del ataque al iniciar desde selección |
-| `score-io` | Formatos de archivo | JSON nativo versionado, validación y guardado atómico |
-| `score-platform` (`crates/platform`) | Audio y MIDI del sistema (cpal, midir) | Audio CPAL, piano RustySynth/GeneralUser GS, cola rtrb; MIDI externo pendiente |
+| `levare` (`crates/app-gpui`) | GPUI application | Dark interface with ribbon, automatic ordering by family, visible instrument removal, inspector, transport, zoom and pending controls |
+| `score-core` | Musical model | Parts, staves, instruments, chords of up to eight notes, sharps/flats/naturals, major/minor key signatures, ties and slurs, dynamics, crescendo/diminuendo hairpins, articulations, pizzicato/arco, rests, dotted and 3:2 triplet durations, bars and IDs |
+| `score-edit` | Commands and undo/redo | Passage selection, copy/cut/paste with ties and marks, transactional edits and persistent snapshots |
+| `score-document` | Document/session | Editor, layout cache and save state |
+| `score-layout` | Engraving/positioning engine | Automatic beams by beat and triplet, double/partial beams, family brackets, grouped barlines, piano braces, Bravura marks and curves across systems, display scale and compact spacing by ink bounds, key signatures per system, accidentals in columns, chords with a shared stem, piano grand staff, aligned staves, treble/alto/bass clefs and a cache per staff and bar |
+| `score-playback` | Interpretation → MIDI events | Dots and triplets on an exact integer clock, hairpins with continuous expression and independent piano hands, persistent pizzicato/arco, persistent dynamics, staccato/accents, tied chains, a common timeline, channels per part and attack recovery when starting from a selection |
+| `score-io` | File formats | Versioned native JSON, validation and atomic save |
+| `score-platform` (`crates/platform`) | System audio (cpal) | CPAL audio, RustySynth/GeneralUser GS piano, rtrb queue; external MIDI pending |
 
-`assets/fonts` incluye Bravura y su licencia; hay instrucciones de desarrollo y CI
-en `.github/workflows`.
+`assets/fonts` includes Bravura and its license; there are development instructions
+and CI in `.github/workflows`.
 
-### Ajustes de arquitectura detectados y resueltos en la primera entrega
+### Architecture adjustments found and made in the first delivery
 
-- Eliminada la dependencia `score-io → score-playback`; la interfaz de eventos para
-  MIDI se definirá al implementar reproducción/exportación.
-- Añadida la capa de **documento/sesión** con partitura, selección, cursor, historial
-  y estado de guardado. La interfaz coordina la reproducción mediante un plan
-  inmutable, detiene planes obsoletos al editar y conserva separada la selección.
-- Añadida la capa de **entrada**: atajos de teclado → comandos de edición.
-- Añadida la capa de **dibujo**: geometría de `score-layout` → pintado de GPUI.
+- Removed the `score-io → score-playback` dependency; the event interface for MIDI
+  will be defined when playback/export is implemented.
+- Added the **document/session** layer with score, selection, cursor, history and save
+  state. The interface coordinates playback through an immutable plan, stops stale
+  plans when editing and keeps the selection separate.
+- Added the **input** layer: keyboard shortcuts → editing commands.
+- Added the **drawing** layer: `score-layout` geometry → GPUI painting.
 
 ---
 
-## 1. Interfaz
+## 1. Interface
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Framework | **gpui** | Ventanas, eventos y dibujo por GPU (Metal en macOS). Base de la velocidad de la interfaz. |
-| Widgets | **gpui-component** | Menús, paneles acoplables, inputs, diálogos y paletas. GPUI solo trae primitivas. |
-| Lienzo de la partitura | ★ propio, sobre la API de pintado de GPUI | Pentagramas, glifos, curvas, selección y cursor. |
-| Diálogos de archivo | API de GPUI (respaldo: **rfd**) | Abrir y guardar. |
+| Framework | **gpui** | Windows, events and GPU drawing (Metal on macOS, DirectX on Windows, Vulkan on Linux). The basis of the interface's speed. |
+| Widgets | **gpui-component** | Menus, dockable panels, inputs, dialogs and palettes. GPUI only brings primitives. |
+| Score canvas | ★ own, on GPUI's painting API | Staves, glyphs, curves, selection and cursor. |
+| File dialogs | GPUI's API (fallback: **rfd**) | Open and save. |
 
-## 2. Tipografía musical
+## 2. Music typography
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Fuente | **Bravura** o **Leland** (estándar SMuFL, licencia OFL) | Figuras, claves, alteraciones, dinámicas y articulaciones. |
-| Métricas | Metadatos JSON de la fuente + **serde_json** | Anclajes exactos (plicas, bordes, grosores recomendados). Sin esto el resultado se ve amateur. |
-| Contornos | **skrifa** o **ttf-parser** | Extraer los glifos para pintarlos y cachearlos. |
+| Font | **Bravura** or **Leland** (SMuFL standard, OFL license) | Notes, clefs, accidentals, dynamics and articulations. |
+| Metrics | The font's JSON metadata + **serde_json** | Exact anchors (stems, edges, recommended thicknesses). Without this the result looks amateur. |
+| Outlines | **skrifa** or **ttf-parser** | Extract the glyphs to paint and cache them. |
 
-## 3. Núcleo musical (`score-core`, `score-edit`)
+## 3. Musical core (`score-core`, `score-edit`)
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Modelo | ★ propio | Partitura, instrumentos, pentagramas, compases, voces, notas, silencios, tuplets, ligaduras, letra, acordes, tonalidad, compás y tempo. |
-| IDs estables | **slotmap** | Referencias a elementos que sobreviven a ediciones. |
-| Deshacer/rehacer | **imbl** (estructuras persistentes) | Instantáneas baratas: deshacer instantáneo e ilimitado, y lecturas seguras desde otros hilos (layout, reproducción). |
-| Teoría musical | ★ propio | Transposición, enarmonía, tonalidades, rangos de instrumentos. |
-| Base de instrumentos | ★ datos propios | Nombres, claves, transposición, rangos, programa General MIDI. (Las listas de MuseScore son GPL; no se pueden copiar en un proyecto MIT.) |
-| Entrada rápida | ★ capa de comandos y atajos | Estilo Sibelius: letra = nota, número = duración, flechas = moverse/transponer. Es el corazón de "rápido de usar". |
+| Model | ★ own | Score, instruments, staves, bars, voices, notes, rests, tuplets, ties and slurs, lyrics, chords, key, meter and tempo. |
+| Stable IDs | **slotmap** | References to elements that survive edits. |
+| Undo/redo | **imbl** (persistent structures) | Cheap snapshots: instant, unlimited undo, and safe reads from other threads (layout, playback). |
+| Music theory | ★ own | Transposition, enharmonics, keys, instrument ranges. |
+| Instrument database | ★ own data | Names, clefs, transposition, ranges, General MIDI program. (MuseScore's lists are GPL; they can't be copied into an MIT project.) |
+| Fast input | ★ command and shortcut layer | Sibelius style: letter = note, number = duration, arrows = move/transpose. It is the heart of "fast to use". |
 
-## 4. Motor de layout (`score-layout`): la parte más difícil
+## 4. Layout engine (`score-layout`): the hardest part
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Espaciado horizontal | ★ algoritmo tipo Gourlay | Espaciar notas según su duración, con alineación vertical entre pentagramas. |
-| Saltos de línea y página | ★ optimización tipo Knuth-Plass | Repartir sistemas de forma equilibrada. |
-| Colisiones | ★ "skylines" | Evitar choques entre dinámicas, articulaciones, ligaduras y texto. |
-| Curvas | **kurbo** | Ligaduras de expresión, ligaduras de valor y reguladores en Bézier. |
-| Selección con el ratón | **rstar** (índice espacial) | Saber qué elemento hay bajo el cursor en microsegundos. |
-| Paralelismo | **rayon** | Calcular sistemas en paralelo. |
-| Referencia | Verovio (C++), LilyPond, MuseScore | Solo para estudiar algoritmos. Verovio no es interactivo; MuseScore y LilyPond son GPL. |
+| Horizontal spacing | ★ Gourlay-style algorithm | Space notes by duration, with vertical alignment across staves. |
+| Line and page breaks | ★ Knuth-Plass-style optimization | Spread systems in a balanced way. |
+| Collisions | ★ "skylines" | Avoid clashes between dynamics, articulations, ties, slurs and text. |
+| Curves | **kurbo** | Slurs, ties and hairpins as Béziers. |
+| Mouse selection | **rstar** (spatial index) | Know which element is under the pointer in microseconds. |
+| Parallelism | **rayon** | Compute systems in parallel. |
+| Reference | Verovio (C++), LilyPond, MuseScore | Only to study algorithms. Verovio is not interactive; MuseScore and LilyPond are GPL. |
 
-**Clave de rendimiento:** layout **incremental**. Al editar un compás solo se recalcula el sistema
-afectado (y los siguientes si cambia el reparto de líneas), nunca la obra entera.
+**Performance key:** **incremental** layout. Editing a bar recomputes only the affected
+system (and the following ones if the line distribution changes), never the whole work.
 
-## 5. Reproducción y sonido (`score-playback`, `score-platform`)
+## 5. Playback and sound (`score-playback`, `score-platform`)
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Interpretación | ★ propio | Expandir repeticiones, D.C., D.S. y Coda; dinámicas → velocidad; articulaciones → duración; swing; mapa de tempo; cursor de reproducción sincronizado. |
-| Salida de audio | **cpal** | Enviar audio a la tarjeta de sonido. |
-| Sintetizador | **rustysynth** (SoundFont, Rust puro) u **oxisynth** | Sonido integrado sin dependencias externas. |
-| Sonidos | **GeneralUser GS** o **MuseScore_General** (licencias permisivas; confirmar antes de distribuir) | Banco General MIDI incluido con la app. |
-| MIDI externo | **midir** | Enviar a otros programas o dispositivos y grabar desde un teclado MIDI. |
-| Hilo de audio en tiempo real | **rtrb** (cola sin bloqueos) + **assert_no_alloc** | Que el audio nunca se corte: el hilo de audio no bloquea ni reserva memoria. |
-| Sonido profesional (fase posterior) | **clack** (host CLAP) o hosting VST3 | Usar librerías de sonido de terceros. |
+| Interpretation | ★ own | Expand repeats, D.C., D.S. and Coda; dynamics → velocity; articulations → duration; swing; tempo map; synchronized playback cursor. |
+| Audio output | **cpal** | Send audio to the sound card. |
+| Synthesizer | **rustysynth** (SoundFont, pure Rust) or **oxisynth** | Built-in sound without external dependencies. |
+| Sounds | **GeneralUser GS** or **MuseScore_General** (permissive licenses; confirm before distributing) | General MIDI bank shipped with the app. |
+| External MIDI | Not chosen yet | Send to other programs or devices and record from a MIDI keyboard. |
+| Real-time audio thread | **rtrb** (lock-free queue) + **assert_no_alloc** | Audio never drops out: the audio thread neither blocks nor allocates. |
+| Professional sound (later phase) | **clack** (CLAP host) or VST3 hosting | Use third-party sound libraries. |
 
-## 6. Archivos (`score-io`)
+## 6. Files (`score-io`)
 
-| Formato | Herramienta | Para qué |
+| Format | Tool | Purpose |
 |---|---|---|
-| Formato propio | **serde** + **postcard**/JSON dentro de un **zip**, con versionado de esquema | Guardado rápido; los archivos siguen abriendo en versiones futuras. |
-| MusicXML | **quick-xml** | Importar y exportar con Sibelius, MuseScore, Dorico y Finale. Imprescindible para ser una alternativa real. |
-| MIDI | **midly** | Leer y escribir archivos `.mid`. |
-| PDF | **krilla** | Impresión y exportación con calidad de imprenta. |
-| SVG/PNG | **tiny-skia** + **resvg** | Exportar imágenes. |
-| Audio | **hound** (WAV), **flacenc** (FLAC) | Exportar la mezcla. |
+| Own format | **serde** + **postcard**/JSON inside a **zip**, with schema versioning | Fast saving; files keep opening in future versions. |
+| MusicXML | **quick-xml** | Import and export with Sibelius, MuseScore, Dorico and Finale. Essential to be a real alternative. |
+| MIDI | **midly** | Read and write `.mid` files. |
+| PDF | **krilla** | Print-quality printing and export. |
+| SVG/PNG | **tiny-skia** + **resvg** | Export images. |
+| Audio | **hound** (WAV), **flacenc** (FLAC) | Export the mix. |
 
-## 7. Estabilidad
+## 7. Stability
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Autoguardado y recuperación | ★ propio | No perder trabajo ante un cierre inesperado. |
-| Tests de layout | **insta** (snapshots) | Detectar cualquier cambio visual no intencionado. |
-| Tests del modelo | **proptest** | Secuencias aleatorias de ediciones y deshacer que nunca deben romper invariantes. |
-| Importadores robustos | **cargo-fuzz** | Un MusicXML o MIDI malformado nunca debe tumbar la app. |
-| Diagnóstico | **tracing** (+ **sentry** opcional) | Logs estructurados e informes de fallos. |
-| CI | GitHub Actions | Compilar, `clippy`, tests y benchmarks en cada cambio. |
+| Autosave and recovery | ★ own | Lose no work when the app closes unexpectedly. |
+| Layout tests | **insta** (snapshots) | Catch any unintended visual change. |
+| Model tests | **proptest** | Random sequences of edits and undos that must never break invariants. |
+| Robust importers | **cargo-fuzz** | A malformed MusicXML or MIDI file must never bring the app down. |
+| Diagnostics | **tracing** (+ optional **sentry**) | Structured logs and crash reports. |
+| CI | GitHub Actions | Build, `clippy`, tests and benchmarks on every change. |
 
-## 8. Rendimiento medible
+## 8. Measurable performance
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Perfilado | **tracy** (vía `tracing-tracy`) | Ver el coste de cada frame y cada fase del layout. |
-| Benchmarks | **divan** o **criterion** | Proteger presupuestos fijos en CI. |
+| Profiling | **tracy** (through `tracing-tracy`) | See the cost of each frame and each layout phase. |
+| Benchmarks | **divan** or **criterion** | Protect fixed budgets in CI. |
 
-Presupuestos propuestos (a confirmar):
+Proposed budgets (to be confirmed):
 
-- Pulsar una tecla de entrada → nota visible en pantalla: **< 16 ms**.
-- Redibujar la partitura visible: **< 8 ms** (120 fps).
-- Abrir una partitura orquestal grande: **< 1 s**.
-- Inicio de la reproducción: **< 50 ms**.
+- Pressing an input key → note visible on screen: **< 16 ms**.
+- Redrawing the visible score: **< 8 ms** (120 fps).
+- Opening a large orchestral score: **< 1 s**.
+- Playback start: **< 50 ms**.
 
-## 9. Capacidades adicionales
+## 9. Additional features
 
-| Pieza | Herramienta | Para qué |
+| Piece | Tool | Purpose |
 |---|---|---|
-| Partes individuales | ★ propio | Extraer partes del score general, con layout propio y vinculadas al original. |
-| Plugins / scripting | **mlua** (Lua) o **wasmtime** (WASM) | Equivalente a ManuScript de Sibelius. |
-| Idiomas | **fluent** | Interfaz traducible. |
-| Preferencias | **directories** + **toml** | Configuración y rutas por sistema. |
-| Distribución | **cargo-packager**, firma y notarización (macOS), auto-actualización | Instaladores y actualizaciones. |
+| Individual parts | ★ own | Extract parts from the full score, with their own layout and linked to the original. |
+| Plugins / scripting | **mlua** (Lua) or **wasmtime** (WASM) | The equivalent of Sibelius' ManuScript. |
+| Languages | **fluent** | A translatable interface. |
+| Preferences | **directories** + **toml** | Settings and per-system paths. |
+| Distribution | **cargo-packager**, signing and notarization (macOS), auto-update | Installers and updates. |
 
 ---
 
-## Riesgos
+## Risks
 
-1. **GPUI es joven:** su API cambia entre versiones y tiene poca documentación. Fijar la versión
-   (como ya hace `Cargo.toml`) y aislar su uso en `levare` (`crates/app-gpui`) para que el resto no dependa de ella.
-2. **El motor de layout** concentra la mayor parte del trabajo real: es lo que separa una
-   partitura profesional de una amateur.
-3. **Licencias:** MuseScore y LilyPond son GPL. Sirven para estudiar ideas, no para copiar código ni datos.
-   Revisar la licencia de cada fuente y SoundFont antes de distribuirlos.
-4. **Tiempo real de audio:** cualquier bloqueo o reserva de memoria en el hilo de audio provoca cortes;
-   hay que diseñarlo así desde el principio.
+1. **GPUI is young:** its API changes between versions and it has little documentation.
+   Pin the version (as `Cargo.toml` already does) and keep its use inside `levare`
+   (`crates/app-gpui`) so the rest doesn't depend on it.
+2. **The layout engine** holds most of the real work: it is what separates a
+   professional score from an amateur one.
+3. **Licenses:** MuseScore and LilyPond are GPL. They are for studying ideas, not for
+   copying code or data. Check the license of each font and SoundFont before
+   distributing it.
+4. **Real-time audio:** any lock or allocation on the audio thread causes dropouts; it
+   has to be designed that way from the start.
 
-## Preguntas resueltas
+## Settled questions
 
-- Plataformas: primero macOS; Windows y Linux todavía no están validados (README).
-- Sonido: sonidos integrados (GeneralUser GS y VSCO CE); el MIDI externo sigue pendiente.
-- Alcance de cada entrega: lo fija [desarrollo.md](desarrollo.md).
+- Platforms: macOS, Windows and Linux alike; CI builds, tests and opens the app on all
+  three, and each release ships for all three.
+- Sound: built-in sounds (GeneralUser GS and VSCO CE); external MIDI is still pending,
+  with no library chosen (an unused `midir` dependency was removed).
+- Scope of each delivery: set by [desarrollo.md](desarrollo.md).
