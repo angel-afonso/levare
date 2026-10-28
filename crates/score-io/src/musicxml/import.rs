@@ -78,6 +78,11 @@ fn ticks(value: f64, divisions: f64) -> Result<u16, FileError> {
     Ok(exact.round() as u16)
 }
 fn parse_xml(data: &str) -> Result<Document<'_>, FileError> {
+    if declares_entities(data) {
+        return Err(error(
+            "MusicXML: el archivo declara entidades XML propias y Levare no las admite",
+        ));
+    }
     Document::parse_with_options(
         data,
         ParsingOptions {
@@ -86,6 +91,17 @@ fn parse_xml(data: &str) -> Result<Document<'_>, FileError> {
         },
     )
     .map_err(|failure| FileError::damaged_with("MusicXML: el archivo no es XML válido", failure))
+}
+
+/// roxmltree expands internal entities in full, so a few hundred bytes of
+/// nested declarations can grow to gigabytes, and running out of memory
+/// aborts Levare. MusicXML's own DOCTYPE only names the public DTD, so a
+/// document that declares entities in an internal subset is refused. Those
+/// declarations can only appear as `<!ENTITY` after a `<!DOCTYPE`; anywhere
+/// else the text is escaped, so finding both is a conservative test.
+fn declares_entities(data: &str) -> bool {
+    data.find("<!DOCTYPE")
+        .is_some_and(|start| data[start..].contains("<!ENTITY"))
 }
 
 pub fn load(path: &Path) -> Result<ImportResult, FileError> {

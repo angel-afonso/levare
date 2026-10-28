@@ -303,6 +303,29 @@ fn external_doctype_is_not_fetched_and_expanded_or_large_archives_are_bounded() 
 }
 
 #[test]
+fn entities_that_multiply_are_refused_before_they_expand() {
+    // Each level repeats the one below ten times: five levels already turn
+    // a few hundred bytes into a title of 400 000 characters.
+    let mut subset = String::from("<!ENTITY e0 \"jaja\">");
+    for level in 1..=5 {
+        let previous = format!("&e{};", level - 1).repeat(10);
+        subset.push_str(&format!("<!ENTITY e{level} \"{previous}\">"));
+    }
+    let score = wrap(
+        "Violin",
+        &format!(
+            "<measure><attributes><divisions>1</divisions></attributes>{}</measure>",
+            n("C", 4, 1, 1)
+        ),
+    )
+    .replace("Prueba externa", "&e5;");
+    let xml = format!("<!DOCTYPE score-partwise [{subset}]>{score}");
+    assert!(xml.len() < 2_000);
+    let failure = decode(xml.as_bytes()).unwrap_err().to_string();
+    assert!(failure.contains("entidades"), "{failure}");
+}
+
+#[test]
 fn pickups_and_directions_inside_sustained_notes_keep_their_lengths_and_onsets() {
     let xml = wrap(
         "Violin",
