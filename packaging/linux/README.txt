@@ -19,3 +19,7 @@ Necesita:
 
 libsfizz.so es el motor de sonidos SFZ (sfizz 1.2.3, licencia BSD-2-Clause);
 sus avisos de licencia están en licenses/sfizz.
+
+La carpeta licenses guarda también la licencia de Levare (MIT), las de las
+bibliotecas de Rust que incluye (THIRD_PARTY_NOTICES.html), las de sus
+fuentes y la del banco de sonidos GeneralUser GS.
