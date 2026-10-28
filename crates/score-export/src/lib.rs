@@ -43,32 +43,11 @@ impl Selection {
     }
 }
 
-/// A readable component with a bounded UTF-8 byte length on macOS filesystems.
+/// The export folder's name. With the part file names below, it keeps the
+/// deepest exported file within about 155 characters of the chosen parent
+/// folder, under Windows' 260-character path limit.
 pub fn folder_name(title: &str) -> String {
-    format!("{} - Exportación", component(title, 120))
-}
-
-fn component(value: &str, limit: usize) -> String {
-    let clean: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_control() || matches!(ch, '/' | '\\' | ':') {
-                '_'
-            } else {
-                ch
-            }
-        })
-        .collect();
-    let mut end = clean.len().min(limit);
-    while !clean.is_char_boundary(end) {
-        end -= 1;
-    }
-    let clean = clean[..end].trim().trim_matches('.').trim();
-    if clean.is_empty() {
-        "Partitura".into()
-    } else {
-        clean.into()
-    }
+    format!("{} - Exportación", score_io::file_name(title, 64))
 }
 
 /// Generates every file before publishing a new directory. Existing destinations
@@ -118,7 +97,7 @@ pub fn export(
             continue;
         }
         let extracted = score.extract_part(part.id()).map_err(|e| e.to_string())?;
-        let name = component(&score.part_name(part.id()), 128);
+        let name = score_io::file_name(&score.part_name(part.id()), 60);
         render(format!("{:02} - {name}", index + 1), &extracted, true)?;
     }
     // This operation also protects against another process choosing the same

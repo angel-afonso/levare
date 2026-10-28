@@ -1,3 +1,6 @@
+// Release builds on Windows open no console window next to Levare.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod agent;
 #[cfg(test)]
 mod agent_tests;
@@ -6,7 +9,9 @@ mod app_paths;
 mod clipboard;
 mod comments;
 mod connection_input;
+mod file_dialogs;
 mod follow;
+mod fonts;
 mod ghost;
 mod keyboard;
 mod mark_drag;
@@ -160,17 +165,17 @@ impl AppView {
     fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
-        quit_snapshot: QuitSnapshot,
+        recovery: Result<score_io::Recovery, String>,
         mut shortcuts: Shortcuts,
     ) -> Self {
-        let recovered = if quit_snapshot.is_some() {
-            recovery_path()
+        let recovered = match &recovery {
+            Ok(_) => recovery_path()
                 .map(|path| score_io::load_recovery(&path).map_err(|e| e.to_string()))
                 .transpose()
-                .map(|value| value.flatten())
-        } else {
-            Err("No se pudo abrir el autoguardado; puede haber otra sesión activa".to_owned())
+                .map(|value| value.flatten()),
+            Err(reason) => Err(reason.clone()),
         };
+        let quit_snapshot: QuitSnapshot = recovery.ok();
         let nothing_recovered = matches!(recovered, Ok(None));
         let (mut document, path, status) = match recovered {
             Ok(Some(recovered)) => match Document::recover(recovered.score) {
@@ -284,7 +289,7 @@ impl AppView {
         let view = cx.weak_entity();
         let layout_change = cx.on_keyboard_layout_change(move |cx| {
             let _ = view.update(cx, |view: &mut Self, cx| {
-                view.shortcuts.refresh_layout();
+                view.shortcuts.refresh_layout(cx);
                 view.shortcuts.install(cx);
                 cx.notify();
             });
@@ -519,8 +524,9 @@ impl AppView {
             self.clicked_bar_mark = Some(mark);
             self.reveal_selection = false;
             self.status = format!(
-                "{} · ⇧⌘P la devuelve a su sitio",
-                mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+                "{} · {} la devuelve a su sitio",
+                mark_drag::DragTarget::Bar(mark).label(self.document.editor.score()),
+                self.shortcuts.hint(id::RESET_POSITION)
             );
             cx.notify();
         }
@@ -543,8 +549,9 @@ impl AppView {
             self.document.editor.select(to.anchor());
             self.clicked_mark = Some(to);
             self.status = format!(
-                "{label}: {} · ⌘Z para deshacer",
-                mark_drag::place_label(self.document.editor.score(), to.anchor())
+                "{label}: {} · {} para deshacer",
+                mark_drag::place_label(self.document.editor.score(), to.anchor()),
+                self.shortcuts.hint(id::UNDO)
             );
         }
         cx.notify();
@@ -584,7 +591,10 @@ impl AppView {
                 .score()
                 .mark_label(mark)
                 .unwrap_or_default();
-            self.status = format!("{label} · ⇧⌘P la devuelve a su sitio");
+            self.status = format!(
+                "{label} · {} la devuelve a su sitio",
+                self.shortcuts.hint(id::RESET_POSITION)
+            );
             cx.notify();
         }
     }
@@ -917,12 +927,13 @@ impl AppView {
                     Command::SetPlayers(part, _) => {
                         let score = self.document.editor.score();
                         format!(
-                            "{}: grabaciones de {} · ⌘Z para deshacer",
+                            "{}: grabaciones de {} · {} para deshacer",
                             ui::instrument_name(score, part),
                             match score.players(part) {
                                 score_core::Players::Solo => "solista",
                                 score_core::Players::Section => "sección",
-                            }
+                            },
+                            self.shortcuts.hint(id::UNDO)
                         )
                     }
                     _ => "Partitura actualizada".into(),
@@ -1301,10 +1312,10 @@ impl AppView {
         }
         let key = Key::from_platform(
             &stroke.key,
-            modifiers.control,
+            modifiers.control && !modifiers.secondary(),
             modifiers.alt,
             modifiers.shift,
-            modifiers.platform,
+            modifiers.secondary(),
             &self.shortcuts.layout,
         );
         self.record(KeySequence::single(key), cx);
@@ -2469,8 +2480,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (None, Some(picker)) => match picker.await {
                     Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                    Ok(Err(error)) => Err(error.to_string()),
-                    Err(error) => Err(error.to_string()),
+                    Ok(Err(error)) => Err(file_dialogs::dialog_error(error)),
+                    Err(error) => Err(file_dialogs::dialog_error(error)),
                 },
                 (None, None) => Ok(None),
             };
@@ -2631,12 +2642,7 @@ impl AppView {
         self.export_picker = None;
         self.confirming = false;
         self.busy = true;
-        let directory = self
-            .path
-            .as_ref()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_owned())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let directory = file_dialogs::start_folder(self.path.as_deref());
         let score = self.document.editor.score().clone();
         let suggested = score_export::folder_name(score.title());
         let picker = cx.prompt_for_new_path(&directory, Some(&suggested));
@@ -2652,8 +2658,14 @@ impl AppView {
                         .await,
                 ),
                 Ok(Ok(None)) => None,
-                Ok(Err(error)) => Some(Err(error.to_string())),
-                Err(error) => Some(Err(error.to_string())),
+                Ok(Err(error)) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
+                Err(error) => Some(Err(format!(
+                    "No se pudo exportar: {}",
+                    file_dialogs::dialog_error(error)
+                ))),
             };
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
@@ -2686,18 +2698,8 @@ impl AppView {
         self.busy = true;
         let existing = if save_as { None } else { self.path.clone() };
         let picker = existing.is_none().then(|| {
-            let directory = self
-                .path
-                .as_ref()
-                .and_then(|path| path.parent())
-                .map(|p| p.to_owned())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            let name = self
-                .document
-                .editor
-                .score()
-                .title()
-                .replace(['/', '\\', ':'], "_");
+            let directory = file_dialogs::start_folder(self.path.as_deref());
+            let name = score_io::file_name(self.document.editor.score().title(), 80);
             cx.prompt_for_new_path(&directory, Some(&format!("{name}.partitura")))
         });
         let score = self.document.editor.score().clone();
@@ -2706,8 +2708,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (_, Some(picker)) => picker
                     .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|result| result.map_err(|e| e.to_string())),
+                    .map_err(file_dialogs::dialog_error)
+                    .and_then(|result| result.map_err(file_dialogs::dialog_error)),
                 _ => Ok(None),
             };
             let result = match path {
@@ -3484,12 +3486,15 @@ impl Render for AppView {
             .and_then(|p| p.file_stem())
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
-        window.set_window_title(&format!(
-            "{}{} · Levare",
-            title,
-            if self.document.is_dirty() { " •" } else { "" }
-        ));
-        div()
+        self.ui.frame.sync(
+            window,
+            format!(
+                "{}{} · Levare",
+                title,
+                if self.document.is_dirty() { " •" } else { "" }
+            ),
+        );
+        let root = div()
             .size_full()
             .flex()
             .flex_col()
@@ -3528,7 +3533,8 @@ impl Render for AppView {
                     this.choose_key(action.0, cx)
                 }),
             )
-            .child(ui::workspace(self, title, cx))
+            .child(ui::workspace(self, title, cx));
+        ui::window_frame::frame(&self.ui.frame, root)
     }
 }
 
@@ -3539,17 +3545,16 @@ fn recovery_path() -> Option<PathBuf> {
 fn main() {
     Application::new().run(|cx| {
         app_icon::install();
+        fonts::register(cx);
         // App-level ownership survives window/view teardown during a native
         // Dock quit. GPUI's Context::on_app_quit would only hold a weak view.
-        let quit_snapshot =
-            recovery_path().and_then(|path| match score_io::Recovery::open(&path) {
-                Ok(recovery) => Some(recovery),
-                Err(error) => {
-                    eprintln!("Recuperación no disponible: {error}");
-                    None
-                }
-            });
-        let pending = quit_snapshot.clone();
+        let recovery = recovery_path()
+            .ok_or_else(|| "no se encontró la carpeta de datos de Levare".to_owned())
+            .and_then(|path| score_io::Recovery::open(&path).map_err(|e| e.to_string()));
+        if let Err(error) = &recovery {
+            eprintln!("Recuperación no disponible: {error}");
+        }
+        let pending = recovery.as_ref().ok().cloned();
         cx.on_app_quit(move |_| {
             if let Some(recovery) = &pending
                 && let Err(error) = recovery.flush()
@@ -3559,21 +3564,27 @@ fn main() {
             async {}
         })
         .detach();
-        let shortcuts = Shortcuts::load();
+        let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
-        let bounds = Bounds::centered(None, size(px(1440.), px(1000.)), cx);
+        let (bounds, min_size) = ui::window_frame::first_window(cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(960.), px(680.))),
+                window_min_size: Some(min_size),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Levare".into()),
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(16.), px(16.))),
                 }),
+                // Linux: Levare's title bar replaces the compositor's, when it
+                // agrees (`ui::window_frame`). macOS and Windows ignore it.
+                window_decorations: Some(WindowDecorations::Client),
+                // The macOS bundle id: Linux desktops match the window to
+                // Levare's desktop entry and icon by it.
+                app_id: Some("dev.partitura.editor".into()),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| AppView::new(window, cx, quit_snapshot, shortcuts)),
+            |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
         )
         .expect("open Levare window");
         cx.on_window_closed(|cx| {

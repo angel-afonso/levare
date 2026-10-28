@@ -1,0 +1,3 @@
+// Levare's icon. GPUI loads icon resource 1 for the window and the taskbar,
+// and Explorer shows it for levare.exe.
+1 ICON "../../assets/branding/levare/levare.ico"

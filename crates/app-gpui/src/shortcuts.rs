@@ -52,7 +52,7 @@ pub struct Shortcuts {
 }
 
 impl Shortcuts {
-    pub fn load() -> Self {
+    pub fn load(cx: &App) -> Self {
         let path = crate::data_path("atajos.json");
         let mut problems = Vec::new();
         let user = match path.as_deref().map(UserKeymap::load) {
@@ -69,11 +69,11 @@ impl Shortcuts {
                 &Registry::builtin(),
                 Profile::sibelius_laptop(),
                 &UserKeymap::new(),
-                &SystemLayout::current(),
+                &SystemLayout::current(cx.keyboard_layout().name()),
             )
             .0,
             user,
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(cx.keyboard_layout().name()),
             path,
             problems,
             recent: Vec::new(),
@@ -101,8 +101,8 @@ impl Shortcuts {
             .extend(problems.into_iter().map(|problem| problem.to_string()));
     }
 
-    pub fn refresh_layout(&mut self) {
-        self.layout = SystemLayout::current();
+    pub fn refresh_layout(&mut self, cx: &App) {
+        self.layout = SystemLayout::current(cx.keyboard_layout().name());
         self.rebuild();
     }
 
@@ -112,6 +112,18 @@ impl Shortcuts {
 
     pub fn label(&self, command: CommandId) -> Option<String> {
         self.keymap.label(command)
+    }
+
+    /// How a status message names the key of `command`: its label on this
+    /// platform, or the command's name in «» when the user removed its keys.
+    pub fn hint(&self, command: CommandId) -> String {
+        self.label(command).unwrap_or_else(|| {
+            format!(
+                "«{}»",
+                self.spec(command)
+                    .map_or(command.as_str(), |spec| spec.label)
+            )
+        })
     }
 
     /// Persists the user's changes and re-resolves the keymap.
@@ -154,7 +166,7 @@ impl Shortcuts {
         let keys = self.keymap.keys_for(command);
         let with_modifier = keys
             .first()
-            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.cmd || stroke.ctrl));
+            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.secondary || stroke.ctrl));
         if with_modifier {
             MenuItem::action(label, Run(command))
         } else if let Some(keys) = keys.first() {
@@ -445,10 +457,18 @@ pub fn recent_title(path: &std::path::Path) -> String {
 
 /// Folder of a recent score, with the home directory shortened to `~`.
 pub fn recent_folder(path: &std::path::Path) -> String {
-    let folder = path.parent().unwrap_or(path);
-    match dirs::home_dir().and_then(|home| folder.strip_prefix(home).ok().map(PathBuf::from)) {
+    folder_label(path.parent().unwrap_or(path), dirs::home_dir().as_deref())
+}
+
+/// Joined with the platform's own separator: `~/Partituras` on macOS and
+/// Linux, `~\Partituras` on Windows.
+fn folder_label(folder: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    match home.and_then(|home| folder.strip_prefix(home).ok()) {
         Some(relative) if relative.as_os_str().is_empty() => "~".into(),
-        Some(relative) => format!("~/{}", relative.display()),
+        Some(relative) => std::path::Path::new("~")
+            .join(relative)
+            .display()
+            .to_string(),
         None => folder.display().to_string(),
     }
 }
@@ -456,7 +476,7 @@ pub fn recent_folder(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use score_keymap::{Layout, UsLayout};
+    use score_keymap::{Layout, Platform, UsLayout};
 
     struct Spanish;
     impl Layout for Spanish {
@@ -469,14 +489,37 @@ mod tests {
     }
 
     #[test]
+    fn recent_folders_shorten_home_with_the_platform_separator() {
+        let home = std::path::Path::new(std::path::MAIN_SEPARATOR_STR)
+            .join("Usuarios")
+            .join("ana");
+        let s = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            folder_label(&home.join("Partituras").join("Coro"), Some(&home)),
+            format!("~{s}Partituras{s}Coro")
+        );
+        assert_eq!(folder_label(&home, Some(&home)), "~");
+        let elsewhere = std::path::Path::new(std::path::MAIN_SEPARATOR_STR).join("Obras");
+        assert_eq!(
+            folder_label(&elsewhere, Some(&home)),
+            elsewhere.display().to_string()
+        );
+        assert_eq!(folder_label(&home, None), home.display().to_string());
+    }
+
+    #[test]
     fn every_default_binding_is_valid_gpui_text_on_us_and_spanish_layouts() {
         let layouts: [&dyn Layout; 2] = [&UsLayout, &Spanish];
-        for layout in layouts {
-            let (keymap, problems) = Keymap::resolve(
+        for (layout, platform) in layouts
+            .into_iter()
+            .flat_map(|layout| Platform::ALL.map(|platform| (layout, platform)))
+        {
+            let (keymap, problems) = Keymap::resolve_for(
                 &Registry::builtin(),
-                Profile::sibelius_laptop(),
+                Profile::sibelius_laptop_for(platform),
                 &UserKeymap::new(),
                 layout,
+                platform,
             );
             assert!(problems.is_empty(), "{problems:?}");
             for binding in keymap.bindings() {
@@ -489,11 +532,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn commands_that_left_the_ribbon_stay_in_the_native_menus() {
-        // The clipboard and the panels left the ribbon (score-toolbar's
-        // `nothing_leaves_the_app` lists them); Edición and Vista keep them.
-        let shortcuts = Shortcuts {
+    fn builtin_shortcuts() -> Shortcuts {
+        // macOS aborts when two test threads read the keyboard layout at once.
+        static LAYOUT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _reading = LAYOUT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Shortcuts {
             registry: Registry::builtin(),
             keymap: Keymap::resolve(
                 &Registry::builtin(),
@@ -503,11 +548,15 @@ mod tests {
             )
             .0,
             user: UserKeymap::new(),
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(""),
             path: None,
             problems: Vec::new(),
             recent: Vec::new(),
-        };
+        }
+    }
+
+    /// Every command the native menus run.
+    fn menu_commands(shortcuts: &Shortcuts) -> Vec<CommandId> {
         fn commands(items: &[MenuItem], found: &mut Vec<CommandId>) {
             for item in items {
                 match item {
@@ -527,6 +576,43 @@ mod tests {
         for menu in shortcuts.menus() {
             commands(&menu.items, &mut found);
         }
+        found
+    }
+
+    #[test]
+    fn every_menu_command_is_found_by_the_command_search() {
+        // Only macOS draws the native menus. On Windows and Linux the command
+        // search in the title bar is the way to the menu-only commands (select
+        // all, full screen, divide part, the update commands…), so it must
+        // find each one by its name.
+        struct Defaults;
+        impl score_toolbar::CommandStates for Defaults {
+            fn state(&self, _: CommandId) -> score_toolbar::CommandState {
+                score_toolbar::CommandState::default()
+            }
+        }
+        let shortcuts = builtin_shortcuts();
+        for command in menu_commands(&shortcuts) {
+            let label = shortcuts.spec(command).expect("registered").label;
+            let found = score_toolbar::search(
+                label,
+                &shortcuts.registry,
+                &shortcuts.keymap,
+                &Defaults,
+                usize::MAX,
+            );
+            assert!(
+                found.iter().any(|result| result.item.command == command),
+                "«{label}» ({command}) is not in the command search"
+            );
+        }
+    }
+
+    #[test]
+    fn commands_that_left_the_ribbon_stay_in_the_native_menus() {
+        // The clipboard and the panels left the ribbon (score-toolbar's
+        // `nothing_leaves_the_app` lists them); Edición and Vista keep them.
+        let found = menu_commands(&builtin_shortcuts());
         for command in [
             id::PASTE,
             id::COPY,
@@ -543,11 +629,12 @@ mod tests {
 
     #[test]
     fn gpui_keystrokes_match_what_macos_reports() {
-        let (keymap, _) = Keymap::resolve(
+        let (keymap, _) = Keymap::resolve_for(
             &Registry::builtin(),
-            Profile::sibelius_laptop(),
+            Profile::sibelius_laptop_for(Platform::MacOs),
             &UserKeymap::new(),
             &Spanish,
+            Platform::MacOs,
         );
         let platform = |command: CommandId| {
             keymap

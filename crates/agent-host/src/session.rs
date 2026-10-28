@@ -99,7 +99,7 @@ impl SessionHandle {
 
 impl Drop for SessionHandle {
     /// Dropping the session task drops the connection, which kills the
-    /// agent's process group.
+    /// agent's processes: its process group on Unix, its job on Windows.
     fn drop(&mut self) {
         self.task.abort();
     }
@@ -120,11 +120,28 @@ pub fn start_session(
     cwd: PathBuf,
     mcp: &McpServer,
 ) -> (SessionHandle, UnboundedReceiver<AgentEvent>) {
-    let agent = AcpAgent::new(
+    let agent = acp_agent(launch);
+    // `AcpAgent` alone would leave the processes behind `npx.cmd` running.
+    #[cfg(windows)]
+    let agent = crate::job::JobAgent(agent);
+    start_with(rt, agent, cwd, mcp)
+}
+
+pub(crate) fn acp_agent(launch: LaunchCommand) -> AcpAgent {
+    AcpAgent::new(
         AcpAgentConfig::new(launch.program)
             .args(launch.args)
             .envs(launch.env),
-    );
+    )
+}
+
+/// [`start_session`] with the agent's process started by `agent`.
+pub(crate) fn start_with(
+    rt: &Runtime,
+    agent: impl ConnectTo<Client>,
+    cwd: PathBuf,
+    mcp: &McpServer,
+) -> (SessionHandle, UnboundedReceiver<AgentEvent>) {
     let endpoint = McpEndpoint {
         url: mcp.url.clone(),
         token: mcp.token.clone(),

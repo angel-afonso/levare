@@ -12,8 +12,9 @@ mod search;
 mod spec;
 
 pub use menu::{
-    BAR_MARK_CONTEXT_MENU, FILE_MENU, MARK_CONTEXT_MENU, MenuEntry, MenuItemView, MenuRow,
-    NOTE_CONTEXT_MENU, RecentItem, item_view, project_menu,
+    BAR_MARK_CONTEXT_MENU, FILE_MENU, FILE_MENU_WITH_APP_ITEMS, IN_WINDOW_FILE_MENU,
+    MARK_CONTEXT_MENU, MenuEntry, MenuItemView, MenuRow, NOTE_CONTEXT_MENU, RecentItem, item_view,
+    project_menu,
 };
 pub use project::{
     CommandState, CommandStates, ControlView, GroupMode, GroupView, Item, Metrics, ToolbarView,

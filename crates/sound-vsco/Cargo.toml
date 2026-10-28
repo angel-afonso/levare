@@ -9,6 +9,7 @@ score-core.workspace = true
 score-playback.workspace = true
 score-platform.workspace = true
 libloading = "=0.8.9"
+dunce = "=1.0.5"
 serde.workspace = true
 serde_json.workspace = true
 

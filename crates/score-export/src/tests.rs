@@ -170,7 +170,6 @@ fn validates_selections_and_protects_existing_destinations() {
     assert!(export(&score, &all, &dir.path().join("missing/delivery")).is_err());
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn exports_general_score_and_every_part_in_both_formats() {
     let score = menuetto();
@@ -198,8 +197,26 @@ fn generated_folder_names_are_safe_and_bounded() {
         "_Sonata_ violín_cello_piano_ - Exportación"
     );
     assert_eq!(folder_name(" .. "), "Partitura - Exportación");
+    assert_eq!(folder_name("¿Quién?"), "¿Quién_ - Exportación");
+    assert_eq!(folder_name("NUL"), "NUL_ - Exportación");
+    assert_eq!(folder_name("Fin. "), "Fin - Exportación");
     let long = folder_name(&"🎻".repeat(200));
     assert!(long.len() < 150);
     assert!(!Path::new(&long).is_absolute());
     assert_eq!(Path::new(&long).components().count(), 1);
+}
+
+#[test]
+fn a_title_with_characters_windows_forbids_still_exports() {
+    let mut data = serde_json::to_value(menuetto()).unwrap();
+    data["title"] = "¿Quién? <Dúo> \"1|2\" *".into();
+    let score: Score = serde_json::from_value(data).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join(folder_name(score.title()));
+    assert_eq!(
+        destination.file_name().unwrap(),
+        "¿Quién_ _Dúo_ _1_2_ _ - Exportación"
+    );
+    let files = export(&score, &Selection::all(&score, true), &destination).unwrap();
+    assert_eq!(files.len(), score.parts().len() + 1);
 }

@@ -13,6 +13,16 @@ pub(super) fn decode_item(item: &ClipboardItem) -> Result<MusicalClipboard, Stri
         .map_err(|_| "El contenido musical del portapapeles no es válido")?;
     clip.upgraded().map_err(|e| e.to_string())
 }
+/// Whether a clipboard write can be read back straight away to check it
+/// before Cut deletes the music.
+///
+/// On Wayland the write only records our offer; the compositor announces it
+/// later, so an immediate read still returns the previous owner's text and the
+/// check would always fail.
+fn reads_back_at_once(compositor: &str) -> bool {
+    compositor != "Wayland"
+}
+
 impl AppView {
     pub(super) fn copy_music(&mut self, cut: bool, cx: &mut Context<Self>) {
         let result = self
@@ -29,13 +39,19 @@ impl AppView {
                     clip.summary(),
                     metadata.clone(),
                 ));
-                if cut
-                    && cx
-                        .read_from_clipboard()
-                        .and_then(|item| item.metadata().cloned())
-                        .as_deref()
-                        != Some(metadata.as_str())
-                {
+                let written = || {
+                    if reads_back_at_once(cx.compositor_name()) {
+                        cx.read_from_clipboard()
+                            .and_then(|item| item.metadata().cloned())
+                            .as_deref()
+                            == Some(metadata.as_str())
+                    } else {
+                        // GPUI's Wayland client writes only while one of our
+                        // windows has focus, and reports that window as active.
+                        cx.active_window().is_some()
+                    }
+                };
+                if cut && !written() {
                     return Err("No se pudo verificar la copia; la música sigue en su sitio".into());
                 }
                 Ok(clip.events.len())
@@ -81,6 +97,15 @@ impl AppView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[::core::prelude::v1::test]
+    fn cut_checks_the_clipboard_except_on_wayland() {
+        // macOS and Windows report "".
+        for compositor in ["", "X11", "headless"] {
+            assert!(reads_back_at_once(compositor));
+        }
+        assert!(!reads_back_at_once("Wayland"));
+    }
+
     #[::core::prelude::v1::test]
     fn clipboard_reader_rejects_external_text_invalid_versions_and_oversized_data() {
         assert!(decode_item(&ClipboardItem::new_string("texto ajeno".into())).is_err());

@@ -40,6 +40,7 @@ mod sound_store;
 pub use review::RangeEditor;
 mod theme;
 mod toolbar;
+pub mod window_frame;
 use super::*;
 use icons::{Icon, icon};
 pub use instrument_panel::{InstrumentPicker, search_field as parts_search_field};
@@ -86,6 +87,8 @@ pub struct UiState {
     pub ribbon_peek: bool,
     /// The last option used from each dropdown group, by group title.
     pub last_choice: std::collections::HashMap<&'static str, score_keymap::CommandId>,
+    /// The window frame's platform state and the title last sent.
+    pub frame: window_frame::FrameState,
 }
 impl Default for UiState {
     fn default() -> Self {
@@ -111,6 +114,7 @@ impl Default for UiState {
             ribbon_collapsed: false,
             ribbon_peek: false,
             last_choice: Default::default(),
+            frame: Default::default(),
         }
     }
 }
@@ -398,8 +402,8 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
 }
 
 fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
-    div()
-        .h(px(44.))
+    let bar = div()
+        .h(px(window_frame::TITLEBAR_HEIGHT))
         .flex_shrink_0()
         .flex()
         .items_center()
@@ -467,11 +471,10 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                 }),
         )
         .child(
-            div()
+            window_frame::drag_area(view, cx)
                 .flex_1()
                 .min_w_0()
-                .h_full()
-                .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()),
+                .h_full(),
         )
         .child(command_search::search_box(view, cx))
         .child(
@@ -544,6 +547,8 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .bg(rgb(TEXT))
             .text_color(rgb(FIELD)),
         )
+        .children(window_frame::window_controls(view, cx));
+    window_frame::titlebar_frame(view, bar)
 }
 const MUSIC_SYMBOL_PADDING: f32 = 4.;
 
@@ -1435,7 +1440,7 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
         .hover(|header| header.bg(gpui::rgba(HEADER_HOVER)))
         .text_center()
         .text_color(rgb(PAPER_INK))
-        .font_family("Times New Roman")
+        .font_family(crate::fonts::SERIF)
         .tooltip(command_hint(view, id::SCORE_INFO))
         .on_mouse_down(
             MouseButton::Left,
@@ -1511,7 +1516,7 @@ fn copyright(view: &AppView) -> Option<Div> {
             .px(px(56. * scale))
             .text_center()
             .truncate()
-            .font_family("Times New Roman")
+            .font_family(crate::fonts::SERIF)
             .text_size(px(10. * scale))
             .text_color(rgb(PAPER_FINE))
             .child(text.clone()),
@@ -1718,7 +1723,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                             .cursor_pointer()
                             .rounded_md()
                             .hover(|style| style.bg(rgb(HOVER)))
-                            .font_family("Menlo")
+                            .font_family(crate::fonts::MONO)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(21.))
                             .tooltip(command_hint(view, id::GO_TO_BAR))

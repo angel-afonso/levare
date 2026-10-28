@@ -1217,7 +1217,7 @@ La arquitectura, decisiones y siguientes entregas están en
 
 Las versiones salen de los mensajes de commit (Conventional Commits, ver `AGENTS.md`) con
 release-plz, y el workflow Release publica la app universal firmada, su `.dmg` y lo que lee
-el actualizador de la app. Proceso y secretos: [`docs/publicar.md`](docs/publicar.md).
+el actualizador de la app. Proceso y secretos: [`docs/releasing.md`](docs/releasing.md).
 
 ## Alcance actual
 

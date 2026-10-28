@@ -8,7 +8,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use ttf_parser::{Face, OutlineBuilder};
 
 use score_layout::glyph_codes;
-pub use score_layout::{TextRun, bravura_character, text_runs};
+pub use score_layout::{TextRun, text_runs};
+// Only the native menus (macOS) and the tests draw single glyphs.
+#[cfg(any(target_os = "macos", test))]
+pub use score_layout::bravura_character;
 
 enum Segment {
     Move(f32, f32),

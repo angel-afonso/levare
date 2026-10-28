@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
@@ -109,10 +108,10 @@ fn same_secret(given: &[u8], expected: &[u8]) -> bool {
             == 0
 }
 
-/// 32 random bytes in hex.
+/// 32 bytes from the system's random generator, in hex.
 fn random_token() -> io::Result<String> {
     let mut bytes = [0u8; 32];
-    File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    getrandom::fill(&mut bytes).map_err(|error| io::Error::other(error.to_string()))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 

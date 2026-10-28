@@ -1,7 +1,8 @@
 //! A mark follows the pointer on a shifted copy of the displayed layout; the
 //! document changes once, when the pointer is released. A mark whose place in
-//! time is musical goes to the nearest note of its voice instead, unless ⌘ is
-//! held: it then sounds there too.
+//! time is musical goes to the nearest note of its voice instead, unless the
+//! secondary key (⌘ on macOS, Ctrl elsewhere) is held: it then sounds there
+//! too.
 use gpui::{Modifiers, Pixels, Point, px};
 use score_core::{BarMarkRef, ElementId, MarkRef, Offset, Score};
 use score_layout::{Layout, LayoutEngine, Point as ScorePoint};
@@ -144,7 +145,8 @@ impl MarkDrag {
     }
 
     /// Rebuild from the immutable displayed layout, so motion never accumulates.
-    /// `free` (⌘) moves a mark that follows time without changing its note.
+    /// `free` (⌘ on macOS, Ctrl elsewhere) moves a mark that follows time
+    /// without changing its note.
     pub fn update(
         &mut self,
         position: Point<Pixels>,
@@ -412,11 +414,19 @@ pub(super) fn step(key: &str, modifiers: Modifiers) -> Option<bool> {
 }
 
 /// Physical arrow keys keep their meaning even under a custom key profile.
+/// The secondary key (⌘ on macOS, Ctrl elsewhere) moves ten times as far.
 pub(super) fn nudge(key: &str, modifiers: Modifiers) -> Option<(i16, i16)> {
-    if modifiers.shift || modifiers.alt || modifiers.control {
+    // On macOS Ctrl is a key of its own; elsewhere it is the secondary key and
+    // the Windows or Super key belongs to the system.
+    let other = if cfg!(target_os = "macos") {
+        modifiers.control
+    } else {
+        modifiers.platform
+    };
+    if modifiers.shift || modifiers.alt || other {
         return None;
     }
-    let step = if modifiers.platform { 10 } else { 2 };
+    let step = if modifiers.secondary() { 10 } else { 2 };
     Some(match key {
         "up" => (0, -step),
         "down" => (0, step),

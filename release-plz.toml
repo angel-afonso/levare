@@ -18,7 +18,7 @@ semver_check = false
 dependencies_update = false
 # Before 1.0 too, `feat:` raises the minor version and `fix:` the patch.
 features_always_increment_minor = true
-pr_name = "chore: publica {{ version }}"
+pr_name = "chore: release {{ version }}"
 
 # Every crate shares the workspace version; the changelog is the app's and
 # covers all of them.
@@ -136,13 +136,13 @@ changelog_update = false
 [changelog]
 commit_parsers = [
     { message = "^Merge (pull request|branch)", skip = true },
-    { message = "^chore: publica", skip = true },
-    { message = "^feat", group = "Añadido" },
-    { message = "^fix", group = "Corregido" },
-    { message = "^perf", group = "Rendimiento" },
-    { message = "^refactor", group = "Cambiado" },
-    { message = "^docs?", group = "Documentación" },
-    { message = "^revert", group = "Revertido" },
+    { message = "^chore: (publica|release)", skip = true },
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^docs?", group = "Documentation" },
+    { message = "^revert", group = "Reverted" },
     { message = "^(test|style|ci)", skip = true },
-    { message = ".*", group = "Otros" },
+    { message = ".*", group = "Other" },
 ]

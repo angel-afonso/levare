@@ -4,9 +4,9 @@
 
 use super::*;
 use score_toolbar::{
-    BAR_MARK_CONTEXT_MENU, ControlView, FILE_MENU, GroupMode, GroupView, Item, MARK_CONTEXT_MENU,
-    MenuItemView, MenuRow, Metrics, NOTE_CONTEXT_MENU, RecentItem, TABS, TabId, ToolbarView,
-    Visual, project, project_menu, tile_width,
+    BAR_MARK_CONTEXT_MENU, ControlView, GroupMode, GroupView, IN_WINDOW_FILE_MENU, Item,
+    MARK_CONTEXT_MENU, MenuItemView, MenuRow, Metrics, NOTE_CONTEXT_MENU, RecentItem, TABS, TabId,
+    ToolbarView, Visual, project, project_menu, tile_width,
 };
 
 /// The items row. Every tile is `TILE_HEIGHT` and centred in it, two pixels
@@ -55,7 +55,7 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
         }
         Visual::Text(text) => Some(
             div()
-                .font_family("Times New Roman")
+                .font_family(crate::fonts::SERIF)
                 .italic()
                 .text_size(px(size * 0.5))
                 .text_color(rgb(color))
@@ -788,10 +788,10 @@ fn separator() -> Div {
     div().h(px(1.)).mx_2().my_1().bg(rgb(BORDER))
 }
 
-/// Archivo: a dropdown from the tab row, built from `FILE_MENU`.
+/// Archivo: a dropdown from the tab row, built from `IN_WINDOW_FILE_MENU`.
 fn file_menu(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
     let rows = project_menu(
-        FILE_MENU,
+        IN_WINDOW_FILE_MENU,
         &view.shortcuts.registry,
         &view.shortcuts.keymap,
         view,

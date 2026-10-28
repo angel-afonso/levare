@@ -11,6 +11,6 @@ mod user;
 
 pub use commands::{Category, CommandId, CommandSpec, Registry, Scope, Status, id};
 pub use keymap::{Binding, Keymap, Origin, Problem};
-pub use keys::{KeyError, KeySequence, Keystroke, Layout, UsLayout};
+pub use keys::{KeyError, KeySequence, Keystroke, Layout, Modifier, Platform, UsLayout};
 pub use profile::Profile;
 pub use user::{UserError, UserKeymap};

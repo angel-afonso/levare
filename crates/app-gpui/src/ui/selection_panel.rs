@@ -530,7 +530,7 @@ fn mark_glyph(view: &AppView, glyph: &MarkGlyph) -> AnyElement {
         MarkGlyph::Words(words) => div()
             .max_w(px(30.))
             .truncate()
-            .font_family("Times New Roman")
+            .font_family(crate::fonts::SERIF)
             .italic()
             .text_size(px(13.))
             .child(words.clone())

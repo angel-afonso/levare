@@ -35,12 +35,16 @@ pub struct Update {
 }
 
 /// This build's key in the manifest's `platforms`, if releases have one.
-/// Both point at the same universal app.
+/// Both Mac keys point at the same universal app.
 pub fn platform() -> Option<&'static str> {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Some("darwin-aarch64")
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         Some("darwin-x86_64")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some("linux-x86_64")
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        Some("windows-x86_64")
     } else {
         None
     }
@@ -238,8 +242,51 @@ mod tests {
 
     #[test]
     fn this_build_has_a_platform_key() {
-        // Releases cover both Mac architectures.
+        // Releases cover both Mac architectures, Linux and Windows on x86_64.
         let platform = platform().expect("a released platform");
-        assert!(["darwin-aarch64", "darwin-x86_64"].contains(&platform));
+        assert!(
+            [
+                "darwin-aarch64",
+                "darwin-x86_64",
+                "linux-x86_64",
+                "windows-x86_64"
+            ]
+            .contains(&platform)
+        );
+    }
+
+    #[test]
+    fn a_manifest_with_more_platforms_and_fields_still_parses() {
+        // Copies already installed (0.1.0 on macOS) read the manifests of
+        // releases that also publish Linux and Windows, and maybe more
+        // fields; serde ignores what they do not know.
+        let extra = r#"{
+          "url": "https://github.com/angel-afonso/levare/releases/download/v0.3.0/levare-v0.3.0-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "00",
+          "signature": "...",
+          "size": 1
+        }"#;
+        let json = MANIFEST.replacen(
+            "\"platforms\": {",
+            &format!(
+                "\"channel\": \"stable\", \"platforms\": {{ \"linux-x86_64\": {extra}, \"windows-x86_64\": {extra},"
+            ),
+            1,
+        );
+        let manifest = Manifest::parse(&json).unwrap();
+        assert_eq!(manifest.platforms.len(), 4);
+        let update = manifest
+            .update_for(&version("0.1.0"), "darwin-aarch64")
+            .unwrap()
+            .unwrap();
+        assert_eq!(update.file_name, "levare-v0.3.0-universal-apple-darwin.zip");
+        let linux = manifest
+            .update_for(&version("0.1.0"), "linux-x86_64")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            linux.file_name,
+            "levare-v0.3.0-x86_64-unknown-linux-gnu.tar.gz"
+        );
     }
 }

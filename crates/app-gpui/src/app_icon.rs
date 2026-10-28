@@ -45,5 +45,9 @@ pub fn install() {
     }
 }
 
+/// Nothing to install at run time elsewhere. On Windows the icon is resource 1
+/// of levare.exe (`build.rs`), which GPUI gives every window. On Linux the
+/// desktop takes it from the desktop entry that matches the window's app id,
+/// `dev.partitura.editor`; GPUI has no API for a window icon.
 #[cfg(not(target_os = "macos"))]
 pub fn install() {}

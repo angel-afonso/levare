@@ -13,7 +13,17 @@ futures.workspace = true
 axum.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
+getrandom = "=0.3.4"
+dirs = "=6.0.0"
 agent-client-protocol = { workspace = true, features = ["process"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }

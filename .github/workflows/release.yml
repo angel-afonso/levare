@@ -1,12 +1,14 @@
 name: Release
 
 # A push to main whose `[workspace.package] version` has no `v*` tag yet (the
-# merged release-plz pull request) tags that version, builds Levare for Apple
-# Silicon and Intel Macs and publishes it as a GitHub release. A `v*` tag
-# pushed by hand does the same for that tag. Running it by hand from a branch
-# only builds the app and keeps it as a workflow artifact. The release pull
-# request comes from the Release PR workflow, run by hand. docs/publicar.md
-# explains the whole process and the secrets it uses.
+# merged release-plz pull request) tags that version, builds Levare for macOS
+# (one universal app for Apple Silicon and Intel), Linux and Windows (x86_64)
+# and publishes it as a GitHub release. A `v*` tag pushed by hand does the
+# same for that tag. Running it by hand (from any branch) never tags or
+# publishes: it only builds every archive and keeps them as workflow
+# artifacts. The release pull request comes from the Release PR workflow, run
+# by hand. docs/releasing.md explains the whole process and the secrets it
+# uses.
 on:
   push:
     branches: [main]
@@ -63,7 +65,7 @@ jobs:
               exit 1
             fi
             if [[ "$HAS_SIGNING_KEY" != true ]]; then
-              echo "::error::UPDATE_SIGNING_KEY is not set; see docs/publicar.md."
+              echo "::error::UPDATE_SIGNING_KEY is not set; see docs/releasing.md."
               exit 1
             fi
             tag="$GITHUB_REF_NAME"
@@ -74,7 +76,7 @@ jobs:
             elif [[ "$HAS_SIGNING_KEY" != true ]]; then
               # Building would cost a full run (and notarizations) for
               # nothing; run the workflow by hand for a test build.
-              echo "::warning::UPDATE_SIGNING_KEY is not set, so v$version is not tagged, built or published. See docs/publicar.md."
+              echo "::warning::UPDATE_SIGNING_KEY is not set, so v$version is not tagged, built or published. See docs/releasing.md."
               build=false
             else
               tag="v$version"
@@ -89,13 +91,24 @@ jobs:
             echo "build=$build"
           } >> "$GITHUB_OUTPUT"
 
-  # The SFZ engine the bundle ships in Contents/Frameworks. It changes only
-  # with scripts/build_sfizz.sh, so it is cached on that file.
+  # The SFZ engine each release ships: in Contents/Frameworks on macOS, next
+  # to the executable on Linux and Windows. It changes only with
+  # scripts/build_sfizz.sh, so it is cached per OS on that file.
   sfizz:
-    name: sfizz engine
+    name: sfizz engine (${{ matrix.os }})
     needs: version
     if: needs.version.outputs.build == 'true'
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux on the oldest runner, like the app, so the library needs no
+        # newer glibc or libstdc++ than Levare does.
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Git Bash on Windows; the script drives cmake and Visual Studio.
+        shell: bash
     steps:
       - uses: actions/checkout@v5
 
@@ -103,7 +116,7 @@ jobs:
         id: cache
         with:
           path: sfizz
-          key: sfizz-${{ hashFiles('scripts/build_sfizz.sh') }}
+          key: sfizz-${{ runner.os }}-${{ hashFiles('scripts/build_sfizz.sh') }}
 
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
@@ -111,7 +124,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sfizz
+          name: sfizz-${{ runner.os }}
           path: sfizz/
           if-no-files-found: error
 
@@ -169,7 +182,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: sfizz
+          name: sfizz-macOS
           path: sfizz
 
       - name: Universal binary
@@ -314,11 +327,139 @@ jobs:
             dist/*.dmg
           if-no-files-found: error
 
+  # Linux and Windows: the release build next to sfizz in one folder, packed
+  # as the archive users download and the in-app updater installs.
+  package:
+    name: Build (${{ matrix.target }})
+    needs: [version, sfizz]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported runner, so the binary runs on any distribution
+          # with glibc 2.35 or newer.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      # NTFS and Defender scanning make Windows builds slow; a trusted ReFS
+      # Dev Drive avoids both. The build runs in its copy of the checkout.
+      - name: Dev Drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@v4
+        with:
+          drive-size: 30GB
+          workspace-copy: true
+          trusted-dev-drive: true
+          env-mapping: |
+            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
+            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
+
+      # What gpui needs to link on Linux (X11, Wayland and fonts), ALSA for
+      # audio, and D-Bus for real-time audio threads.
+      - name: System dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev \
+            libdbus-1-dev imagemagick
+
+      - name: Workspace
+        run: echo "WORKSPACE=${DEV_DRIVE_WORKSPACE:-$GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+
+      # The version comes from rust-toolchain.toml.
+      - name: Toolchain
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.WORKSPACE }}
+          key: ${{ matrix.target }}
+
+      - name: Build
+        working-directory: ${{ env.WORKSPACE }}
+        run: cargo build --release --locked -p levare --target ${{ matrix.target }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sfizz-${{ runner.os }}
+          path: ${{ env.WORKSPACE }}/sfizz
+
+      - name: Archive name
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          version="${TAG:-${GITHUB_SHA::7}}"
+          echo "ARCHIVE=levare-$version-${{ matrix.target }}" >> "$GITHUB_ENV"
+
+      # levare/ holds the executable, libsfizz.so, a desktop entry with its
+      # icon and an install script that adds it to the user's menu.
+      - name: Linux archive
+        if: runner.os == 'Linux'
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          folder="stage/levare"
+          mkdir -p "$folder/licenses" dist
+          cp target/${{ matrix.target }}/release/levare "$folder/levare"
+          # Rust's release profile keeps the standard library's symbols.
+          strip "$folder/levare"
+          cp sfizz/libsfizz.so "$folder/libsfizz.so"
+          cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
+          cp packaging/linux/dev.partitura.editor.desktop packaging/linux/install.sh packaging/linux/README.txt "$folder/"
+          convert assets/branding/levare/icon-macos-v2.png -resize 256x256 "$folder/levare.png"
+          chmod 755 "$folder/levare" "$folder/install.sh"
+          chmod 644 "$folder/libsfizz.so"
+
+          # What it needs from the system, and the newest glibc symbol it
+          # uses: the oldest distribution it runs on.
+          ldd "$folder/levare"
+          glibc="$(objdump -T "$folder/levare" "$folder/libsfizz.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+          echo "Newest glibc symbol: $glibc"
+          echo "::notice::Linux build needs $glibc or newer"
+
+          tar -C stage -czf "dist/$ARCHIVE.tar.gz" --owner=0 --group=0 levare
+          tar -tzvf "dist/$ARCHIVE.tar.gz"
+
+      # Levare/ holds levare.exe and sfizz.dll, which needs nothing else (it
+      # links the C runtime statically).
+      - name: Windows archive
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          folder="stage/Levare"
+          mkdir -p "$folder/licenses" dist
+          cp target/${{ matrix.target }}/release/levare.exe "$folder/levare.exe"
+          cp sfizz/sfizz.dll "$folder/sfizz.dll"
+          cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
+          (cd stage && 7z a -tzip -mx=9 "../dist/$ARCHIVE.zip" Levare >/dev/null)
+          7z l "dist/$ARCHIVE.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: |
+            ${{ env.WORKSPACE }}/dist/*.tar.gz
+            ${{ env.WORKSPACE }}/dist/*.zip
+          if-no-files-found: error
+
   # Signs the archive the in-app updater installs and writes latest.json,
   # which the app reads from the latest release to find new versions.
   update-manifest:
     name: Update manifest
-    needs: [version, macos-universal]
+    needs: [version, macos-universal, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -359,7 +500,7 @@ jobs:
   release:
     name: GitHub release
     if: needs.version.outputs.tag != ''
-    needs: [version, macos-universal, update-manifest]
+    needs: [version, macos-universal, package, update-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write

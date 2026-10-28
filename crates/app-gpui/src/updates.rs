@@ -17,7 +17,7 @@ use crate::AppView;
 use crate::app_paths::data_path;
 
 /// The key the release workflow signs updates with; its secret half is the
-/// repository's UPDATE_SIGNING_KEY (see docs/publicar.md).
+/// repository's UPDATE_SIGNING_KEY (see docs/releasing.md).
 const PUBLIC_KEY: &str = include_str!("../assets/update.pub");
 /// Long enough after start-up not to slow it down.
 const FIRST_CHECK: Duration = Duration::from_secs(10);
@@ -45,7 +45,7 @@ enum Status {
 pub struct Updates {
     status: Status,
     /// Why updates are unavailable, when they are (a development build, an
-    /// app not running from Levare.app).
+    /// app not running from Levare.app, a folder Levare cannot write).
     updater: Result<(Arc<Updater>, Installation), String>,
     automatic: bool,
 }
@@ -352,8 +352,26 @@ impl AppView {
         {
             let _ = save_reopen(&marker, &score);
         }
-        cx.set_restart_path(path);
-        cx.restart();
+        // macOS reopens the bundle through GPUI's restart.
+        #[cfg(target_os = "macos")]
+        {
+            cx.set_restart_path(path);
+            cx.restart();
+        }
+        // GPUI's restart would paste the path into a script unquoted; see
+        // `levare_update::relaunch_after_exit`.
+        #[cfg(not(target_os = "macos"))]
+        match levare_update::relaunch_after_exit(&path) {
+            Ok(()) => cx.quit(),
+            Err(error) => {
+                // The update is in place; it runs from the next start.
+                self.status = format!(
+                    "Actualización instalada, pero no se pudo reiniciar Levare: {error}. \
+                     Ciérralo y vuelve a abrirlo."
+                );
+                self.set_update_status(Status::Installed { path }, cx);
+            }
+        }
     }
 
     pub(crate) fn toggle_automatic_updates(&mut self, cx: &mut Context<Self>) {
@@ -364,7 +382,10 @@ impl AppView {
         match saved {
             Ok(()) => {
                 self.updates.automatic = on;
-                self.status = if on {
+                self.status = if let (true, Err(why)) = (on, &self.updates.updater) {
+                    // On, but nothing will come of it; say why now.
+                    format!("Búsqueda automática de actualizaciones activada. {why}")
+                } else if on {
                     "Levare buscará actualizaciones automáticamente.".into()
                 } else {
                     "Búsqueda automática de actualizaciones desactivada. «Buscar \
