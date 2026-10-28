@@ -188,6 +188,67 @@ mod tests {
             *document.editor.score()
         );
     }
+    /// Key→note cost on the typical orchestral score: one note edit, then
+    /// the displayed view. Run with
+    /// `cargo test -p score-document --release edit_relayout_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "measurement, not a regression test"]
+    fn edit_relayout_cost() {
+        use score_layout::ViewMode;
+        use std::time::Instant;
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/menuetto-y-trio-orquesta.partitura"
+        );
+        let score = score_io::decode(&std::fs::read(path).unwrap()).unwrap();
+        for mode in [ViewMode::Page, ViewMode::Continuous] {
+            let mut doc = Document::new(score.clone()).unwrap();
+            // The first note of bar 9 in the middle of the orchestra.
+            let parts = doc.editor.score().parts();
+            let id = parts
+                .iter()
+                .skip(parts.len() / 2)
+                .find_map(|part| {
+                    let (event, _) = part.measures()[8]
+                        .iter()
+                        .find(|(_, e)| e.pitches.first().is_some())?;
+                    Some(score_core::ElementId {
+                        part: part.id(),
+                        staff: score_core::StaffId::Upper,
+                        measure: 8,
+                        event,
+                    })
+                })
+                .unwrap();
+            doc.editor.select(id);
+            doc.layout_view(1200., mode, 1.);
+            let mut runs: Vec<f64> = (0..30)
+                .map(|run| {
+                    let start = Instant::now();
+                    doc.execute(Command::Transpose(if run % 2 == 0 { 1 } else { -1 }))
+                        .unwrap();
+                    std::hint::black_box(doc.layout_view(1200., mode, 1.));
+                    start.elapsed().as_secs_f64() * 1000.
+                })
+                .collect();
+            runs.sort_by(f64::total_cmp);
+            let frame: Vec<f64> = (0..30)
+                .map(|_| {
+                    let start = Instant::now();
+                    std::hint::black_box(doc.layout_view(1200., mode, 1.));
+                    std::hint::black_box(doc.is_dirty());
+                    start.elapsed().as_secs_f64() * 1000.
+                })
+                .collect();
+            println!(
+                "{mode:?}: edit + layout_view {:.3} ms, unchanged frame {:.3} ms (median of 30), {} measures engraved in the last pass",
+                runs[runs.len() / 2],
+                frame.iter().sum::<f64>() / frame.len() as f64,
+                doc.layout.recomputed_measures,
+            );
+        }
+    }
+
     #[test]
     fn recovered_document_requires_explicit_save() {
         let mut document = Document::recover(Score::default()).unwrap();
