@@ -16,12 +16,6 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$(mkdir -p "$1" && cd "$1" && pwd)"
 
-cp "$root/LICENSE" "$out/Levare-LICENSE.txt"
+# The files kept in the repository, shared with local macOS bundles.
+sh "$root/scripts/copy_licenses.sh" "$out"
 (cd "$root" && cargo about generate --locked --fail about.hbs -o "$out/THIRD_PARTY_NOTICES.html")
-
-mkdir -p "$out/fonts" "$out/GeneralUser-GS"
-cp "$root/assets/fonts/OFL.txt" "$out/fonts/Bravura-OFL.txt"
-cp "$root/assets/fonts/Cantarell-OFL.txt" "$out/fonts/Cantarell-OFL.txt"
-cp "$root/assets/fonts/Liberation-LICENSE.txt" "$out/fonts/Liberation-LICENSE.txt"
-cp "$root/assets/fonts/README.md" "$out/fonts/README.md"
-cp "$root/assets/sounds/LICENSE.txt" "$root/assets/sounds/README.md" "$out/GeneralUser-GS/"

@@ -249,7 +249,6 @@ jobs:
           cp sfizz/libsfizz.dylib "$app/Contents/Frameworks/libsfizz.dylib"
           cp -R licenses/. "$app/Contents/Resources/licenses/"
           cp -R sfizz/licenses/sfizz "$app/Contents/Resources/licenses/sfizz"
-          scripts/copy_licenses.sh "$app/Contents/Resources/licenses"
           plist="$app/Contents/Info.plist"
           cp packaging/macos/Info.plist "$plist"
           plutil -replace CFBundleVersion -string "$VERSION" "$plist"
@@ -478,7 +477,6 @@ jobs:
           cp sfizz/libsfizz.so "$folder/libsfizz.so"
           cp -R licenses/. "$folder/licenses/"
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
-          scripts/copy_licenses.sh "$folder/licenses"
           cp packaging/linux/dev.partitura.editor.desktop packaging/linux/levare-mime.xml packaging/linux/install.sh packaging/linux/README.txt "$folder/"
           convert assets/branding/levare/icon-macos-v2.png -resize 256x256 "$folder/levare.png"
           chmod 755 "$folder/levare" "$folder/install.sh"
@@ -506,7 +504,6 @@ jobs:
           cp sfizz/sfizz.dll "$folder/sfizz.dll"
           cp -R licenses/. "$folder/licenses/"
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
-          scripts/copy_licenses.sh "$folder/licenses"
           (cd stage && 7z a -tzip -mx=9 "../dist/$ARCHIVE.zip" Levare >/dev/null)
           7z l "dist/$ARCHIVE.zip"
 
