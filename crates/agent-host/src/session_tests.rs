@@ -289,6 +289,24 @@ fn agent_without_http_mcp_fails() {
     assert_eq!(next(&rt, &mut events), None);
 }
 
+#[cfg(unix)]
+type Started = (SessionHandle, mpsc::UnboundedReceiver<AgentEvent>);
+
+/// Starts `launch` each way Levare starts an agent's process: through
+/// `AcpAgent`, and through the transport Windows uses, which runs here
+/// without its job.
+#[cfg(unix)]
+fn starters() -> [fn(&Runtime, LaunchCommand, &McpServer) -> Started; 2] {
+    use crate::job::JobAgent;
+    use crate::session::{acp_agent, start_with};
+    [
+        |rt, launch, mcp| start_session(rt, launch, cwd(), mcp),
+        |rt, launch, mcp| start_with(rt, JobAgent(acp_agent(launch)), cwd(), mcp),
+    ]
+}
+
+// The agents in these tests are `/bin/sh` scripts.
+#[cfg(unix)]
 #[test]
 fn process_exit_fails_with_its_stderr() {
     let rt = Runtime::new().unwrap();
@@ -303,21 +321,24 @@ fn process_exit_fails_with_its_stderr() {
         env: vec![("PATH".into(), "/usr/bin:/bin".into())],
     };
 
-    let (_session, mut events) = start_session(&rt, launch, cwd(), &mcp);
+    for start in starters() {
+        let (_session, mut events) = start(&rt, launch.clone(), &mcp);
 
-    let Some(AgentEvent::Failed(raw)) = next(&rt, &mut events) else {
-        panic!("expected a failure")
-    };
-    assert!(raw.contains("ENOTFOUND"), "{raw}");
-    assert_eq!(
-        explain_error(AgentKind::Codex, &raw),
-        "Sin conexión para descargar el adaptador."
-    );
-    assert_eq!(next(&rt, &mut events), None);
+        let Some(AgentEvent::Failed(raw)) = next(&rt, &mut events) else {
+            panic!("expected a failure")
+        };
+        assert!(raw.contains("ENOTFOUND"), "{raw}");
+        assert_eq!(
+            explain_error(AgentKind::Codex, &raw),
+            "Sin conexión para descargar el adaptador."
+        );
+        assert_eq!(next(&rt, &mut events), None);
+    }
 }
 
 /// A shell agent that opens the session, then exits with `status` when the
 /// prompt arrives.
+#[cfg(unix)]
 fn exits_on_prompt(status: u8) -> LaunchCommand {
     let reply = |result: &str| {
         format!(
@@ -337,38 +358,46 @@ fn exits_on_prompt(status: u8) -> LaunchCommand {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn process_exit_during_a_turn_fails_once() {
     let rt = Runtime::new().unwrap();
     let (tools, _invocations) = mpsc::unbounded();
     let mcp = rt.handle().block_on(McpServer::start(tools)).unwrap();
 
-    let (session, mut events) = start_session(&rt, exits_on_prompt(3), cwd(), &mcp);
-    session.prompt("hola".into());
+    for start in starters() {
+        let (session, mut events) = start(&rt, exits_on_prompt(3), &mcp);
+        session.prompt("hola".into());
 
-    let Some(AgentEvent::Failed(raw)) = next(&rt, &mut events) else {
-        panic!("expected a failure")
-    };
-    assert!(raw.contains("se acabó"), "{raw}");
-    assert_eq!(next(&rt, &mut events), None);
+        let Some(AgentEvent::Failed(raw)) = next(&rt, &mut events) else {
+            panic!("expected a failure")
+        };
+        assert!(raw.contains("se acabó"), "{raw}");
+        assert_eq!(next(&rt, &mut events), None);
+    }
 }
 
+#[cfg(unix)]
 #[test]
 fn clean_process_exit_also_fails() {
     let rt = Runtime::new().unwrap();
     let (tools, _invocations) = mpsc::unbounded();
     let mcp = rt.handle().block_on(McpServer::start(tools)).unwrap();
 
-    let (session, mut events) = start_session(&rt, exits_on_prompt(0), cwd(), &mcp);
-    session.prompt("hola".into());
+    for start in starters() {
+        let (session, mut events) = start(&rt, exits_on_prompt(0), &mcp);
+        session.prompt("hola".into());
 
-    assert_eq!(
-        next(&rt, &mut events),
-        Some(AgentEvent::Failed("El agente se cerró.".into()))
-    );
-    assert_eq!(next(&rt, &mut events), None);
+        assert_eq!(
+            next(&rt, &mut events),
+            Some(AgentEvent::Failed("El agente se cerró.".into()))
+        );
+        assert_eq!(next(&rt, &mut events), None);
+    }
 }
 
+// `/bin/sleep` and `pgrep`.
+#[cfg(unix)]
 #[test]
 fn dropping_the_handle_ends_the_session_and_the_process() {
     let rt = Runtime::new().unwrap();
@@ -389,19 +418,21 @@ fn dropping_the_handle_ends_the_session_and_the_process() {
             .success()
     };
 
-    let (session, mut events) = start_session(&rt, launch, cwd(), &mcp);
-    let started = std::time::Instant::now();
-    while !running() {
-        assert!(started.elapsed() < Duration::from_secs(5), "never started");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    drop(session);
+    for start in starters() {
+        let (session, mut events) = start(&rt, launch.clone(), &mcp);
+        let started = std::time::Instant::now();
+        while !running() {
+            assert!(started.elapsed() < Duration::from_secs(5), "never started");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(session);
 
-    assert_eq!(next(&rt, &mut events), None);
-    let dropped = std::time::Instant::now();
-    while running() {
-        assert!(dropped.elapsed() < Duration::from_secs(5), "still running");
-        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(next(&rt, &mut events), None);
+        let dropped = std::time::Instant::now();
+        while running() {
+            assert!(dropped.elapsed() < Duration::from_secs(5), "still running");
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 

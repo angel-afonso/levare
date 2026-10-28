@@ -73,7 +73,9 @@ dependencies = [
  "agent-client-protocol",
  "agent-tools",
  "axum",
+ "dirs 6.0.0",
  "futures",
+ "getrandom 0.3.4",
  "reqwest",
  "rmcp",
  "schemars 1.2.3",
@@ -81,6 +83,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
