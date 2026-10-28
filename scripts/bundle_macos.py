@@ -101,9 +101,10 @@ def bundle_sfizz(contents, resources):
     frameworks = contents / "Frameworks"
     frameworks.mkdir(parents=True, exist_ok=True)
     shutil.copy2(sfizz, frameworks / "libsfizz.dylib")
-    licenses = resources / "licenses"
-    licenses.mkdir(exist_ok=True)
-    shutil.copy2(sfizz.parent / "licenses" / "sfizz.txt", licenses / "sfizz.txt")
+    # The same licenses/sfizz/ folder the release bundle carries.
+    notices = sfizz.parent / "licenses" / "sfizz"
+    if notices.is_dir():
+        shutil.copytree(notices, resources / "licenses" / "sfizz", dirs_exist_ok=True)
 
 
 if __name__ == "__main__":
