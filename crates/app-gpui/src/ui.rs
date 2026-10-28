@@ -40,6 +40,7 @@ mod sound_store;
 pub use review::RangeEditor;
 mod theme;
 mod toolbar;
+pub mod window_frame;
 use super::*;
 use icons::{Icon, icon};
 pub use instrument_panel::{InstrumentPicker, search_field as parts_search_field};

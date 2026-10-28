@@ -3561,11 +3561,11 @@ fn main() {
         .detach();
         let shortcuts = Shortcuts::load();
         shortcuts.install(cx);
-        let bounds = Bounds::centered(None, size(px(1440.), px(1000.)), cx);
+        let (bounds, min_size) = ui::window_frame::first_window(cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(960.), px(680.))),
+                window_min_size: Some(min_size),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Levare".into()),
                     appears_transparent: true,
