@@ -6,7 +6,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use score_playback::{Message, PlaybackPlan};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
 };
 
 const QUEUE_CAPACITY: usize = 64;
@@ -14,6 +14,28 @@ const BLOCK: usize = 64;
 /// Changes of pace (start, pause, resume, loop wrap, end) remembered to tell
 /// which frame the listener hears. A few per second at most.
 const HISTORY: usize = 64;
+
+/// The state of the audio device, as its stream reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Health {
+    Running = 0,
+    /// A stream error that reopening the stream may cure: an ALSA error
+    /// after suspend, a failed write, an unexpected backend error.
+    Interrupted,
+    /// The device is gone.
+    Disconnected,
+}
+
+impl Health {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Running,
+            1 => Self::Interrupted,
+            _ => Self::Disconnected,
+        }
+    }
+}
 
 struct Shared {
     epoch: AtomicU64,
@@ -23,7 +45,7 @@ struct Shared {
     /// output latency.
     frame: AtomicU64,
     volume: AtomicU32,
-    failed: Arc<AtomicBool>,
+    health: Arc<AtomicU8>,
     paused: AtomicBool,
     mix: [AtomicU32; score_playback::PLAYBACK_CHANNELS],
     reverb: AtomicU32,
@@ -302,7 +324,13 @@ impl Control {
         })
     }
     pub fn failed(&self) -> bool {
-        self.shared.failed.load(Ordering::Acquire)
+        self.health() != Health::Running
+    }
+    pub fn health(&self) -> Health {
+        Health::from_u8(self.shared.health.load(Ordering::Acquire))
+    }
+    pub(crate) fn set_health(&self, health: Health) {
+        self.shared.health.store(health as u8, Ordering::Release);
     }
     pub fn set_volume(&mut self, percent: u32) {
         self.shared
@@ -376,7 +404,7 @@ impl Renderer {
             finished: AtomicU64::new(0),
             frame: AtomicU64::new(0),
             volume: AtomicU32::new(70),
-            failed: Arc::new(AtomicBool::new(false)),
+            health: Arc::new(AtomicU8::new(0)),
             paused: AtomicBool::new(false),
             mix: std::array::from_fn(|_| AtomicU32::new(ChannelMix::default().packed())),
             reverb: AtomicU32::new(ReverbSettings::default().packed()),
@@ -433,8 +461,11 @@ impl Renderer {
         Ok((control, renderer))
     }
 
-    pub(crate) fn failure_flag(&self) -> Arc<AtomicBool> {
-        self.shared.failed.clone()
+    pub(crate) fn health_flag(&self) -> Arc<AtomicU8> {
+        self.shared.health.clone()
+    }
+    pub(crate) fn sample_rate(&self) -> u32 {
+        self.sample_rate
     }
     /// The time from rendering a sample to hearing it, as the device reports
     /// it each callback. The position published to the interface lags the

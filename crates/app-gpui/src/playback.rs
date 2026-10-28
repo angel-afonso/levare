@@ -1,10 +1,15 @@
 use score_core::{ElementId, Instrument, PartId, Score, StaffId};
-use score_platform::AudioOutput;
 use score_platform::mixer::{ChannelMix, ReverbSettings};
 use score_platform::sound_engine::{RoutingSignature, SoundBank};
+use score_platform::{AudioOutput, Health};
 use score_playback::{Audition, PlaybackPlan, Style, Tempo};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// A stream error is cured by reopening the stream once; another one this
+/// soon after means the device is not coming back by itself.
+const RECOVERY_WINDOW: Duration = Duration::from_secs(5);
 
 /// UI-owned transport. The audio callback only receives immutable prepared plans.
 pub struct Playback {
@@ -41,6 +46,8 @@ pub struct Playback {
     pub part_mix: HashMap<PartId, ChannelMix>,
     pub reverb: ReverbSettings,
     mix_channels: [ChannelMix; score_playback::PLAYBACK_CHANNELS],
+    /// When the stream was last reopened after an error.
+    recovered_at: Option<Instant>,
 }
 
 impl Playback {
@@ -77,6 +84,7 @@ impl Playback {
             part_mix: HashMap::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
+            recovered_at: None,
         };
         playback.connect();
         playback
@@ -518,7 +526,17 @@ impl Playback {
         let Some(output) = &mut self.output else {
             return false;
         };
-        if output.control.failed() {
+        let health = output.control.health();
+        // A hiccup (an ALSA error after suspend, say) gets one reopen,
+        // which keeps the sounds and the place in the score.
+        let recovered = health == Health::Interrupted
+            && self
+                .recovered_at
+                .is_none_or(|at| at.elapsed() >= RECOVERY_WINDOW)
+            && output.reopen().is_ok();
+        if recovered {
+            self.recovered_at = Some(Instant::now());
+        } else if health != Health::Running {
             self.output = None;
             self.playhead = None;
             self.clock = None;
@@ -609,6 +627,7 @@ mod tests {
             part_mix: HashMap::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
+            recovered_at: None,
         }
     }
 
