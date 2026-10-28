@@ -993,8 +993,33 @@ pub(super) fn hairpin_y<'a>(
     dynamic.max(floor + 28.)
 }
 
+/// The sides of the staff, `(above, below)`, that slurs and ties take in each
+/// bar. Indexed once, so rows and hairpins don't scan every connection.
+pub(super) fn curve_lanes(score: &Score) -> HashMap<(PartId, StaffId, usize), (bool, bool)> {
+    let mut lanes = HashMap::<_, (bool, bool)>::new();
+    for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
+        let below = score.voice_of(c.start) == Some(Voice::Two);
+        for index in c.start.measure..=c.end.measure {
+            let lanes = lanes
+                .entry((c.start.part, c.start.staff, index))
+                .or_default();
+            if c.kind == ConnectionKind::Tie {
+                // Ties can turn either way, depending on the chord/stem.
+                lanes.0 = true;
+                lanes.1 = true;
+            } else if below {
+                lanes.1 = true;
+            } else {
+                lanes.0 = true;
+            }
+        }
+    }
+    lanes
+}
+
 pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Vec<Hairpin> {
     let mut result = Vec::new();
+    let curve_lanes = curve_lanes(score);
     for c in score.connections().iter().filter(|c| c.kind.is_hairpin()) {
         let Some(start) = index.measure_of(c.start) else {
             continue;
@@ -1068,15 +1093,10 @@ pub(super) fn hairpins(score: &Score, index: &PlacedIndex, thickness: f32) -> Ve
                     x2 = left - 6.;
                 }
             }
-            let below_curve = score.connections().iter().any(|connection| {
-                connection.kind.is_curve()
-                    && connection.start.part == first.part
-                    && connection.start.staff == first.source_staff
-                    && (connection.kind == ConnectionKind::Tie
-                        || score.voice_of(connection.start) == Some(Voice::Two))
-                    && row.measures.iter().any(|m| {
-                        (connection.start.measure..=connection.end.measure).contains(&m.index)
-                    })
+            let below_curve = row.measures.iter().any(|m| {
+                curve_lanes
+                    .get(&(first.part, first.source_staff, m.index))
+                    .is_some_and(|&(_, below)| below)
             });
             let y = first.origin.y
                 + hairpin_y(row.measures.iter().map(|m| m.content.as_ref()), below_curve);

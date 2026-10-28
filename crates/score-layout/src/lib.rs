@@ -996,25 +996,7 @@ impl LayoutEngine {
         let mut connectors = Vec::new();
         let mut braces = Vec::new();
         let mut brackets = Vec::new();
-        // Index connection lanes once; avoid scanning every link for every staff row.
-        let mut curve_lanes = HashMap::<_, (bool, bool)>::new();
-        for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
-            let below = score.voice_of(c.start) == Some(Voice::Two);
-            for index in c.start.measure..=c.end.measure {
-                let lanes = curve_lanes
-                    .entry((c.start.part, c.start.staff, index))
-                    .or_default();
-                if c.kind == score_core::ConnectionKind::Tie {
-                    // Ties can turn either way, depending on the chord/stem.
-                    lanes.0 = true;
-                    lanes.1 = true;
-                } else if below {
-                    lanes.1 = true;
-                } else {
-                    lanes.0 = true;
-                }
-            }
-        }
+        let curve_lanes = expression::curve_lanes(score);
         let hairpin_lanes: HashSet<_> = score
             .connections()
             .iter()
