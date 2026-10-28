@@ -455,14 +455,14 @@ fn load_automatic(path: &Path) -> bool {
 
 fn save_automatic(path: &Path, on: bool) -> std::io::Result<()> {
     let text = serde_json::to_string_pretty(&Settings { automaticas: on })?;
-    std::fs::write(path, text + "\n")
+    atomic_write::write(path, (text + "\n").as_bytes())
 }
 
 fn save_reopen(path: &Path, score: &Path) -> std::io::Result<()> {
     let text = serde_json::to_string_pretty(&Reopen {
         partitura: score.to_path_buf(),
     })?;
-    std::fs::write(path, text + "\n")
+    atomic_write::write(path, (text + "\n").as_bytes())
 }
 
 /// The score to open again after an update's restart, once: the marker is
@@ -583,6 +583,25 @@ mod tests {
         assert!(!load_automatic(&path));
         save_automatic(&path, true).unwrap();
         assert!(load_automatic(&path));
+    }
+
+    #[test]
+    fn a_read_only_settings_file_is_kept_and_explained_in_spanish() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("actualizaciones.json");
+        save_automatic(&path, false).unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions.clone()).unwrap();
+        let error = save_automatic(&path, true).unwrap_err().to_string();
+        assert!(
+            error.starts_with("«actualizaciones.json» es de solo lectura"),
+            "{error}"
+        );
+        assert!(!load_automatic(&path));
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&path, permissions).unwrap();
     }
 
     #[test]
