@@ -399,11 +399,10 @@ fn retry<T>(mut operation: impl FnMut() -> std::io::Result<T>) -> std::io::Resul
     operation()
 }
 
-/// Access denied, a sharing or lock violation, or a folder still emptying.
+/// Another program holding a file, as when saving one, or a folder still
+/// emptying. Only Windows retries: elsewhere `waits` is empty.
 fn transient(cause: &std::io::Error) -> bool {
-    cause.kind() == std::io::ErrorKind::PermissionDenied
-        || cause.kind() == std::io::ErrorKind::DirectoryNotEmpty
-        || (cfg!(windows) && matches!(cause.raw_os_error(), Some(32 | 33)))
+    atomic_write::is_transient(cause) || cause.kind() == std::io::ErrorKind::DirectoryNotEmpty
 }
 
 fn remove_dir_all(path: &Path) -> std::io::Result<()> {

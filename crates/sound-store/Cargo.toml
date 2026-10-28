@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+atomic-write.workspace = true
 score-sound-vsco = { path = "../sound-vsco" }
 score-platform.workspace = true
 serde.workspace = true

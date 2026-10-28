@@ -5817,6 +5817,7 @@ dependencies = [
 name = "score-sound-store"
 version = "0.2.0"
 dependencies = [
+ "atomic-write",
  "libc",
  "score-core",
  "score-platform",
