@@ -1,5 +1,7 @@
 //! Vector PDF adapter. Export uses print layout, independent of screen zoom/view.
 #[cfg(target_os = "macos")]
+mod painter;
+#[cfg(target_os = "macos")]
 mod quartz;
 
 pub fn export(score: &score_core::Score, path: &std::path::Path) -> Result<usize, String> {
