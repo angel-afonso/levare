@@ -2,12 +2,16 @@
 //! finished temporary copy written beside it, so a failed write never leaves
 //! a truncated file behind.
 //!
+//! The copy takes the permissions of the file it replaces, a symbolic link is
+//! written through so it keeps pointing at the same file, and on Unix the
+//! folder is flushed after the rename so the new name survives a power cut.
 //! On Windows the rename fails for a moment while another program (OneDrive,
 //! Defender, the search indexer) has the target open, so it is retried a few
-//! times. Elsewhere it behaves like a plain `NamedTempFile::persist`.
+//! times.
 use std::{
+    fs,
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
     thread,
     time::Duration,
 };
@@ -25,7 +29,7 @@ const RETRY_DELAYS: [Duration; 5] = [
 /// Writes `bytes` to `path` in one step: into a temporary file beside it,
 /// flushed to disk, then renamed over it by [`persist`].
 pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut temporary = NamedTempFile::new_in(directory_of(path)).map_err(|e| explain(e, path))?;
+    let mut temporary = temporary_for(path)?;
     temporary.write_all(bytes).map_err(|e| explain(e, path))?;
     temporary
         .as_file()
@@ -34,23 +38,51 @@ pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     persist(temporary, path)
 }
 
-/// Replaces `path` with `temporary`. A read-only target is refused on every
-/// platform, so a protected score is never overwritten. Errors carry a
-/// message for the musician, in Spanish.
+/// An empty temporary file in the folder of the file `path` names, for
+/// writers that need a path to fill (Quartz) before [`persist`]. On Unix it
+/// starts with the replaced file's permissions, so its contents are never
+/// more exposed than the file's while they are written, or with those a new
+/// file gets (the umask) when there is none yet. The owner can always write
+/// it, so a writer that reopens it by path can fill it; [`persist`] refuses a
+/// read-only target afterwards.
+pub fn temporary_for(path: &Path) -> io::Result<NamedTempFile> {
+    let target = resolve(path);
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut builder = tempfile::Builder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&target).map_or(0o666, |metadata| {
+            (metadata.permissions().mode() & 0o777) | 0o200
+        });
+        builder.permissions(fs::Permissions::from_mode(mode));
+    }
+    builder
+        .tempfile_in(directory_of(&target))
+        .map_err(|e| explain(e, path))
+}
+
+/// Replaces `path` with `temporary`, which should come from
+/// [`temporary_for`]: a temporary file on another disk cannot be renamed
+/// over the target. A read-only target is refused on every platform, so a
+/// protected score is never overwritten. Errors carry a message for the
+/// musician, in Spanish.
 pub fn persist(temporary: NamedTempFile, path: &Path) -> io::Result<()> {
-    if is_read_only(path) {
+    let target = resolve(path);
+    if is_read_only(&target) {
         return Err(explain(
             io::Error::from(io::ErrorKind::PermissionDenied),
             path,
         ));
     }
+    keep_permissions(temporary.as_file(), &target).map_err(|e| explain(e, path))?;
     let mut temporary = temporary;
     let mut attempt = 0;
     loop {
-        match temporary.persist(path) {
-            Ok(_) => return Ok(()),
+        match temporary.persist(&target) {
+            Ok(_) => break,
             Err(failure) => match retry_delay(&failure.error, attempt, cfg!(windows)) {
-                Some(delay) if !is_read_only(path) => {
+                Some(delay) if !is_read_only(&target) => {
                     thread::sleep(delay);
                     temporary = failure.file;
                     attempt += 1;
@@ -59,7 +91,57 @@ pub fn persist(temporary: NamedTempFile, path: &Path) -> io::Result<()> {
             },
         }
     }
+    sync_directory(directory_of(&target));
+    Ok(())
 }
+
+/// The file `path` names. A symbolic link is followed, so the rename
+/// replaces the file it points at and the link stays a link.
+fn resolve(path: &Path) -> PathBuf {
+    let is_link = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
+    if !is_link {
+        return path.to_owned();
+    }
+    dunce::canonicalize(path).unwrap_or_else(|_| match fs::read_link(path) {
+        // A link to a file not created yet: relative to the link's folder.
+        Ok(destination) => directory_of(path).join(destination),
+        Err(_) => path.to_owned(),
+    })
+}
+
+/// Gives the temporary file the replaced file's permissions, so saving a
+/// shared score does not make it private.
+#[cfg(unix)]
+fn keep_permissions(temporary: &fs::File, target: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    match fs::metadata(target) {
+        Ok(metadata) => {
+            let mode = metadata.permissions().mode() & 0o777;
+            temporary.set_permissions(fs::Permissions::from_mode(mode))
+        }
+        Err(_) => Ok(()),
+    }
+}
+
+/// Windows: the only permission std exposes is read-only, refused before;
+/// the file's ACL is inherited from the folder, like the target's.
+#[cfg(not(unix))]
+fn keep_permissions(_temporary: &fs::File, _target: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+/// Makes the rename itself durable. Best effort: the file is already in
+/// place, and some file systems refuse to flush a folder.
+#[cfg(unix)]
+fn sync_directory(directory: &Path) {
+    if let Ok(directory) = fs::File::open(directory) {
+        let _ = directory.sync_all();
+    }
+}
+
+/// Windows has no folder flush through std; NTFS journals the rename.
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) {}
 
 /// Whether `error` is Windows saying another program holds the file for
 /// now, which waiting can fix. Always false elsewhere.
@@ -168,6 +250,96 @@ mod tests {
         write(&path, b"{\"version\": 1}").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"version\": 1}");
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_keeps_the_permissions_of_the_replaced_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("Compartida.partitura");
+        for permissions in [0o644, 0o664, 0o600] {
+            std::fs::write(&path, "antes").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(permissions)).unwrap();
+            write(&path, b"despues").unwrap();
+            assert_eq!(mode(&path), permissions);
+            persist(temporary_with(directory.path(), "otra vez"), &path).unwrap();
+            assert_eq!(mode(&path), permissions);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_private_file_stays_private_while_its_copy_is_written() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("Privada.partitura");
+        std::fs::write(&path, "antes").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let temporary = temporary_for(&path).unwrap();
+        assert_eq!(mode(temporary.path()), 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_file_is_readable_like_any_other_the_user_creates() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("Nueva.partitura");
+        write(&path, b"x").unwrap();
+        let ordinary = directory.path().join("ordinaria");
+        std::fs::write(&ordinary, "x").unwrap();
+        assert_eq!(mode(&path), mode(&ordinary), "umask, not 0600");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_through_a_symbolic_link_updates_the_file_it_names() {
+        let directory = tempfile::tempdir().unwrap();
+        let elsewhere = directory.path().join("obras");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let real = elsewhere.join("Sinfonia.partitura");
+        std::fs::write(&real, "antes").unwrap();
+        let link = directory.path().join("Enlace.partitura");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        write(&link, b"despues").unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "despues");
+
+        persist(temporary_with(directory.path(), "otra vez"), &link).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "otra vez");
+
+        // A relative link to a file that does not exist yet creates it.
+        let dangling = directory.path().join("Pendiente.partitura");
+        std::os::unix::fs::symlink("obras/Nueva.partitura", &dangling).unwrap();
+        write(&dangling, b"nueva").unwrap();
+        assert!(
+            std::fs::symlink_metadata(&dangling)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_to_string(elsewhere.join("Nueva.partitura")).unwrap(),
+            "nueva"
+        );
     }
 
     #[test]
