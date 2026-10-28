@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Levare
+GenericName=Editor de partituras
+Comment=Escribe, escucha y maqueta partituras
+Exec=levare
+Icon=levare
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=partitura;música;notación;score;music;notation;
+StartupWMClass=dev.partitura.editor

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: update-manifest.sh <dist dir> <version> <tag> <owner/repo>
 #
-# Signs the archive the in-app updater installs with minisign and writes
+# Signs each archive the in-app updater installs with minisign and writes
 # <dist dir>/latest.json, which the app reads from
 # https://github.com/<owner/repo>/releases/latest/download/latest.json.
 # Expects UPDATE_SIGNING_KEY_PATH (the minisign secret key, without a
@@ -16,11 +16,14 @@ repo="$4"
 public_key="$(dirname "$0")/../../crates/app-gpui/assets/update.pub"
 base_url="https://github.com/$repo/releases/download/$tag"
 
-# Updater platform → archive suffix. Both Mac architectures use the
-# universal app.
+# Updater platform (levare_update::platform()) → archive suffix. Both Mac
+# architectures use the universal app. Clients only read their own key, so
+# adding one does not affect the others.
 platforms=(
   "darwin-aarch64:universal-apple-darwin.zip"
   "darwin-x86_64:universal-apple-darwin.zip"
+  "linux-x86_64:x86_64-unknown-linux-gnu.tar.gz"
+  "windows-x86_64:x86_64-pc-windows-msvc.zip"
 )
 
 entries='{}'
