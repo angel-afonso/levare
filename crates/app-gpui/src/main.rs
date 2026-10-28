@@ -234,7 +234,7 @@ impl AppView {
                     message
                 }
                 Err(why) => {
-                    eprintln!("No se pudo apartar la recuperación: {why}");
+                    diagnostics::log(format_args!("No se pudo apartar la recuperación: {why}"));
                     quit_snapshot = None;
                     format!(
                         "No se pudo recuperar: {error}. El autoguardado queda desactivado para \
@@ -3735,7 +3735,7 @@ fn main() {
             .ok_or_else(|| "no se encontró la carpeta de datos de Levare".to_owned())
             .and_then(|path| score_io::Recovery::open(&path).map_err(|e| e.to_string()));
         if let Err(error) = &recovery {
-            eprintln!("Recuperación no disponible: {error}");
+            diagnostics::log(format_args!("Recuperación no disponible: {error}"));
         }
         let pending = recovery.as_ref().ok().cloned();
         let shortcuts = Shortcuts::load(cx);
@@ -3770,7 +3770,7 @@ fn main() {
                 && let Some(recovery) = &pending
                 && let Err(error) = recovery.flush()
             {
-                eprintln!("No se pudo guardar la recuperación: {error}");
+                diagnostics::log(format_args!("No se pudo guardar la recuperación: {error}"));
             }
             async {}
         })

@@ -41,6 +41,10 @@ pub fn log(message: impl Display) {
     let message = message.to_string();
     // Not eprintln!, which panics when stderr is a closed pipe.
     let _ = writeln!(io::stderr(), "levare: {message}");
+    // Tests that reach a failure path must not write to the musician's log.
+    if cfg!(test) {
+        return;
+    }
     if let Some(directory) = directory() {
         let _ = append(&directory, &line(now(), &message));
     }

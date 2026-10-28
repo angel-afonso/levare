@@ -83,7 +83,7 @@ pub fn failure_title(action: &str, path: Option<&Path>) -> String {
 /// log.
 pub fn file_error(error: &score_io::FileError) -> String {
     if let Some(detail) = error.detail() {
-        eprintln!("levare: {error}: {detail}");
+        crate::diagnostics::log(format_args!("{error}: {detail}"));
     }
     error.to_string()
 }

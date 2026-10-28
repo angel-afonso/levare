@@ -25,16 +25,23 @@ impl AppView {
         match kept {
             Ok(None) => {}
             Ok(Some(copy)) => {
-                eprintln!("Copia de emergencia guardada en {}", copy.display());
+                crate::diagnostics::log(format_args!(
+                    "Copia de emergencia guardada en {}",
+                    copy.display()
+                ));
                 // «Abrir reciente» leads to it on the next start.
                 self.recent.touch(&copy);
                 if let Some(path) = &self.recent_path
                     && let Err(error) = self.recent.save(path)
                 {
-                    eprintln!("No se pudo guardar la lista de recientes: {error}");
+                    crate::diagnostics::log(format_args!(
+                        "No se pudo guardar la lista de recientes: {error}"
+                    ));
                 }
             }
-            Err(error) => eprintln!("No se pudo conservar la partitura sin guardar: {error}"),
+            Err(error) => crate::diagnostics::log(format_args!(
+                "No se pudo conservar la partitura sin guardar: {error}"
+            )),
         }
     }
 }
@@ -54,7 +61,9 @@ pub(crate) fn keep_on_quit(
     let Err(autosave) = autosave_now(recovery, snapshot) else {
         return Ok(None);
     };
-    eprintln!("No se pudo guardar la recuperación: {autosave}");
+    crate::diagnostics::log(format_args!(
+        "No se pudo guardar la recuperación: {autosave}"
+    ));
     let (Some(score), Some(folder)) = (unsaved, folder) else {
         return Err("no se encontró la carpeta de datos de Levare".into());
     };

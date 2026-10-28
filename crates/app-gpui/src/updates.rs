@@ -426,7 +426,9 @@ impl AppView {
                 avisado: true,
             };
             if let Err(error) = save_settings(&path, &settings) {
-                eprintln!("levare: no se pudo guardar el ajuste de actualizaciones: {error}");
+                crate::diagnostics::log(format_args!(
+                    "No se pudo guardar el ajuste de actualizaciones: {error}"
+                ));
             }
         }
         let command = id::AUTOMATIC_UPDATES;
