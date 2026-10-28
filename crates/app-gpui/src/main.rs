@@ -1538,8 +1538,8 @@ impl AppView {
             ),
             id::NEW => self.request_next(Next::New, window, cx),
             id::OPEN => self.request_next(Next::Open, window, cx),
-            id::SAVE => self.save(false, cx),
-            id::SAVE_AS => self.save(true, cx),
+            id::SAVE => self.save(false, window, cx),
+            id::SAVE_AS => self.save(true, window, cx),
             id::EXPORT => self.export_pdf(cx),
             id::EXPORT_MUSICXML => self.export_musicxml(cx),
             id::CLOSE | id::QUIT => self.request_next(Next::Close, window, cx),
@@ -2693,7 +2693,7 @@ impl AppView {
         cx.notify();
     }
 
-    fn save(&mut self, save_as: bool, cx: &mut Context<Self>) {
+    fn save(&mut self, save_as: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy || self.confirming || self.agent_locked() {
             return;
         }
@@ -2711,7 +2711,7 @@ impl AppView {
             cx.prompt_for_new_path(&directory, Some(&name))
         });
         let score = self.document.editor.score().clone();
-        cx.spawn(async move |view, cx| {
+        cx.spawn_in(window, async move |view, cx| {
             let path = match (existing, picker) {
                 (Some(path), _) => Ok(Some(path)),
                 (_, Some(picker)) => picker
@@ -2720,8 +2720,35 @@ impl AppView {
                     .and_then(|result| result.map_err(file_dialogs::dialog_error)),
                 _ => Ok(None),
             };
+            // The native panel approved replacing the name the musician typed,
+            // not the one with the extension added, so that one asks again.
+            let path = match path {
+                Ok(Some(chosen)) => match file_dialogs::with_levare_extension(&chosen) {
+                    Some(named) if named.exists() => {
+                        let answer = view.update_in(cx, |view, window, cx| {
+                            view.confirming = true;
+                            let name = named.file_name().unwrap_or_default().to_string_lossy();
+                            window.prompt(
+                                PromptLevel::Warning,
+                                &format!("«{name}» ya existe"),
+                                Some("Si lo reemplazas, se perderá su contenido actual."),
+                                &["Cancelar", "Reemplazar"],
+                                cx,
+                            )
+                        });
+                        let replace = match answer {
+                            Ok(answer) => answer.await == Ok(1),
+                            Err(_) => false,
+                        };
+                        let _ = view.update(cx, |view, _| view.confirming = false);
+                        Ok(replace.then_some(named))
+                    }
+                    Some(named) => Ok(Some(named)),
+                    None => Ok(Some(chosen)),
+                },
+                other => other,
+            };
             let result = match path {
-                // Preserve exactly the path whose replacement the native panel approved.
                 Ok(Some(path)) => Some(
                     cx.background_executor()
                         .spawn(async move {

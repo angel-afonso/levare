@@ -43,6 +43,28 @@ pub fn suggested_save(path: Option<&Path>, title: &str) -> (PathBuf, String) {
     )
 }
 
+/// `name.levare` when the chosen name has no extension of its own, as when
+/// the musician deletes the suggested one. A dot inside a title («Op. 2»)
+/// does not count as an extension.
+pub fn with_levare_extension(path: &Path) -> Option<PathBuf> {
+    let has_extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            (1..=10).contains(&extension.len())
+                && extension.chars().all(|c| c.is_ascii_alphanumeric())
+        });
+    if has_extension {
+        return None;
+    }
+    let name = path.file_name()?.to_string_lossy();
+    let name = name.trim_end_matches('.');
+    if name.is_empty() {
+        return None;
+    }
+    Some(path.with_file_name(format!("{name}.{}", score_io::EXTENSION)))
+}
+
 fn is_levare(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case(score_io::EXTENSION))
@@ -109,6 +131,26 @@ mod tests {
         }
         assert_eq!(save_in_place(None), None);
         assert_eq!(suggested_save(None, "Sin título").1, "Sin título.levare");
+    }
+
+    #[test]
+    fn a_name_without_extension_becomes_a_levare_file() {
+        let folder = Path::new("obras");
+        assert_eq!(
+            with_levare_extension(&folder.join("Sonata")),
+            Some(folder.join("Sonata.levare"))
+        );
+        assert_eq!(
+            with_levare_extension(&folder.join("Sonata Op. 2")),
+            Some(folder.join("Sonata Op. 2.levare"))
+        );
+        assert_eq!(
+            with_levare_extension(&folder.join("Sonata.")),
+            Some(folder.join("Sonata.levare"))
+        );
+        for named in ["Sonata.levare", "Sonata.partitura", "Sonata.musicxml"] {
+            assert_eq!(with_levare_extension(&folder.join(named)), None);
+        }
     }
 
     #[test]

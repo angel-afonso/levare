@@ -427,8 +427,8 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
         )
         .child(div().h(px(25.)).border_r_1().border_color(rgb(BORDER)))
         .child(
-            icon_button("save-document", Icon::Save, false, cx, |v, _, cx| {
-                v.save(false, cx)
+            icon_button("save-document", Icon::Save, false, cx, |v, window, cx| {
+                v.save(false, window, cx)
             })
             .tooltip(command_hint(view, id::SAVE)),
         )
