@@ -751,6 +751,60 @@ mod tests {
         );
     }
 
+    /// What the release workflow runs against each packaged download, with
+    /// `LEVARE_SFIZZ` naming the library inside the unpacked archive: it must
+    /// load, read a sample and render sound.
+    #[test]
+    #[ignore = "requires a sfizz library, found as the app finds it (set LEVARE_SFIZZ)"]
+    fn the_bundled_sfizz_engine_loads_a_patch_and_renders_it() {
+        let library = crate::bundled_engine().expect("no sfizz library");
+        let api = Api::open(&library).unwrap();
+
+        // Half a second of A4 as 16-bit mono PCM.
+        let rate = 48_000u32;
+        let samples: Vec<i16> = (0..rate / 2)
+            .map(|i| {
+                let phase = std::f32::consts::TAU * 440. * i as f32 / rate as f32;
+                (phase.sin() * 16_000.) as i16
+            })
+            .collect();
+        let data = (samples.len() * 2) as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::write(folder.path().join("a4.wav"), wav).unwrap();
+        let patch = folder.path().join("a4.sfz");
+        std::fs::write(&patch, "<region> sample=a4.wav pitch_keycenter=69\n").unwrap();
+
+        let mut voice = Voice::load(&api, &patch, rate, false).unwrap();
+        voice.on(69, 100);
+        let mut energy = 0.;
+        for _ in 0..32 {
+            let (mut left, mut right) = ([0f32; 64], [0f32; 64]);
+            voice.render(&mut left, &mut right);
+            energy += left.iter().chain(&right).map(|s| s * s).sum::<f32>();
+        }
+        assert!(
+            energy > 0.01,
+            "sfizz rendered silence from {}",
+            library.display()
+        );
+    }
+
     #[test]
     fn cc1_cache_is_per_voice_and_resets_even_after_a_zero_value() {
         let (mut normal, mut pizz) = (None, None);
