@@ -149,7 +149,9 @@ In a release build:
   Unsaved work comes back through the autosave; a saved score is opened again.
 - **Buscar actualizaciones…** checks right away and says what it found.
 - **Activar o desactivar la búsqueda automática de actualizaciones** is saved in
-  `actualizaciones.json`, in the data folder.
+  `actualizaciones.json`, in the data folder. The first automatic check says in the
+  status bar that Levare looks on GitHub every 6 hours and names this command; the same
+  file remembers that it was said (`avisado`).
 
 The commands are in the Levare menu on macOS and in the in-window File menu on Windows and
 Linux; command search finds them everywhere.

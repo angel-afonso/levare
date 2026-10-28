@@ -11,6 +11,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use gpui::{Context, Timer};
 use levare_update::{Installation, Update, Updater};
+use score_keymap::id;
 use serde::{Deserialize, Serialize};
 
 use crate::AppView;
@@ -49,12 +50,27 @@ pub struct Updates {
     /// app not running from Levare.app, a folder Levare cannot write).
     updater: Result<(Arc<Updater>, Installation), String>,
     automatic: bool,
+    /// Whether the musician has been told that Levare looks for updates on
+    /// its own (`disclosure`).
+    told: bool,
 }
 
 /// `actualizaciones.json` in the data folder.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Settings {
     automaticas: bool,
+    /// Missing from files written before Levare said it checks.
+    #[serde(default)]
+    avisado: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            automaticas: true,
+            avisado: false,
+        }
+    }
 }
 
 /// `reabrir.json`: the saved score to open again after restarting into an
@@ -66,12 +82,15 @@ struct Reopen {
 
 impl Updates {
     pub fn new() -> Self {
+        let settings = data_path("actualizaciones.json")
+            .as_deref()
+            .map(load_settings)
+            .unwrap_or_default();
         Self {
             status: Status::Idle,
             updater: updater(),
-            automatic: data_path("actualizaciones.json")
-                .as_deref()
-                .is_none_or(load_automatic),
+            automatic: settings.automaticas,
+            told: settings.avisado,
         }
     }
 
@@ -127,6 +146,7 @@ pub fn start(updates: &Updates, cx: &mut Context<AppView>) {
         loop {
             let alive = view.update(cx, |view, cx| {
                 if view.updates.automatic {
+                    view.disclose_automatic_checks();
                     view.check_for_updates(false, cx);
                 }
             });
@@ -393,14 +413,44 @@ impl AppView {
         }
     }
 
+    /// Says once, at the first automatic check, that Levare goes online and
+    /// how to stop it.
+    fn disclose_automatic_checks(&mut self) {
+        if self.updates.told {
+            return;
+        }
+        self.updates.told = true;
+        if let Some(path) = data_path("actualizaciones.json") {
+            let settings = Settings {
+                automaticas: true,
+                avisado: true,
+            };
+            if let Err(error) = save_settings(&path, &settings) {
+                eprintln!("levare: no se pudo guardar el ajuste de actualizaciones: {error}");
+            }
+        }
+        let command = id::AUTOMATIC_UPDATES;
+        let name = self
+            .shortcuts
+            .spec(command)
+            .map_or(command.as_str(), |spec| spec.label);
+        self.status = disclosure(name, self.shortcuts.label(command).as_deref());
+    }
+
     pub(crate) fn toggle_automatic_updates(&mut self, cx: &mut Context<Self>) {
         let on = !self.updates.automatic;
+        // Whoever turns it on or off knows it is there.
+        let settings = Settings {
+            automaticas: on,
+            avisado: true,
+        };
         let saved = data_path("actualizaciones.json")
             .ok_or_else(|| "no hay carpeta de datos".to_owned())
-            .and_then(|path| save_automatic(&path, on).map_err(|error| error.to_string()));
+            .and_then(|path| save_settings(&path, &settings).map_err(|error| error.to_string()));
         match saved {
             Ok(()) => {
                 self.updates.automatic = on;
+                self.updates.told = true;
                 self.status = if let (true, Err(why)) = (on, &self.updates.updater) {
                     // On, but nothing will come of it; say why now.
                     format!("Búsqueda automática de actualizaciones activada. {why}")
@@ -436,6 +486,22 @@ impl AppView {
     }
 }
 
+/// What Levare says the first time it looks for updates on its own: where,
+/// how often, and the command that stops it, with its keys if it has any.
+fn disclosure(command: &str, keys: Option<&str>) -> String {
+    let menu = if cfg!(target_os = "macos") {
+        "Levare"
+    } else {
+        "Archivo"
+    };
+    let keys = keys.map(|keys| format!(" ({keys})")).unwrap_or_default();
+    format!(
+        "Levare busca actualizaciones en GitHub cada {} horas. Para que deje de hacerlo, \
+         elige «{command}»{keys} en el menú {menu}.",
+        EVERY.as_secs() / 3600
+    )
+}
+
 fn ready_message(version: &str) -> String {
     format!("Levare {version} está listo: reinicia para actualizar.")
 }
@@ -463,17 +529,17 @@ fn percent(received: u64, total: Option<u64>) -> Option<u8> {
     Some((received.min(total) * 100 / total) as u8)
 }
 
-/// On unless the file says otherwise; a missing or damaged file keeps the
-/// default.
-fn load_automatic(path: &Path) -> bool {
+/// Automatic checks are on unless the file says otherwise; a missing or
+/// damaged file keeps the defaults.
+fn load_settings(path: &Path) -> Settings {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-        .is_none_or(|settings| settings.automaticas)
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
-fn save_automatic(path: &Path, on: bool) -> std::io::Result<()> {
-    let text = serde_json::to_string_pretty(&Settings { automaticas: on })?;
+fn save_settings(path: &Path, settings: &Settings) -> std::io::Result<()> {
+    let text = serde_json::to_string_pretty(settings)?;
     atomic_write::write(path, (text + "\n").as_bytes())
 }
 
@@ -554,6 +620,7 @@ mod tests {
             status,
             updater: Err(String::new()),
             automatic: true,
+            told: true,
         };
         assert_eq!(updates(Status::Idle).status_item(), None);
         assert_eq!(
@@ -595,29 +662,86 @@ mod tests {
     fn automatic_checks_are_on_unless_turned_off() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("actualizaciones.json");
-        assert!(load_automatic(&path), "no file");
+        assert!(load_settings(&path).automaticas, "no file");
         std::fs::write(&path, "{ roto").unwrap();
-        assert!(load_automatic(&path), "damaged file");
-        save_automatic(&path, false).unwrap();
-        assert!(!load_automatic(&path));
-        save_automatic(&path, true).unwrap();
-        assert!(load_automatic(&path));
+        assert!(load_settings(&path).automaticas, "damaged file");
+        for automaticas in [false, true] {
+            let settings = Settings {
+                automaticas,
+                avisado: false,
+            };
+            save_settings(&path, &settings).unwrap();
+            assert_eq!(load_settings(&path), settings);
+        }
+    }
+
+    #[test]
+    fn having_said_that_levare_checks_is_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("actualizaciones.json");
+        assert!(!load_settings(&path).avisado, "a first launch says it");
+        let told = Settings {
+            automaticas: true,
+            avisado: true,
+        };
+        save_settings(&path, &told).unwrap();
+        assert_eq!(load_settings(&path), told);
+    }
+
+    #[test]
+    fn settings_from_before_the_notice_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("actualizaciones.json");
+        std::fs::write(&path, "{\n  \"automaticas\": false\n}\n").unwrap();
+        assert_eq!(
+            load_settings(&path),
+            Settings {
+                automaticas: false,
+                avisado: false,
+            }
+        );
+    }
+
+    #[test]
+    fn the_notice_names_the_command_that_turns_checks_off() {
+        let name = "Activar o desactivar la búsqueda automática de actualizaciones";
+        let menu = if cfg!(target_os = "macos") {
+            "Levare"
+        } else {
+            "Archivo"
+        };
+        assert_eq!(
+            disclosure(name, None),
+            format!(
+                "Levare busca actualizaciones en GitHub cada 6 horas. Para que deje de \
+                 hacerlo, elige «{name}» en el menú {menu}."
+            )
+        );
+        assert!(disclosure(name, Some("Ctrl+U")).contains(&format!("«{name}» (Ctrl+U) en")));
     }
 
     #[test]
     fn a_read_only_settings_file_is_kept_and_explained_in_spanish() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("actualizaciones.json");
-        save_automatic(&path, false).unwrap();
+        let off = Settings {
+            automaticas: false,
+            avisado: false,
+        };
+        save_settings(&path, &off).unwrap();
         let mut permissions = std::fs::metadata(&path).unwrap().permissions();
         permissions.set_readonly(true);
         std::fs::set_permissions(&path, permissions.clone()).unwrap();
-        let error = save_automatic(&path, true).unwrap_err().to_string();
+        let on = Settings {
+            automaticas: true,
+            avisado: false,
+        };
+        let error = save_settings(&path, &on).unwrap_err().to_string();
         assert!(
             error.starts_with("«actualizaciones.json» es de solo lectura"),
             "{error}"
         );
-        assert!(!load_automatic(&path));
+        assert_eq!(load_settings(&path), off);
         #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);
         std::fs::set_permissions(&path, permissions).unwrap();
