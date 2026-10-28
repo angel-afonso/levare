@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Levare · Editor de partituras para macOS, Windows y Linux</title>
+<meta name="description" content="Levare es un editor de partituras para macOS, Windows y Linux. Escribes con el teclado, oyes cada parte con sonidos de orquesta y preparas las partes para el atril.">
+<meta name="theme-color" content="#f4f2ec">
+<meta property="og:title" content="Levare · Escribe la música, escúchala al instante">
+<meta property="og:description" content="Editor de partituras para macOS, Windows y Linux.">
+<meta property="og:image" content="assets/levare.png">
+<link rel="icon" type="image/png" href="assets/levare.png">
+<link rel="preload" href="assets/Bravura.otf" as="font" type="font/otf" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&amp;display=swap">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="assets/scenes/stage.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<header class="nav wrap" id="top">
+  <a class="brand" href="#top"><span class="logo" aria-hidden="true"></span>Levare</a>
+  <nav class="links" aria-label="Principal">
+    <a class="nl" href="#asi-es">La ventana</a>
+    <a class="nl" href="#funciones">Funciones</a>
+    <a class="nl" href="#compas">Cómo se trabaja</a>
+    <a class="nl" href="#programa">Hoja de ruta</a>
+    <a class="btn btn-sm" href="#descargar">Descargar</a>
+  </nav>
+</header>
+
+<main id="main">
+<!-- The page opens on Levare's own Escribir ribbon over a staff the visitor writes on. -->
+<section class="hero">
+  <div class="wrap">
+    <h1 class="h1"><span class="ln"><span>Escribe la música.</span></span><span class="ln l2"><span>Escúchala al instante.</span></span></h1>
+    <div class="g12 hrow">
+      <p class="lead">Levare es un editor de partituras para macOS, Windows y Linux. Escribes con el teclado, oyes cada parte con sonidos de orquesta y preparas las partes para el atril.</p>
+      <div class="acts">
+        <a class="btn" href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-universal-apple-darwin.dmg" data-dl><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m6 11 6 6 6-6"/><path d="M4 20h16"/></svg><span>Descargar para <span data-os-name>macOS</span></span></a>
+        <a class="tlink" href="#asi-es">Ver capturas de la app</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="app ui desk" data-ui data-js hidden>
+      <div class="ui-tabs">
+        <span class="ui-menu">Archivo ▾</span>
+        <span class="ui-tab on">Escribir</span><span class="ui-tab">Articulaciones</span><span class="ui-tab">Dinámicas</span><span class="ui-tab">Texto</span><span class="ui-tab">Partitura</span><span class="ui-tab">Reproducción</span><span class="ui-tab">Revisión</span><span class="ui-tab">Vista</span>
+        <span class="ui-pill" data-pill-wrap><i></i><span data-pill>Escribiendo · Negra · Voz 1</span></span>
+      </div>
+      <div class="ui-ribbon" role="toolbar" aria-label="Cinta, pestaña Escribir">
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl big on" data-entry aria-pressed="true"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D7;</text></svg><span class="cn">Escribir</span><span class="ck">N</span></button>
+            <button type="button" class="ctl" data-oct="1"><span class="cg">↑</span><span class="cn">Octava</span><span class="ck"></span></button>
+            <button type="button" class="ctl" data-oct="-1"><span class="cg">↓</span><span class="cn">Octava</span><span class="ck"></span></button>
+          </div>
+          <span class="rgt">Entrada</span>
+        </div>
+        <div class="rg">
+          <div class="rgc track" role="group" aria-label="Duración">
+            <button type="button" class="ctl" data-dur="w" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="20" class="gbv">&#xE1D2;</text></svg><span class="cn">Redonda</span><span class="ck">6</span></button>
+            <button type="button" class="ctl" data-dur="h" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D3;</text></svg><span class="cn">Blanca</span><span class="ck">5</span></button>
+            <button type="button" class="ctl on" data-dur="q" aria-pressed="true"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D5;</text></svg><span class="cn">Negra</span><span class="ck">4</span></button>
+            <button type="button" class="ctl" data-dur="e" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D7;</text></svg><span class="cn">Corchea</span><span class="ck">3</span></button>
+            <button type="button" class="ctl" data-dur="s" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D9;</text></svg><span class="cn">Semicorchea</span><span class="ck">2</span></button>
+            <button type="button" class="ctl" data-dur="t" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="27" class="gbv">&#xE1DB;</text></svg><span class="cn">Fusa</span><span class="ck">1</span></button>
+          </div>
+          <span class="rgt">Duración</span>
+        </div>
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl" data-dot aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="18" class="gbv">&#xE1E7;</text></svg><span class="cn">Puntillo</span><span class="ck">.</span></button>
+            <button type="button" class="ctl" data-inert><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="25" class="gbv" style="font-size:34px">&#xE883;</text></svg><span class="cn">Tresillo</span><span class="ck" data-mac="⌘3" data-pc="Ctrl+3">⌘3</span></button>
+            <button type="button" class="ctl" data-rest><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="17" class="gbv">&#xE4E5;</text></svg><span class="cn">Silencio</span><span class="ck">0</span></button>
+          </div>
+          <span class="rgt">Modificar</span>
+        </div>
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl" data-acc="0" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="17" class="gbv">&#xE261;</text></svg><span class="cn">Becuadro</span><span class="ck">7</span></button>
+            <button type="button" class="ctl" data-acc="1" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="17" class="gbv">&#xE262;</text></svg><span class="cn">Sostenido</span><span class="ck">8</span></button>
+            <button type="button" class="ctl" data-acc="-1" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="19" class="gbv">&#xE260;</text></svg><span class="cn">Bemol</span><span class="ck">9</span></button>
+            <button type="button" class="ctl on" data-inert><span class="cg sm">arm.</span><span class="cn">Armadura</span><span class="ck"></span></button>
+          </div>
+          <span class="rgt">Alteración</span>
+        </div>
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl" data-inert><svg viewBox="0 0 32 32" aria-hidden="true"><text x="9" y="22" class="gbv sm">&#xE0A4;</text><text x="23" y="22" class="gbv sm">&#xE0A4;</text><path d="M8 26c4 3 12 3 16 0" stroke="currentColor" stroke-width="1.6" fill="none"/></svg><span class="cn">Unión</span><span class="ck" data-mac="↩" data-pc="Intro">↩</span></button>
+            <button type="button" class="ctl" data-inert><svg viewBox="0 0 32 32" aria-hidden="true"><text x="9" y="27" class="gbv sm">&#xE1D5;</text><text x="23" y="23" class="gbv sm">&#xE1D5;</text><path d="M7 9c5-5 13-6 18-3" stroke="currentColor" stroke-width="1.6" fill="none"/></svg><span class="cn">Expresión</span><span class="ck">S</span></button>
+          </div>
+          <span class="rgt">Ligadura</span>
+        </div>
+        <div class="rg">
+          <div class="rgc track" role="group" aria-label="Voz">
+            <button type="button" class="ctl on" data-voice="1" aria-pressed="true"><span class="cg">1</span><span class="cn">Voz 1</span><span class="ck" data-mac="⌥1" data-pc="Alt+1">⌥1</span></button>
+            <button type="button" class="ctl" data-voice="2" aria-pressed="false"><span class="cg">2</span><span class="cn">Voz 2</span><span class="ck" data-mac="⌥2" data-pc="Alt+2">⌥2</span></button>
+          </div>
+          <span class="rgt">Voz</span>
+        </div>
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl" data-inert><svg viewBox="0 0 32 32" aria-hidden="true"><text x="13" y="28" class="gbv sm">&#xE0A4;</text><text x="13" y="20" class="gbv sm">&#xE0A4;</text><text x="13" y="12" class="gbv sm">&#xE0A4;</text></svg><span class="cn">Acorde</span><span class="ck" data-mac="⌥A" data-pc="Alt+A">⌥A</span></button>
+          </div>
+          <span class="rgt">Acorde</span>
+        </div>
+        <div class="rg">
+          <div class="rgc">
+            <button type="button" class="ctl" data-inert><span class="cg">2ª</span><span class="cn">Segunda</span><span class="ck" data-mac="⇧2" data-pc="Mayús+2">⇧2</span></button>
+          </div>
+          <span class="rgt">Intervalo</span>
+        </div>
+      </div>
+      <div class="ui-strip">
+        <div class="ro"><span>Compás</span><b data-r-bar>1 de 2</b></div>
+        <div class="ro"><span>Tiempo</span><b data-r-beat>1</b></div>
+        <i class="div"></i>
+        <div class="ro ctlro"><span>Tempo</span><b><span class="glyph">&#xE1D5;</span> = 96</b></div>
+        <div class="ro ctlro"><span>Métrica</span><b>4/4</b></div>
+        <div class="ro ctlro"><span>Tonalidad</span><b>Do mayor</b></div>
+        <i class="div"></i>
+        <div class="ro"><span>Parte</span><b>Flauta · Voz <span data-r-voice>1</span></b></div>
+        <span class="sum" data-r-sel>Nada seleccionado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="staff-wrap">
+      <svg class="staff" id="staff" viewBox="0 30 1400 200" role="img" aria-label="Pentagrama de flauta con la frase Sol, La, Si, Do, Si, La, Sol">
+        <g data-frame>
+          <g class="lines">
+            <path d="M24 80H1392"/><path d="M24 98H1392"/><path d="M24 116H1392"/><path d="M24 134H1392"/><path d="M24 152H1392"/>
+          </g>
+          <path class="bar" d="M800 80V152"/>
+          <path class="bar" d="M1380 80V152"/>
+          <path class="bar end" d="M1389 80V152"/>
+          <text class="hbv clef" x="40" y="134">&#xE050;</text>
+          <text class="hbv clef" x="128" y="98">&#xE084;</text>
+          <text class="hbv clef" x="128" y="134">&#xE084;</text>
+        </g>
+        <rect class="cur" x="-50" y="62" width="4" height="108" data-cursor/>
+        <!-- The phrase as engraved without script; the page retypes it. -->
+        <g data-notes>
+          <g class="note"><text class="hbv" x="244" y="134">&#xE0A4;</text><path class="stem" d="M264.64 130.94V71"/></g>
+          <g class="note"><text class="hbv" x="374" y="125">&#xE0A4;</text><path class="stem" d="M394.64 121.94V53"/></g>
+          <g class="note"><text class="hbv" x="439" y="116">&#xE0A4;</text><path class="stem" d="M459.64 112.94V53"/></g>
+          <path class="beam" d="M393.54 53H460.74V62H393.54Z"/>
+          <g class="note"><text class="hbv" x="504" y="107">&#xE0A4;</text><path class="stem" d="M505.1 110.06V170"/></g>
+          <g class="note"><text class="hbv" x="634" y="116">&#xE0A4;</text><path class="stem" d="M635.1 119.06V179"/></g>
+          <g class="note"><text class="hbv" x="834" y="125">&#xE0A3;</text><path class="stem" d="M854.64 121.94V62"/></g>
+          <g class="note"><text class="hbv" x="1094" y="134">&#xE0A3;</text><path class="stem" d="M1114.64 130.94V71"/></g>
+        </g>
+      </svg>
+    </div>
+    <div class="wrap keys" data-js hidden>
+      <div class="keypad" role="group" aria-label="Notas">
+        <button type="button" class="kp" data-note="C"><b>Do</b><span>C</span></button>
+        <button type="button" class="kp" data-note="D"><b>Re</b><span>D</span></button>
+        <button type="button" class="kp" data-note="E"><b>Mi</b><span>E</span></button>
+        <button type="button" class="kp" data-note="F"><b>Fa</b><span>F</span></button>
+        <button type="button" class="kp" data-note="G"><b>Sol</b><span>G</span></button>
+        <button type="button" class="kp" data-note="A"><b>La</b><span>A</span></button>
+        <button type="button" class="kp" data-note="B"><b>Si</b><span>B</span></button>
+        <button type="button" class="kp alt" data-undo><b>Borrar</b><span data-mac="⌫" data-pc="Retroceso">⌫</span></button>
+        <button type="button" class="kp alt" data-clear><b>Vaciar</b><span>&#160;</span></button>
+        <button type="button" class="kp play" data-play><b data-play-label>Escuchar</b><span>Espacio</span></button>
+      </div>
+      <p class="hint">Haz clic en el pentagrama y escribe como en Levare: las letras escriben la nota, los números del 1 al 6 eligen la duración, el punto añade el puntillo y el 0 escribe un silencio.</p>
+    </div>
+  </div>
+</section>
+
+<!-- The real app as one window: scrolling opens it and walks through its parts. -->
+<section class="scene tour" id="asi-es" data-scene="app-tour" data-options='{"hold":3}' aria-label="Así es Levare">
+  <div class="scene-stage">
+    <div class="wrap tour-in">
+      <div class="tour-head">
+        <h2 class="h2">Así es Levare %VERSION%.</h2>
+        <p>Una sola ventana para toda la partitura, la misma en macOS, Windows y Linux.</p>
+      </div>
+      <figure class="tour-shot">
+        <a class="tour-img" href="assets/screenshots/levare.png"><img src="assets/screenshots/levare.png" alt="Ventana de Levare con una partitura nueva para piano: la cinta en la pestaña Escribir, el panel Partes, la hoja, el panel Selección y el transporte" width="1440" height="978"></a>
+        <span class="zone" data-zone="0" style="left:0;top:4.6%;width:100%;height:14.2%"></span>
+        <span class="zone" data-zone="1" style="left:0;top:18.8%;width:16.7%;height:74.8%"></span>
+        <span class="zone" data-zone="2" style="left:16.7%;top:18.8%;width:63.4%;height:74.8%"></span>
+        <span class="zone" data-zone="3" style="left:80.1%;top:18.8%;width:19.9%;height:74.8%"></span>
+        <span class="zone" data-zone="4" style="left:0;top:93.6%;width:100%;height:6.4%"></span>
+        <ol class="tour-list">
+          <li data-zone="0"><b>La cinta</b><span>Una pestaña por tarea. Bajo cada símbolo, su nombre y su tecla.</span></li>
+          <li data-zone="1"><b>Partes</b><span>Las partes por familia, con su clave y su transposición, en Lista o en Mezcla.</span></li>
+          <li data-zone="2"><b>La hoja</b><span>La partitura tal como se imprime y, encima, compás, tiempo, tempo, métrica y tonalidad.</span></li>
+          <li data-zone="3"><b>Selección</b><span>Lo que tienes seleccionado y qué hacer con ello. Al lado, Sonido y Revisión.</span></li>
+          <li data-zone="4"><b>Transporte</b><span>Reproducir, bucle, media velocidad y el reloj de compases y tiempos.</span></li>
+        </ol>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- Who it is for: a sentence with a blank. -->
+<section class="sec dk" id="para-quien">
+  <div class="wrap">
+    <h2 class="h2 yo rv"><span>Yo</span><span class="blank" aria-live="polite"><span data-verb>compongo</span></span><span>música.</span></h2>
+    <div class="verbs rv d1" role="group" aria-label="Elige qué haces">
+      <button type="button" class="verb on" data-role="0" aria-pressed="true">compongo</button>
+      <button type="button" class="verb" data-role="1" aria-pressed="false">arreglo</button>
+      <button type="button" class="verb" data-role="2" aria-pressed="false">enseño</button>
+      <button type="button" class="verb" data-role="3" aria-pressed="false">copio</button>
+    </div>
+
+    <div class="g12 role" data-role-pane data-role="0">
+      <div class="role-t">
+        <h3 class="h3">Toda la obra, sonando mientras la escribes</h3>
+        <p>Pentagramas alineados para muchas partes y entrada por teclado. Cada idea se oye en cuanto la escribes, con el sonido de solista o de sección que elijas para cada cuerda, madera o metal.</p>
+        <ul class="ticks">
+          <li>Partes agrupadas por familia, con su clave y su transposición</li>
+          <li>Reproducción de todo el conjunto, en bucle o a media velocidad</li>
+          <li>La altura que suena, junto a la escrita, en los instrumentos transpositores</li>
+        </ul>
+      </div>
+      <div class="role-f" data-ui>
+        <div class="ui p-parts" data-ui>
+          <div class="pp-head">
+            <div class="pp-title"><b>Partes</b><span>5</span><i class="plus">+</i></div>
+            <div class="track tr24"><span class="opt on">Lista</span><span class="opt">Mezcla</span></div>
+            <span class="field">Buscar parte</span>
+          </div>
+          <div class="pp-list">
+            <div class="fam"><i>⌄</i><span>Maderas</span><span>2</span></div>
+            <div class="part"><span>Flauta</span><small>Sol</small></div>
+            <div class="part"><span>Clarinete en Si<span class="fl">&#xE260;</span></span><small>Si<span class="fl">&#xE260;</span> · Sol</small></div>
+            <div class="fam"><i>⌄</i><span>Cuerda</span><span>3</span></div>
+            <div class="part sel"><span>Violín</span><small>Sol</small><i class="trash" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></i></div>
+            <div class="part"><span>Viola</span><small>Do 3.ª</small></div>
+            <div class="part"><span>Violonchelo</span><small>Fa</small></div>
+          </div>
+          <div class="pp-foot"><span>Violín seleccionada</span><span data-mac="⌥↑ ⌥↓ cambian" data-pc="Alt+↑ Alt+↓ cambian">⌥↑ ⌥↓ cambian</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g12 role" data-role-pane data-role="1" hidden>
+      <div class="role-t">
+        <h3 class="h3">Pasajes que se mueven de un tirón</h3>
+        <p>Selecciona un pasaje y súbelo o bájalo un grado o una octava, cópialo a otra parte o conviértelo en silencios. Revisión marca en rojo lo que se sale del registro del instrumento.</p>
+        <ul class="ticks">
+          <li>Portapapeles musical entre partes</li>
+          <li>Transposición instrumental en cada parte</li>
+          <li>Avisos de registro y comentarios en la nota exacta</li>
+        </ul>
+      </div>
+      <div class="role-f" data-ui>
+        <div class="ui p-sel" data-ui>
+          <div class="ps-top"><div class="track tr26"><span class="opt on">Selección</span><span class="opt">Sonido</span><span class="opt">Revisión</span></div></div>
+          <div class="ps-body">
+            <div class="ps-head"><b>Pasaje</b><span>Violín y Viola · compases 5–8</span></div>
+            <div class="facts"><div class="fact"><span>Notas</span><b>38</b></div><div class="fact"><span>Partes</span><b>2</b></div><div class="fact"><span>Marcas</span><b>3</b></div></div>
+            <div class="grp"><span class="gt">Hacer con el pasaje</span>
+              <div class="cmds"><span class="cmd">Subir un grado</span><span class="cmd">Bajar un grado</span><span class="cmd">Subir una octava</span><span class="cmd">Bajar una octava</span><span class="cmd">Copiar</span><span class="cmd">Convertir en silencios</span><span class="cmd">Comprobar</span></div>
+            </div>
+            <div class="grp"><span class="gt">Marcas en el pasaje</span>
+              <div class="mark-row"><span class="mg"><svg viewBox="0 0 30 20" aria-hidden="true"><path d="M4 14c6-9 16-9 22 0" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span><span class="ml">Ligadura de expresión</span><small>c. 5</small><span class="mx">✕</span></div>
+              <div class="mark-row"><span class="mg"><span class="glyph big">&#xE52D;</span></span><span class="ml">mf</span><small>c. 5</small><span class="mx">✕</span></div>
+              <div class="mark-row"><span class="mg"><span class="glyph big">&#xE4A2;</span></span><span class="ml">Staccato</span><small>c. 7</small><span class="mx">✕</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g12 role" data-role-pane data-role="2" hidden>
+      <div class="role-t">
+        <h3 class="h3">Materiales de clase, listos para imprimir</h3>
+        <p>Prepara ejercicios, ejemplos y arreglos para el aula y expórtalos a PDF. Los archivos .partitura se abren igual en macOS, Windows y Linux, en clase o en casa.</p>
+        <ul class="ticks">
+          <li>Atajos al estilo de Sibelius, que puedes cambiar</li>
+          <li>PDF para imprimir o enviar</li>
+          <li>El mismo archivo en los tres sistemas</li>
+        </ul>
+      </div>
+      <div class="role-f" data-ui>
+        <div class="ui canvas" data-ui>
+          <div class="page">
+            <p class="pg-title">Ejercicio de ritmo</p>
+            <p class="pg-credits">Compositor, arreglista, año…</p>
+            <svg viewBox="0 0 600 90" role="img" aria-label="Pentagrama de cuatro compases en tres por cuatro con el primer compás escrito">
+              <text class="pg-part" x="52" y="58">Voz</text>
+              <text class="pg-num" x="62" y="26">1</text><text class="pg-num" x="202" y="26">2</text><text class="pg-num" x="332" y="26">3</text><text class="pg-num" x="462" y="26">4</text>
+              <path class="lsl" d="M60 36H594M60 44H594M60 52H594M60 60H594M60 68H594"/>
+              <path class="lbl" d="M200 36V68M330 36V68M460 36V68M593 36V68"/>
+              <text class="lbv" x="64 100 100" y="60 44 60">&#xE050;&#xE083;&#xE084;</text>
+              <text class="lbv" x="130 152 174" y="64 60 56">&#xE1D5;&#xE1D5;&#xE1D5;</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g12 role" data-role-pane data-role="3" hidden>
+      <div class="role-t">
+        <h3 class="h3">Una parte para cada atril</h3>
+        <p>Exporta la partitura general y las partes que elijas en PDF, MusicXML o ambos, con marcas de ensayo, repeticiones, da capo y saltos de sistema y de página donde tú los pongas.</p>
+        <ul class="ticks">
+          <li>Partitura general y partes en una sola exportación</li>
+          <li>Marcas de ensayo con su estilo</li>
+          <li>MusicXML para abrir y compartir con otros programas</li>
+        </ul>
+      </div>
+      <div class="role-f" data-ui>
+        <div class="ui p-export" data-ui>
+          <div class="ex-head"><b>Exportar partitura y partes</b><span>Elige los documentos y formatos que quieres entregar.</span></div>
+          <div class="ex-body">
+            <span class="cap">Formatos</span>
+            <div class="row8"><span class="b on">☑&#160;&#160;PDF</span><span class="b">☐&#160;&#160;MusicXML</span></div>
+            <div class="row-sb"><span class="cap">Documentos</span><span class="row8"><span class="b">Todo</span><span class="b">Ninguno</span></span></div>
+            <span class="b on wide">☑&#160;&#160;Partitura general</span>
+            <span class="b on wide">☑&#160;&#160;Flauta</span>
+            <span class="b on wide">☑&#160;&#160;Clarinete en Si<span class="fl">&#xE260;</span></span>
+            <span class="b on wide">☑&#160;&#160;Violín</span>
+            <span class="b on wide">☑&#160;&#160;Viola</span>
+            <span class="b on wide">☑&#160;&#160;Violonchelo</span>
+          </div>
+          <div class="ex-foot">
+            <span class="cnt">6 archivos · Un archivo por documento y formato</span>
+            <span class="note">Se creará una carpeta nueva en el destino que elijas. Las partes conservan sus voces, pentagramas y divisis. Alturas de concierto.</span>
+            <div class="row8 end"><span class="b">Cancelar</span><span class="b on">Elegir destino…</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features: one score, read four ways. -->
+<section class="dk sec-b" id="funciones">
+  <div class="wrap">
+    <h2 class="h2 rv" style="max-width:18ch">Una partitura. Cuatro maneras de mirarla.</h2>
+    <div class="g12 lens" data-lens="0">
+      <div class="lens-l rv d1" role="tablist" aria-label="Maneras de mirar la partitura">
+        <div class="litem on"><button type="button" role="tab" class="lbtn" data-lens-tab="0" aria-selected="true">Revisar</button><p>Revisión marca en rojo cada nota que se sale del registro del instrumento y te dice su rango en altura real.</p></div>
+        <div class="litem"><button type="button" role="tab" class="lbtn" data-lens-tab="1" aria-selected="false">Transponer</button><p>Cada parte lleva su armadura escrita. Elige una nota del clarinete en Si<span class="fl">&#xE260;</span> y el panel Selección dice qué suena.</p></div>
+        <div class="litem"><button type="button" role="tab" class="lbtn" data-lens-tab="2" aria-selected="false">Escuchar</button><p>En Mezcla, volumen, posición estéreo y sección o solista para cada parte. La elección de intérpretes se guarda con la partitura.</p></div>
+        <div class="litem"><button type="button" role="tab" class="lbtn" data-lens-tab="3" aria-selected="false">Pedírselo</button><p>El panel de agente habla con Claude Code, Codex o Gemini CLI, con tu propia suscripción, y edita con las mismas acciones que tú.</p></div>
+      </div>
+      <div class="lens-r rv d2">
+        <div class="lens-grid" data-ui>
+          <div class="ui canvas lens-score" data-ui>
+            <div class="page">
+              <svg viewBox="0 0 700 230" role="img" aria-label="Partitura de clarinete en si bemol y violonchelo, compases 7 y 8">
+                <text class="pg-num" x="234" y="40">7</text><text class="pg-num" x="464" y="40">8</text>
+                <path class="lsl" d="M80 50H690M80 58H690M80 66H690M80 74H690M80 82H690"/>
+                <path class="lbl" d="M460 50V82M689.5 50V82"/>
+                <text class="pg-part" x="72" y="70">Cl. en Si<tspan class="fl">&#xE260;</tspan></text>
+                <text class="lbv" x="86 112 120 128 150 150 300 352 550" y="74 50 62 46 58 74 62 66 70">&#xE050;&#xE262;&#xE262;&#xE262;&#xE084;&#xE084;&#xE1D6;&#xE1D4;&#xE1D2;</text>
+                <rect class="selbg l1" x="243" y="40" width="18" height="44" rx="3"/>
+                <text class="lbv cl1" x="248" y="70">&#xE1D5;</text>
+                <text class="trill l3" x="242" y="36">&#xE566;</text>
+                <path class="lsl" d="M80 150H690M80 158H690M80 166H690M80 174H690M80 182H690"/>
+                <path class="lbl" d="M460 150V182M689.5 150V182"/>
+                <path class="lsl" d="M592 190H622M592 198H622"/>
+                <path class="lbl" d="M80 50V182" style="stroke-width:1.6"/>
+                <text class="pg-part" x="72" y="170">Vc.</text>
+                <text class="lbv" x="86 112 150 150 248 352 490" y="158 158 158 174 182 166 182">&#xE062;&#xE262;&#xE084;&#xE084;&#xE1D3;&#xE1D4;&#xE1D3;</text>
+                <text class="lbv oor" x="580 600" y="202 202">&#xE260;&#xE1D3;</text>
+                <rect class="selbg l0" x="576" y="168" width="44" height="44" rx="3"/>
+                <rect class="sweep l2" x="230" y="38" width="3" height="172"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="ui p-sel lens-under l0" data-ui>
+            <div class="ps-top"><div class="track tr26"><span class="opt on">Selección</span><span class="opt">Sonido</span><span class="opt">Revisión</span></div></div>
+            <div class="ps-body">
+              <div class="ps-head"><b>Violonchelo</b><span>Compás 8, tiempo 3 · voz 1</span></div>
+              <div class="pitch"><b>Si<span class="fl">&#xE260;</span> 1</b><span>blanca</span></div>
+              <div class="warn">Fuera del registro habitual. Rango en altura real: C2–A5.</div>
+              <div class="grp"><span class="gt">Marcas en esta nota</span><span class="empty">Ninguna. Añádelas desde Articulaciones o Dinámicas.</span></div>
+            </div>
+          </div>
+          <div class="ui p-sel lens-under l1" data-ui>
+            <div class="ps-top"><div class="track tr26"><span class="opt on">Selección</span><span class="opt">Sonido</span><span class="opt">Revisión</span></div></div>
+            <div class="ps-body">
+              <div class="ps-head"><b>Clarinete en Si<span class="fl">&#xE260;</span></b><span>Compás 7, tiempo 1 · voz 1</span></div>
+              <div class="pitch"><b>La 4</b><span>negra</span></div>
+              <div class="facts"><div class="fact"><span>Suena</span><b>Sol 4</b></div></div>
+              <div class="grp"><span class="gt">Texto en esta nota</span><div class="cmds"><span class="cmd">Letra</span><span class="cmd">Cifrado</span><span class="cmd">Comentario</span></div></div>
+            </div>
+          </div>
+          <div class="ui p-parts lens-under l2" data-ui>
+            <div class="pp-head">
+              <div class="pp-title"><b>Partes</b><span>2</span><i class="plus">+</i></div>
+              <div class="track tr24"><span class="opt">Lista</span><span class="opt on">Mezcla</span></div>
+            </div>
+            <div class="pp-list">
+              <div class="mix sel">
+                <div class="part"><span>Clarinete en Si<span class="fl">&#xE260;</span></span><small>Si<span class="fl">&#xE260;</span> · Sol</small></div>
+                <div class="rail"><span class="r"><i style="--v:70%"></i></span><span class="val">70 %</span></div>
+                <div class="rail"><span class="r"><i style="--v:62%"></i></span><span class="val">25 % der.</span></div>
+                <div class="track tr20"><span class="opt">Sección</span><span class="opt on">Solista</span></div>
+              </div>
+              <div class="mix">
+                <div class="part"><span>Violonchelo</span><small>Fa</small></div>
+                <div class="rail"><span class="r"><i style="--v:78%"></i></span><span class="val">78 %</span></div>
+                <div class="rail"><span class="r"><i style="--v:70%"></i></span><span class="val">40 % der.</span></div>
+                <div class="track tr20"><span class="opt on">Sección</span><span class="opt">Solista</span></div>
+              </div>
+            </div>
+            <div class="pp-foot"><span>Volumen general</span><span>80 %</span></div>
+            <button type="button" class="excerpt" data-excerpt><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg><span data-excerpt-label>Escuchar estos compases</span></button>
+          </div>
+          <div class="ui p-agent lens-under l3" data-ui>
+            <div class="ag-log">
+              <div class="ag-user">Pon un trino en la primera nota del clarinete del compás 7.</div>
+              <div class="ag-tool">✓ mcp__levare__leer</div>
+              <div class="ag-tool">✓ mcp__levare__seleccionar</div>
+              <div class="ag-tool">✓ mcp__levare__ejecutar</div>
+              <div class="ag-msg">He puesto un trino sobre el La del clarinete en el compás 7, tiempo 1.</div>
+            </div>
+            <div class="ag-comp">
+              <div class="row8"><span class="field grow">Pide un cambio en la partitura…</span><span class="b h32">Enviar</span></div>
+              <div class="row-sb"><span class="ag-pick">Claude Code <i>▾</i></span><span class="ag-hint">Enter envía · Esc vuelve</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How work goes: a bar of four beats. -->
+<section class="scene four" id="compas" data-scene="four-beats" data-options='{"hold":4}' data-beat="0" aria-label="En cuatro tiempos, al atril">
+  <div class="scene-stage">
+  <div class="wrap four-in">
+    <h2 class="h2 rv" style="max-width:20ch">En cuatro tiempos, al atril.</h2>
+    <div class="beats rv d1" role="tablist" aria-label="Los cuatro pasos">
+      <button type="button" role="tab" class="beat on" data-beat="0" aria-selected="true"><svg viewBox="0 0 40 40" aria-hidden="true"><text x="6" y="20">&#xE081;</text></svg><b>Partes</b><i class="tick"></i></button>
+      <button type="button" role="tab" class="beat" data-beat="1" aria-selected="false"><svg viewBox="0 0 40 40" aria-hidden="true"><text x="6" y="20">&#xE082;</text></svg><b>Escribir</b><i class="tick"></i></button>
+      <button type="button" role="tab" class="beat" data-beat="2" aria-selected="false"><svg viewBox="0 0 40 40" aria-hidden="true"><text x="6" y="20">&#xE083;</text></svg><b>Escuchar</b><i class="tick"></i></button>
+      <button type="button" role="tab" class="beat" data-beat="3" aria-selected="false"><svg viewBox="0 0 40 40" aria-hidden="true"><text x="6" y="20">&#xE084;</text></svg><b>Exportar</b><i class="tick"></i></button>
+    </div>
+    <div class="beat-progress" aria-hidden="true"><i></i></div>
+
+    <div class="g12 beat-under" data-beat-pane="0">
+      <div class="bt"><h3 class="h3">Primer tiempo: las partes</h3><p>Añade instrumentos con <kbd>I</kbd> o con el + del panel Partes. Cada parte llega con su clave y su transposición, agrupada en su familia.</p></div>
+      <div class="bf" data-ui>
+        <div class="ui p-parts" data-ui>
+          <div class="pp-head">
+            <div class="pp-title"><b>Partes</b><span>5</span><i class="plus on">+</i></div>
+            <div class="track tr24"><span class="opt on">Lista</span><span class="opt">Mezcla</span></div>
+            <span class="field">Buscar parte</span>
+          </div>
+          <div class="pp-list">
+            <div class="fam"><i>⌄</i><span>Maderas</span><span>2</span></div>
+            <div class="part"><span>Flauta</span><small>Sol</small></div>
+            <div class="part"><span>Clarinete en Si<span class="fl">&#xE260;</span></span><small>Si<span class="fl">&#xE260;</span> · Sol</small></div>
+            <div class="fam"><i>⌄</i><span>Cuerda</span><span>3</span></div>
+            <div class="part"><span>Violín</span><small>Sol</small></div>
+            <div class="part sel"><span>Viola</span><small>Do 3.ª</small><i class="trash" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></i></div>
+            <div class="part"><span>Violonchelo</span><small>Fa</small></div>
+          </div>
+          <div class="pp-foot"><span>Viola seleccionada</span><span data-mac="⌥↑ ⌥↓ cambian" data-pc="Alt+↑ Alt+↓ cambian">⌥↑ ⌥↓ cambian</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="g12 beat-under" data-beat-pane="1">
+      <div class="bt"><h3 class="h3">Segundo tiempo: escribir</h3><p>La duración con un número, la nota con su letra y el intervalo con <kbd data-mac="⇧" data-pc="Mayús">⇧</kbd> y un número. La tira de arriba dice siempre dónde estás.</p></div>
+      <div class="bf" data-ui>
+        <div class="ui" data-ui>
+          <div class="ui-strip">
+            <div class="ro"><span>Compás</span><b>2 de 4</b></div>
+            <div class="ro"><span>Tiempo</span><b>2</b></div>
+            <i class="div"></i>
+            <div class="ro ctlro"><span>Tempo</span><b>Andante <span class="glyph">&#xE1D5;</span> = 72</b></div>
+            <div class="ro ctlro"><span>Métrica</span><b>4/4</b></div>
+            <div class="ro ctlro"><span>Tonalidad</span><b>Sol mayor</b></div>
+            <i class="div"></i>
+            <div class="ro"><span>Parte</span><b>Violín · Voz 1</b></div>
+            <span class="sum">1 nota</span>
+          </div>
+          <div class="canvas">
+            <div class="page">
+              <p class="pg-title">Cuarteto en Sol</p>
+              <p class="pg-credits">Compositor, arreglista, año…</p>
+              <svg viewBox="0 0 770 350" role="img" aria-label="Partitura de cinco partes, compases 1 a 4, con una nota del violín seleccionada">
+                <path class="lsl" d="M70 46H752M70 52H752M70 58H752M70 64H752M70 70H752"/>
+                <text class="sbv" x="76 100 128 128 164 230 263 314 380 413 464 497 530 563 658" y="67 46 52 64 52 49 46 43 46 49 52 49 52 55 58">&#xE050;&#xE262;&#xE084;&#xE084;&#xE1D4;&#xE1D6;&#xE1D6;&#xE1D4;&#xE1D6;&#xE1D6;&#xE1D6;&#xE1D6;&#xE1D6;&#xE1D6;&#xE1D2;</text>
+                <path class="lbl" d="M296 46V70M446 46V70M596 46V70M751.5 46V70"/>
+                <text class="pg-part" x="62" y="62">Flauta</text>
+                <path class="lsl" d="M70 108H752M70 114H752M70 120H752M70 126H752M70 132H752"/>
+                <text class="sbv" x="76 100 107 114 128 128 164 230 263 314 380 413 464 497 530 658" y="129 108 117 105 114 126 123 123 120 117 120 123 126 123 120 123">&#xE050;&#xE262;&#xE262;&#xE262;&#xE084;&#xE084;&#xE1D3;&#xE1D5;&#xE1D6;&#xE1D4;&#xE1D6;&#xE1D5;&#xE1D5;&#xE1D5;&#xE1D4;&#xE1D2;</text>
+                <path class="lbl" d="M296 108V132M446 108V132M596 108V132M751.5 108V132"/>
+                <text class="pg-part" x="62" y="124">Clarinete</text>
+                <path class="lsl" d="M70 170H752M70 176H752M70 182H752M70 188H752M70 194H752"/>
+                <text class="sbv" x="76 100 128 128 164 197 230 314 380 464 497 530 563 658" y="191 170 176 188 182 176 167 176 182 185 182 179 185 182">&#xE050;&#xE262;&#xE084;&#xE084;&#xE1D6;&#xE1D6;&#xE1D4;&#xE1D6;&#xE1D4;&#xE1D5;&#xE1D6;&#xE1D6;&#xE1D5;&#xE1D2;</text>
+                <rect class="selbg" x="343" y="162" width="17" height="38" rx="3"/>
+                <text class="sbv sel" x="347" y="179">&#xE1D6;</text>
+                <path class="lbl" d="M296 170V194M446 170V194M596 170V194M751.5 170V194"/>
+                <text class="pg-part" x="62" y="186">Violín</text>
+                <path class="lsl" d="M70 232H752M70 238H752M70 244H752M70 250H752M70 256H752"/>
+                <text class="sbv" x="76 100 128 128 164 230 314 380 464 497 530 658" y="244 235 238 250 241 241 232 238 241 238 235 241">&#xE05C;&#xE262;&#xE084;&#xE084;&#xE1D4;&#xE1D4;&#xE1D4;&#xE1D4;&#xE1D6;&#xE1D6;&#xE1D4;&#xE1D2;</text>
+                <path class="lbl" d="M296 232V256M446 232V256M596 232V256M751.5 232V256"/>
+                <text class="pg-part" x="62" y="248">Viola</text>
+                <path class="lsl" d="M70 294H752M70 300H752M70 306H752M70 312H752M70 318H752"/>
+                <text class="sbv" x="76 100 128 128 164 230 314 380 464 530 658" y="300 300 300 312 318 312 297 309 306 306 318">&#xE062;&#xE262;&#xE084;&#xE084;&#xE1D3;&#xE1D3;&#xE1D4;&#xE1D3;&#xE1D4;&#xE1D4;&#xE1D2;</text>
+                <path class="lbl" d="M296 294V318M446 294V318M596 294V318M751.5 294V318"/>
+                <text class="pg-part" x="62" y="310">Violonchelo</text>
+                <path class="lbl" d="M70 46V318" style="stroke-width:1.4"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="g12 beat-under" data-beat-pane="2">
+      <div class="bt"><h3 class="h3">Tercer tiempo: escuchar</h3><p>Reproduce la obra entera o en bucle, a media velocidad si hace falta. El reloj y la regla siguen la posición musical real; el sonido de cada parte se elige en la pestaña Sonido.</p></div>
+      <div class="bf" data-ui>
+<div class="listen">
+        <div class="ui transport playing" data-ui>
+          <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5v14"/><path d="m18 6-8 6 8 6z"/></svg></span>
+          <span class="playc"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/></svg></span>
+          <span class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg></span>
+          <span class="ib w on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></span>
+          <span class="ib w on half">½×</span>
+          <div class="pos"><span class="pc">COMPÁS · TIEMPO</span><b>003 : 02</b><span class="pt">00:07,48 · Reproduciendo</span></div>
+          <div class="tempo"><span class="pc">TEMPO</span><div class="row4"><span class="b h22">−</span><span class="b h22">72</span><span class="b h22">+</span></div></div>
+          <div class="timeline"><span class="n" style="left:2%">1</span><span class="n" style="left:26%">2</span><span class="n" style="left:50%">3</span><span class="n" style="left:74%">4</span><i class="loop"></i><i class="head"></i></div>
+          <span class="src"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg>GeneralUser GS</span>
+        </div>
+        <div class="ui p-parts mixpanel" data-ui>
+          <div class="pp-head">
+            <div class="pp-title"><b>Partes</b><span>5</span><i class="plus">+</i></div>
+            <div class="track tr24"><span class="opt">Lista</span><span class="opt on">Mezcla</span></div>
+          </div>
+          <div class="pp-list">
+            <div class="mix"><div class="part"><span>Flauta</span><small>Sol</small></div><div class="rail"><span class="r"><i style="--v:72%"></i></span><span class="val">72 %</span></div><div class="rail"><span class="r"><i style="--v:40%"></i></span><span class="val">20 % izq.</span></div><div class="track tr20"><span class="opt">Sección</span><span class="opt on">Solista</span></div></div>
+            <div class="mix sel"><div class="part"><span>Violín</span><small>Sol</small></div><div class="rail"><span class="r"><i style="--v:80%"></i></span><span class="val">80 %</span></div><div class="rail"><span class="r"><i style="--v:28%"></i></span><span class="val">45 % izq.</span></div><div class="track tr20"><span class="opt on">Sección</span><span class="opt">Solista</span></div></div>
+          </div>
+          <div class="pp-foot"><span>Volumen general</span><span>80 %</span></div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <div class="g12 beat-under" data-beat-pane="3">
+      <div class="bt"><h3 class="h3">Cuarto tiempo: al atril</h3><p>Exporta la partitura general y una parte por intérprete en PDF, MusicXML o ambos. Levare crea una carpeta nueva en el destino que elijas, sin tocar exportaciones anteriores.</p></div>
+      <div class="bf" data-ui>
+        <div class="ui p-export" data-ui>
+          <div class="ex-head"><b>Exportar partitura y partes</b><span>Elige los documentos y formatos que quieres entregar.</span></div>
+          <div class="ex-body">
+            <span class="cap">Formatos</span>
+            <div class="row8"><span class="b on">☑&#160;&#160;PDF</span><span class="b on">☑&#160;&#160;MusicXML</span></div>
+            <div class="row-sb"><span class="cap">Documentos</span><span class="row8"><span class="b">Todo</span><span class="b">Ninguno</span></span></div>
+            <span class="b on wide">☑&#160;&#160;Partitura general</span>
+            <span class="b on wide">☑&#160;&#160;Flauta</span>
+            <span class="b wide">☐&#160;&#160;Clarinete en Si<span class="fl">&#xE260;</span></span>
+          </div>
+          <div class="ex-foot">
+            <span class="cnt">4 archivos · Un archivo por documento y formato</span>
+            <div class="row8 end"><span class="b">Cancelar</span><span class="b on">Elegir destino…</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- The roadmap as a staff: each bar is a version; the playhead stops at today. -->
+<section class="sec dk road" id="programa">
+  <div class="wrap">
+    <div class="g12 road-head">
+      <h2 class="h2 rv">Hoja de ruta de Levare.</h2>
+      <p class="rv d1">Cada compás es una versión. Las notas negras ya suenan en Levare; las blancas son lo que viene.</p>
+    </div>
+    <div class="road-staff" aria-hidden="true">
+      <svg viewBox="0 0 1200 100">
+        <path class="rs-line" d="M0 30H1200M0 40H1200M0 50H1200M0 60H1200M0 70H1200"/>
+        <path class="rs-bar" d="M400 30V70M800 30V70"/>
+        <text class="rs-clef" x="10" y="60">&#xE050;</text>
+          <text class="rnote done" x="70" y="70">&#xE1D5;</text>
+          <text class="rnote done" x="110" y="60">&#xE1D5;</text>
+          <text class="rnote done" x="150" y="50">&#xE1D6;</text>
+          <text class="rnote done" x="190" y="40">&#xE1D6;</text>
+          <text class="rnote done" x="230" y="45">&#xE1D6;</text>
+          <text class="rnote done" x="270" y="35">&#xE1D6;</text>
+          <text class="rnote done" x="310" y="40">&#xE1D6;</text>
+          <text class="rnote done" x="350" y="25">&#xE1D6;</text>
+          <text class="rnote done" x="450" y="50">&#xE1D6;</text>
+          <text class="rnote done" x="505" y="40">&#xE1D6;</text>
+          <text class="rnote done" x="560" y="30">&#xE1D6;</text>
+          <text class="rnote done" x="615" y="35">&#xE1D6;</text>
+          <text class="rnote done" x="670" y="40">&#xE1D6;</text>
+          <text class="rnote done" x="725" y="25">&#xE1D6;</text>
+          <text class="rnote next" x="830" y="45">&#xE1D4;</text>
+          <text class="rnote next" x="868" y="55">&#xE1D3;</text>
+          <text class="rnote next" x="906" y="65">&#xE1D3;</text>
+          <text class="rnote next" x="944" y="60">&#xE1D3;</text>
+          <text class="rnote next" x="982" y="50">&#xE1D4;</text>
+          <text class="rnote next" x="1020" y="40">&#xE1D4;</text>
+          <text class="rnote next" x="1058" y="35">&#xE1D4;</text>
+          <text class="rnote next" x="1096" y="30">&#xE1D4;</text>
+          <text class="rnote next" x="1134" y="40">&#xE1D4;</text>
+        <g class="rs-head"><rect x="798" y="14" width="3" height="72" rx="1.5"/></g>
+      </svg>
+    </div>
+    <div class="road-cols">
+      <article class="rcol done">
+        <h3 class="rv-n">0.1.0</h3>
+        <p class="when">27 de octubre de 2026 · macOS</p>
+        <p class="lede">La primera versión pública.</p>
+        <ul class="ritems">
+          <li>Entrada por teclado con atajos al estilo de Sibelius</li>
+          <li>Articulaciones, dinámicas, adornos y líneas</li>
+          <li>Título, tempo, letra, cifrado y marcas de ensayo</li>
+          <li>Repeticiones, da capo, segno y saltos de página</li>
+          <li>Mezcla con sección o solista por parte</li>
+          <li>Exportar PDF y MusicXML, y abrir MusicXML</li>
+          <li>Panel de agente con Claude Code, Codex y Gemini CLI</li>
+          <li>Busca e instala las versiones nuevas desde la app</li>
+        </ul>
+      </article>
+      <article class="rcol done now">
+        <h3 class="rv-n">0.2.0</h3>
+        <p class="when">28 de octubre de 2026 · la versión actual</p>
+        <p class="lede">Levare llega a Windows y Linux.</p>
+        <ul class="ritems">
+          <li>Descargas para Windows y Linux</li>
+          <li>Actualizaciones en los tres sistemas</li>
+          <li>Exportar PDF en Windows y Linux</li>
+          <li>Atajos con Ctrl fuera de macOS</li>
+          <li>Paquetes de sonido en Windows y Linux</li>
+          <li>El agente también en Windows y Linux</li>
+        </ul>
+        <p class="fixes">Y 29 correcciones para que los tres sistemas se comporten igual.</p>
+      </article>
+      <article class="rcol next">
+        <h3 class="rv-n">Después</h3>
+        <p class="when">Sin fecha todavía</p>
+        <p class="lede">Lo que ya tiene su sitio en la cinta.</p>
+        <ul class="ritems">
+          <li>Varias partituras abiertas en pestañas</li>
+          <li>Entrada MIDI y en tiempo real</li>
+          <li>Voces 3 y 4</li>
+          <li>Impresión directa</li>
+          <li>Búsqueda en la partitura</li>
+          <li>Silencio y solo por parte</li>
+          <li>Plicas manuales</li>
+          <li>Velocidad y duración sonora por nota</li>
+          <li>Cambio de timbre</li>
+        </ul>
+      </article>
+    </div>
+    <p class="road-more"><a class="tlink" href="https://github.com/angel-afonso/levare/blob/main/CHANGELOG.md">Leer todos los cambios</a></p>
+  </div>
+</section>
+
+<!-- Download: the visitor's system comes first. -->
+<section class="sec" id="descargar">
+  <div class="wrap">
+    <h2 class="h2" style="max-width:18ch">Llévatelo a tu ordenador.</h2>
+    <p class="dl-lead">Levare %VERSION%, la misma app y los mismos archivos .partitura en macOS, Windows y Linux. Cuando salga una versión nueva, Levare te lo dirá y se actualizará sin reinstalar.</p>
+    <div class="dlg">
+      <article class="dlc on" data-os="mac">
+        <h3 class="osn">macOS</h3>
+        <span class="fn">levare-%TAG%-universal-apple-darwin.dmg</span>
+        <span class="req">macOS 11 o posterior</span>
+        <p>Una sola app para Apple Silicon e Intel. Abre el .dmg y arrastra Levare a Aplicaciones. La primera vez, ábrela con clic derecho › Abrir.</p>
+        <a class="btn" href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-universal-apple-darwin.dmg">Descargar .dmg</a>
+      </article>
+      <article class="dlc" data-os="win">
+        <h3 class="osn">Windows</h3>
+        <span class="fn">levare-%TAG%-x86_64-pc-windows-msvc.zip</span>
+        <span class="req">Windows de 64 bits</span>
+        <p>Descomprime la carpeta donde quieras y abre levare.exe. Si SmartScreen avisa la primera vez: Más información › Ejecutar de todas formas.</p>
+        <a class="btn" href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-x86_64-pc-windows-msvc.zip">Descargar .zip</a>
+      </article>
+      <article class="dlc" data-os="linux">
+        <h3 class="osn">Linux</h3>
+        <span class="fn">levare-%TAG%-x86_64-unknown-linux-gnu.tar.gz</span>
+        <span class="req">x86_64 con glibc 2.35 o posterior (Ubuntu 22.04 y similares), Vulkan y ALSA</span>
+        <p>Descomprime el archivo y ejecuta ./install.sh para añadir Levare a tus aplicaciones.</p>
+        <a class="btn" href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-x86_64-unknown-linux-gnu.tar.gz">Descargar .tar.gz</a>
+      </article>
+    </div>
+    <div class="snd"><span>Incluye GeneralUser GS. VSCO CE y Virtual Playing Orchestra se instalan desde Sonido › Más sonidos.</span><a class="tlink" href="https://github.com/angel-afonso/levare/releases/download/%TAG%/SHA256SUMS">Sumas SHA-256</a><a class="tlink" href="https://github.com/angel-afonso/levare/releases">Todas las versiones</a></div>
+  </div>
+</section>
+</main>
+
+<!-- The name returns at full width under the icon. -->
+<footer class="foot dk">
+  <div class="wrap">
+    <span class="mark logo" aria-hidden="true"></span>
+    <p class="word">Levare</p>
+    <p class="def"><i>levare</i> (it.): el gesto del director justo antes del primer tiempo. Lo que pasa antes de que suene la música.</p>
+    <div class="fmeta">
+      <nav aria-label="Pie"><a href="https://github.com/angel-afonso/levare">Código fuente</a><a href="https://github.com/angel-afonso/levare/issues">Avisar de un problema</a><a href="https://github.com/angel-afonso/levare/releases">Versiones</a></nav>
+      <span>Notación con Bravura, de Steinberg, bajo SIL Open Font License · Hecho con Rust y GPUI</span>
+      <a class="r" href="#top">Volver arriba ↑</a>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/ScrollTrigger.min.js"></script>
+<script src="assets/scenes/stage.js"></script>
+<script src="main.js"></script>
+<script src="scenes.js"></script>
+</body>
+</html>
