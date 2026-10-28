@@ -285,6 +285,7 @@ impl CommandStates for AppView {
             id::GO_TO_BAR => CommandState::checked(self.go_to_bar.is_some()),
             id::TEMPO_TEXT => CommandState::checked(self.tempo_picker.is_some()),
             id::SCORE_INFO => CommandState::checked(self.header_editor.is_some()),
+            id::ABOUT => CommandState::checked(self.about),
             id::TIME_SIGNATURE => CommandState::checked(self.time_picker),
             id::ADD_INSTRUMENT => CommandState::checked(self.instrument_picker.is_some()),
 

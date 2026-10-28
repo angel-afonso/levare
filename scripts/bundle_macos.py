@@ -84,6 +84,8 @@ def main():
         subprocess.run(["plutil", "-replace", key, "-string", version,
                         str(contents / "Info.plist")], check=True)
     shutil.copy2(icon, resources / icon.name)
+    subprocess.run(["sh", str(ROOT / "scripts" / "copy_licenses.sh"),
+                    str(resources / "licenses")], check=True)
     bundle_sfizz(contents, resources)
     subprocess.run(["plutil", "-lint", str(contents / "Info.plist")], check=True)
     print(bundle)

@@ -28,6 +28,7 @@ pub const EXCLUDED: &[CommandId] = &[
     id::SCORE_INFO,
     id::GO_TO_BAR,
     id::PREFERENCES,
+    id::ABOUT,
     // Toggles the window itself.
     id::FULL_SCREEN,
     // Ask to save and replace or close the document, ending the session.

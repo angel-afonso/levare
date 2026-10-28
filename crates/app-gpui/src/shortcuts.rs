@@ -302,6 +302,8 @@ impl Shortcuts {
             Menu {
                 name: "Levare".into(),
                 items: self.items(&[
+                    Some(id::ABOUT),
+                    None,
                     Some(id::CHECK_FOR_UPDATES),
                     Some(id::RESTART_TO_UPDATE),
                     Some(id::AUTOMATIC_UPDATES),

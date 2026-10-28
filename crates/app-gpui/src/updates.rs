@@ -75,6 +75,15 @@ impl Updates {
         }
     }
 
+    pub fn automatic(&self) -> bool {
+        self.automatic
+    }
+
+    /// Why this Levare cannot update itself, when it cannot.
+    pub fn unavailable(&self) -> Option<&str> {
+        self.updater.as_ref().err().map(String::as_str)
+    }
+
     /// The status bar's update item, when an update is under way, and
     /// whether clicking it restarts into the update.
     pub fn status_item(&self) -> Option<(String, bool)> {

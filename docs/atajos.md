@@ -27,6 +27,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Buscar actualizaciones… |  |
 | — | — | Reiniciar para actualizar |  |
 | — | — | Activar o desactivar la búsqueda automática de actualizaciones |  |
+| — | — | Acerca de Levare… |  |
 | `Esc` | `Esc` | Cerrar el panel abierto |  |
 
 ## Edición

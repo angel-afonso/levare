@@ -1,5 +1,6 @@
 //! Native editor chrome. Pending controls are visibly marked «Pendiente»; score
 //! data and transport readouts always come from the current document/session.
+mod about;
 pub mod agent_panel;
 mod clef_picker;
 mod comments;
@@ -396,6 +397,7 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         .when(view.export_picker.is_some(), |root| {
             root.child(export_picker::dialog(view, cx))
         })
+        .when(view.about, |root| root.child(about::dialog(view, cx)))
         .when_some(view.ui.context_menu, |root, (position, is_mark)| {
             root.child(toolbar::context_menu(view, position, is_mark, cx))
         })

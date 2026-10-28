@@ -92,6 +92,8 @@ struct AppView {
     confirming: bool,
     instrument_picker: Option<ui::InstrumentPicker>,
     export_picker: Option<ui::ExportPicker>,
+    /// Acerca de Levare.
+    about: bool,
     key_picker: bool,
     time_picker: bool,
     clef_picker: bool,
@@ -348,6 +350,7 @@ impl AppView {
             confirming: false,
             instrument_picker: None,
             export_picker: None,
+            about: false,
             key_picker: false,
             time_picker: false,
             clef_picker: false,
@@ -1082,6 +1085,13 @@ impl AppView {
             }
             return;
         }
+        if self.about {
+            cx.stop_propagation();
+            if !stroke.modifiers.modified() && matches!(stroke.key.as_str(), "escape" | "enter") {
+                self.close_about(cx);
+            }
+            return;
+        }
         let now = Instant::now();
         let repeated = self
             .held
@@ -1630,6 +1640,7 @@ impl AppView {
             id::CHECK_FOR_UPDATES => self.check_for_updates(true, cx),
             id::RESTART_TO_UPDATE => self.restart_to_update(cx),
             id::AUTOMATIC_UPDATES => self.toggle_automatic_updates(cx),
+            id::ABOUT => self.open_about(cx),
 
             id::COPY => self.copy_music(false, cx),
             id::CUT => self.copy_music(true, cx),
@@ -3663,6 +3674,7 @@ impl Render for AppView {
                 if self.preferences.is_some()
                     || self.instrument_picker.is_some()
                     || self.export_picker.is_some()
+                    || self.about
                 {
                     "Levare Modal"
                 } else {

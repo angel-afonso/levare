@@ -186,6 +186,7 @@ pub mod id {
         CHECK_FOR_UPDATES = "archivo.buscar-actualizaciones";
         RESTART_TO_UPDATE = "archivo.reiniciar-para-actualizar";
         AUTOMATIC_UPDATES = "archivo.actualizaciones-automaticas";
+        ABOUT = "archivo.acerca-de";
         CLOSE_PANEL = "panel.cerrar";
 
         UNDO = "edicion.deshacer";
@@ -452,6 +453,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CHECK_FOR_UPDATES, C::File, "Buscar actualizaciones…", G, false, R),
     spec(id::RESTART_TO_UPDATE, C::File, "Reiniciar para actualizar", G, false, R),
     spec(id::AUTOMATIC_UPDATES, C::File, "Activar o desactivar la búsqueda automática de actualizaciones", G, false, R),
+    spec(id::ABOUT, C::File, "Acerca de Levare…", G, false, R),
     spec(id::CLOSE_PANEL, C::File, "Cerrar el panel abierto", M, false, R),
 
     spec(id::UNDO, C::Edit, "Deshacer", G, true, R),
