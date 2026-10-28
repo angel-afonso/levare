@@ -398,6 +398,31 @@ mod tests {
     }
 
     #[test]
+    fn the_shortcut_each_command_shows_needs_no_altgr() {
+        // Characters Spanish, German or French keyboards only type with AltGr,
+        // which Windows and Linux report as Ctrl+Alt.
+        const ALTGR: &[char] = &['[', ']', '{', '}', '\\', '|', '@', '#', '~', '`'];
+        for platform in Platform::ALL {
+            let (keymap, _) = resolve_on(platform, &UserKeymap::new());
+            for binding in keymap.bindings() {
+                let shown = keymap.keys_for(binding.command)[0];
+                assert!(
+                    !shown.0.iter().any(|stroke| stroke.key.contains(ALTGR)),
+                    "{platform:?}: {} shows {shown}",
+                    binding.command
+                );
+            }
+        }
+        let (keymap, _) = resolve_on(Windows, &UserKeymap::new());
+        assert_eq!(
+            keymap.label(id::PLAYLINE_TO_START).as_deref(),
+            Some("Ctrl+Inicio")
+        );
+        assert_eq!(typed(&keymap, id::PLAYLINE_TO_START), Some("ctrl-home"));
+        assert_eq!(keymap.keys_for(id::PLAYLINE_TO_START).len(), 2);
+    }
+
+    #[test]
     fn tab_shortcuts_do_not_steal_voice_keys() {
         let (keymap, problems) = resolve(&UserKeymap::new());
         assert!(problems.is_empty(), "{problems:?}");

@@ -247,7 +247,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `P` | `P` | Reproducir desde la selección |  |
 | — | — | Reproducir desde el inicio |  |
 | `⇧O` | `Mayús+O` | Detener la reproducción |  |
-| `⌘[` | `Ctrl+[` | Llevar la línea de reproducción al inicio |  |
+| `⌘↖` · `⌘[` | `Ctrl+Inicio` · `Ctrl+[` | Llevar la línea de reproducción al inicio |  |
 | `⌥P` | `Alt+P` | Reproducción en bucle |  |
 | `⌥Espacio` | Windows: `Alt+Espacio` · Linux: `Mayús+Alt+Espacio` | Repetir la última reproducción |  |
 | `⇧Espacio` | `Mayús+Espacio` | Reproducir a media velocidad |  |

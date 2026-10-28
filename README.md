@@ -997,7 +997,7 @@ interiores y finales que muestra la regla.
   cambia de velocidad en el mismo punto. Funciona también con el bucle.
 - **Repetir la última reproducción** (`⌥Espacio`): vuelve a empezar desde donde
   empezó la reproducción anterior.
-- **Línea de reproducción al inicio** (`⌘[`): lleva el cabezal al compás 1, sonando o parado.
+- **Línea de reproducción al inicio** (`⌘↖` o `⌘[`; `Ctrl+Inicio` en Windows y Linux): lleva el cabezal al compás 1, sonando o parado.
 - **Compás siguiente** (`⌘→`) e **Inicio del compás** (`⌘←`): seleccionan la primera
   nota del compás siguiente, o la del compás actual; si ya estás ahí, la del anterior.
 - **Ir al compás…** (`⌥⌘G`, o un clic en el contador **COMPÁS · TIEMPO**): escribe el

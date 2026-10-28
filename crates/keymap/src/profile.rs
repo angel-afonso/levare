@@ -190,6 +190,9 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("space", id::PLAY),
     ("p", id::PLAY_FROM_SELECTION),
     ("shift-o", id::STOP),
+    // Spanish, German and French keyboards type [ with AltGr, so Ctrl+[ cannot
+    // be pressed there; Ctrl+Inicio works on every layout and labels the command.
+    ("secondary-home", id::PLAYLINE_TO_START),
     ("secondary-[", id::PLAYLINE_TO_START),
     ("alt-p", id::LOOP),
     ("shift-space", id::HALF_SPEED),
