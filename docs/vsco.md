@@ -1,90 +1,102 @@
-# VSCO CE: paquete de sonido opcional
+# VSCO CE: optional sound pack
 
-VSCO sigue siendo un paquete SFZ de formato 1 compatible. Levare también admite
-paquetes de formato 2 y una combinación por prioridad; consulta [Bibliotecas SFZ](sfz.md).
+VSCO remains a compatible format 1 SFZ pack. Levare also supports format 2 packs and a
+combination by priority; see [SFZ libraries](sfz.md).
 
-La integración experimental lee los SFZ y WAV originales de **VSCO 2 Community
-Edition 1.1.0** con **sfizz 1.2.3**. No convierte las grabaciones a SoundFont ni
-reemplaza GeneralUser. No es un host de plugins VST/AU: es un paquete local con
-un motor de reproducción intercambiable desde la aplicación.
+The experimental integration reads the original SFZ and WAV files of **VSCO 2 Community
+Edition 1.1.0** with **sfizz 1.2.3**. It does not convert the recordings to SoundFont or
+replace GeneralUser. It is not a VST/AU plugin host: it is a local pack played by the SFZ
+engine that Levare ships.
 
-## Probarlo
+## Trying it
 
-El adaptador está en el paquete independiente `score-sound-vsco`. La característica
-`vsco` de `levare` está activa por defecto, así que `cargo run` y `cargo build`
-lo incluyen. Instalar las muestras sigue siendo opcional: sin ellas, la pestaña **Sonido** solo
-ofrece GeneralUser. Para compilar sin el adaptador:
-`cargo run --no-default-features --features runtime-shaders`.
+The adapter lives in the separate package `score-sound-vsco`. The `vsco` feature of
+`levare` is on by default, so `cargo run` and `cargo build` include it. Installing the
+samples remains optional: without them, the **Sonido** tab offers only GeneralUser. To
+build without the adapter: `cargo run --no-default-features --features runtime-shaders`.
 
-1. Abre la pestaña **Sonido** del panel derecho, o pulsa el nombre del sonido junto al transporte.
-2. Elige **VSCO CE · experimental**. Se cargan los instrumentos de la partitura y
-   el de la audición al escribir. La primera carga puede tardar unos segundos.
-3. Reproduce, pausa o cambia la posición en la regla como de costumbre.
-4. Elige **GeneralUser GS** para comparar. Cambiar el paquete detiene el transporte;
-   no modifica la partitura. La elección es de sesión; al abrir la app se usa GeneralUser.
+1. Open the **Sonido** tab of the right panel, or click the sound name next to the
+   transport.
+2. Choose **VSCO CE · experimental**. The score's instruments and the one used for the
+   typing preview are loaded. The first load can take a few seconds.
+3. Play, pause or change the position on the ruler as usual.
+4. Choose **GeneralUser GS** to compare. Changing the pack stops the transport; it does not
+   modify the score. The choice lasts for the session; when the app opens, GeneralUser is
+   used.
 
-En la pestaña **Sonido**, ambos bancos comparten una reverberación estéreo suave (14 % por
-defecto), con cantidad, tamaño de sala y apagado para comparar en seco. En **Mezcla**, a la
-izquierda, cada fila de parte tiene volumen (0–100 %) y posición estéreo
-(izquierda/centro/derecha); pulsar el valor de un deslizador lo devuelve al habitual. Con
-varias partes, cada una parte de su sitio habitual en el escenario
-(violines a la izquierda, violas y graves a la derecha, maderas y metales repartidos
-detrás); un instrumento repetido, como un segundo violín, se coloca un 20 % más a la
-derecha. Una parte sola queda centrada. Pulsar el valor de la posición vuelve a ese sitio. Los controles funcionan durante la reproducción, también para pizzicato,
-las dos manos del piano y las notas de GeneralUser usadas como respaldo.
-Los ajustes se conservan al cambiar de banco o reconectar audio; los de cada parte
-se restablecen al abrir o crear una partitura y no se guardan en el documento.
-La pausa congela también el ambiente; Detener y los saltos limpian la cola anterior.
+In the **Sonido** tab, both banks share a soft stereo reverb (14 % by default), with
+amount, room size and an off switch to compare dry. In **Mezcla**, on the left, each part
+row has a volume (0–100 %) and a stereo position (left/center/right); clicking a slider's
+value returns it to the usual one. With several parts, each starts from its usual place on
+the stage (violins on the left, violas and low instruments on the right, woodwinds and brass
+spread behind); a repeated instrument, such as a second violin, is placed 20 % further to
+the right. A single part stays centered. Clicking the position value returns it to that
+place. The controls work during playback, also for pizzicato, the two hands of the piano and
+the GeneralUser notes used as a fallback. The settings are kept when changing bank or
+reconnecting audio; those of each part are reset when a score is opened or created and are
+not saved in the document. Pause also freezes the ambience; Stop and jumps clear the
+previous tail.
 
-El paquete instalado en esta máquina está en `soundpacks/vsco-ce/`; las muestras
-están en `soundpacks/VSCO-2-CE-1.1.0/`. Ambos están excluidos de Git y no aumentan el
-ejecutable. La app busca el manifiesto en los directorios antecesores de su ejecutable,
-incluido el proyecto cuando se abre `target/Levare.app`.
+## Where the pack lives
 
-## Cobertura de esta primera integración
+Every pack, VSCO included, plays through the sfizz Levare ships. The manifest's `engine`
+field, which older VSCO manifests carry, is ignored.
 
-- Piano vertical; violín solista y sección de violines (según **Sección | Solista** en
-  Mezcla); secciones de viola y violoncello; contrabajo solista; flauta, oboe, clarinete,
-  fagot, trompeta, corno y trombón.
-- Los trémolos de tres barras en la cuerda usan las grabaciones de trémolo de VSCO
-  (violín solista y sección, viola, violoncello y contrabajo).
-- El cambio **pizzicato / arco** usa grabaciones distintas de cada instrumento de
-  cuerda. Se conservan las capas de intensidad y las variaciones que contiene el SFZ.
-- Los reguladores modifican la expresión de cada canal, también en notas sostenidas.
-  El nivel sigue a cada paso del regulador de forma continua (unos 4 ms), sin saltos
-  audibles; tras una parada o un salto se aplica de inmediato.
-- **Capas de dinámica:** VSCO reparte sus grabaciones en 2–4 capas por velocidad
-  (cortes en 63, 42/84 o 31/63/95), pensadas para 0–127, pero las dinámicas escritas
-  van de ppp (32) a fff (124). Al cargar cada SFZ los cortes se reescalan a ese rango,
-  de modo que con dos capas ppp–mp usan la grabación suave y mf–fff la fuerte (antes
-  mp ya usaba la fuerte). Solo cambian los límites de las regiones: el volumen sigue
-  la misma velocidad. El piano conserva sus cortes originales (61 y 111), que ya
-  coinciden con p, mp–f y ff.
-- La guitarra y las notas fuera del rango numérico de los parches cargados usan
-  GeneralUser automáticamente. Instrumentos repetidos tienen sintetizadores separados.
-- El staccato usa grabaciones **staccato** en flauta, oboe, clarinete, fagot,
-  trompeta, corno y trombón, y **spiccato** en violín, viola, violoncello y contrabajo.
-  Esto se aplica a la audición breve y a la reproducción completa. La marca escrita
-  sigue siendo staccato; spiccato es la muestra corta elegida por este adaptador.
-- Un staccato bajo una ligadura de expresión es portato: usa la grabación sostenida
-  con la duración del 75 %, no la muestra corta.
-- Pizzicato tiene prioridad sobre la muestra corta de arco. Si falta una muestra
-  corta o no cubre la nota, se utiliza la sostenida con duración acortada; si tampoco
-  la cubre, el contrato común permite que GeneralUser reproduzca la nota.
-- Los acentos y marcato modifican la intensidad; tenuto conserva la duración completa.
-  No se añaden automáticamente tremolo ni transiciones de legato.
-- VSCO es una biblioteca de muestras: no añade por sí sola transiciones de legato,
-  respiración musical, pedal de piano ni una interpretación humana completa.
+An installed Levare looks for the pack only in its own `soundpacks` folder
+(`Contents/Resources/soundpacks` inside the app bundle on macOS, `soundpacks` next to the
+executable on Windows and Linux) and in the `soundpacks` folder of Levare's data folder.
+Folders above the app are not searched. Debug builds also search every folder above the
+executable, so `cargo run` finds the repository's `soundpacks/`, and so does a debug build
+opened from `target/Levare.app`. `LEVARE_SFIZZ` overrides the sfizz library in development;
+a debug build otherwise falls back to the library in `soundpacks/vsco-ce/`.
 
-La preparación y la carga del motor/muestras ocurren antes de abrir el nuevo flujo
-de audio. Editar notas reutiliza el motor; cambiar la plantilla de instrumentos o
-el instrumento de audición puede necesitar una nueva carga. Si falla la activación,
-se conserva el motor anterior y se muestra el error en Sonidos.
+The pack installed on this machine is in `soundpacks/vsco-ce/`; the samples are in
+`soundpacks/VSCO-2-CE-1.1.0/`. Both are excluded from Git and do not enlarge the
+executable.
 
-## Instalación local reproducible
+## Coverage of this first integration
 
-Se conserva el archivo del usuario en Downloads. El importador no descarga ni instala
-nada en el sistema; recibe el archivo y una biblioteca sfizz ya compilada:
+- Upright piano; solo violin and violin section (according to **Sección | Solista** in
+  Mezcla); viola and cello sections; solo double bass; flute, oboe, clarinet, bassoon,
+  trumpet, horn and trombone.
+- Three-bar tremolos on strings use VSCO's tremolo recordings (solo violin and section,
+  viola, cello and double bass).
+- The **pizzicato / arco** switch uses separate recordings for each string instrument. The
+  intensity layers and the variations the SFZ contains are kept.
+- Hairpins change each channel's expression, also on sustained notes. The level follows
+  each step of the hairpin continuously (about 4 ms), with no audible jumps; after a stop or
+  a jump it applies at once.
+- **Dynamic layers:** VSCO splits its recordings into 2–4 velocity layers (cuts at 63,
+  42/84 or 31/63/95), meant for 0–127, but written dynamics go from ppp (32) to fff (124).
+  When each SFZ is loaded, the cuts are rescaled to that range, so with two layers ppp–mp
+  use the soft recording and mf–fff the strong one (before, mp already used the strong one).
+  Only the region limits change: the volume follows the same velocity. The piano keeps its
+  original cuts (61 and 111), which already match p, mp–f and ff.
+- The guitar and notes outside the numeric range of the loaded patches use GeneralUser
+  automatically. Repeated instruments have separate synthesizers.
+- Staccato uses **staccato** recordings on flute, oboe, clarinet, bassoon, trumpet, horn and
+  trombone, and **spiccato** on violin, viola, cello and double bass. This applies to the
+  short preview and to full playback. The written mark is still staccato; spiccato is the
+  short sample this adapter chooses.
+- A staccato under a slur is portato: it uses the sustained recording at 75 % of the
+  duration, not the short sample.
+- Pizzicato takes priority over the short bowed sample. If a short sample is missing or does
+  not cover the note, the sustained one is used with a shortened duration; if that does not
+  cover it either, the common contract lets GeneralUser play the note.
+- Accents and marcato change the intensity; tenuto keeps the full duration. Tremolo and
+  legato transitions are not added automatically.
+- VSCO is a sample library: by itself it adds no legato transitions, musical breathing,
+  piano pedal or complete human interpretation.
+
+Preparing and loading the engine and samples happen before the new audio stream opens.
+Editing notes reuses the engine; changing the instrument template or the preview
+instrument may need a new load. If activation fails, the previous engine is kept and the
+error is shown in Sonidos.
+
+## Reproducible local installation
+
+The user's archive in Downloads is kept as is. The importer downloads and installs nothing
+on the system; it takes the archive and an sfizz library that is already built:
 
 ```sh
 python3 scripts/prepare_vsco.py ~/Downloads/VSCO-2-CE-1.1.0.tar.gz \
@@ -92,13 +104,15 @@ python3 scripts/prepare_vsco.py ~/Downloads/VSCO-2-CE-1.1.0.tar.gz \
   --licenses target/native/sfizz-1.2.3
 ```
 
-Requiere Python 3.12 o posterior. Comprueba los archivos de muestras referenciados por
-los 27 parches usados antes de publicar `manifest.json`, y copia los avisos de licencia.
-El manifiesto versión 1 contiene `kind=vsco-ce`, `samples` y `engine`, con rutas relativas.
+It requires Python 3.12 or later. It checks the sample files referenced by the 27 patches
+in use before publishing `manifest.json`, and copies the license notices. The version 1
+manifest contains `kind=vsco-ce`, `samples` and `engine`, with relative paths. `engine` is a
+legacy field that Levare ignores; the script also copies the library into
+`soundpacks/vsco-ce/`, which is where a debug build finds it when `LEVARE_SFIZZ` is not set.
 
-El motor se obtuvo del [archivo oficial sfizz 1.2.3](https://github.com/sfztools/sfizz/releases/download/1.2.3/sfizz-1.2.3.tar.gz).
+The engine came from the [official sfizz 1.2.3 archive](https://github.com/sfztools/sfizz/releases/download/1.2.3/sfizz-1.2.3.tar.gz).
 SHA-256: `a9339eac7620d7f0f6b44bdfe860680fab73e66efad4b5f15b21198dd9436822`.
-Se compiló como biblioteca dinámica, sin JACK, renderer CLI ni plugins:
+It was built as a dynamic library, without JACK, the CLI renderer or plugins:
 
 ```sh
 cmake -S target/native/sfizz-1.2.3 -B target/native/sfizz-build \
@@ -109,14 +123,13 @@ cmake -S target/native/sfizz-1.2.3 -B target/native/sfizz-build \
 cmake --build target/native/sfizz-build -j 4
 ```
 
-Con Apple Clang actual, el `atomic_queue.h` incluido necesita retirar cuatro
-calificadores `template` redundantes: `Base::template do_pop_any(` y
-`Base::template do_push_any(` pasan a `Base::do_pop_any(` y `Base::do_push_any(`.
-Esta corrección de compilación no modifica el procesamiento de audio.
-`PROJECT_SYSTEM_PROCESSOR=aarch64` evita los indicadores ARM de 32 bits que esta
-versión antigua selecciona para el nombre `arm64`.
+With current Apple Clang, the bundled `atomic_queue.h` needs four redundant `template`
+qualifiers removed: `Base::template do_pop_any(` and `Base::template do_push_any(` become
+`Base::do_pop_any(` and `Base::do_push_any(`. This build fix does not change audio
+processing. `PROJECT_SYSTEM_PROCESSOR=aarch64` avoids the 32-bit ARM flags that this old
+version selects for the name `arm64`.
 
-## Validación y comparación
+## Validation and comparison
 
 ```sh
 cargo test --workspace
@@ -125,22 +138,21 @@ cargo test -p levare
 cargo run -p score-sound-vsco --example vsco_compare
 ```
 
-Los tests del paquete instalado requieren muestras locales; el resto del proyecto
-se compila y prueba sin ellas ni sfizz. Las pruebas nativas incluyen audio distinto
-de GM, pausa, salto en pausa, reanudación, Stop, instrumentos repetidos, pizzicato,
-los once instrumentos con muestras cortas, fallback de guitarra, el mezclador y
-ausencia de asignaciones Rust en el callback.
-`exports/vsco-comparison/` contiene pares WAV de la misma melodía con GeneralUser y VSCO.
-Para exportar más rápido que el tiempo real, el ejemplo usa el modo offline de sfizz;
-el flujo de audio en vivo no lo activa.
+The installed-pack tests require local samples; the rest of the project builds and tests
+without them or sfizz. The native tests include audio different from GM, pause, a jump
+while paused, resume, Stop, repeated instruments, pizzicato, the eleven instruments with
+short samples, the guitar fallback, the mixer and the absence of Rust allocations in the
+callback. `exports/vsco-comparison/` contains WAV pairs of the same melody with GeneralUser
+and VSCO. To export faster than real time, the example uses sfizz's offline mode; the live
+audio stream does not turn it on.
 
-## Licencias
+## Licenses
 
-- VSCO CE: CC0; se conserva su `LICENSE` y los créditos a Sam Gossner, Simon Dalzell
-  y Elan Hickler/Soundemote. [Sitio oficial](https://versilian-studios.com/vsco-community/).
-- sfizz: BSD-2-Clause, con sus avisos y los de sus dependencias en
-  `soundpacks/vsco-ce/licenses/`. El repositorio original está archivado; para esta
-  prueba se fija 1.2.3, sin afirmar mantenimiento futuro del motor.
+- VSCO CE: CC0; its `LICENSE` is kept, along with the credits to Sam Gossner, Simon Dalzell
+  and Elan Hickler/Soundemote. [Official site](https://versilian-studios.com/vsco-community/).
+- sfizz: BSD-2-Clause, with its notices and those of its dependencies in
+  `soundpacks/vsco-ce/licenses/`. The original repository is archived; for this trial 1.2.3
+  is pinned, without claiming future maintenance of the engine.
 
-Para desinstalar, cierra la app y retira `soundpacks/vsco-ce/`. Las partituras no
-guardan dependencias de este paquete y siguen funcionando con GeneralUser.
+To uninstall, close the app and remove `soundpacks/vsco-ce/`. Scores do not store
+dependencies on this pack and keep working with GeneralUser.
