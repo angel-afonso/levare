@@ -342,7 +342,13 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
             "El archivo supera el límite de 256 MiB",
         ));
     }
-    if container::is_levare(&bytes)
+    // A `.levare` cut short by a copy or a sync has no ZIP directory to show
+    // its mimetype; its name still says it is not MusicXML.
+    let named_levare = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(EXTENSION));
+    if named_levare
+        || container::is_levare(&bytes)
         || bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{')
     {
         return Ok(OpenedScore {
@@ -699,6 +705,17 @@ mod tests {
         let loaded = load(&path).unwrap();
         assert_eq!(loaded, score);
         assert_eq!(loaded.event(id), score.event(id));
+    }
+
+    #[test]
+    fn a_truncated_levare_file_is_reported_as_a_damaged_score_not_musicxml() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cortada.levare");
+        let whole = encode_file(&Score::default()).unwrap();
+        std::fs::write(&path, &whole[..whole.len() / 2]).unwrap();
+        let failure = open(&path).err().unwrap();
+        assert_eq!(failure.kind(), FileErrorKind::Damaged);
+        assert!(!failure.to_string().contains("MusicXML"), "{failure}");
     }
 
     /// 32 parts with a quarter-note line in every bar, like a dense tutti.
