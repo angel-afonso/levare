@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 use std::{fmt, fs::File, io::Read, path::Path};
 
 pub const SCHEMA_VERSION: u32 = 29;
-pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+/// Enough for the largest score the model allows (`MAX_PARTS` parts of
+/// `MAX_MEASURES` bars at orchestral density is about 60 MiB of compact JSON),
+/// including the indented JSON that older versions wrote.
+pub const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct NativeFile {
@@ -42,21 +45,22 @@ fn error(error: impl fmt::Display) -> FileError {
 
 pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
     score.validate().map_err(error)?;
-    let bytes = serde_json::to_vec_pretty(&NativeFile {
+    // Compact: indentation alone made orchestral scores four times larger.
+    let bytes = serde_json::to_vec(&NativeFile {
         format: "partitura".into(),
         version: SCHEMA_VERSION,
         score: score.clone(),
     })
     .map_err(error)?;
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("La partitura supera el límite de 16 MiB"));
+        return Err(error("La partitura supera el límite de 256 MiB"));
     }
     Ok(bytes)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("El archivo supera el límite de 16 MiB"));
+        return Err(error("El archivo supera el límite de 256 MiB"));
     }
     // Check the envelope before deserializing a possibly incompatible score.
     let mut envelope: serde_json::Value = serde_json::from_slice(bytes).map_err(error)?;
@@ -312,7 +316,7 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
         .read_to_end(&mut bytes)
         .map_err(error)?;
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("El archivo supera el límite de 16 MiB"));
+        return Err(error("El archivo supera el límite de 256 MiB"));
     }
     if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{') {
         return Ok(OpenedScore {
@@ -669,6 +673,57 @@ mod tests {
         let loaded = load(&path).unwrap();
         assert_eq!(loaded, score);
         assert_eq!(loaded.event(id), score.event(id));
+    }
+
+    /// 32 parts with a quarter-note line in every bar, like a dense tutti.
+    pub(crate) fn orchestral(bars: usize) -> Score {
+        let instruments: Vec<_> = score_core::Instrument::ALL
+            .iter()
+            .copied()
+            .cycle()
+            .take(32)
+            .collect();
+        let mut score = Score::new("Tutti".into(), &instruments, bars).unwrap();
+        let parts: Vec<_> = score.parts().iter().map(|part| part.id()).collect();
+        for part in parts {
+            for bar in 0..bars {
+                for beat in 0..4 {
+                    let step = [Step::C, Step::E, Step::G, Step::B][(bar + beat) % 4];
+                    score
+                        .insert_on(
+                            part,
+                            score_core::StaffId::Upper,
+                            bar,
+                            beat,
+                            Event {
+                                notation: Default::default(),
+                                pitches: score_core::Pitches::single(Pitch::new(step, 4)),
+                                duration: Duration::Quarter,
+                            },
+                        )
+                        .unwrap();
+                }
+            }
+        }
+        score
+    }
+
+    #[test]
+    fn saves_an_orchestral_score_too_large_for_indented_json() {
+        let score = orchestral(420);
+        let pretty = serde_json::to_vec_pretty(&NativeFile {
+            format: "partitura".into(),
+            version: SCHEMA_VERSION,
+            score: score.clone(),
+        })
+        .unwrap();
+        assert!(pretty.len() > 16 * 1024 * 1024, "{}", pretty.len());
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tutti.partitura");
+        save(&path, &score).unwrap();
+        assert_eq!(load(&path).unwrap(), score);
+        // Files written indented by older versions still open.
+        assert_eq!(decode(&pretty).unwrap(), score);
     }
 
     #[test]

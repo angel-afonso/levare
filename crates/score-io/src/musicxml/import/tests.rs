@@ -296,7 +296,7 @@ fn external_doctype_is_not_fetched_and_expanded_or_large_archives_are_bounded() 
         )
     );
     assert!(decode(xml.as_bytes()).is_ok());
-    assert!(decode(&vec![b' '; MAX_FILE_BYTES + 1]).is_err());
+    assert!(decode(&vec![b' '; MAX_MUSICXML_BYTES + 1]).is_err());
     assert!(decode(b"PK not a zip").is_err());
     let xml = "<!DOCTYPE score-partwise [<!ENTITY leak SYSTEM 'file:///etc/passwd'>]><score-partwise><work><work-title>&leak;</work-title></work></score-partwise>";
     assert!(decode(xml.as_bytes()).is_err());

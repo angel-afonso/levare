@@ -1,6 +1,6 @@
 //! Bounded MusicXML reader. Unsupported musical data is rejected or reported,
 //! never silently used to overwrite the source document.
-use crate::{FileError, MAX_FILE_BYTES, error};
+use crate::{FileError, error};
 use roxmltree::{Document, Node, ParsingOptions};
 use score_core::*;
 use std::{
@@ -11,6 +11,10 @@ use std::{
 };
 
 mod build;
+
+/// MusicXML is far more verbose than the native format, so it keeps its own,
+/// older limit.
+const MAX_MUSICXML_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct ImportResult {
@@ -82,14 +86,14 @@ pub fn load(path: &Path) -> Result<ImportResult, FileError> {
     let mut bytes = Vec::new();
     File::open(path)
         .map_err(error)?
-        .take((MAX_FILE_BYTES + 1) as u64)
+        .take((MAX_MUSICXML_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(error)?;
     decode(&bytes)
 }
 /// Reads uncompressed XML or a compressed MXL container without extracting files.
 pub fn decode(bytes: &[u8]) -> Result<ImportResult, FileError> {
-    if bytes.len() > MAX_FILE_BYTES {
+    if bytes.len() > MAX_MUSICXML_BYTES {
         return Err(error("MusicXML supera el límite de 16 MiB"));
     }
     let expanded;
@@ -294,15 +298,15 @@ fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
         return Err(error("Ruta inválida en el contenedor MusicXML"));
     }
     let mut f = zip.by_name(name).map_err(error)?;
-    if f.size() > MAX_FILE_BYTES as u64 {
+    if f.size() > MAX_MUSICXML_BYTES as u64 {
         return Err(error("MusicXML descomprimido supera 16 MiB"));
     }
     let mut out = Vec::new();
     f.by_ref()
-        .take((MAX_FILE_BYTES + 1) as u64)
+        .take((MAX_MUSICXML_BYTES + 1) as u64)
         .read_to_end(&mut out)
         .map_err(error)?;
-    if out.len() > MAX_FILE_BYTES {
+    if out.len() > MAX_MUSICXML_BYTES {
         return Err(error("MusicXML descomprimido supera 16 MiB"));
     }
     Ok(out)

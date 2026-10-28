@@ -67,7 +67,7 @@ fn written() -> Score {
 fn texts_round_trip_in_the_native_format() {
     let score = written();
     let bytes = encode(&score).unwrap();
-    assert!(String::from_utf8_lossy(&bytes).contains("\"expression_text\": \"dolce\""));
+    assert!(String::from_utf8_lossy(&bytes).contains("\"expression_text\":\"dolce\""));
     assert_eq!(decode(&bytes).unwrap(), score);
     let long = String::from_utf8(bytes).unwrap().replace(
         "\"dolce\"",

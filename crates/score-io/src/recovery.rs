@@ -193,6 +193,8 @@ fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
     .map_err(error)?;
     atomic_write::write(path, &bytes).map_err(error)
 }
+/// The document plus its envelope and original path.
+const MAX_RECOVERY_BYTES: usize = MAX_FILE_BYTES + 1024 * 1024;
 pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
     let mut bytes = Vec::new();
     let file = match File::open(path) {
@@ -200,10 +202,10 @@ pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(error(e)),
     };
-    file.take((MAX_FILE_BYTES * 2 + 1) as u64)
+    file.take((MAX_RECOVERY_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(error)?;
-    if bytes.len() > MAX_FILE_BYTES * 2 {
+    if bytes.len() > MAX_RECOVERY_BYTES {
         return Err(error("Recuperación demasiado grande"));
     }
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(error)?;
