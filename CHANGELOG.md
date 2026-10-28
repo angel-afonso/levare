@@ -8,6 +8,67 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/angel-afonso/levare/compare/v0.1.0...v0.2.0) - 2026-10-28
+
+### Added
+
+- *(updates)* install updates on Windows and Linux
+- *(window)* show the Levare icon on Windows and Linux
+- *(file)* export PDF on Windows and Linux
+
+### Changed
+
+- *(score-pdf)* draw PDF pages through one painter any backend can use
+
+### Documentation
+
+- write the commit convention and changelog in English
+
+### Fixed
+
+- open Levare on Linux desktops without a common interface font
+- *(playback)* keep the bar counter's digits monospaced on Windows and Linux
+- *(layout)* keep score text in a serif font on Linux
+- *(window)* reach updates, preferences and quit from the File menu on Windows and Linux
+- *(window)* open no console window with Levare on Windows
+- *(window)* draw Levare's own frame and resize edges on Linux
+- *(window)* draw minimize, maximize and close buttons on Windows
+- *(window)* keep the first window inside small screens
+- *(playback)* follow the default output device on Windows
+- *(playback)* recover from audio hiccups instead of dropping the device
+- *(sounds)* install and update sound packs reliably on Windows
+- *(score)* zoom one step per mouse wheel notch on Windows and Linux
+- *(score)* add intervals with Shift+digit on any keyboard layout
+- *(score)* draw hairpins, move marks freely and nudge by ten with Ctrl off macOS
+- *(shortcuts)* name the right keys in status messages on Windows and Linux
+- *(shortcuts)* use Ctrl instead of the Windows key off macOS
+- *(file)* explain in Spanish when Linux has no file chooser to open or save
+- *(score)* cut music on Wayland without a false «No se pudo verificar la copia»
+- *(file)* show recent scores on Windows without \\?\ prefixes or mixed slashes
+- *(file)* start Save As and Export in the score's folder or Documents
+- *(file)* export scores whose title has ? or other characters Windows forbids
+- *(file)* retry saving while another program holds the file on Windows
+- *(file)* keep autosave and crash recovery on Windows
+- *(agent)* stop every agent process when a session ends on Windows
+- *(agent)* find Claude, Codex and Gemini on Windows and Linux
+- *(agent)* start agent sessions on Windows
+- *(sonidos)* instala paquetes en Linux y Windows sin comprobar el espacio libre a ciegas
+- compila las dependencias y el panel de agente en Linux y Windows
+- *(playback)* keep the playhead in time with the sound
+- *(sounds)* load SFZ sound packs on Windows and Linux
+
+### Other
+
+- Merge portable PDF export and Linux fonts
+- Merge window, title bar and icon fixes for Windows and Linux
+- Merge file, autosave and export fixes for Windows and Linux
+- Merge audio and sound pack fixes for Windows and Linux
+- *(platform)* drop the unused MIDI library
+
+### Performance
+
+- *(window)* set the window title only when it changes
+
 ## [0.1.0](https://github.com/angel-afonso/levare/releases/tag/v0.1.0) - 2026-10-27
 
 ### Añadido
