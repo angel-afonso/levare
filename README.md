@@ -33,7 +33,8 @@ Añade `--release` para empaquetar la versión optimizada. La app y su cabecera 
 adaptadas al Dock. El script prepara los tamaños de macOS y Retina antes de
 compilar; `icon-v1.png` conserva el diseño original.
 
-Levare abre los documentos `.partitura` existentes y conserva el portapapeles
+Levare guarda las partituras como archivos `.levare` comprimidos, abre los
+documentos `.partitura` existentes y conserva el portapapeles
 musical compatible. Las instalaciones anteriores siguen usando sus atajos,
 archivos recientes y recuperación; las nuevas guardan esos datos en `Levare`.
 
@@ -1014,7 +1015,12 @@ Para comprobar brevemente el dispositivo sin abrir la interfaz:
 cargo run -p score-platform --example audio_smoke
 ```
 
-Los archivos `.partitura` son JSON con esquema versionado. Se escriben mediante
+Los archivos `.levare` son ZIP: una entrada `mimetype` sin comprimir
+(`application/vnd.levare.score`) y `score.json`, comprimido, con el JSON de esquema
+versionado. Los `.partitura` de versiones anteriores son ese mismo JSON sin
+comprimir; se siguen abriendo, y **Guardar** propone un `.levare` a su lado sin
+modificar el original. Las versiones de Levare anteriores a `.levare` no pueden
+abrir estos archivos. Se escriben mediante
 reemplazo atómico; abrir, crear o cerrar pide descartar los cambios si los hay.
 Los cambios se copian automáticamente a recuperación tras 750 ms sin edición
 (o a los 3 segundos si sigues escribiendo). Esta copia separada no modifica tu
@@ -1166,12 +1172,12 @@ El directorio de destino debe existir.
 
 ## Abrir MusicXML
 
-**Archivo › Abrir…** (⌘O) admite documentos nativos **.partitura**, MusicXML
+**Archivo › Abrir…** (⌘O) admite documentos nativos **.levare** y **.partitura**, MusicXML
 **.musicxml** y **.xml**, y archivos comprimidos **.mxl**. Se reconocen por su
 contenido y se admiten las estructuras partwise y timewise.
 
 La importación crea una copia editable sin ruta nativa y la marca como pendiente
-de guardar. **Guardar** pide un archivo **.partitura**; el original MusicXML no se
+de guardar. **Guardar** pide un archivo **.levare**; el original MusicXML no se
 modifica. La copia importada también participa en el autoguardado y recuperación.
 
 Se conservan notas, acordes de duración uniforme, silencios, hasta dos voces por

@@ -5,12 +5,14 @@ mod breaks_tests;
 mod clef_tests;
 #[cfg(test)]
 mod comment_tests;
+mod container;
 pub mod musicxml;
 mod names;
 #[cfg(test)]
 mod range_tests;
 mod recent;
 mod recovery;
+pub use container::{EXTENSION, MAX_CONTAINER_BYTES, MIME_TYPE};
 pub use names::file_name;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};
@@ -43,6 +45,8 @@ fn error(error: impl fmt::Display) -> FileError {
     FileError(error.to_string())
 }
 
+/// The versioned JSON envelope, as stored inside a `.levare` file and in the
+/// recovery file.
 pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
     score.validate().map_err(error)?;
     // Compact: indentation alone made orchestral scores four times larger.
@@ -58,7 +62,22 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
     Ok(bytes)
 }
 
+/// A compressed `.levare` document, as Save writes it.
+pub fn encode_file(score: &Score) -> Result<Vec<u8>, FileError> {
+    container::pack(&encode(score)?)
+}
+
+/// Reads a `.levare` document or the JSON of an older `.partitura` file,
+/// recognised by their contents rather than their extension.
 pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
+    if container::is_zip(bytes) {
+        decode_json(&container::unpack(bytes)?)
+    } else {
+        decode_json(bytes)
+    }
+}
+
+fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
     if bytes.len() > MAX_FILE_BYTES {
         return Err(error("El archivo supera el límite de 256 MiB"));
     }
@@ -306,7 +325,8 @@ pub struct OpenedScore {
     pub warnings: Vec<String>,
 }
 
-/// Detect native JSON, plain MusicXML or compressed MXL by their contents.
+/// Detect a `.levare` document, older native JSON, plain MusicXML or
+/// compressed MXL by their contents.
 /// Imported documents have no native save path; the UI must request a new one.
 pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
     let mut bytes = Vec::new();
@@ -318,7 +338,9 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
     if bytes.len() > MAX_FILE_BYTES {
         return Err(error("El archivo supera el límite de 256 MiB"));
     }
-    if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{') {
+    if container::is_levare(&bytes)
+        || bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{')
+    {
         return Ok(OpenedScore {
             score: decode(&bytes)?,
             imported: false,
@@ -336,7 +358,7 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
 /// Write beside the destination, flush, then replace atomically. A failed write
 /// never truncates the previous document.
 pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
-    let bytes = encode(score)?;
+    let bytes = encode_file(score)?;
     atomic_write::write(path, &bytes).map_err(error)
 }
 

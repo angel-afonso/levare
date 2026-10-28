@@ -23,6 +23,31 @@ fn start_folder_from(
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Where Save writes without asking: only a document already saved as
+/// `.levare`. An older `.partitura` file or an imported MusicXML is left
+/// untouched, and Save asks for a new `.levare` beside it.
+pub fn save_in_place(path: Option<&Path>) -> Option<&Path> {
+    path.filter(|path| is_levare(path))
+}
+
+/// The folder and file name the Save dialog proposes.
+pub fn suggested_save(path: Option<&Path>, title: &str) -> (PathBuf, String) {
+    let stem = path
+        .filter(|path| !is_levare(path))
+        .and_then(Path::file_stem)
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| score_io::file_name(title, 80));
+    (
+        start_folder(path),
+        format!("{stem}.{}", score_io::EXTENSION),
+    )
+}
+
+fn is_levare(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(score_io::EXTENSION))
+}
+
 /// Why a dialog did not open, to follow «No se pudo abrir: » or «No se pudo
 /// guardar: ».
 ///
@@ -61,6 +86,29 @@ mod tests {
         );
         assert_eq!(start_folder_from(None, None, home), Path::new("casa"));
         assert_eq!(start_folder_from(None, None, None), Path::new("."));
+    }
+
+    #[test]
+    fn save_writes_in_place_only_over_a_levare_document() {
+        let levare = Path::new("obras").join("Sonata.levare");
+        assert_eq!(save_in_place(Some(&levare)), Some(levare.as_path()));
+        assert_eq!(
+            suggested_save(Some(&levare), "Sonata en Do"),
+            (PathBuf::from("obras"), "Sonata en Do.levare".into())
+        );
+        let upper = Path::new("obras").join("Sonata.LEVARE");
+        assert_eq!(save_in_place(Some(&upper)), Some(upper.as_path()));
+        // Older files and imports keep their name, beside the original.
+        for original in ["Sonata.partitura", "Sonata.musicxml", "Sonata.mxl"] {
+            let path = Path::new("obras").join(original);
+            assert_eq!(save_in_place(Some(&path)), None);
+            assert_eq!(
+                suggested_save(Some(&path), "Otra"),
+                (PathBuf::from("obras"), "Sonata.levare".into())
+            );
+        }
+        assert_eq!(save_in_place(None), None);
+        assert_eq!(suggested_save(None, "Sin título").1, "Sin título.levare");
     }
 
     #[test]

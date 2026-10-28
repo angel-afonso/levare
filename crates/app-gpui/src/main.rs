@@ -82,6 +82,8 @@ struct AppView {
     document: Document,
     ui: ui::UiState,
     focus: FocusHandle,
+    /// The file the score came from. Save replaces it only when it is a
+    /// `.levare` document; see `file_dialogs::save_in_place`.
     path: Option<PathBuf>,
     status: String,
     busy: bool,
@@ -2525,8 +2527,8 @@ impl AppView {
                             view.chord_entry = false;
                             view.entry_accidental = None;
                             view.remember_recent(&path, cx);
-                            view.path = if opened.imported { None } else { Some(path) };
-                            view.status = if opened.imported { "MusicXML importado · guarda una copia .partitura para conservar los cambios" } else { "Partitura abierta" }.into();
+                            view.path = Some(path);
+                            view.status = if opened.imported { "MusicXML importado · guarda una copia .levare para conservar los cambios" } else { "Partitura abierta" }.into();
                             view.sync_quit_snapshot();
                             if !opened.warnings.is_empty() {
                                 view.confirming = true;
@@ -2696,11 +2698,17 @@ impl AppView {
             return;
         }
         self.busy = true;
-        let existing = if save_as { None } else { self.path.clone() };
+        let existing = if save_as {
+            None
+        } else {
+            file_dialogs::save_in_place(self.path.as_deref()).map(PathBuf::from)
+        };
         let picker = existing.is_none().then(|| {
-            let directory = file_dialogs::start_folder(self.path.as_deref());
-            let name = score_io::file_name(self.document.editor.score().title(), 80);
-            cx.prompt_for_new_path(&directory, Some(&format!("{name}.partitura")))
+            let (directory, name) = file_dialogs::suggested_save(
+                self.path.as_deref(),
+                self.document.editor.score().title(),
+            );
+            cx.prompt_for_new_path(&directory, Some(&name))
         });
         let score = self.document.editor.score().clone();
         cx.spawn(async move |view, cx| {

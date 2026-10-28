@@ -310,7 +310,14 @@ mod tests {
     fn legacy_recovery_and_write_failures_preserve_the_previous_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("recovery.partitura");
-        super::super::save(&path, &Score::default()).unwrap();
+        // Before the recovery envelope, the autosave was an indented native file.
+        let legacy = serde_json::to_vec_pretty(&super::super::NativeFile {
+            format: "partitura".into(),
+            version: super::super::SCHEMA_VERSION,
+            score: Score::default(),
+        })
+        .unwrap();
+        std::fs::write(&path, legacy).unwrap();
         assert_eq!(
             load_recovery(&path).unwrap().unwrap().score,
             Score::default()
