@@ -1,0 +1,49 @@
+# cargo-deny, run by CI's Dependencies job: known vulnerabilities, licenses
+# Levare cannot ship and crates from outside crates.io. Locally:
+# `cargo deny --locked check`.
+
+[graph]
+# The systems the downloads are built for.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+# Unmaintained crates deep in gpui's tree are not ours to replace; only the
+# ones Levare depends on directly are reported.
+unmaintained = "workspace"
+# Each entry needs a reason: why it cannot affect Levare, or that no fixed
+# release exists.
+ignore = [
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained with no maintained release; Levare reads font metrics with it and fontdb and rustybuzz need it too, so replacing it (skrifa) is a change of its own" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz is unmaintained with no maintained release; score-pdf measures text with it and usvg (under krilla) needs it too, so replacing it (harfrust) is a change of its own" },
+]
+
+[licenses]
+# The same list as about.toml's `accepted`, which the release's third-party
+# notices are generated with: keep both in step.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+# gpui alone brings several versions of windows-sys, syn, hashbrown…; they
+# are reported, not refused.
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

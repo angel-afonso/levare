@@ -78,7 +78,9 @@ on macOS, next to the executable on Windows and Linux. The Licenses job writes i
 | `sfizz/` | sfizz's license and its dependencies' notices. |
 
 cargo-about fails the job when a crate's license is not in `about.toml`'s `accepted`
-list; add one only after checking it allows shipping Levare as it is.
+list. `deny.toml` allows the same list, so CI's Dependencies job (cargo-deny) catches a
+new license on the pull request that brings it; add one to both only after checking it
+allows shipping Levare as it is.
 
 ### Checks on the Windows and Linux downloads
 

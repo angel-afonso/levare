@@ -32,6 +32,19 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+  # Known vulnerabilities, licenses Levare cannot ship (deny.toml allows the
+  # same ones as about.toml, which the release's notices come from) and
+  # crates from outside crates.io. Duplicate versions are only reported.
+  deny:
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
   # Levare is built and tested on all three systems alike. Clippy runs on
   # each because the cfg-gated code differs between them.
   check:

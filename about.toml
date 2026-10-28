@@ -1,10 +1,12 @@
 # Third-party notices for the Rust crates built into Levare, written by the
 # Release workflow (.github/scripts/collect-licenses.sh) with about.hbs. Only
 # what the release builds link counts. Where a crate offers a choice of
-# licenses, the first one listed here is used.
+# licenses, the first one listed here is used. deny.toml allows the same list
+# for CI's cargo-deny check: keep both in step.
 accepted = [
     "MIT",
     "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
