@@ -17,7 +17,7 @@ use futures::stream;
 use gpui::{Context, ScrollHandle, Task, Timer, Window};
 use score_core::{Accidental, BarMarkRef, Duration, ElementId, MarkRef, Score};
 use score_edit::{Cursor, Editor, HistoryMark};
-use score_keymap::{Category, CommandId, Registry};
+use score_keymap::{Category, CommandId, Registry, id};
 
 use crate::AppView;
 use crate::app_paths::data_path;
@@ -27,11 +27,13 @@ pub const LOCKED: &str = "El agente está trabajando: detenlo para editar la par
 pub const LOCKED_CLOSE: &str = "Detén al agente antes de cerrar la ventana.";
 const WORKING: &str =
     "El agente está trabajando · puedes reproducir, desplazarte y hacer zoom mientras tanto";
-pub const FINISHED: &str = "El agente terminó · ⌘Z deshace todo lo que hizo";
-pub const STOPPED: &str = "Agente detenido · ⌘Z deshace lo que llegó a hacer";
+/// Where a status names the Undo key, which differs per platform and user.
+pub const UNDO_KEY: &str = "{deshacer}";
+pub const FINISHED: &str = "El agente terminó · {deshacer} deshace todo lo que hizo";
+pub const STOPPED: &str = "Agente detenido · {deshacer} deshace lo que llegó a hacer";
 /// The agent did not end its turn after Stop, so its process was closed.
 pub const STOPPED_HARD: &str =
-    "Se cerró el agente: no respondió a Detener · ⌘Z deshace lo que llegó a hacer";
+    "Se cerró el agente: no respondió a Detener · {deshacer} deshace lo que llegó a hacer";
 pub const FAILED: &str = "El agente se detuvo por un error";
 pub const NO_START: &str = "El agente no pudo empezar";
 /// How long a stopped turn may take to report its end before the agent's
@@ -749,7 +751,7 @@ impl AppView {
             self.finish_turn(cx);
         }
         if let Some(status) = reaction.status {
-            self.status = status.into();
+            self.status = status.replace(UNDO_KEY, &self.shortcuts.hint(id::UNDO));
         }
         if let Some(stop) = reaction.watch_stop {
             cx.spawn(async move |view, cx| {

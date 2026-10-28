@@ -284,7 +284,7 @@ impl AppView {
         let view = cx.weak_entity();
         let layout_change = cx.on_keyboard_layout_change(move |cx| {
             let _ = view.update(cx, |view: &mut Self, cx| {
-                view.shortcuts.refresh_layout();
+                view.shortcuts.refresh_layout(cx);
                 view.shortcuts.install(cx);
                 cx.notify();
             });
@@ -519,8 +519,9 @@ impl AppView {
             self.clicked_bar_mark = Some(mark);
             self.reveal_selection = false;
             self.status = format!(
-                "{} · ⇧⌘P la devuelve a su sitio",
-                mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+                "{} · {} la devuelve a su sitio",
+                mark_drag::DragTarget::Bar(mark).label(self.document.editor.score()),
+                self.shortcuts.hint(id::RESET_POSITION)
             );
             cx.notify();
         }
@@ -543,8 +544,9 @@ impl AppView {
             self.document.editor.select(to.anchor());
             self.clicked_mark = Some(to);
             self.status = format!(
-                "{label}: {} · ⌘Z para deshacer",
-                mark_drag::place_label(self.document.editor.score(), to.anchor())
+                "{label}: {} · {} para deshacer",
+                mark_drag::place_label(self.document.editor.score(), to.anchor()),
+                self.shortcuts.hint(id::UNDO)
             );
         }
         cx.notify();
@@ -584,7 +586,10 @@ impl AppView {
                 .score()
                 .mark_label(mark)
                 .unwrap_or_default();
-            self.status = format!("{label} · ⇧⌘P la devuelve a su sitio");
+            self.status = format!(
+                "{label} · {} la devuelve a su sitio",
+                self.shortcuts.hint(id::RESET_POSITION)
+            );
             cx.notify();
         }
     }
@@ -917,12 +922,13 @@ impl AppView {
                     Command::SetPlayers(part, _) => {
                         let score = self.document.editor.score();
                         format!(
-                            "{}: grabaciones de {} · ⌘Z para deshacer",
+                            "{}: grabaciones de {} · {} para deshacer",
                             ui::instrument_name(score, part),
                             match score.players(part) {
                                 score_core::Players::Solo => "solista",
                                 score_core::Players::Section => "sección",
-                            }
+                            },
+                            self.shortcuts.hint(id::UNDO)
                         )
                     }
                     _ => "Partitura actualizada".into(),
@@ -1301,10 +1307,10 @@ impl AppView {
         }
         let key = Key::from_platform(
             &stroke.key,
-            modifiers.control,
+            modifiers.control && !modifiers.secondary(),
             modifiers.alt,
             modifiers.shift,
-            modifiers.platform,
+            modifiers.secondary(),
             &self.shortcuts.layout,
         );
         self.record(KeySequence::single(key), cx);
@@ -3559,7 +3565,7 @@ fn main() {
             async {}
         })
         .detach();
-        let shortcuts = Shortcuts::load();
+        let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
         let bounds = Bounds::centered(None, size(px(1440.), px(1000.)), cx);
         cx.open_window(

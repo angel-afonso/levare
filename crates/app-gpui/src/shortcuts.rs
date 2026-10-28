@@ -52,7 +52,7 @@ pub struct Shortcuts {
 }
 
 impl Shortcuts {
-    pub fn load() -> Self {
+    pub fn load(cx: &App) -> Self {
         let path = crate::data_path("atajos.json");
         let mut problems = Vec::new();
         let user = match path.as_deref().map(UserKeymap::load) {
@@ -69,11 +69,11 @@ impl Shortcuts {
                 &Registry::builtin(),
                 Profile::sibelius_laptop(),
                 &UserKeymap::new(),
-                &SystemLayout::current(),
+                &SystemLayout::current(cx.keyboard_layout().name()),
             )
             .0,
             user,
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(cx.keyboard_layout().name()),
             path,
             problems,
             recent: Vec::new(),
@@ -101,8 +101,8 @@ impl Shortcuts {
             .extend(problems.into_iter().map(|problem| problem.to_string()));
     }
 
-    pub fn refresh_layout(&mut self) {
-        self.layout = SystemLayout::current();
+    pub fn refresh_layout(&mut self, cx: &App) {
+        self.layout = SystemLayout::current(cx.keyboard_layout().name());
         self.rebuild();
     }
 
@@ -112,6 +112,18 @@ impl Shortcuts {
 
     pub fn label(&self, command: CommandId) -> Option<String> {
         self.keymap.label(command)
+    }
+
+    /// How a status message names the key of `command`: its label on this
+    /// platform, or the command's name in «» when the user removed its keys.
+    pub fn hint(&self, command: CommandId) -> String {
+        self.label(command).unwrap_or_else(|| {
+            format!(
+                "«{}»",
+                self.spec(command)
+                    .map_or(command.as_str(), |spec| spec.label)
+            )
+        })
     }
 
     /// Persists the user's changes and re-resolves the keymap.
@@ -154,7 +166,7 @@ impl Shortcuts {
         let keys = self.keymap.keys_for(command);
         let with_modifier = keys
             .first()
-            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.cmd || stroke.ctrl));
+            .is_some_and(|keys| keys.0.iter().all(|stroke| stroke.secondary || stroke.ctrl));
         if with_modifier {
             MenuItem::action(label, Run(command))
         } else if let Some(keys) = keys.first() {
@@ -456,7 +468,7 @@ pub fn recent_folder(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use score_keymap::{Layout, UsLayout};
+    use score_keymap::{Layout, Platform, UsLayout};
 
     struct Spanish;
     impl Layout for Spanish {
@@ -471,12 +483,16 @@ mod tests {
     #[test]
     fn every_default_binding_is_valid_gpui_text_on_us_and_spanish_layouts() {
         let layouts: [&dyn Layout; 2] = [&UsLayout, &Spanish];
-        for layout in layouts {
-            let (keymap, problems) = Keymap::resolve(
+        for (layout, platform) in layouts
+            .into_iter()
+            .flat_map(|layout| Platform::ALL.map(|platform| (layout, platform)))
+        {
+            let (keymap, problems) = Keymap::resolve_for(
                 &Registry::builtin(),
-                Profile::sibelius_laptop(),
+                Profile::sibelius_laptop_for(platform),
                 &UserKeymap::new(),
                 layout,
+                platform,
             );
             assert!(problems.is_empty(), "{problems:?}");
             for binding in keymap.bindings() {
@@ -503,7 +519,7 @@ mod tests {
             )
             .0,
             user: UserKeymap::new(),
-            layout: SystemLayout::current(),
+            layout: SystemLayout::current(""),
             path: None,
             problems: Vec::new(),
             recent: Vec::new(),
@@ -543,11 +559,12 @@ mod tests {
 
     #[test]
     fn gpui_keystrokes_match_what_macos_reports() {
-        let (keymap, _) = Keymap::resolve(
+        let (keymap, _) = Keymap::resolve_for(
             &Registry::builtin(),
-            Profile::sibelius_laptop(),
+            Profile::sibelius_laptop_for(Platform::MacOs),
             &UserKeymap::new(),
             &Spanish,
+            Platform::MacOs,
         );
         let platform = |command: CommandId| {
             keymap

@@ -3,7 +3,8 @@
 
 use score_keymap::{CommandId, id};
 
-/// One tab per task, in the order they appear and ⌥⌘1–8 open them.
+/// One tab per task, in the order they appear and ⌥⌘1–8 (Ctrl+Mayús+1–8 on
+/// Windows and Linux) open them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabId {
     Write,
@@ -1632,7 +1633,7 @@ mod tests {
 mod task_tests {
     use super::*;
     use crate::menu::{BAR_MARK_CONTEXT_MENU, FILE_MENU, MARK_CONTEXT_MENU, NOTE_CONTEXT_MENU};
-    use score_keymap::{KeySequence, Profile, Registry};
+    use score_keymap::{KeySequence, Platform, Profile, Registry};
 
     const ORDER: [(TabId, &str); 8] = [
         (TabId::Write, "Escribir"),
@@ -1860,12 +1861,19 @@ mod task_tests {
         ] {
             assert!(registry.get(command.as_str()).is_some(), "{command}");
         }
-        let profile = Profile::sibelius_laptop();
-        for (index, (tab, _)) in ORDER.iter().enumerate() {
-            let keys = KeySequence::parse(&format!("alt-cmd-{}", index + 1)).unwrap();
-            assert_eq!(profile.keys_for(tab.command()), vec![keys], "{tab:?}");
+        for (platform, modifier) in [
+            (Platform::MacOs, "alt"),
+            (Platform::Windows, "shift"),
+            (Platform::Linux, "shift"),
+        ] {
+            let profile = Profile::sibelius_laptop_for(platform);
+            for (index, (tab, _)) in ORDER.iter().enumerate() {
+                let keys =
+                    KeySequence::parse(&format!("{modifier}-secondary-{}", index + 1)).unwrap();
+                assert_eq!(profile.keys_for(tab.command()), vec![keys], "{tab:?}");
+            }
+            assert!(profile.keys_for(id::TAB_LAYOUT).is_empty());
         }
-        assert!(profile.keys_for(id::TAB_LAYOUT).is_empty());
     }
 }
 

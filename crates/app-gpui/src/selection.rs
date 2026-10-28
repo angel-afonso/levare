@@ -1,5 +1,6 @@
 //! Pointer selection uses the existing continuous, single-staff passage model.
 use super::*;
+use score_keymap::Modifier;
 use score_layout::{Layout, Point as ScorePoint};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,11 +73,56 @@ pub(super) fn anchored_offset(
         )
 }
 
+/// Scroll motion, in pixels, per zoom step.
+const WHEEL_STEP: f32 = 40.;
+
 fn wheel_steps(acc: &mut f32, delta: f32) -> i32 {
     *acc += delta;
-    let steps = (*acc / 40.).trunc() as i32;
-    *acc -= steps as f32 * 40.;
+    let steps = (*acc / WHEEL_STEP).trunc() as i32;
+    *acc -= steps as f32 * WHEEL_STEP;
     steps
+}
+
+/// Zoom motion of a wheel event, in the pixels `wheel_steps` counts. On
+/// Windows and Linux a mouse wheel reports lines, several per notch, so each
+/// notch is one step whatever the system's scroll setting.
+fn zoom_wheel_motion(delta: ScrollDelta) -> f32 {
+    match delta {
+        ScrollDelta::Lines(lines) if !cfg!(target_os = "macos") => {
+            lines.y / wheel::lines_per_notch() * WHEEL_STEP
+        }
+        delta => f32::from(delta.pixel_delta(px(20.)).y),
+    }
+}
+
+/// Lines GPUI reports for one notch of a mouse wheel.
+mod wheel {
+    #[cfg(target_os = "windows")]
+    pub fn lines_per_notch() -> f32 {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
+        };
+        let mut lines: u32 = 3;
+        // SAFETY: SPI_GETWHEELSCROLLLINES writes one u32 to the pointer, which
+        // lives for the whole call. On failure `lines` keeps Windows' default.
+        let _ = unsafe {
+            SystemParametersInfoW(
+                SPI_GETWHEELSCROLLLINES,
+                0,
+                Some((&raw mut lines).cast()),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+        };
+        // WHEEL_PAGESCROLL (u32::MAX) scrolls by pages; GPUI then multiplies
+        // the notch by the same number, so the division still gives notches.
+        (lines as f32).max(1.)
+    }
+
+    /// GPUI's `SCROLL_LINES` on X11 and Wayland.
+    #[cfg(not(target_os = "windows"))]
+    pub fn lines_per_notch() -> f32 {
+        3.
+    }
 }
 
 fn select_whole_bar(
@@ -259,16 +305,13 @@ impl AppView {
         let ghost_cleared = self.ghost.take().is_some();
         let hover_cleared = self.hover.take().is_some();
         let cleared = ghost_cleared || hover_cleared;
-        if !event.modifiers.platform && !event.modifiers.control {
+        if !event.modifiers.secondary() && !event.modifiers.control {
             if cleared {
                 cx.notify();
             }
             return;
         }
-        let steps = wheel_steps(
-            &mut self.zoom_wheel,
-            f32::from(event.delta.pixel_delta(px(20.)).y),
-        );
+        let steps = wheel_steps(&mut self.zoom_wheel, zoom_wheel_motion(event.delta));
         if steps != 0 {
             self.zoom_at(self.ui.zoom + steps as f32 * 0.1, event.position);
         }
@@ -430,8 +473,9 @@ impl AppView {
                 Rc::clone(&self.layout),
             );
             self.status = format!(
-                "{} seleccionada · Arrastra para mover; ⇧⌘P restablece",
-                crate::mark_drag::DragTarget::Bar(mark).label(self.document.editor.score())
+                "{} seleccionada · Arrastra para mover; {} restablece",
+                crate::mark_drag::DragTarget::Bar(mark).label(self.document.editor.score()),
+                self.shortcuts.hint(id::RESET_POSITION)
             );
             cx.notify();
             return;
@@ -457,15 +501,20 @@ impl AppView {
                 .mark_label(mark)
                 .unwrap_or_default();
             let step = if mark.follows_time() {
-                "; ⌥←/→ lo lleva a otra nota"
+                // ⌥← on macOS, Alt+← elsewhere: `mark_drag::step`.
+                let left = Key::parse("alt-left")
+                    .map(|key| key.label())
+                    .unwrap_or_default();
+                format!("; {left}/→ lo lleva a otra nota")
             } else {
-                ""
+                String::new()
             };
+            let delete = self.shortcuts.hint(id::DELETE);
             self.status = if matches!(mark, MarkRef::Grace(..)) {
-                "Nota de adorno seleccionada · ↑/↓ cambian su altura; Backspace la borra".into()
+                format!("Nota de adorno seleccionada · ↑/↓ cambian su altura; {delete} la borra")
             } else {
                 format!(
-                    "{label} seleccionado · Backspace lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
+                    "{label} seleccionado · {delete} lo borra{step}; pulsa otra marca de la cinta para cambiarlo"
                 )
             };
             cx.notify();
@@ -569,8 +618,9 @@ impl AppView {
         cx.notify();
     }
 
-    /// A press on a handle of the picked line stretches it; ⌥ on a note draws
-    /// a slur from it, ⌥⌘ a crescendo and ⌥⇧⌘ a diminuendo.
+    /// A press on a handle of the picked line stretches it; Alt on a note draws
+    /// a slur from it, Alt with the secondary key (⌘ on macOS, Ctrl elsewhere)
+    /// a crescendo, and with Shift too a diminuendo.
     fn begin_line_drag(
         &mut self,
         event: &MouseDownEvent,
@@ -603,7 +653,7 @@ impl AppView {
         else {
             return false;
         };
-        let kind = match (event.modifiers.platform, event.modifiers.shift) {
+        let kind = match (event.modifiers.secondary(), event.modifiers.shift) {
             (false, _) => ConnectionKind::Slur,
             (true, false) => ConnectionKind::Crescendo,
             (true, true) => ConnectionKind::Diminuendo,
@@ -669,9 +719,10 @@ impl AppView {
                 self.document.editor.select(mark.anchor());
                 self.clicked_mark = Some(mark);
                 self.status = format!(
-                    "{} hasta el compás {} · ⌘Z para deshacer",
+                    "{} hasta el compás {} · {} para deshacer",
                     line.kind.label(),
-                    line.end.measure + 1
+                    line.end.measure + 1,
+                    self.shortcuts.hint(id::UNDO)
                 );
             }
         } else if drag.active {
@@ -798,7 +849,9 @@ impl AppView {
                     }
                 }
                 self.status = format!(
-                    "{label} · Posición ajustada; ⇧⌘P la devuelve a su sitio · ⌘Z para deshacer"
+                    "{label} · Posición ajustada; {} la devuelve a su sitio · {} para deshacer",
+                    self.shortcuts.hint(id::RESET_POSITION),
+                    self.shortcuts.hint(id::UNDO)
                 );
                 cx.notify();
             } else if !drag.active
@@ -842,13 +895,14 @@ impl AppView {
                             let tick = self.document.editor.score().event_tick(id).unwrap();
                             self.seek_playback(tick, false, cx);
                             self.status = format!(
-                                "{} al compás {} · ⌘Z para deshacer",
+                                "{} al compás {} · {} para deshacer",
                                 if target.swap {
                                     "Figuras intercambiadas"
                                 } else {
                                     "Figura movida"
                                 },
-                                target.measure + 1
+                                target.measure + 1,
+                                self.shortcuts.hint(id::UNDO)
                             );
                             if let Err(error) =
                                 self.playback.preview(self.document.editor.score(), id)
@@ -869,7 +923,10 @@ impl AppView {
                         if let Some(tick) = tick {
                             self.seek_playback(tick, false, cx);
                         }
-                        self.status = format!("Nota cambiada a {pitch} · ⌘Z para deshacer");
+                        self.status = format!(
+                            "Nota cambiada a {pitch} · {} para deshacer",
+                            self.shortcuts.hint(id::UNDO)
+                        );
                         if let Err(error) =
                             self.playback.preview(self.document.editor.score(), drag.id)
                         {
@@ -906,7 +963,7 @@ impl AppView {
                 return;
             }
             let starting = !drag.active;
-            let free = modifiers.platform;
+            let free = modifiers.secondary();
             let changed = drag.update(position, self.canvas_origin, modifiers.shift, free);
             if starting {
                 self.playback.stop();
@@ -918,12 +975,14 @@ impl AppView {
                     error.into()
                 } else if let Some((moved, _)) = drag.destination() {
                     format!(
-                        "{label} → {} · Suelta para aplicar; ⌘ mueve sin cambiar de nota; Esc cancela",
-                        crate::mark_drag::place_label(score, moved.anchor())
+                        "{label} → {} · Suelta para aplicar; {} mueve sin cambiar de nota; Esc cancela",
+                        crate::mark_drag::place_label(score, moved.anchor()),
+                        Modifier::Secondary.label()
                     )
                 } else if drag.follows_time() && !free {
                     format!(
-                        "{label} · Arrastra a los lados para cambiar de nota; ⌘ mueve sin cambiar de nota; Esc cancela"
+                        "{label} · Arrastra a los lados para cambiar de nota; {} mueve sin cambiar de nota; Esc cancela",
+                        Modifier::Secondary.label()
                     )
                 } else {
                     format!("{label} · Suelta para colocarla; Mayús fija la dirección; Esc cancela")
@@ -1158,6 +1217,24 @@ mod tests {
         assert_eq!(acc, 0.);
         assert_eq!(wheel_steps(&mut acc, -85.), -2);
         assert_eq!(acc, -5.);
+    }
+
+    #[::core::prelude::v1::test]
+    fn each_notch_of_a_line_wheel_is_one_zoom_step() {
+        // Off macOS a notch reports the system's lines per notch; macOS keeps
+        // its two lines per step.
+        let notch = if cfg!(target_os = "macos") {
+            2.
+        } else {
+            wheel::lines_per_notch()
+        };
+        let mut acc = 0.;
+        for _ in 0..5 {
+            let motion = zoom_wheel_motion(ScrollDelta::Lines(point(0., notch)));
+            assert_eq!(wheel_steps(&mut acc, motion), 1);
+        }
+        let back = zoom_wheel_motion(ScrollDelta::Lines(point(0., -notch)));
+        assert_eq!(wheel_steps(&mut acc, back), -1);
     }
 
     #[::core::prelude::v1::test]

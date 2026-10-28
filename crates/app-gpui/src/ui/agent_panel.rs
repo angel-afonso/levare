@@ -9,7 +9,7 @@ const WORKING: &str = "Trabajando… La partitura está bloqueada. Pulsa Detener
 const STOPPING: &str = "Deteniendo… Pulsa Detener otra vez para cerrar el agente.";
 const EMPTY: &str = "Pide lo que harías en el editor, como se lo dirías a un copista: \
                      «pon un trino en el tiempo 3 del compás 4». Todo lo que haga el agente \
-                     se deshace con un solo ⌘Z.";
+                     se deshace con un solo {deshacer}.";
 const NONE_AVAILABLE: &str =
     "No se encontró ningún agente. Abre la lista junto al campo para ver qué falta.";
 const SEARCHING: &str = "Buscando…";
@@ -85,9 +85,9 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_size(px(12.))
                 .when(entries.is_empty(), |log| {
                     log.child(div().text_color(rgb(MUTED)).child(if none_available {
-                        NONE_AVAILABLE
+                        NONE_AVAILABLE.to_owned()
                     } else {
-                        EMPTY
+                        EMPTY.replace(crate::agent::UNDO_KEY, &view.shortcuts.hint(id::UNDO))
                     }))
                 })
                 .children(
