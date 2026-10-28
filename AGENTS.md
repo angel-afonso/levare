@@ -53,7 +53,7 @@ So every commit that changes behavior is a
 | `chore` | Maintenance: dependencies, configuration | patch |
 | `ci`, `test`, `style` | CI, tests or formatting only | patch, left out of the changelog |
 
-A change that breaks something users rely on (the `.partitura` format, saved shortcuts, a
+A change that breaks something users rely on (the `.levare` format, saved shortcuts, a
 sound pack) takes `!` after the scope, `feat(file)!: …`, and explains what breaks in a
 `BREAKING CHANGE:` footer. Before 1.0 it raises the minor version.
 
@@ -89,7 +89,7 @@ The title goes into `CHANGELOG.md` as is, so write it for the people who use Lev
 
 ## Before calling something done
 
-What CI checks (README, «Verificar»):
+What CI checks (README, «Verifying»), besides the cargo-deny dependency check:
 
 ```sh
 cargo fmt --all --check
