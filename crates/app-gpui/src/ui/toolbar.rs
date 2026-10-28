@@ -55,7 +55,7 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
         }
         Visual::Text(text) => Some(
             div()
-                .font_family("Times New Roman")
+                .font_family(crate::fonts::SERIF)
                 .italic()
                 .text_size(px(size * 0.5))
                 .text_color(rgb(color))

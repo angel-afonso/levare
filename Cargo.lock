@@ -3589,6 +3589,7 @@ dependencies = [
  "score-io",
  "score-keymap",
  "score-layout",
+ "score-pdf",
  "score-platform",
  "score-playback",
  "score-sound-store",

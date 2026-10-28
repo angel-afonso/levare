@@ -22,6 +22,7 @@ score-layout.workspace = true
 score-playback.workspace = true
 score-io.workspace = true
 score-export.workspace = true
+score-pdf.workspace = true
 score-platform.workspace = true
 score-sound-vsco = { path = "../sound-vsco", optional = true }
 score-sound-store = { path = "../sound-store", optional = true }

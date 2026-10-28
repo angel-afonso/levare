@@ -27,5 +27,8 @@ Times New Roman metric-compatible font, by Red Hat and Google.
 
 Liberation Serif has the same advance widths and vertical metrics as Times New Roman
 for every Latin, Latin Extended, and punctuation character, so score-layout's text
-estimates hold for both. The portable PDF writer (Windows and Linux) embeds a subset of
-it for score text.
+estimates hold for both. It is used for:
+
+- score text on Linux, where Times New Roman is rarely installed;
+- text in the PDFs the portable writer produces (Windows and Linux), embedded as a
+  subset.

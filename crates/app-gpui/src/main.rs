@@ -7,6 +7,7 @@ mod clipboard;
 mod comments;
 mod connection_input;
 mod follow;
+mod fonts;
 mod ghost;
 mod keyboard;
 mod mark_drag;
@@ -3539,6 +3540,7 @@ fn recovery_path() -> Option<PathBuf> {
 fn main() {
     Application::new().run(|cx| {
         app_icon::install();
+        fonts::register(cx);
         // App-level ownership survives window/view teardown during a native
         // Dock quit. GPUI's Context::on_app_quit would only hold a weak view.
         let quit_snapshot =

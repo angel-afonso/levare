@@ -1435,7 +1435,7 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
         .hover(|header| header.bg(gpui::rgba(HEADER_HOVER)))
         .text_center()
         .text_color(rgb(PAPER_INK))
-        .font_family("Times New Roman")
+        .font_family(crate::fonts::SERIF)
         .tooltip(command_hint(view, id::SCORE_INFO))
         .on_mouse_down(
             MouseButton::Left,
@@ -1511,7 +1511,7 @@ fn copyright(view: &AppView) -> Option<Div> {
             .px(px(56. * scale))
             .text_center()
             .truncate()
-            .font_family("Times New Roman")
+            .font_family(crate::fonts::SERIF)
             .text_size(px(10. * scale))
             .text_color(rgb(PAPER_FINE))
             .child(text.clone()),
