@@ -1718,7 +1718,7 @@ fn transport(view: &AppView, cx: &Context<AppView>) -> Div {
                             .cursor_pointer()
                             .rounded_md()
                             .hover(|style| style.bg(rgb(HOVER)))
-                            .font_family("Menlo")
+                            .font_family(crate::fonts::MONO)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(21.))
                             .tooltip(command_hint(view, id::GO_TO_BAR))
