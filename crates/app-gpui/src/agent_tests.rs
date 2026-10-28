@@ -1,7 +1,7 @@
 use crate::agent::{
     AgentState, Entry, FAILED, FINISHED, LOCKED, LOCKED_CLOSE, Log, NO_START, Reaction, STOPPED,
     STOPPED_HARD, Selected, Sending, Turn, UNANSWERED, follows_agent, lock_message, refusal,
-    user_may_run,
+    user_may_run, working_folder_in,
 };
 use agent_host::{AgentEvent, AgentKind};
 use agent_tools::{EscribirArgs, Host, LeerArgs, Position, SeleccionarArgs, ToolCall, dispatch};
@@ -603,4 +603,16 @@ fn stop_without_a_turn_does_nothing() {
     let mut panel = Panel::new();
     assert_eq!(panel.stop(), Reaction::default());
     assert!(panel.agent.can_send());
+}
+
+#[test]
+fn the_agent_works_in_an_empty_folder_of_its_own() {
+    let data = tempfile::tempdir().unwrap();
+    std::fs::write(data.path().join("recovery.partitura"), "{}").unwrap();
+    let agent = data.path().join("agente");
+    let folder = working_folder_in(&agent).unwrap();
+    assert_eq!(folder, agent.join("espacio"));
+    assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0);
+    // Created on demand, and found again the next time.
+    assert_eq!(working_folder_in(&agent).unwrap(), folder);
 }

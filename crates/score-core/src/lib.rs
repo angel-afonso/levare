@@ -407,6 +407,11 @@ impl Part {
     pub fn instrument(&self) -> Instrument {
         self.instrument
     }
+    /// The name the part carries in the file, if any. Without one,
+    /// `Score::part_name` names it after its instrument.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
     pub fn measures(&self) -> &Vector<Measure> {
         &self.staves[0].measures
     }

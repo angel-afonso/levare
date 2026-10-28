@@ -1,5 +1,5 @@
 //! Settings with a value: each is one editor command and one undo step.
-use super::text::{key_text, place, tempo_text, time_text};
+use super::text::{key_text, part_label, place, quoted, tempo_text, time_text};
 use super::{AjustarArgs, ConnectionClass, TextClass, fold, resolve, staff_of};
 use score_core::{
     Clef, Connection, ConnectionKind, Instrument, KeyMode, KeySignature, Score, TempoMark,
@@ -84,7 +84,7 @@ pub(super) fn adjust(editor: &mut Editor, args: AjustarArgs) -> Result<String, S
                 format!(
                     "Clave de {} en {} desde el compás {compas}.",
                     clef.label().to_lowercase(),
-                    score.part_name(part)
+                    part_label(score, part)
                 ),
             )
         }
@@ -106,7 +106,7 @@ pub(super) fn adjust(editor: &mut Editor, args: AjustarArgs) -> Result<String, S
             let part = score_text::resolve_part(score, &parte)?;
             (
                 Command::RemovePartById(part),
-                format!("Quitada la parte {}.", score.part_name(part)),
+                format!("Quitada la parte {}.", part_label(score, part)),
             )
         }
         AjustarArgs::Conexion {
@@ -155,14 +155,19 @@ pub(super) fn adjust(editor: &mut Editor, args: AjustarArgs) -> Result<String, S
                     place(score, id)
                 )
             } else {
-                format!("{} «{texto}» en {}.", kind.label(), place(score, id))
+                format!(
+                    "{} {} en {}.",
+                    kind.label(),
+                    quoted(texto),
+                    place(score, id)
+                )
             };
             let words = (!texto.is_empty()).then(|| texto.to_owned());
             (Command::SetText(id, kind, words), done)
         }
         AjustarArgs::Titulo { titulo } => (
             Command::SetHeader(titulo.clone(), score.credits().clone()),
-            format!("Título: «{}».", titulo.trim()),
+            format!("Título: {}.", quoted(titulo.trim())),
         ),
     };
     match editor.execute(command) {
@@ -178,7 +183,7 @@ fn parts_list(score: &Score) -> String {
         .parts()
         .iter()
         .enumerate()
-        .map(|(index, part)| format!("{} {}", index + 1, score.part_name(part.id())))
+        .map(|(index, part)| format!("{} {}", index + 1, part_label(score, part.id())))
         .collect();
     format!("Partes: {}.", parts.join(", "))
 }

@@ -1,7 +1,7 @@
 //! The cheap overview, the bounded read and the command catalog.
 use super::text::{
-    REHEARSAL_STYLE, bar_changes, key_text, part_header, place, score_settings, staff_lines,
-    tempo_text, time_text,
+    REHEARSAL_STYLE, bar_changes, key_text, part_header, part_label, place, quoted, rehearsal_text,
+    score_settings, staff_lines, tempo_text, time_text,
 };
 use super::{ComandosArgs, LeerArgs, fold};
 use crate::allowed_commands;
@@ -19,7 +19,7 @@ pub(super) fn summary(editor: &Editor) -> String {
         if score.title().is_empty() {
             "Título: (sin título)".to_owned()
         } else {
-            format!("Título: «{}»", score.title())
+            format!("Título: {}", quoted(score.title()))
         },
         format!(
             "La partitura tiene {count} compases y {} partes:",
@@ -28,7 +28,7 @@ pub(super) fn summary(editor: &Editor) -> String {
     ];
     for (index, part) in score.parts().iter().enumerate() {
         let staves = part.staves().len();
-        let mut line = format!("  {} {}", index + 1, score.part_name(part.id()));
+        let mut line = format!("  {} {}", index + 1, part_label(score, part.id()));
         if staves > 1 {
             line.push_str(&format!(" ({staves} pentagramas)"));
         }
@@ -57,8 +57,7 @@ pub(super) fn summary(editor: &Editor) -> String {
     let rehearsals: Vec<_> = score
         .rehearsal_marks()
         .filter_map(|(measure, _)| {
-            score
-                .rehearsal_label(measure)
+            rehearsal_text(score, measure)
                 .map(|label| format!("{label} en el compás {}", measure + 1))
         })
         .collect();
@@ -90,7 +89,7 @@ fn selection_line(editor: &Editor) -> String {
             let cursor = editor.cursor();
             format!(
                 "Selección: ninguna. El cursor está en {}, compás {}.",
-                score.part_name(cursor.part),
+                part_label(score, cursor.part),
                 cursor.measure + 1
             )
         }

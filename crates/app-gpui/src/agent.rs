@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use agent_host::{
@@ -688,7 +688,15 @@ fn serve(
 
 /// The agent's working folder, created if missing.
 fn working_folder() -> Result<PathBuf, String> {
-    let folder = data_path("agente").ok_or_else(|| NO_FOLDER.to_string())?;
+    let agent = data_path("agente").ok_or_else(|| NO_FOLDER.to_string())?;
+    working_folder_in(&agent)
+}
+
+/// A folder of the agent's own inside `agent`, empty until it writes there,
+/// so the agent never starts next to Levare's files (the recovery copy, the
+/// settings) that share the data folder.
+pub(crate) fn working_folder_in(agent: &Path) -> Result<PathBuf, String> {
+    let folder = agent.join("espacio");
     fs::create_dir_all(&folder)
         .map_err(|error| format!("No se pudo crear la carpeta del agente: {error}"))?;
     Ok(folder)

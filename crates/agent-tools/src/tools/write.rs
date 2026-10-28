@@ -1,5 +1,5 @@
 //! Whole bars of one voice in one call: all of them are written, or none.
-use super::text::{beats, part_header, staff_lines, time_text};
+use super::text::{beats, part_header, part_label, staff_lines, time_text};
 use super::{EscribirArgs, staff_of, voice_of};
 use score_core::{Connection, ConnectionKind, ElementId, Score};
 use score_edit::{Command, Cursor, Editor};
@@ -13,7 +13,7 @@ pub(super) fn write(editor: &mut Editor, args: &EscribirArgs) -> Result<String, 
     if score.part(part).and_then(|p| p.staff(staff)).is_none() {
         return Err(format!(
             "La parte {} no tiene pentagrama {}.",
-            score.part_name(part),
+            part_label(score, part),
             args.pentagrama.unwrap_or(1)
         ));
     }
@@ -50,7 +50,7 @@ pub(super) fn write(editor: &mut Editor, args: &EscribirArgs) -> Result<String, 
             } else {
                 format!("los compases {} a {}", first + 1, last + 1)
             };
-            let mut lines = vec![format!("Escrito {bars} de {}:", score.part_name(part))];
+            let mut lines = vec![format!("Escrito {bars} de {}:", part_label(score, part))];
             lines.push(part_header(score, part, first, last));
             lines.extend(staff_lines(score, part, &[staff], first, last, &[]));
             Ok(lines.join("\n"))

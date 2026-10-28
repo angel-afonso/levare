@@ -1,6 +1,7 @@
 //! Musical positions as an agent says them ("beat 3 of bar 4 of the violas"),
 //! resolved against a score. Errors are Spanish sentences meant to be shown as
 //! they are.
+use crate::part_label;
 use score_core::{ElementId, PartId, Score, StaffId, TICKS_PER_WHOLE, Voice};
 
 /// Part by 1-based number or by name; ignores case and accents, accepts a
@@ -19,11 +20,11 @@ pub fn resolve_part(score: &Score, query: &str) -> Result<PartId, String> {
             .and_then(|number| number.checked_sub(1))
             .and_then(|index| parts.get(index))
             .map(|(id, _)| *id)
-            .ok_or_else(|| format!("No hay una parte número {query}. {}", listing(&parts)));
+            .ok_or_else(|| format!("No hay una parte número {query}. {}", listing(score)));
     }
     let folded = fold(query);
     if folded.is_empty() {
-        return Err(format!("Falta indicar la parte. {}", listing(&parts)));
+        return Err(format!("Falta indicar la parte. {}", listing(score)));
     }
     let mut variants = vec![folded.as_str()];
     for suffix in ["es", "s"] {
@@ -47,13 +48,13 @@ pub fn resolve_part(score: &Score, query: &str) -> Result<PartId, String> {
     match found[..] {
         [] => Err(format!(
             "Ninguna parte se llama «{query}». {}",
-            listing(&parts)
+            listing(score)
         )),
         [index] => Ok(parts[index].0),
         _ => {
             let candidates: Vec<_> = found
                 .iter()
-                .map(|&i| format!("{} {}", i + 1, parts[i].1))
+                .map(|&i| format!("{} {}", i + 1, part_label(score, parts[i].0)))
                 .collect();
             Err(format!(
                 "«{query}» puede ser varias partes: {}. Pregunta al usuario cuál quiere: no elijas tú.",
@@ -122,7 +123,7 @@ pub fn event_at(
     measure: usize,
     tick: u16,
 ) -> Result<ElementId, String> {
-    let name = score.part_name(part);
+    let name = part_label(score, part);
     let Some(source) = score.part(part).and_then(|p| p.staff(staff)) else {
         return Err(format!("La parte {name} no tiene ese pentagrama."));
     };
@@ -170,11 +171,12 @@ fn beat_label(tick: u16, unit: u16) -> String {
     beat.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
-fn listing(parts: &[(PartId, String)]) -> String {
-    let all: Vec<_> = parts
+fn listing(score: &Score) -> String {
+    let all: Vec<_> = score
+        .parts()
         .iter()
         .enumerate()
-        .map(|(i, (_, name))| format!("{} {name}", i + 1))
+        .map(|(i, part)| format!("{} {}", i + 1, part_label(score, part.id())))
         .collect();
     format!("Partes disponibles: {}.", all.join(", "))
 }

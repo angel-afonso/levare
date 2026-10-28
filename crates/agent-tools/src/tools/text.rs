@@ -70,12 +70,25 @@ pub(super) fn key_text(key: KeySignature) -> String {
     }
 }
 
+pub(super) use score_text::{part_label, quoted};
+
 pub(super) fn tempo_text(mark: &TempoMark) -> String {
     let mut text = format!("{} = {}", mark.beat.label().to_lowercase(), mark.bpm);
     if !mark.text.is_empty() {
-        text.push_str(&format!(" «{}»", mark.text));
+        text.push(' ');
+        text.push_str(&quoted(&mark.text));
     }
     text
+}
+
+/// A bar's rehearsal mark; a label the musician typed is quoted, one Levare
+/// counts (A, 2, 17) is not.
+pub(super) fn rehearsal_text(score: &Score, measure: usize) -> Option<String> {
+    let label = score.rehearsal_label(measure)?;
+    let custom = score
+        .rehearsal_marks()
+        .any(|(bar, mark)| bar == measure && mark.custom.is_some());
+    Some(if custom { quoted(&label) } else { label })
 }
 
 /// One line per bar of `from..=to` that starts with something every part
@@ -102,7 +115,7 @@ pub(super) fn bar_changes(score: &Score, from: usize, to: usize) -> Vec<String> 
             if first || measure > 0 && score.tempo_change_at(measure).is_some() {
                 items.push(format!("tempo {}", tempo_text(score.tempo_at(measure))));
             }
-            if let Some(label) = score.rehearsal_label(measure) {
+            if let Some(label) = rehearsal_text(score, measure) {
                 items.push(format!("ensayo {label}"));
             }
             items.extend(form_items(score, measure));
@@ -174,7 +187,7 @@ pub(super) fn score_settings(score: &Score) -> Vec<(&'static str, String)> {
 /// The part's number and name, and the key its players read when it is not
 /// the work's key (a transposing instrument).
 pub(super) fn part_header(score: &Score, part: PartId, from: usize, to: usize) -> String {
-    let mut header = format!("{} {}", part_number(score, part), score.part_name(part));
+    let mut header = format!("{} {}", part_number(score, part), part_label(score, part));
     let concert = score
         .part(part)
         .is_none_or(|p| p.transposition().is_concert());
@@ -289,7 +302,7 @@ fn tokens(text: &str) -> Vec<&str> {
 
 /// A place in the score as a musician says it: «Viola, compás 2, tiempo 3».
 pub(super) fn place(score: &Score, id: ElementId) -> String {
-    let mut text = format!("{}, compás {}", score.part_name(id.part), id.measure + 1);
+    let mut text = format!("{}, compás {}", part_label(score, id.part), id.measure + 1);
     if let Some(tick) = score
         .event_tick(id)
         .map(|tick| (tick - score.measure_start_tick(id.measure)) as u16)
