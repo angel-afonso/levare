@@ -43,7 +43,9 @@ pub fn register(cx: &App) {
             .map(std::borrow::Cow::Borrowed),
         );
         if let Err(error) = cx.text_system().add_fonts(fonts) {
-            eprintln!("No se pudieron cargar las fuentes incluidas: {error}");
+            crate::diagnostics::log(format_args!(
+                "No se pudieron cargar las fuentes incluidas: {error}"
+            ));
         }
     }
     #[cfg(any(target_os = "macos", target_os = "windows"))]

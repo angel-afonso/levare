@@ -41,7 +41,7 @@ mod native {
     pub fn apply(titles: &[Entry]) {
         let Ok(font) = font::new_from_buffer(include_bytes!("../../../assets/fonts/Bravura.otf"))
         else {
-            eprintln!("No se pudo cargar Bravura para los menús");
+            crate::diagnostics::log("No se pudo cargar Bravura para los menús");
             return;
         };
         let font = font.clone_with_font_size(f64::from(MUSIC_SIZE));

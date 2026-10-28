@@ -422,7 +422,7 @@ impl AppView {
         if manual {
             self.status = message;
         } else {
-            eprintln!("levare: {message}");
+            crate::diagnostics::log(message);
         }
     }
 }

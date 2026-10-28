@@ -10,6 +10,7 @@ mod autosave;
 mod clipboard;
 mod comments;
 mod connection_input;
+mod diagnostics;
 mod file_dialogs;
 mod follow;
 mod fonts;
@@ -3699,6 +3700,7 @@ fn recovery_path() -> Option<PathBuf> {
 }
 
 fn main() {
+    diagnostics::install();
     Application::new().run(|cx| {
         app_icon::install();
         fonts::register(cx);
@@ -3714,27 +3716,26 @@ fn main() {
         let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
         let (bounds, min_size) = ui::window_frame::first_window(cx);
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(min_size),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("Levare".into()),
-                        appears_transparent: true,
-                        traffic_light_position: Some(point(px(16.), px(16.))),
-                    }),
-                    // Linux: Levare's title bar replaces the compositor's, when it
-                    // agrees (`ui::window_frame`). macOS and Windows ignore it.
-                    window_decorations: Some(WindowDecorations::Client),
-                    // The macOS bundle id: Linux desktops match the window to
-                    // Levare's desktop entry and icon by it.
-                    app_id: Some("dev.partitura.editor".into()),
-                    ..Default::default()
-                },
-                |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
-            )
-            .expect("open Levare window");
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_min_size: Some(min_size),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Levare".into()),
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(16.), px(16.))),
+                }),
+                // Linux: Levare's title bar replaces the compositor's, when it
+                // agrees (`ui::window_frame`). macOS and Windows ignore it.
+                window_decorations: Some(WindowDecorations::Client),
+                // The macOS bundle id: Linux desktops match the window to
+                // Levare's desktop entry and icon by it.
+                app_id: Some("dev.partitura.editor".into()),
+                ..Default::default()
+            },
+            |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
+        );
+        let window = opened.unwrap_or_else(|error| diagnostics::window_failed(error));
         cx.on_app_quit(move |cx| {
             // The window is gone after a close, which already asked about
             // unsaved changes; the writer still finishes what it holds.

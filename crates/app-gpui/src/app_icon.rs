@@ -39,7 +39,7 @@ pub fn install() {
             NSApp().setApplicationIconImage_(image);
             let _: () = msg_send![image, release];
         } else {
-            eprintln!("No se pudo cargar el icono de Levare");
+            crate::diagnostics::log("No se pudo cargar el icono de Levare");
         }
         let _: () = msg_send![pool, drain];
     }
