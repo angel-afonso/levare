@@ -56,7 +56,7 @@ fn pings(target: &str) -> usize {
 
 fn next(rt: &Runtime, events: &mut mpsc::UnboundedReceiver<AgentEvent>) -> Option<AgentEvent> {
     rt.handle()
-        .block_on(tokio::time::timeout(Duration::from_secs(10), events.next()))
+        .block_on(async { tokio::time::timeout(Duration::from_secs(10), events.next()).await })
         .expect("no event within 10 s")
 }
 
