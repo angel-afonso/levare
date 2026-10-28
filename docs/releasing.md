@@ -80,6 +80,17 @@ on macOS, next to the executable on Windows and Linux. The Licenses job writes i
 cargo-about fails the job when a crate's license is not in `about.toml`'s `accepted`
 list; add one only after checking it allows shipping Levare as it is.
 
+### Checks on the Windows and Linux downloads
+
+Before an archive is kept, its job unpacks it into a fresh folder and:
+
+- opens that Levare for 30 seconds, like CI opens its debug build (on Linux with
+  `.github/scripts/launch-linux.sh`, on X11 and Wayland); the job fails if it quits.
+  The log and screenshots are kept as the `launch-<target>` artifact;
+- runs the ignored sfizz test
+  `sfizz::tests::the_bundled_sfizz_engine_loads_a_patch_and_renders_it` with
+  `LEVARE_SFIZZ` naming the unpacked library, which loads a patch and renders a note.
+
 ## Repository secrets
 
 Settings → Secrets and variables → Actions.

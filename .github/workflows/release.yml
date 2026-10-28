@@ -395,7 +395,9 @@ jobs:
             RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
 
       # What gpui needs to link on Linux (X11, Wayland and fonts), ALSA for
-      # audio, and D-Bus for real-time audio threads.
+      # audio, and D-Bus for real-time audio threads; then what opening the
+      # download needs, as in CI: a virtual X server and window manager, a
+      # headless Wayland compositor, Mesa's software Vulkan and screenshots.
       - name: System dependencies
         if: runner.os == 'Linux'
         run: |
@@ -404,7 +406,8 @@ jobs:
             pkg-config libfontconfig-dev libfreetype-dev \
             libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
             libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev \
-            libdbus-1-dev imagemagick
+            libdbus-1-dev imagemagick \
+            xvfb openbox sway grim mesa-vulkan-drivers vulkan-tools x11-utils
 
       - name: Workspace
         run: echo "WORKSPACE=${DEV_DRIVE_WORKSPACE:-$GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
@@ -502,6 +505,77 @@ jobs:
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
           (cd stage && 7z a -tzip -mx=9 "../dist/$ARCHIVE.zip" Levare >/dev/null)
           7z l "dist/$ARCHIVE.zip"
+
+      # The download as a user gets it, unpacked into a fresh folder: the next
+      # steps open that Levare and load that sfizz, so a missing file or
+      # library shows here rather than on a musician's computer.
+      - name: Unpack the download
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            unpacked="$(cygpath -u "$RUNNER_TEMP")/unpacked"
+            mkdir -p "$unpacked"
+            7z x "dist/$ARCHIVE.zip" -o"$(cygpath -w "$unpacked")" >/dev/null
+            app="$(cygpath -w "$unpacked/Levare/levare.exe")"
+            sfizz="$(cygpath -w "$unpacked/Levare/sfizz.dll")"
+          else
+            unpacked="$RUNNER_TEMP/unpacked"
+            mkdir -p "$unpacked"
+            tar -xzf "dist/$ARCHIVE.tar.gz" -C "$unpacked"
+            app="$unpacked/levare/levare"
+            sfizz="$unpacked/levare/libsfizz.so"
+          fi
+          ls -R "$unpacked"
+          {
+            echo "DOWNLOAD_APP=$app"
+            echo "DOWNLOAD_SFIZZ=$sfizz"
+          } >> "$GITHUB_ENV"
+
+      # Open it for 30 seconds, as CI opens its debug build; fails only if
+      # Levare quits before then.
+      - name: Launch the download (Linux)
+        if: runner.os == 'Linux'
+        working-directory: ${{ env.WORKSPACE }}
+        run: .github/scripts/launch-linux.sh "$DOWNLOAD_APP" smoke
+
+      - name: Launch the download (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.WORKSPACE }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process $env:DOWNLOAD_APP -PassThru `
+            -RedirectStandardOutput smoke\stdout.log -RedirectStandardError smoke\levare.log
+          Start-Sleep -Seconds 30
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+          [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+          $bitmap.Save("smoke\screen.png")
+          $exited = $app.HasExited
+          if ($exited) { "exited with $($app.ExitCode)" | Add-Content smoke\levare.log } else { "still running" | Add-Content smoke\levare.log; Stop-Process $app }
+          Get-Content smoke\stdout.log, smoke\levare.log
+          if ($exited) { Write-Output "::error::The packaged Levare quit within 30 seconds of starting."; exit 1 }
+
+      # Opening Levare does not load sfizz (only a sound pack does), so the
+      # sfizz test loads the download's library and renders a note with it.
+      - name: Load the download's sfizz
+        if: ${{ !cancelled() && env.DOWNLOAD_SFIZZ != '' }}
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          LEVARE_SFIZZ="$DOWNLOAD_SFIZZ" cargo test --release --locked -p score-sound-vsco \
+            --target ${{ matrix.target }} -- --ignored --exact \
+            sfizz::tests::the_bundled_sfizz_engine_loads_a_patch_and_renders_it 2>&1 | tee sfizz-test.log
+          # A renamed test would otherwise pass by running nothing.
+          grep -q "test result: ok. 1 passed" sfizz-test.log
+
+      - name: Upload launch results
+        if: ${{ !cancelled() && env.DOWNLOAD_APP != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-${{ matrix.target }}
+          path: ${{ env.WORKSPACE }}/smoke/
 
       - uses: actions/upload-artifact@v4
         with:
