@@ -58,7 +58,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                 .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(12.)).text_color(rgb(ERROR)).child(error)))
                 .child(div().flex().justify_end().gap_2()
                     .child(button(view, "export-cancel", "Cancelar", false, cx, |v, _, cx| v.close_export_picker(cx)).px_3())
-                    .child(button(view, "export-confirm", "Elegir destino…", true, cx, |v, _, cx| v.confirm_export(cx)).px_3()
+                    .child(button(view, "export-confirm", "Elegir destino…", true, cx, |v, window, cx| v.confirm_export(window, cx)).px_3()
                         .when(count == 0, |b| b.opacity(0.4).cursor_default())))))
 }
 

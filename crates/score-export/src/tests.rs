@@ -167,7 +167,8 @@ fn validates_selections_and_protects_existing_destinations() {
     score_io::save(&source, &score).unwrap();
     assert!(export(&score, &all, &source).is_err());
     assert_eq!(score_io::load(&source).unwrap(), score);
-    assert!(export(&score, &all, &dir.path().join("missing/delivery")).is_err());
+    let missing = export(&score, &all, &dir.path().join("missing").join("delivery")).unwrap_err();
+    assert_eq!(missing, "el archivo o su carpeta ya no existe");
 }
 
 #[test]

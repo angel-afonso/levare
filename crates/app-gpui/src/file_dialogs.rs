@@ -70,6 +70,33 @@ fn is_levare(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(score_io::EXTENSION))
 }
 
+/// The title of the window that reports a failure: «No se pudo guardar
+/// «Sonata.levare»».
+pub fn failure_title(action: &str, path: Option<&Path>) -> String {
+    match path.and_then(Path::file_name) {
+        Some(name) => format!("No se pudo {action} «{}»", name.to_string_lossy()),
+        None => format!("No se pudo {action}"),
+    }
+}
+
+/// The musician's message; the technical cause, in English, only reaches the
+/// log.
+pub fn file_error(error: &score_io::FileError) -> String {
+    if let Some(detail) = error.detail() {
+        eprintln!("levare: {error}: {detail}");
+    }
+    error.to_string()
+}
+
+/// `message` as a sentence on its own, starting with a capital letter.
+pub fn sentence(message: &str) -> String {
+    let mut chars = message.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// Why a dialog did not open, to follow «No se pudo abrir: » or «No se pudo
 /// guardar: ».
 ///
@@ -151,6 +178,20 @@ mod tests {
         for named in ["Sonata.levare", "Sonata.partitura", "Sonata.musicxml"] {
             assert_eq!(with_levare_extension(&folder.join(named)), None);
         }
+    }
+
+    #[test]
+    fn failures_name_the_file_in_spanish() {
+        let path = Path::new("obras").join("Sonata.levare");
+        assert_eq!(
+            failure_title("guardar", Some(&path)),
+            "No se pudo guardar «Sonata.levare»"
+        );
+        assert_eq!(failure_title("abrir", None), "No se pudo abrir");
+        assert_eq!(sentence("el archivo está dañado"), "El archivo está dañado");
+        let denied =
+            score_io::FileError::from(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert!(!file_error(&denied).contains("permission"));
     }
 
     #[test]

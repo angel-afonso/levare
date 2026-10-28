@@ -34,6 +34,12 @@ impl Warnings {
     }
 }
 
+fn bad_number(failure: impl std::fmt::Display) -> FileError {
+    FileError::damaged_with("MusicXML: hay un valor numérico no válido", failure)
+}
+fn damaged_mxl(failure: impl std::fmt::Display) -> FileError {
+    FileError::damaged_with("MusicXML comprimido dañado o incompleto", failure)
+}
 fn child<'a, 'b>(n: Node<'a, 'b>, name: &str) -> Option<Node<'a, 'b>> {
     n.children().find(|c| c.has_tag_name(name))
 }
@@ -44,7 +50,7 @@ fn number(n: Node<'_, '_>, name: &str) -> Result<f64, FileError> {
     let x: f64 = text(n, name)
         .ok_or_else(|| error(format!("MusicXML: falta {name}")))?
         .parse()
-        .map_err(error)?;
+        .map_err(bad_number)?;
     if x.is_finite() && x.abs() <= 1e9 {
         Ok(x)
     } else {
@@ -79,22 +85,20 @@ fn parse_xml(data: &str) -> Result<Document<'_>, FileError> {
             nodes_limit: 1_000_000,
         },
     )
-    .map_err(error)
+    .map_err(|failure| FileError::damaged_with("MusicXML: el archivo no es XML válido", failure))
 }
 
 pub fn load(path: &Path) -> Result<ImportResult, FileError> {
     let mut bytes = Vec::new();
-    File::open(path)
-        .map_err(error)?
+    File::open(path)?
         .take((MAX_MUSICXML_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(error)?;
+        .read_to_end(&mut bytes)?;
     decode(&bytes)
 }
 /// Reads uncompressed XML or a compressed MXL container without extracting files.
 pub fn decode(bytes: &[u8]) -> Result<ImportResult, FileError> {
     if bytes.len() > MAX_MUSICXML_BYTES {
-        return Err(error("MusicXML supera el límite de 16 MiB"));
+        return Err(FileError::too_large("MusicXML supera el límite de 16 MiB"));
     }
     let expanded;
     let bytes = if bytes.starts_with(b"PK") {
@@ -272,17 +276,17 @@ fn clean(text: &str) -> String {
     line
 }
 fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(error)?;
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(damaged_mxl)?;
     if zip.len() > 4096 {
         return Err(error("MusicXML comprimido contiene demasiados archivos"));
     }
     let container = {
-        let mut f = zip.by_name("META-INF/container.xml").map_err(error)?;
+        let mut f = zip.by_name("META-INF/container.xml").map_err(damaged_mxl)?;
         let mut data = String::new();
         f.by_ref()
             .take(65_537)
             .read_to_string(&mut data)
-            .map_err(error)?;
+            .map_err(damaged_mxl)?;
         if data.len() > 65_536 {
             return Err(error("Contenedor MusicXML demasiado grande"));
         }
@@ -297,17 +301,17 @@ fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
     if Path::new(name).is_absolute() || name.split(['/', '\\']).any(|p| p == "..") {
         return Err(error("Ruta inválida en el contenedor MusicXML"));
     }
-    let mut f = zip.by_name(name).map_err(error)?;
+    let mut f = zip.by_name(name).map_err(damaged_mxl)?;
     if f.size() > MAX_MUSICXML_BYTES as u64 {
-        return Err(error("MusicXML descomprimido supera 16 MiB"));
+        return Err(FileError::too_large("MusicXML descomprimido supera 16 MiB"));
     }
     let mut out = Vec::new();
     f.by_ref()
         .take((MAX_MUSICXML_BYTES + 1) as u64)
         .read_to_end(&mut out)
-        .map_err(error)?;
+        .map_err(damaged_mxl)?;
     if out.len() > MAX_MUSICXML_BYTES {
-        return Err(error("MusicXML descomprimido supera 16 MiB"));
+        return Err(FileError::too_large("MusicXML descomprimido supera 16 MiB"));
     }
     Ok(out)
 }
@@ -804,7 +808,7 @@ fn read_part(
 }
 
 fn xml_interval(n: Node<'_, '_>, fallback: Transposition) -> Result<Transposition, FileError> {
-    let octave = text(n, "octave-change").map_or(Ok(0i32), |s| s.parse().map_err(error))?;
+    let octave = text(n, "octave-change").map_or(Ok(0i32), |s| s.parse().map_err(bad_number))?;
     let chromatic = integer(n, "chromatic")?
         .checked_add(
             octave
@@ -814,7 +818,7 @@ fn xml_interval(n: Node<'_, '_>, fallback: Transposition) -> Result<Transpositio
         .ok_or_else(|| error("Transposición fuera de rango"))?;
     let diatonic = if let Some(s) = text(n, "diatonic") {
         s.parse::<i32>()
-            .map_err(error)?
+            .map_err(bad_number)?
             .checked_add(
                 octave
                     .checked_mul(7)
@@ -827,10 +831,10 @@ fn xml_interval(n: Node<'_, '_>, fallback: Transposition) -> Result<Transpositio
         (f64::from(chromatic) * 7. / 12.).round() as i32
     };
     let value = Transposition::new(
-        i8::try_from(diatonic).map_err(error)?,
-        i8::try_from(chromatic).map_err(error)?,
+        i8::try_from(diatonic).map_err(bad_number)?,
+        i8::try_from(chromatic).map_err(bad_number)?,
     );
-    value.validate().map_err(error)?;
+    value.validate()?;
     Ok(value)
 }
 
@@ -842,20 +846,21 @@ fn attributes(
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
     if let Some(d) = child(n, "divisions") {
-        state.divisions = d.text().unwrap_or("").trim().parse().map_err(error)?;
+        state.divisions = d.text().unwrap_or("").trim().parse().map_err(bad_number)?;
         if !state.divisions.is_finite() || state.divisions <= 0.0 || state.divisions > 1e9 {
             return Err(error("MusicXML: divisiones inválidas"));
         }
     }
     if let Some(s) = text(n, "staves") {
-        state.staves = s.parse().map_err(error)?;
+        state.staves = s.parse().map_err(bad_number)?;
         if !(1..=2).contains(&state.staves) {
             return Err(error("MusicXML: máximo de dos pentagramas por instrumento"));
         }
     }
     for t in n.children().filter(|c| c.has_tag_name("transpose")) {
         let chromatic = integer(t, "chromatic")?;
-        let octave = text(t, "octave-change").map_or(Ok(0), |s| s.parse::<i32>().map_err(error))?;
+        let octave =
+            text(t, "octave-change").map_or(Ok(0), |s| s.parse::<i32>().map_err(bad_number))?;
         let amount = chromatic
             .checked_add(
                 octave
@@ -886,8 +891,8 @@ fn attributes(
         if time.children().filter(|c| c.has_tag_name("beats")).count() != 1 {
             return Err(error("MusicXML: métrica compuesta aditiva no admitida"));
         }
-        let numerator = u8::try_from(integer(time, "beats")?).map_err(error)?;
-        let denominator = u8::try_from(integer(time, "beat-type")?).map_err(error)?;
+        let numerator = u8::try_from(integer(time, "beats")?).map_err(bad_number)?;
+        let denominator = u8::try_from(integer(time, "beat-type")?).map_err(bad_number)?;
         let value = TimeSignature {
             numerator,
             denominator,
@@ -904,7 +909,7 @@ fn attributes(
                 "MusicXML: cambio de tonalidad dentro del compás no admitido",
             ));
         }
-        let fifths = i8::try_from(integer(k, "fifths")?).map_err(error)?;
+        let fifths = i8::try_from(integer(k, "fifths")?).map_err(bad_number)?;
         let mode = match text(k, "mode").unwrap_or("major") {
             "major" => KeyMode::Major,
             "minor" => KeyMode::Minor,
@@ -1119,7 +1124,7 @@ fn read_harmony(
     bar: &mut Bar,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
-    let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(error))?;
+    let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(bad_number))?;
     let tickf = f64::from(cursor) + offset * f64::from(TICKS_PER_QUARTER) / state.divisions;
     if !tickf.is_finite() || tickf < 0.0 || (tickf - tickf.round()).abs() > 1e-6 {
         warnings.add("Un cifrado fuera de lugar no se importa");
@@ -1254,7 +1259,7 @@ fn read_note(
         let octave = text(unpitched, "display-octave")
             .unwrap_or("4")
             .parse::<u8>()
-            .map_err(error)?;
+            .map_err(bad_number)?;
         vec![Tone {
             pitch: Pitch::new(step, octave).ok_or_else(|| error("Percusión fuera de registro"))?,
             harmonic: None,
@@ -1438,7 +1443,7 @@ fn sound_tempo(n: Node<'_, '_>, warnings: &mut Warnings) -> Result<Option<TempoM
     let Some(s) = n.attribute("tempo") else {
         return Ok(None);
     };
-    let bpm: f64 = s.parse().map_err(error)?;
+    let bpm: f64 = s.parse().map_err(bad_number)?;
     if !bpm.is_finite() || !(10.0..=1200.0).contains(&bpm) {
         return Err(error("MusicXML: tempo fuera del rango representable"));
     }
@@ -1574,7 +1579,7 @@ fn read_direction(
     bar: &mut Bar,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
-    let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(error))?;
+    let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(bad_number))?;
     let tickf = f64::from(cursor) + offset * f64::from(TICKS_PER_QUARTER) / state.divisions;
     if !tickf.is_finite()
         || tickf < 0.0

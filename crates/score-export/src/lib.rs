@@ -50,6 +50,11 @@ pub fn folder_name(title: &str) -> String {
     format!("{} - Exportación", score_io::file_name(title, 64))
 }
 
+/// The system's reason in Spanish, without its English text.
+fn explain(error: std::io::Error) -> String {
+    score_io::FileError::from(error).to_string()
+}
+
 /// Generates every file before publishing a new directory. Existing destinations
 /// are never merged or replaced, so a failed export cannot damage an older set.
 pub fn export(
@@ -65,7 +70,7 @@ pub fn export(
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let staging = tempfile::tempdir_in(parent).map_err(|e| e.to_string())?;
+    let staging = tempfile::tempdir_in(parent).map_err(explain)?;
     let mut files = Vec::new();
     let mut render = |name: String, score: &Score, part: bool| -> Result<(), String> {
         for (enabled, extension) in [(selection.pdf, "pdf"), (selection.musicxml, "musicxml")] {
@@ -103,7 +108,7 @@ pub fn export(
     // This operation also protects against another process choosing the same
     // destination during rendering. Only our newly created directory is populated.
     std::fs::create_dir(destination)
-        .map_err(|e| format!("No se pudo crear la carpeta de exportación: {e}"))?;
+        .map_err(|e| format!("No se pudo crear la carpeta de exportación: {}", explain(e)))?;
     let mut published = Vec::new();
     for filename in files {
         let path = destination.join(&filename);
@@ -112,7 +117,10 @@ pub fn export(
                 let _ = std::fs::remove_file(path);
             }
             let _ = std::fs::remove_dir(destination);
-            return Err(format!("No se pudo completar la exportación: {error}"));
+            return Err(format!(
+                "No se pudo completar la exportación: {}",
+                explain(error)
+            ));
         }
         published.push(path);
     }

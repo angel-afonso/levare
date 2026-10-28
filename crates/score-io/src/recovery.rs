@@ -54,14 +54,13 @@ impl Recovery {
         let parent = path
             .parent()
             .ok_or_else(|| error("Ruta de recuperación inválida"))?;
-        std::fs::create_dir_all(parent).map_err(error)?;
+        std::fs::create_dir_all(parent)?;
         let lock = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(path.with_extension("lock"))
-            .map_err(error)?;
+            .open(path.with_extension("lock"))?;
         lock_file(&lock)?;
         let (sender, receiver) = mpsc::channel();
         let status = Arc::new(Mutex::new(WriteStatus::default()));
@@ -118,8 +117,7 @@ impl Recovery {
                         }
                     }
                 }
-            })
-            .map_err(error)?;
+            })?;
         Ok(Self(Arc::new(Writer {
             sender,
             error: status,
@@ -131,10 +129,13 @@ impl Recovery {
     }
     pub fn flush(&self) -> Result<(), FileError> {
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.0.sender.send(Message::Flush(sender)).map_err(error)?;
+        self.0
+            .sender
+            .send(Message::Flush(sender))
+            .map_err(FileError::internal)?;
         receiver
             .recv_timeout(Duration::from_secs(6))
-            .map_err(error)?
+            .map_err(FileError::internal)?
             .map_err(error)
     }
     pub fn last_error(&self) -> Option<String> {
@@ -162,7 +163,7 @@ fn persist_pending(
         None => match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(error(e)),
+            Err(e) => Err(e.into()),
         },
     };
     *status.lock().unwrap() = WriteStatus {
@@ -178,20 +179,20 @@ fn lock_file(file: &File) -> Result<(), FileError> {
     match file.try_lock() {
         Ok(()) => Ok(()),
         Err(std::fs::TryLockError::WouldBlock) => Err(error(IN_USE)),
-        Err(std::fs::TryLockError::Error(failure)) => Err(error(failure)),
+        Err(std::fs::TryLockError::Error(failure)) => Err(failure.into()),
     }
 }
 /// Shown after «Recuperación no disponible: ».
 const IN_USE: &str = "otra ventana de Levare ya está usando el autoguardado";
 fn write(path: &Path, value: &RecoveredScore) -> Result<(), FileError> {
-    let document = serde_json::from_slice(&encode(&value.score)?).map_err(error)?;
+    let document = serde_json::from_slice(&encode(&value.score)?).map_err(FileError::internal)?;
     let bytes = serde_json::to_vec(&Envelope {
         recovery_version: 1,
         original_path: value.original_path.clone(),
         document,
     })
-    .map_err(error)?;
-    atomic_write::write(path, &bytes).map_err(error)
+    .map_err(FileError::internal)?;
+    Ok(atomic_write::write(path, &bytes)?)
 }
 /// The document plus its envelope and original path.
 const MAX_RECOVERY_BYTES: usize = MAX_FILE_BYTES + 1024 * 1024;
@@ -200,15 +201,14 @@ pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(error(e)),
+        Err(e) => return Err(e.into()),
     };
     file.take((MAX_RECOVERY_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(error)?;
+        .read_to_end(&mut bytes)?;
     if bytes.len() > MAX_RECOVERY_BYTES {
-        return Err(error("Recuperación demasiado grande"));
+        return Err(FileError::too_large("Recuperación demasiado grande"));
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(error)?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(FileError::damaged)?;
     if value.get("recovery_version").is_none() {
         return decode(&bytes).map(|score| {
             Some(RecoveredScore {
@@ -217,11 +217,11 @@ pub fn load_recovery(path: &Path) -> Result<Option<RecoveredScore>, FileError> {
             })
         });
     }
-    let envelope: Envelope = serde_json::from_value(value).map_err(error)?;
+    let envelope: Envelope = serde_json::from_value(value).map_err(FileError::damaged)?;
     if envelope.recovery_version != 1 {
         return Err(error("Versión de recuperación no compatible"));
     }
-    let score = decode(&serde_json::to_vec(&envelope.document).map_err(error)?)?;
+    let score = decode(&serde_json::to_vec(&envelope.document).map_err(FileError::internal)?)?;
     Ok(Some(RecoveredScore {
         score,
         original_path: envelope.original_path,

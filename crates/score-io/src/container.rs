@@ -2,7 +2,7 @@
 //! uncompressed so the file identifies itself, and whose `score.json` holds the
 //! same versioned envelope as the older `.partitura` JSON files. Unknown entries
 //! are ignored, so later versions can add to the container without breaking it.
-use crate::{FileError, MAX_FILE_BYTES, error};
+use crate::{FileError, MAX_FILE_BYTES};
 use std::io::{Cursor, Read, Write};
 use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -31,14 +31,19 @@ pub(crate) fn is_levare(bytes: &[u8]) -> bool {
 pub(crate) fn pack(json: &[u8]) -> Result<Vec<u8>, FileError> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("mimetype", stored).map_err(error)?;
-    zip.write_all(MIME_TYPE.as_bytes()).map_err(error)?;
+    zip.start_file("mimetype", stored)
+        .map_err(FileError::internal)?;
+    zip.write_all(MIME_TYPE.as_bytes())
+        .map_err(FileError::internal)?;
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    zip.start_file(SCORE, deflated).map_err(error)?;
-    zip.write_all(json).map_err(error)?;
-    let bytes = zip.finish().map_err(error)?.into_inner();
+    zip.start_file(SCORE, deflated)
+        .map_err(FileError::internal)?;
+    zip.write_all(json).map_err(FileError::internal)?;
+    let bytes = zip.finish().map_err(FileError::internal)?.into_inner();
     if bytes.len() > MAX_CONTAINER_BYTES {
-        return Err(error("La partitura supera el límite de 64 MiB"));
+        return Err(FileError::too_large(
+            "La partitura supera el límite de 64 MiB",
+        ));
     }
     Ok(bytes)
 }
@@ -47,20 +52,28 @@ pub(crate) fn pack(json: &[u8]) -> Result<Vec<u8>, FileError> {
 /// whatever the entry's header claims.
 pub(crate) fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
     if bytes.len() > MAX_CONTAINER_BYTES {
-        return Err(error("El archivo supera el límite de 64 MiB"));
+        return Err(FileError::too_large(
+            "El archivo supera el límite de 64 MiB",
+        ));
     }
-    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(error)?;
+    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(FileError::damaged)?;
     if zip.len() > MAX_ENTRIES {
-        return Err(error("El archivo .levare contiene demasiadas entradas"));
+        return Err(FileError::damaged_with(
+            "El archivo .levare contiene demasiadas entradas",
+            format!("{} entries", zip.len()),
+        ));
     }
     if read_mime_type(&mut zip)? != MIME_TYPE {
-        return Err(error("El archivo no es una partitura de Levare"));
+        return Err(FileError::damaged("unexpected mimetype"));
     }
-    let mut entry = zip
-        .by_name(SCORE)
-        .map_err(|_| error("El archivo .levare está dañado: no contiene la partitura"))?;
+    let mut entry = zip.by_name(SCORE).map_err(|failure| {
+        FileError::damaged_with(
+            "El archivo .levare está dañado: no contiene la partitura",
+            failure,
+        )
+    })?;
     if entry.size() > MAX_FILE_BYTES as u64 {
-        return Err(error(
+        return Err(FileError::too_large(
             "La partitura descomprimida supera el límite de 256 MiB",
         ));
     }
@@ -69,9 +82,9 @@ pub(crate) fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
         .by_ref()
         .take((MAX_FILE_BYTES + 1) as u64)
         .read_to_end(&mut json)
-        .map_err(error)?;
+        .map_err(FileError::damaged)?;
     if json.len() > MAX_FILE_BYTES {
-        return Err(error(
+        return Err(FileError::too_large(
             "La partitura descomprimida supera el límite de 256 MiB",
         ));
     }
@@ -79,14 +92,12 @@ pub(crate) fn unpack(bytes: &[u8]) -> Result<Vec<u8>, FileError> {
 }
 
 fn read_mime_type(zip: &mut ZipArchive<Cursor<&[u8]>>) -> Result<String, FileError> {
-    let entry = zip
-        .by_name("mimetype")
-        .map_err(|_| error("El archivo no es una partitura de Levare"))?;
+    let entry = zip.by_name("mimetype").map_err(FileError::damaged)?;
     let mut mime = String::new();
     entry
         .take(256)
         .read_to_string(&mut mime)
-        .map_err(|_| error("El archivo no es una partitura de Levare"))?;
+        .map_err(FileError::damaged)?;
     Ok(mime.trim().to_owned())
 }
 

@@ -328,7 +328,7 @@ fn voice_number(staff: StaffId, voice: Voice) -> u8 {
 
 /// Encode a validated score as UTF-8, uncompressed `.musicxml`.
 pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
-    score.validate().map_err(error)?;
+    score.validate()?;
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n",
     );
@@ -492,7 +492,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
 /// Flush and replace atomically, leaving an existing destination intact on error.
 pub fn export(path: &Path, score: &Score) -> Result<(), FileError> {
     let bytes = encode(score)?;
-    atomic_write::write(path, &bytes).map_err(error)
+    Ok(atomic_write::write(path, &bytes)?)
 }
 
 fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {

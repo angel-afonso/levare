@@ -79,7 +79,7 @@ fn put(
         .transposition()
         .inverse()
         .pitches(event.pitches, score.key_signature_at(bar))
-        .map_err(error)?;
+        .map_err(FileError::from)?;
     let (staff, voice) = source(lane);
     let index = score
         .part(part)
@@ -90,7 +90,7 @@ fn put(
         .voice_len(voice);
     score
         .insert_in_voice(part, staff, bar, voice, index, event)
-        .map_err(error)
+        .map_err(FileError::from)
 }
 fn append_rest(
     score: &mut Score,
@@ -214,7 +214,7 @@ fn music(
             })
             .collect::<Vec<_>>(),
     )
-    .map_err(error)?;
+    .map_err(FileError::from)?;
     if pitches.is_empty() {
         notation.articulation = None;
         notation.harmonic = None;
@@ -312,7 +312,7 @@ fn normalize_techniques(
                         None
                     },
                 )
-                .map_err(error)?;
+                .map_err(FileError::from)?;
             actual[s] = wanted;
         } else if let Some(t) = mark {
             actual[s] = t;
@@ -334,7 +334,7 @@ pub(super) fn score(
         }
     }
     let instruments = parts.iter().map(|p| p.instrument).collect::<Vec<_>>();
-    let mut score = Score::new(title, &instruments, count).map_err(error)?;
+    let mut score = Score::new(title, &instruments, count).map_err(FileError::from)?;
     let mut active_time = vec![TimeSignature::default(); parts.len()];
     let mut active_key = vec![KeySignature::default(); parts.len()];
     for bar in 0..count {
@@ -396,10 +396,12 @@ pub(super) fn score(
                 bar + 1
             )));
         }
-        score.set_time_signature_at(bar, time).map_err(error)?;
+        score
+            .set_time_signature_at(bar, time)
+            .map_err(FileError::from)?;
         score
             .set_key_signature_at(bar, conductor_key)
-            .map_err(error)?;
+            .map_err(FileError::from)?;
         let marks: Vec<_> = parts
             .iter()
             .filter_map(|p| p.bars[bar].tempo.as_ref())
@@ -412,7 +414,9 @@ pub(super) fn score(
                 warnings
                     .add("Los tempos simultáneos distintos se unifican con el primero indicado");
             }
-            score.set_tempo_at(bar, (*tempo).clone()).map_err(error)?;
+            score
+                .set_tempo_at(bar, (*tempo).clone())
+                .map_err(FileError::from)?;
         }
     }
     apply_form(&mut score, &parts, warnings);
@@ -422,7 +426,7 @@ pub(super) fn score(
         if let Some(interval) = data.transposition {
             score
                 .set_part_transposition(part, interval)
-                .map_err(error)?;
+                .map_err(FileError::from)?;
         }
         let lanes = Lanes::new(data)?;
         let two = data
@@ -430,7 +434,7 @@ pub(super) fn score(
             .iter()
             .any(|b| b.staves == 2 || b.events.iter().any(|e| e.staff == 2));
         if two && !data.instrument.is_grand_staff() && !data.passage {
-            score.set_part_divisi(part, true).map_err(error)?;
+            score.set_part_divisi(part, true).map_err(FileError::from)?;
         }
         let explicit = data.bars.iter().any(|b| {
             b.directions
@@ -451,7 +455,7 @@ pub(super) fn score(
                         }
                         score
                             .set_divisi_span(part, DivisiPoint::new(bar, m.tick), None, divided)
-                            .map_err(error)?;
+                            .map_err(FileError::from)?;
                     }
                 }
             }
@@ -474,7 +478,9 @@ pub(super) fn score(
                         warnings.add("Las ramas de divisi comparten la clave de la primera rama");
                     }
                 } else {
-                    score.set_clef_at(part, staff, bar, clef).map_err(error)?;
+                    score
+                        .set_clef_at(part, staff, bar, clef)
+                        .map_err(FileError::from)?;
                 }
             }
             let mut streams: BTreeMap<u8, Vec<(usize, &RawEvent)>> = BTreeMap::new();
@@ -712,14 +718,18 @@ pub(super) fn score(
                 let (id, kind) = events[0];
                 // The public API permits a single tone in each hand for a shared roll.
                 if score.set_arpeggio_both_hands(id, true).is_ok() {
-                    score.set_arpeggio(id, Some(kind)).map_err(error)?;
+                    score
+                        .set_arpeggio(id, Some(kind))
+                        .map_err(FileError::from)?;
                 } else {
                     warnings.add("Un arpegio entre pentagramas no pudo enlazarse");
                 }
             } else {
                 for (id, kind) in events {
                     if score.event(id).unwrap().pitches.len() >= 2 {
-                        score.set_arpeggio(id, Some(kind)).map_err(error)?;
+                        score
+                            .set_arpeggio(id, Some(kind))
+                            .map_err(FileError::from)?;
                     } else {
                         warnings.add("Un arpegio sobre una sola nota no pudo importarse");
                     }
@@ -744,9 +754,11 @@ pub(super) fn score(
                 let lane = lanes.lane(m.staff, m.voice.as_deref())?;
                 if let Some(&id) = anchors.get(&(bar, lane, m.tick)) {
                     match m.kind {
-                        MarkType::Dynamic(d) => score.set_dynamic(id, Some(d)).map_err(error)?,
+                        MarkType::Dynamic(d) => {
+                            score.set_dynamic(id, Some(d)).map_err(FileError::from)?
+                        }
                         MarkType::Chord(chord) => {
-                            score.set_chord(id, Some(chord)).map_err(error)?
+                            score.set_chord(id, Some(chord)).map_err(FileError::from)?
                         }
                         MarkType::Text(kind, ref text) => {
                             let mut end = text.len().min(MAX_TEXT_BYTES);
@@ -769,7 +781,7 @@ pub(super) fn score(
                         }
                         MarkType::Technique(t) => {
                             if data.instrument.family() == InstrumentFamily::Strings {
-                                score.set_technique(id, Some(t)).map_err(error)?;
+                                score.set_technique(id, Some(t)).map_err(FileError::from)?;
                             } else {
                                 warnings.add(
                                     "Una técnica de cuerda en otro instrumento no pudo importarse",
@@ -877,7 +889,7 @@ pub(super) fn score(
             }
         }
     }
-    score.validate().map_err(error)?;
+    score.validate().map_err(FileError::from)?;
     Ok(score)
 }
 
@@ -985,7 +997,7 @@ fn apply_rehearsals(
             if clean.trim().is_empty() {
                 continue;
             }
-            score.toggle_rehearsal_mark(bar).map_err(error)?;
+            score.toggle_rehearsal_mark(bar).map_err(FileError::from)?;
             marks.push((bar, clean));
         }
     }
@@ -1005,7 +1017,9 @@ fn apply_rehearsals(
     score.set_rehearsal_style(best);
     for (bar, text) in marks {
         if score.rehearsal_label(bar).as_ref() != Some(&text) {
-            score.set_rehearsal_custom(bar, Some(text)).map_err(error)?;
+            score
+                .set_rehearsal_custom(bar, Some(text))
+                .map_err(FileError::from)?;
         }
     }
     Ok(())

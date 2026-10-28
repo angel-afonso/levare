@@ -6,6 +6,7 @@ mod clef_tests;
 #[cfg(test)]
 mod comment_tests;
 mod container;
+mod error;
 pub mod musicxml;
 mod names;
 #[cfg(test)]
@@ -13,12 +14,14 @@ mod range_tests;
 mod recent;
 mod recovery;
 pub use container::{EXTENSION, MAX_CONTAINER_BYTES, MIME_TYPE};
+use error::error;
+pub use error::{FileError, FileErrorKind};
 pub use names::file_name;
 pub use recent::RecentFiles;
 pub use recovery::{RecoveredScore, Recovery, load_recovery};
 use score_core::Score;
 use serde::{Deserialize, Serialize};
-use std::{fmt, fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path};
 
 pub const SCHEMA_VERSION: u32 = 29;
 /// Enough for the largest score the model allows (`MAX_PARTS` parts of
@@ -33,31 +36,21 @@ struct NativeFile {
     score: Score,
 }
 
-#[derive(Debug)]
-pub struct FileError(String);
-impl fmt::Display for FileError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-impl std::error::Error for FileError {}
-fn error(error: impl fmt::Display) -> FileError {
-    FileError(error.to_string())
-}
-
 /// The versioned JSON envelope, as stored inside a `.levare` file and in the
 /// recovery file.
 pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
-    score.validate().map_err(error)?;
+    score.validate()?;
     // Compact: indentation alone made orchestral scores four times larger.
     let bytes = serde_json::to_vec(&NativeFile {
         format: "partitura".into(),
         version: SCHEMA_VERSION,
         score: score.clone(),
     })
-    .map_err(error)?;
+    .map_err(FileError::internal)?;
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("La partitura supera el límite de 256 MiB"));
+        return Err(FileError::too_large(
+            "La partitura supera el límite de 256 MiB",
+        ));
     }
     Ok(bytes)
 }
@@ -79,12 +72,21 @@ pub fn decode(bytes: &[u8]) -> Result<Score, FileError> {
 
 fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("El archivo supera el límite de 256 MiB"));
+        return Err(FileError::too_large(
+            "El archivo supera el límite de 256 MiB",
+        ));
     }
     // Check the envelope before deserializing a possibly incompatible score.
-    let mut envelope: serde_json::Value = serde_json::from_slice(bytes).map_err(error)?;
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(FileError::damaged)?;
     if envelope["format"] != "partitura" {
-        return Err(error("El archivo no es una partitura nativa"));
+        return Err(FileError::damaged("missing \"format\": \"partitura\""));
+    }
+    if let Some(version) = envelope["version"]
+        .as_u64()
+        .filter(|&version| version > u64::from(SCHEMA_VERSION))
+    {
+        return Err(FileError::newer(version));
     }
     if envelope["version"].as_u64() == Some(1) {
         let score = envelope["score"]
@@ -129,7 +131,8 @@ fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
                 .get("instrument")
                 .is_some_and(|instrument| instrument == "Piano")
             {
-                let empty = serde_json::to_value(score_core::Measure::default()).map_err(error)?;
+                let empty = serde_json::to_value(score_core::Measure::default())
+                    .map_err(FileError::internal)?;
                 staves.push(serde_json::json!({"id": "Lower", "measures": vec![empty; count]}));
             }
             part.insert("staves".into(), staves.into());
@@ -193,7 +196,8 @@ fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
             .ok_or_else(|| error("Partitura inválida"))?
             .insert(
                 "key_signature".into(),
-                serde_json::to_value(score_core::KeySignature::default()).map_err(error)?,
+                serde_json::to_value(score_core::KeySignature::default())
+                    .map_err(FileError::internal)?,
             );
         envelope["version"] = 6.into();
     }
@@ -304,18 +308,16 @@ fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
     if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {
         return Err(error("Versión de archivo no compatible"));
     }
-    let file: NativeFile = serde_json::from_value(envelope).map_err(error)?;
-    file.score.validate().map_err(error)?;
+    let file: NativeFile = serde_json::from_value(envelope).map_err(FileError::damaged)?;
+    file.score.validate()?;
     Ok(file.score)
 }
 
 pub fn load(path: &Path) -> Result<Score, FileError> {
     let mut bytes = Vec::new();
-    File::open(path)
-        .map_err(error)?
+    File::open(path)?
         .take((MAX_FILE_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(error)?;
+        .read_to_end(&mut bytes)?;
     decode(&bytes)
 }
 
@@ -330,13 +332,13 @@ pub struct OpenedScore {
 /// Imported documents have no native save path; the UI must request a new one.
 pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
     let mut bytes = Vec::new();
-    File::open(path)
-        .map_err(error)?
+    File::open(path)?
         .take((MAX_FILE_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(error)?;
+        .read_to_end(&mut bytes)?;
     if bytes.len() > MAX_FILE_BYTES {
-        return Err(error("El archivo supera el límite de 256 MiB"));
+        return Err(FileError::too_large(
+            "El archivo supera el límite de 256 MiB",
+        ));
     }
     if container::is_levare(&bytes)
         || bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) == Some(b'{')
@@ -359,7 +361,7 @@ pub fn open(path: &Path) -> Result<OpenedScore, FileError> {
 /// never truncates the previous document.
 pub fn save(path: &Path, score: &Score) -> Result<(), FileError> {
     let bytes = encode_file(score)?;
-    atomic_write::write(path, &bytes).map_err(error)
+    Ok(atomic_write::write(path, &bytes)?)
 }
 
 #[cfg(test)]
@@ -754,11 +756,17 @@ mod tests {
         let mut data: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
         data["version"] = 999.into();
         data["score"] = serde_json::Value::Null;
-        assert!(
-            decode(&serde_json::to_vec(&data).unwrap())
-                .unwrap_err()
-                .to_string()
-                .contains("Versión")
+        let newer = decode(&serde_json::to_vec(&data).unwrap()).unwrap_err();
+        assert_eq!(newer.kind(), FileErrorKind::NewerVersion);
+        assert_eq!(
+            newer.to_string(),
+            "la partitura se creó con una versión más reciente de Levare (formato 999); actualiza Levare para abrirla"
+        );
+        // The same inside a .levare written by that newer version.
+        let packed = container::pack(&serde_json::to_vec(&data).unwrap()).unwrap();
+        assert_eq!(
+            decode(&packed).unwrap_err().kind(),
+            FileErrorKind::NewerVersion
         );
         let mut data: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
         data["score"]["time"]["denominator"] = 0.into();

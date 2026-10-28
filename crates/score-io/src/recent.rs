@@ -32,9 +32,11 @@ impl RecentFiles {
         let text = match fs::read_to_string(path) {
             Ok(text) => text,
             Err(failure) if failure.kind() == ErrorKind::NotFound => return Ok(Self::new()),
-            Err(failure) => return Err(error(failure)),
+            Err(failure) => return Err(failure.into()),
         };
-        let mut recent: Self = serde_json::from_str(&text).map_err(error)?;
+        let mut recent: Self = serde_json::from_str(&text).map_err(|failure| {
+            FileError::damaged_with("la lista de recientes está dañada", failure)
+        })?;
         if recent.version != FORMAT_VERSION {
             return Err(error(format!(
                 "la lista de recientes usa la versión {}",
@@ -49,9 +51,9 @@ impl RecentFiles {
     /// Writes a temporary file next to the target and renames it over.
     pub fn save(&self, path: &Path) -> Result<(), FileError> {
         let parent = path.parent().unwrap_or(Path::new("."));
-        fs::create_dir_all(parent).map_err(error)?;
-        let bytes = serde_json::to_vec_pretty(self).map_err(error)?;
-        atomic_write::write(path, &bytes).map_err(error)
+        fs::create_dir_all(parent)?;
+        let bytes = serde_json::to_vec_pretty(self).map_err(FileError::internal)?;
+        Ok(atomic_write::write(path, &bytes)?)
     }
 
     /// Moves `file` to the front, without duplicates, keeping at most `LIMIT`.

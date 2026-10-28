@@ -182,13 +182,34 @@ fn is_read_only(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().readonly())
 }
 
+/// The message for the musician that some returned `io::Error`s carry, so a
+/// caller can tell it from the system's own English text.
+#[derive(Debug)]
+pub struct Explanation {
+    pub message: String,
+    /// The target is protected against writing.
+    pub read_only: bool,
+}
+impl std::fmt::Display for Explanation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for Explanation {}
+
+/// The [`Explanation`] inside `error`, if this crate added one.
+pub fn explanation(error: &io::Error) -> Option<&Explanation> {
+    error.get_ref()?.downcast_ref()
+}
+
 fn explain(error: io::Error, path: &Path) -> io::Error {
     let name = path.file_name().map_or_else(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
     let in_use = cfg!(windows) && matches!(error.raw_os_error(), Some(32 | 33));
-    let message = if is_read_only(path) {
+    let read_only = is_read_only(path);
+    let message = if read_only {
         format!(
             "«{name}» es de solo lectura. Guarda con otro nombre o quita la protección contra escritura"
         )
@@ -201,7 +222,7 @@ fn explain(error: io::Error, path: &Path) -> io::Error {
     } else {
         return error;
     };
-    io::Error::new(error.kind(), message)
+    io::Error::new(error.kind(), Explanation { message, read_only })
 }
 
 #[cfg(test)]
@@ -358,6 +379,7 @@ mod tests {
                 .starts_with("«Protegida.partitura» es de solo lectura"),
             "{error}"
         );
+        assert!(explanation(&error).is_some_and(|explained| explained.read_only));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
         #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);

@@ -1000,7 +1000,7 @@ impl AppView {
                 if stroke.key == "escape" {
                     self.close_export_picker(cx);
                 } else if stroke.key == "enter" {
-                    self.confirm_export(cx);
+                    self.confirm_export(window, cx);
                 }
             }
             return;
@@ -2482,8 +2482,8 @@ impl AppView {
                 (Some(path), _) => Ok(Some(path)),
                 (None, Some(picker)) => match picker.await {
                     Ok(Ok(paths)) => Ok(paths.and_then(|paths| paths.into_iter().next())),
-                    Ok(Err(error)) => Err(file_dialogs::dialog_error(error)),
-                    Err(error) => Err(file_dialogs::dialog_error(error)),
+                    Ok(Err(error)) => Err((None, file_dialogs::dialog_error(error))),
+                    Err(error) => Err((None, file_dialogs::dialog_error(error))),
                 },
                 (None, None) => Ok(None),
             };
@@ -2491,9 +2491,10 @@ impl AppView {
                 Ok(Some(path)) => Some(
                     cx.background_executor()
                         .spawn(async move {
-                            score_io::open(&path)
-                                .map(|score| (score, path))
-                                .map_err(|error| error.to_string())
+                            match score_io::open(&path) {
+                                Ok(score) => Ok((score, path)),
+                                Err(error) => Err((Some(path), file_dialogs::file_error(&error))),
+                            }
                         })
                         .await,
                 ),
@@ -2540,13 +2541,51 @@ impl AppView {
                                 }).detach();
                             }
                         }
-                        Err(error) => view.status = error.to_string(),
+                        Err(error) => {
+                            view.report_file_error("abrir", Some(&path), error.to_string(), window, cx)
+                        }
                     },
-                    Some(Err(error)) => view.status = format!("No se pudo abrir: {error}"),
+                    Some(Err((path, error))) => {
+                        view.report_file_error("abrir", path.as_deref(), error, window, cx)
+                    }
                     None => {}
                 }
                 cx.notify();
             });
+        })
+        .detach();
+    }
+
+    /// A failed open, save or export stays on the status line and is also
+    /// explained in a window, which names the file.
+    fn report_file_error(
+        &mut self,
+        action: &str,
+        path: Option<&std::path::Path>,
+        message: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let title = file_dialogs::failure_title(action, path);
+        self.status = format!("{title}: {message}");
+        // The export picker, reopened behind the window, keeps its own hold.
+        let release = !self.confirming;
+        self.confirming = true;
+        let answer = window.prompt(
+            PromptLevel::Critical,
+            &title,
+            Some(&file_dialogs::sentence(&message)),
+            &["Aceptar"],
+            cx,
+        );
+        cx.spawn_in(window, async move |view, cx| {
+            let _ = answer.await;
+            if release {
+                let _ = view.update(cx, |view, cx| {
+                    view.confirming = false;
+                    cx.notify();
+                });
+            }
         })
         .detach();
     }
@@ -2628,7 +2667,7 @@ impl AppView {
         cx.notify();
     }
 
-    fn confirm_export(&mut self, cx: &mut Context<Self>) {
+    fn confirm_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy {
             return;
         }
@@ -2648,28 +2687,24 @@ impl AppView {
         let score = self.document.editor.score().clone();
         let suggested = score_export::folder_name(score.title());
         let picker = cx.prompt_for_new_path(&directory, Some(&suggested));
-        cx.spawn(async move |view, cx| {
+        cx.spawn_in(window, async move |view, cx| {
             let retry = selection.clone();
             let result = match picker.await {
                 Ok(Ok(Some(path))) => Some(
                     cx.background_executor()
                         .spawn(async move {
-                            score_export::export(&score, &selection, &path)
-                                .map(|files| (path, files.len()))
+                            match score_export::export(&score, &selection, &path) {
+                                Ok(files) => Ok((path, files.len())),
+                                Err(error) => Err((Some(path), error)),
+                            }
                         })
                         .await,
                 ),
                 Ok(Ok(None)) => None,
-                Ok(Err(error)) => Some(Err(format!(
-                    "No se pudo exportar: {}",
-                    file_dialogs::dialog_error(error)
-                ))),
-                Err(error) => Some(Err(format!(
-                    "No se pudo exportar: {}",
-                    file_dialogs::dialog_error(error)
-                ))),
+                Ok(Err(error)) => Some(Err((None, file_dialogs::dialog_error(error)))),
+                Err(error) => Some(Err((None, file_dialogs::dialog_error(error)))),
             };
-            let _ = view.update(cx, |view, cx| {
+            let _ = view.update_in(cx, |view, window, cx| {
                 view.busy = false;
                 match result {
                     Some(Ok((path, count))) => {
@@ -2679,11 +2714,17 @@ impl AppView {
                         );
                     }
                     other => {
+                        let failure = other.and_then(Result::err);
                         view.export_picker = Some(ui::ExportPicker {
                             selection: retry,
-                            error: other.and_then(Result::err),
+                            error: failure
+                                .as_ref()
+                                .map(|(_, error)| format!("No se pudo exportar: {error}")),
                         });
                         view.confirming = true;
+                        if let Some((path, error)) = failure {
+                            view.report_file_error("exportar", path.as_deref(), error, window, cx);
+                        }
                     }
                 }
                 cx.notify();
@@ -2717,7 +2758,8 @@ impl AppView {
                 (_, Some(picker)) => picker
                     .await
                     .map_err(file_dialogs::dialog_error)
-                    .and_then(|result| result.map_err(file_dialogs::dialog_error)),
+                    .and_then(|result| result.map_err(file_dialogs::dialog_error))
+                    .map_err(|error| (None, error)),
                 _ => Ok(None),
             };
             // The native panel approved replacing the name the musician typed,
@@ -2752,16 +2794,17 @@ impl AppView {
                 Ok(Some(path)) => Some(
                     cx.background_executor()
                         .spawn(async move {
-                            score_io::save(&path, &score)
-                                .map(|_| path)
-                                .map_err(|error| error.to_string())
+                            match score_io::save(&path, &score) {
+                                Ok(()) => Ok(path),
+                                Err(error) => Err((Some(path), file_dialogs::file_error(&error))),
+                            }
                         })
                         .await,
                 ),
                 Ok(None) => None,
                 Err(error) => Some(Err(error)),
             };
-            let _ = view.update(cx, |view, cx| {
+            let _ = view.update_in(cx, |view, window, cx| {
                 view.busy = false;
                 match result {
                     Some(Ok(path)) => {
@@ -2772,7 +2815,9 @@ impl AppView {
                         view.path = Some(path);
                         view.sync_quit_snapshot();
                     }
-                    Some(Err(error)) => view.status = format!("No se pudo guardar: {error}"),
+                    Some(Err((path, error))) => {
+                        view.report_file_error("guardar", path.as_deref(), error, window, cx)
+                    }
                     None => {}
                 }
                 cx.notify();
