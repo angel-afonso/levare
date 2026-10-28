@@ -29,7 +29,7 @@ atomic-write = { path = "crates/atomic-write" }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 schemars = { version = "=1.2.3", features = ["derive"] }
-imbl = { version = "=7.0.1", features = ["serde"] }
+imbl = { version = "=7.0.2", features = ["serde"] }
 slotmap = { version = "=1.1.1", features = ["serde"] }
 tempfile = "=3.27.0"
 gpui = "=0.2.2"
