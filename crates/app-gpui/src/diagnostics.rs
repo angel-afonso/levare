@@ -3,8 +3,9 @@
 //! Release builds have no console on Windows, and on macOS one opened from
 //! Finder only reaches the unified log, so stderr alone loses every failure.
 //! Lines also go to stderr for whoever does have a terminal.
+use crate::AppView;
 use crate::app_paths::data_path;
-use gpui::{AnyWindowHandle, App, AppContext, PromptLevel};
+use gpui::{App, PromptLevel, Timer, WindowHandle};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
@@ -13,7 +14,7 @@ use std::{
     panic::PanicHookInfo,
     path::{Path, PathBuf},
     sync::{Mutex, PoisonError},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const LOG: &str = "registro.log";
@@ -104,8 +105,11 @@ pub fn window_failed(error: impl Display) -> ! {
 }
 
 /// Tells the musician once about a crash report newer than the last one they
-/// were told about, and offers to show it.
-pub fn announce_unseen_crash(window: AnyWindowHandle, cx: &mut App) {
+/// were told about, and offers to show it. It waits for any other question
+/// Levare is asking (a recovery that could not be restored, unsaved changes
+/// before opening a file) and holds `confirming` while it asks, because a
+/// second prompt would replace the first on Linux.
+pub fn announce_unseen_crash(window: WindowHandle<AppView>, cx: &mut App) {
     let Some(directory) = directory() else {
         return;
     };
@@ -122,24 +126,43 @@ pub fn announce_unseen_crash(window: AnyWindowHandle, cx: &mut App) {
         let _ = fs::write(directory.join(SEEN), text + "\n");
     }
     let report = directory.join(report_name(time));
-    let _ = cx.update_window(window, |_, window, cx| {
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            "Levare se cerró inesperadamente",
-            Some(
-                "Se guardó un informe del fallo en la carpeta de datos de Levare. Si vuelve \
-                 a ocurrir, envíalo con una descripción de lo que estabas haciendo.",
-            ),
-            &["Mostrar el informe", "Cerrar"],
-            cx,
-        );
-        cx.spawn(async move |cx| {
-            if answer.await == Ok(0) {
-                let _ = cx.update(|cx| cx.reveal_path(&report));
+    cx.spawn(async move |cx| {
+        let answer = loop {
+            let asked = window.update(cx, |view, window, cx| {
+                if view.confirming {
+                    return None;
+                }
+                view.confirming = true;
+                Some(window.prompt(
+                    PromptLevel::Warning,
+                    "Levare se cerró inesperadamente",
+                    Some(
+                        "Se guardó un informe del fallo en la carpeta de datos de Levare. Si \
+                         vuelve a ocurrir, envíalo con una descripción de lo que estabas \
+                         haciendo.",
+                    ),
+                    &["Mostrar el informe", "Cerrar"],
+                    cx,
+                ))
+            });
+            match asked {
+                Ok(Some(answer)) => break answer,
+                Ok(None) => {
+                    Timer::after(Duration::from_millis(250)).await;
+                }
+                Err(_) => return,
             }
-        })
-        .detach();
-    });
+        };
+        let reveal = answer.await == Ok(0);
+        let _ = window.update(cx, |view, _, cx| {
+            view.confirming = false;
+            if reveal {
+                cx.reveal_path(&report);
+            }
+            cx.notify();
+        });
+    })
+    .detach();
 }
 
 fn directory() -> Option<PathBuf> {
