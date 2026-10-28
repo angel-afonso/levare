@@ -42,7 +42,7 @@ impl Api {
         // SAFETY: the optional pack explicitly supplies a sfizz library. Every
         // symbol is checked before use, with types from the pinned sfizz.h.
         unsafe {
-            let library = Library::new(path).map_err(error)?;
+            let library = load(path).map_err(error)?;
             macro_rules! symbol {
                 ($name:literal) => {
                     *library
@@ -70,6 +70,31 @@ impl Api {
             }))
         }
     }
+}
+
+/// On Windows the DLL's own folder is searched for the libraries it needs,
+/// so a `sfizz.dll` next to `levare.exe` finds its neighbours rather than
+/// whatever the current folder or `PATH` holds. Needs an absolute path.
+#[cfg(windows)]
+unsafe fn load(path: &Path) -> Result<Library, libloading::Error> {
+    use libloading::os::windows::{
+        LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+        Library as WindowsLibrary,
+    };
+    // SAFETY: the caller's contract, as for `Library::new`.
+    unsafe {
+        WindowsLibrary::load_with_flags(
+            path,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        )
+    }
+    .map(Library::from)
+}
+
+#[cfg(not(windows))]
+unsafe fn load(path: &Path) -> Result<Library, libloading::Error> {
+    // SAFETY: the caller's contract.
+    unsafe { Library::new(path) }
 }
 
 struct Voice {
@@ -412,9 +437,10 @@ impl NativeBank {
             let Some((pack, patch)) = first_pack_with(packs, instrument, seat) else {
                 continue;
             };
-            let library = pack
-                .library
-                .canonicalize()
+            // Absolute, as loading with the DLL's own folder searched needs,
+            // and a plain `C:\…` rather than `\\?\C:\…` on Windows.
+            let library = dunce::canonicalize(&pack.library)
+                .or_else(|_| std::path::absolute(&pack.library))
                 .unwrap_or_else(|_| pack.library.clone());
             if !apis.contains_key(&library) {
                 apis.insert(library.clone(), Api::open(&library)?);

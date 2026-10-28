@@ -8,7 +8,10 @@ mod install;
 mod tests;
 
 pub use catalog::{Archive, Catalog, Entry, License};
-pub use install::{Installed, Progress, Stage, install, installed, size_label, uninstall};
+pub use install::{
+    Installed, Prepared, Progress, Stage, install, installed, prepare_install, size_label,
+    uninstall,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoreError(pub String);

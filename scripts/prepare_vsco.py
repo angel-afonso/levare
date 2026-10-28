@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sys
 import tarfile
 
 PATCHES = [
@@ -40,6 +41,14 @@ def audit(root):
     return checked
 
 
+def engine_file_name():
+    if sys.platform == "win32":
+        return "sfizz.dll"
+    if sys.platform == "darwin":
+        return "libsfizz.dylib"
+    return "libsfizz.so"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
@@ -62,8 +71,9 @@ def main():
     count = audit(root)
     pack = destination / "vsco-ce"
     pack.mkdir(exist_ok=True)
-    extension = args.engine.suffix
-    engine = pack / ("libsfizz" + extension)
+    # The name Levare looks for on this system. The suffix of the input is no
+    # guide: a Linux build is often `libsfizz.so.1.2.3`.
+    engine = pack / engine_file_name()
     if args.engine.resolve() != engine.resolve():
         shutil.copy2(args.engine, engine)
     licenses = pack / "licenses"

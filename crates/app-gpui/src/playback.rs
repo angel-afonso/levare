@@ -1,10 +1,21 @@
 use score_core::{ElementId, Instrument, PartId, Score, StaffId};
-use score_platform::AudioOutput;
 use score_platform::mixer::{ChannelMix, ReverbSettings};
 use score_platform::sound_engine::{RoutingSignature, SoundBank};
+use score_platform::{AudioOutput, Health};
 use score_playback::{Audition, PlaybackPlan, Style, Tempo};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// A stream error is cured by reopening the stream once; another one this
+/// soon after means the device is not coming back by itself.
+const RECOVERY_WINDOW: Duration = Duration::from_secs(5);
+/// How often the default output device is checked while nothing plays.
+const DEVICE_CHECK: Duration = Duration::from_secs(2);
+/// Windows keeps a stream on the device that was default when it opened;
+/// macOS (the default-output unit) and Linux (ALSA's "default", routed by
+/// PipeWire or PulseAudio) follow the system's choice by themselves.
+const FOLLOW_DEFAULT_DEVICE: bool = cfg!(target_os = "windows");
 
 /// UI-owned transport. The audio callback only receives immutable prepared plans.
 pub struct Playback {
@@ -41,6 +52,10 @@ pub struct Playback {
     pub part_mix: HashMap<PartId, ChannelMix>,
     pub reverb: ReverbSettings,
     mix_channels: [ChannelMix; score_playback::PLAYBACK_CHANNELS],
+    /// When the stream was last reopened after an error.
+    recovered_at: Option<Instant>,
+    /// When the default output device was last checked.
+    device_checked_at: Option<Instant>,
 }
 
 impl Playback {
@@ -77,6 +92,8 @@ impl Playback {
             part_mix: HashMap::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
+            recovered_at: None,
+            device_checked_at: None,
         };
         playback.connect();
         playback
@@ -515,10 +532,21 @@ impl Playback {
     pub fn tick(&mut self) -> bool {
         self.just_finished = false;
         let was = self.playhead;
+        self.follow_default_device();
         let Some(output) = &mut self.output else {
             return false;
         };
-        if output.control.failed() {
+        let health = output.control.health();
+        // A hiccup (an ALSA error after suspend, say) gets one reopen,
+        // which keeps the sounds and the place in the score.
+        let recovered = health == Health::Interrupted
+            && self
+                .recovered_at
+                .is_none_or(|at| at.elapsed() >= RECOVERY_WINDOW)
+            && output.reopen().is_ok();
+        if recovered {
+            self.recovered_at = Some(Instant::now());
+        } else if health != Health::Running {
             self.output = None;
             self.playhead = None;
             self.clock = None;
@@ -556,6 +584,46 @@ impl Playback {
             })
             .or_else(|| self.playheads.first().copied());
         changed || was != self.playhead || playing
+    }
+}
+
+impl Playback {
+    /// Move to a new default output device, every few seconds while nothing
+    /// plays, where the system does not do it for us.
+    fn follow_default_device(&mut self) {
+        if !FOLLOW_DEFAULT_DEVICE
+            || self.is_playing()
+            || self
+                .device_checked_at
+                .is_some_and(|at| at.elapsed() < DEVICE_CHECK)
+        {
+            return;
+        }
+        self.device_checked_at = Some(Instant::now());
+        let Some(output) = &mut self.output else {
+            return;
+        };
+        let Some(default) = score_platform::default_output_device_name() else {
+            return;
+        };
+        if output.device_name() == Some(default.as_str()) || output.reopen().is_ok() {
+            return;
+        }
+        // The new device cannot run at the old rate: open afresh. A chosen
+        // library is prepared again on the next play or audition.
+        self.stop();
+        self.output = None;
+        self.sound_signature = None;
+        if self.selected_bank.is_none() {
+            match AudioOutput::open() {
+                Ok(output) => self.install_output(output),
+                Err(error) => {
+                    self.error = Some(format!(
+                        "No se pudo abrir la salida de audio ({error}). Pulsa Reintentar audio en Sonidos."
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -609,6 +677,8 @@ mod tests {
             part_mix: HashMap::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
+            recovered_at: None,
+            device_checked_at: None,
         }
     }
 

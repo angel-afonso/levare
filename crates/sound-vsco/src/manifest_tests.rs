@@ -299,3 +299,30 @@ fn hidden_folders_in_progress_are_not_packages() {
     assert!(errors.is_empty());
     assert_eq!(packs.len(), 1);
 }
+
+#[test]
+fn sfizz_is_looked_for_next_to_the_executable_under_this_system_s_name() {
+    let name = super::manifest::engine_file_name();
+    #[cfg(target_os = "windows")]
+    assert_eq!(name, "sfizz.dll");
+    #[cfg(target_os = "linux")]
+    assert_eq!(name, "libsfizz.so");
+    #[cfg(target_os = "macos")]
+    assert_eq!(name, "libsfizz.dylib");
+    let root = Path::new("levare");
+    let executable = root.join("target").join("debug").join("levare");
+    let candidates = super::manifest::engine_candidates(&executable);
+    assert_eq!(candidates[0], root.join("target").join("debug").join(&name));
+    let mut rest = candidates[1..].iter();
+    if cfg!(target_os = "macos") {
+        // Levare.app/Contents/MacOS/levare → Contents/Frameworks.
+        assert_eq!(
+            rest.next(),
+            Some(&root.join("target").join("Frameworks").join(&name))
+        );
+    }
+    let vsco = |dir: &Path| dir.join("soundpacks").join("vsco-ce").join(&name);
+    assert_eq!(rest.next(), Some(&vsco(&root.join("target").join("debug"))));
+    assert_eq!(rest.next(), Some(&vsco(&root.join("target"))));
+    assert_eq!(rest.next(), Some(&vsco(root)));
+}
