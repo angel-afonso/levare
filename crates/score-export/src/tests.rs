@@ -170,7 +170,6 @@ fn validates_selections_and_protects_existing_destinations() {
     assert!(export(&score, &all, &dir.path().join("missing/delivery")).is_err());
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn exports_general_score_and_every_part_in_both_formats() {
     let score = menuetto();

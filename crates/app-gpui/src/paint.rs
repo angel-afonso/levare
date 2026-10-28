@@ -256,7 +256,7 @@ pub fn score_canvas(
                                     px(18. * scale),
                                     &[TextRun {
                                         len: text.len(),
-                                        font: font("Times New Roman").bold(),
+                                        font: font(crate::fonts::SERIF).bold(),
                                         color: rgb(color).into(),
                                         background_color: None,
                                         underline: None,
@@ -287,7 +287,7 @@ pub fn score_canvas(
                 at.x += music_font.bounds(glyph, 28. * scale).size.width + px(8. * scale);
                 text_at(
                     &format!("= {}", mark.mark.bpm),
-                    font("Times New Roman"),
+                    font(crate::fonts::SERIF),
                     18. * scale,
                     at,
                     color,
@@ -420,7 +420,7 @@ pub fn score_canvas(
                     mixed_text_at(
                         &music_font,
                         &ending.text,
-                        font("Times New Roman").bold(),
+                        font(crate::fonts::SERIF).bold(),
                         18. * scale,
                         origin
                             + point(px(ending.position.x * scale), px(ending.position.y * scale)),
@@ -459,7 +459,7 @@ pub fn score_canvas(
                     mixed_text_at(
                         &music_font,
                         &ending.label,
-                        font("Times New Roman").bold(),
+                        font(crate::fonts::SERIF).bold(),
                         14. * scale,
                         origin
                             + point(
@@ -482,7 +482,7 @@ pub fn score_canvas(
                 } else {
                     0x303735
                 };
-                let font = font("Times New Roman").bold().italic();
+                let font = font(crate::fonts::SERIF).bold().italic();
                 let text_width =
                     mixed_text_width(&music_font, &label.text, &font, label.size * scale, window);
                 let x = label.position.x
@@ -520,7 +520,7 @@ pub fn score_canvas(
                 mixed_text_at(
                     &music_font,
                     &label.text,
-                    font("Times New Roman"),
+                    font(crate::fonts::SERIF),
                     score_layout::STAFF_LABEL_SIZE * scale,
                     origin + point(px(label.position.x * scale), px(label.position.y * scale)),
                     if label.part == cursor.part
@@ -595,7 +595,7 @@ pub fn score_canvas(
                         mixed_text_at(
                             &music_font,
                             label.text.as_str(),
-                            font("Times New Roman"),
+                            font(crate::fonts::SERIF),
                             18. * scale,
                             at,
                             color,
@@ -605,7 +605,7 @@ pub fn score_canvas(
                     } else {
                         text_at(
                             label.text.as_str(),
-                            font("Times New Roman").italic(),
+                            font(crate::fonts::SERIF).italic(),
                             16. * scale,
                             at,
                             color,
@@ -617,7 +617,7 @@ pub fn score_canvas(
                 for lyric in &measure.content.lyrics {
                     text_at(
                         lyric.syllable.text(),
-                        font("Times New Roman"),
+                        font(crate::fonts::SERIF),
                         16. * scale,
                         offset + point(px(lyric.position.x * scale), px(lyric.position.y * scale)),
                         if selected.contains(&lyric.element)
