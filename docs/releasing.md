@@ -1,87 +1,152 @@
-# Publicar una versión
+# Releasing
 
-Levare se publica en GitHub Releases como una app universal para Mac (Apple Silicon e
-Intel), en `.dmg` para instalarla y en `.zip` para el actualizador de la app. La versión
-y el changelog salen de los mensajes de commit (ver `AGENTS.md`).
+Levare is released on GitHub Releases for macOS, Windows and Linux at the same time,
+from the same commit and with the same version. The version and the changelog come from
+the commit messages (see `AGENTS.md`).
 
-## Los tres workflows
+## The three workflows
 
-| Workflow | Cuándo | Qué hace |
+| Workflow | When | What it does |
 | --- | --- | --- |
-| **CI** (`ci.yml`) | Cada push a `main` y cada pull request | Formato, clippy y pruebas en macOS. |
-| **Release PR** (`release-pr.yml`) | A mano: Actions → Release PR → Run workflow, desde `main` | release-plz abre (o actualiza) la pull request «chore: publica X.Y.Z», que sube `[workspace.package] version` y añade las entradas a `CHANGELOG.md`. |
-| **Release** (`release.yml`) | Cada push a `main`; un tag `v*`; o a mano | Si la versión de `Cargo.toml` aún no tiene tag, la etiqueta, compila, firma y publica. Si ya lo tiene, no hace nada. A mano desde una rama solo compila y deja la app como artefacto. |
+| **CI** (`ci.yml`) | Every push to `main` and every pull request | Formatting; clippy and tests on macOS, Linux and Windows; on Linux and Windows it also opens the app for 30 seconds and keeps a screenshot. |
+| **Release PR** (`release-pr.yml`) | By hand: Actions → Release PR → Run workflow, from `main` | release-plz opens (or updates) the "chore: release X.Y.Z" pull request, which raises `[workspace.package] version` and adds the entries to `CHANGELOG.md`. |
+| **Release** (`release.yml`) | Every push to `main`; a `v*` tag; or by hand | If the `Cargo.toml` version has no tag yet, tags it, builds every platform, signs and publishes. If it has one, does nothing. |
 
-Para publicar: ejecuta Release PR, revisa la pull request (sobre todo el changelog) y
-fusiónala. El push a `main` que eso produce hace el resto.
+To release: run Release PR, review the pull request (the changelog above all) and merge
+it. The push to `main` that makes does the rest.
 
-## Qué publica una versión
+### A test build
 
-- `levare-vX.Y.Z-universal-apple-darwin.dmg`: el instalador (arrastrar Levare a
-  Aplicaciones).
-- `levare-vX.Y.Z-universal-apple-darwin.zip`: la misma app, la que descarga el
-  actualizador.
-- `latest.json` y `….zip.minisig`: el manifiesto que lee la app y la firma del zip.
-- `SHA256SUMS`.
+Running **Release** by hand (Actions → Release → Run workflow, or
+`gh workflow run release.yml --ref <branch>`) never tags or publishes, from any branch.
+It builds every archive and keeps each as a workflow artifact, so a branch can check the
+packaging before it is merged. With `UPDATE_SIGNING_KEY` set, it also signs the archives
+and writes a `latest.json` for the commit (artifact `levare-update`), which tests the
+signing; nothing reads it.
 
-La app lleva el motor sfizz en `Contents/Frameworks`, compilado en el workflow con
-`scripts/build_sfizz.sh` (sfizz 1.2.3 universal, ver `docs/vsco.md`) y guardado en caché
-mientras el script no cambie.
+## What a release publishes
 
-## Secretos del repositorio
+| File | For |
+| --- | --- |
+| `levare-vX.Y.Z-universal-apple-darwin.dmg` | macOS installer: drag Levare to Applications. |
+| `levare-vX.Y.Z-universal-apple-darwin.zip` | The same `Levare.app`; what the macOS updater downloads. |
+| `levare-vX.Y.Z-x86_64-pc-windows-msvc.zip` | Windows: a `Levare\` folder with `levare.exe`, `sfizz.dll` and `licenses\`. Unzip it anywhere you can write and run `levare.exe`; the updater downloads the same file. |
+| `levare-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` | Linux: a `levare/` folder with `levare`, `libsfizz.so`, `dev.partitura.editor.desktop`, `levare.png`, `install.sh`, `README.txt` and `licenses/`. `./install.sh` adds Levare to the user's applications menu; the updater downloads the same file. |
+| `latest.json` and one `….minisig` per archive | The manifest the app reads and each archive's signature. |
+| `SHA256SUMS` | Checksums of all of the above. |
+
+- **macOS**: one universal app for Apple Silicon and Intel (both architectures built
+  separately, then merged with `lipo`), macOS 11 or newer.
+- **Windows**: x86_64, built with MSVC. `sfizz.dll` links the C runtime statically,
+  so the folder needs no Visual C++ redistributable.
+- **Linux**: x86_64, built on Ubuntu 22.04, so it runs on distributions with glibc 2.35
+  or newer (the build logs the newest glibc symbol it uses). It needs ALSA (PulseAudio and
+  PipeWire are reached through ALSA), `libdbus-1-3` (real-time priority for the audio
+  thread), a Vulkan driver, and xdg-desktop-portal for the open and save dialogs. The desktop entry is named after Levare's app id (`dev.partitura.editor`, also its
+  `StartupWMClass`), so the desktop matches the window to its entry and icon.
+
+### The sfizz engine
+
+Each release ships sfizz 1.2.3, the SFZ engine for the sound packs, built in the
+workflow by `scripts/build_sfizz.sh` from the official source archive (checked against
+its SHA-256; see `docs/vsco.md`):
+
+| System | Library | Where it goes |
+| --- | --- | --- |
+| macOS | `libsfizz.dylib`, universal (arm64 + x86_64), macOS 11+ | `Levare.app/Contents/Frameworks/` |
+| Windows | `sfizz.dll`, x64, static C runtime (`/MT`) | Next to `levare.exe` |
+| Linux | `libsfizz.so`, x86_64, libstdc++ linked in (needs only glibc) | Next to `levare` |
+
+The script needs cmake and a C++ compiler (Xcode's command line tools, GCC, or Visual
+Studio from Git Bash on Windows). Its licenses go into `licenses/sfizz`. The workflow
+caches each system's build on the script's hash, so sfizz is only rebuilt when the
+script changes.
+
+## Repository secrets
 
 Settings → Secrets and variables → Actions.
 
-| Secreto | Obligatorio | Qué es |
+| Secret | Required | What it is |
 | --- | --- | --- |
-| `UPDATE_SIGNING_KEY` | Sí, para publicar | El contenido entero del archivo de clave secreta minisign (sin contraseña) cuya clave pública es `crates/app-gpui/assets/update.pub`. Sin él, un push a `main` no etiqueta, compila ni publica nada (Release solo avisa). |
-| `MACOS_CERTIFICATE` | No | El certificado «Developer ID Application» exportado como `.p12`, en base64 (`base64 -i cert.p12`). |
-| `MACOS_CERTIFICATE_PASSWORD` | Con el anterior | La contraseña del `.p12`. |
-| `APPLE_API_KEY` | No | La clave de App Store Connect API (`AuthKey_….p8`) en base64, para notarizar. |
-| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | Con el anterior | Su Key ID y su Issuer ID. |
+| `UPDATE_SIGNING_KEY` | Yes, to release | The whole minisign secret key file (no password) whose public key is `crates/app-gpui/assets/update.pub`. Without it, a push to `main` does not tag, build or publish anything (Release only warns). |
+| `MACOS_CERTIFICATE` | No | The "Developer ID Application" certificate exported as `.p12`, in base64 (`base64 -i cert.p12`). |
+| `MACOS_CERTIFICATE_PASSWORD` | With the above | The `.p12`'s password. |
+| `APPLE_API_KEY` | No | The App Store Connect API key (`AuthKey_….p8`) in base64, for notarization. |
+| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | With the above | Its Key ID and Issuer ID. |
 
-Sin los secretos de Apple la app lleva una firma ad hoc y no está notarizada: la primera
-vez hay que abrirla con clic derecho → Abrir. Con ellos, Gatekeeper la abre sin avisos.
+Without the Apple secrets the macOS app gets an ad-hoc signature and is not notarized:
+the first time it has to be opened with right-click → Open. With them, Gatekeeper opens
+it without a warning.
 
-Además, Release PR necesita que Actions pueda abrir pull requests: Settings → Actions →
-General → «Allow GitHub Actions to create and approve pull requests».
+The Windows and Linux builds are not code-signed. Windows SmartScreen may warn the first
+time `levare.exe` runs ("More info → Run anyway"). Updates are still verified by their
+minisign signature, as on macOS.
 
-### La clave de las actualizaciones
+Release PR also needs Actions to be allowed to open pull requests: Settings → Actions →
+General → "Allow GitHub Actions to create and approve pull requests".
 
-La app solo instala un zip firmado con la clave secreta cuya pública lleva dentro
-(`crates/app-gpui/assets/update.pub`), y solo si la firma nombra esa versión y ese
-archivo. **Guarda una copia de la clave secreta fuera del ordenador**: si se pierde, las
-copias ya instaladas no aceptarán ninguna actualización firmada con otra clave y habrá
-que reinstalarlas a mano desde el `.dmg`.
+### The update signing key
 
-Para cambiarla: genera un par nuevo sin contraseña (`minisign -G -W -p update.pub -s
-update.key`), sustituye `crates/app-gpui/assets/update.pub`, actualiza el secreto y
-publica una versión; las copias instaladas necesitan esa versión instalada a mano.
+The app only installs an archive signed with the secret key whose public half it carries
+(`crates/app-gpui/assets/update.pub`), and only if the signature's trusted comment names
+that version and that file (`levare X.Y.Z <file>`). **Keep a copy of the secret key off
+the computer**: if it is lost, installed copies will not accept any update signed with
+another key and have to be reinstalled by hand.
 
-## El actualizador de la app
+To change it: generate a new pair without a password (`minisign -G -W -p update.pub -s
+update.key`), replace `crates/app-gpui/assets/update.pub`, update the secret and release
+a version; installed copies need that version installed by hand.
 
-En una compilación de release que se ejecuta desde `Levare.app`:
+## The in-app updater
 
-- Diez segundos después de abrirse, y cada seis horas, busca en
-  `https://github.com/angel-afonso/levare/releases/latest/download/latest.json` una
-  versión más nueva, la descarga a la carpeta de datos (`actualizaciones/`, que se vacía al abrir Levare) y comprueba
-  su SHA-256 y su firma. La barra de estado muestra el progreso y, al final,
-  «Reiniciar para actualizar a X.Y.Z».
-- **Levare → Reiniciar para actualizar** (o ese texto de la barra) comprueba la firma de
-  código de la app nueva (del mismo equipo de Apple que la instalada, si esta lo tiene),
-  la cambia por la instalada y reinicia. El trabajo sin guardar vuelve por el
-  autoguardado; una partitura guardada se vuelve a abrir. No reinicia mientras trabaja el
-  agente, se guarda o exporta algo o se instalan sonidos, ni con cambios sin guardar si el
-  autoguardado no está disponible: lo dice en la barra de estado.
-- **Levare → Buscar actualizaciones…** busca en el momento y dice lo que encuentra.
-- **Levare → Activar o desactivar la búsqueda automática de actualizaciones** lo guarda en
-  `actualizaciones.json`, en la carpeta de datos.
+`latest.json` lists one archive per platform key: `darwin-aarch64` and `darwin-x86_64`
+(both the universal zip), `linux-x86_64` and `windows-x86_64`. Each copy of Levare reads
+only its own key, so adding platforms does not affect copies already installed (0.1.0 on
+macOS reads the new manifests as before).
 
-Con `cargo run` (compilación de desarrollo) no busca nada y «Buscar actualizaciones…» lo
-dice.
+In a release build:
 
-## La primera versión
+- Ten seconds after it opens, and every six hours, it looks for a newer version in
+  `https://github.com/angel-afonso/levare/releases/latest/download/latest.json`,
+  downloads it into the data folder (`actualizaciones/`, emptied when Levare opens) and
+  checks its SHA-256 and its signature. The status bar shows the progress and, at the
+  end, «Reiniciar para actualizar a X.Y.Z».
+- **Reiniciar para actualizar** (the status bar item, or the command) unpacks the archive
+  next to the installation and swaps it in, then restarts. It does not restart while the
+  agent is working, something is being saved or exported or sounds are being installed,
+  nor with unsaved changes if the autosave is unavailable: the status bar says so.
+  Unsaved work comes back through the autosave; a saved score is opened again.
+- **Buscar actualizaciones…** checks right away and says what it found.
+- **Activar o desactivar la búsqueda automática de actualizaciones** is saved in
+  `actualizaciones.json`, in the data folder.
 
-Todavía no hay ningún tag, así que el primer push a `main` con `UPDATE_SIGNING_KEY`
-configurado publica `v0.1.0` (la versión actual de `Cargo.toml`). Sin el secreto, ese
-push no publica nada. Las siguientes versiones salen de las pull requests de Release PR.
+The commands are in the Levare menu on macOS and in the in-window File menu on Windows and
+Linux; command search finds them everywhere.
+
+### How each system installs an update
+
+- **macOS**: `ditto` unpacks `Levare.app`. Its code signature must verify, and come from
+  the same Apple team as the installed app if that one has a team. The installed bundle
+  is renamed to `.Levare.app.old`, the new one moved into its place (the old one is put
+  back if that fails), and GPUI reopens the bundle.
+- **Windows and Linux**: the archive (zip or tar.gz, unpacked in Rust; links and paths
+  leaving the folder are skipped) must contain the executable. Every file of its folder
+  replaces the one of the same name in the folder of the running executable:
+  `levare.exe` and `sfizz.dll`, or `levare` and `libsfizz.so`, plus the licenses and the
+  desktop files. Each replaced file is first renamed to `.<name>.old`; Windows can rename
+  a running executable or a loaded DLL but not overwrite or delete it. If any step fails,
+  every file moved so far is taken out and the old ones are put back. The `.old` files
+  are deleted at once where the system allows it, and otherwise the next time Levare
+  starts. Levare then starts the new executable once the old process has exited, and
+  quits.
+
+Levare does not update itself when:
+
+- it is a development build (`cargo run`), or runs from cargo's `target/` folder (for
+  example `cargo run --release`);
+- on macOS, it is not running from `Levare.app`;
+- on Windows and Linux, its folder is not writable (for example an install under `/usr`,
+  `/opt` or `C:\Program Files`). The status bar says to install the new version from the
+  releases page or move Levare to a folder of the user's.
+
+«Buscar actualizaciones…» says why in each case.
