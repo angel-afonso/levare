@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Levare's score formats, for shared-mime-info. install.sh copies this file
+     to ~/.local/share/mime/packages. MusicXML needs nothing here: the
+     freedesktop.org database already knows it. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.levare.score">
+    <comment>Levare score</comment>
+    <comment xml:lang="es">Partitura de Levare</comment>
+    <sub-class-of type="application/zip"/>
+    <generic-icon name="audio-x-generic"/>
+    <glob pattern="*.levare"/>
+    <!-- A ZIP whose first entry is a stored "mimetype" file holding the
+         type, as in OpenDocument and EPUB. -->
+    <magic priority="70">
+      <match type="string" offset="30" value="mimetype">
+        <match type="string" offset="38" value="application/vnd.levare.score"/>
+      </match>
+    </magic>
+  </mime-type>
+  <mime-type type="application/x-levare-partitura">
+    <comment>Levare score (earlier format)</comment>
+    <comment xml:lang="es">Partitura de Levare (formato anterior)</comment>
+    <sub-class-of type="application/json"/>
+    <generic-icon name="audio-x-generic"/>
+    <glob pattern="*.partitura"/>
+  </mime-type>
+</mime-info>

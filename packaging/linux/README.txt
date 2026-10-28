@@ -3,8 +3,11 @@ Levare para Linux
 
 Abrir Levare: ejecuta ./levare desde esta carpeta.
 
-Añadirlo al menú de aplicaciones: ejecuta ./install.sh. Copia el icono y una
-entrada de menú en ~/.local/share; Levare sigue en esta carpeta.
+Añadirlo al menú de aplicaciones: ejecuta ./install.sh. Copia el icono, una
+entrada de menú y los tipos de archivo .levare y .partitura en ~/.local/share,
+para que el gestor de archivos abra las partituras con Levare; Levare sigue en
+esta carpeta. Si mueves la carpeta, vuelve a ejecutarlo. ./install.sh
+--uninstall quita lo que añadió.
 
 Levare se actualiza solo dentro de esta carpeta, así que déjala donde puedas
 escribir (por ejemplo ~/Aplicaciones/levare), no en /usr ni en /opt.

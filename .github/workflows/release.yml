@@ -464,7 +464,8 @@ jobs:
           echo "ARCHIVE=levare-$version-${{ matrix.target }}" >> "$GITHUB_ENV"
 
       # levare/ holds the executable, libsfizz.so, a desktop entry with its
-      # icon and an install script that adds it to the user's menu.
+      # icon, the score file types and an install script that adds them to
+      # the user's desktop.
       - name: Linux archive
         if: runner.os == 'Linux'
         working-directory: ${{ env.WORKSPACE }}
@@ -478,7 +479,7 @@ jobs:
           cp -R licenses/. "$folder/licenses/"
           cp -R sfizz/licenses/sfizz "$folder/licenses/sfizz"
           scripts/copy_licenses.sh "$folder/licenses"
-          cp packaging/linux/dev.partitura.editor.desktop packaging/linux/install.sh packaging/linux/README.txt "$folder/"
+          cp packaging/linux/dev.partitura.editor.desktop packaging/linux/levare-mime.xml packaging/linux/install.sh packaging/linux/README.txt "$folder/"
           convert assets/branding/levare/icon-macos-v2.png -resize 256x256 "$folder/levare.png"
           chmod 755 "$folder/levare" "$folder/install.sh"
           chmod 644 "$folder/libsfizz.so"

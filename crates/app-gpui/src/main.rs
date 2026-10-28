@@ -34,6 +34,7 @@ mod sound_banks;
 mod staff_text;
 #[cfg(feature = "vsco")]
 mod store;
+mod system_open;
 mod ui;
 mod updates;
 
@@ -3713,7 +3714,9 @@ fn recovery_path() -> Option<PathBuf> {
 
 fn main() {
     diagnostics::install();
-    Application::new().run(|cx| {
+    let app = Application::new();
+    let to_open = system_open::listen(&app);
+    app.run(|cx| {
         app_icon::install();
         fonts::register(cx);
         // App-level ownership survives window/view teardown during a native
@@ -3763,6 +3766,7 @@ fn main() {
         })
         .detach();
         diagnostics::announce_unseen_crash(window.into(), cx);
+        system_open::deliver(to_open, cx);
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();

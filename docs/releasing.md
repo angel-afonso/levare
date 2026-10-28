@@ -31,7 +31,7 @@ signing; nothing reads it.
 | `levare-vX.Y.Z-universal-apple-darwin.dmg` | macOS installer: drag Levare to Applications. |
 | `levare-vX.Y.Z-universal-apple-darwin.zip` | The same `Levare.app`; what the macOS updater downloads. |
 | `levare-vX.Y.Z-x86_64-pc-windows-msvc.zip` | Windows: a `Levare\` folder with `levare.exe`, `sfizz.dll` and `licenses\`. Unzip it anywhere you can write and run `levare.exe`; the updater downloads the same file. |
-| `levare-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` | Linux: a `levare/` folder with `levare`, `libsfizz.so`, `dev.partitura.editor.desktop`, `levare.png`, `install.sh`, `README.txt` and `licenses/`. `./install.sh` adds Levare to the user's applications menu; the updater downloads the same file. |
+| `levare-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` | Linux: a `levare/` folder with `levare`, `libsfizz.so`, `dev.partitura.editor.desktop`, `levare-mime.xml`, `levare.png`, `install.sh`, `README.txt` and `licenses/`. `./install.sh` adds Levare to the user's applications menu and registers the `.levare` and `.partitura` file types (`--uninstall` removes both); the updater downloads the same file. |
 | `latest.json` and one `….minisig` per archive | The manifest the app reads and each archive's signature. |
 | `SHA256SUMS` | Checksums of all of the above. |
 
