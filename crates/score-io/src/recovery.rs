@@ -1,5 +1,5 @@
 //! A single writer owns the recovery file. Ordinary saves never target it.
-use super::{FileError, MAX_FILE_BYTES, decode, encode, error};
+use super::{EXTENSION, FileError, MAX_FILE_BYTES, decode, encode, encode_file, error};
 use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -256,6 +256,33 @@ pub fn set_aside_recovery(path: &Path) -> Result<PathBuf, FileError> {
     Ok(kept)
 }
 
+/// Saves `score` as a new `.levare` file in `folder`, under a dated name and
+/// never over another file: the copy Levare keeps when it quits and the
+/// autosave could not take the unsaved work.
+pub fn save_emergency_copy(folder: &Path, score: &Score) -> Result<PathBuf, FileError> {
+    let bytes = encode_file(score)?;
+    std::fs::create_dir_all(folder)?;
+    let stamp = timestamp(SystemTime::now());
+    for copy in 1.. {
+        let path = folder.join(dated_name("Copia de emergencia", &stamp, copy, EXTENSION));
+        // Reserved first, so two Levare windows quitting together cannot pick
+        // the same name.
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+        return match atomic_write::write(&path, &bytes) {
+            Ok(()) => Ok(path),
+            Err(e) => {
+                let _ = std::fs::remove_file(&path);
+                Err(e.into())
+            }
+        };
+    }
+    unreachable!("an unused name")
+}
+
 fn dated_name(label: &str, stamp: &str, copy: u32, extension: &str) -> String {
     match copy {
         1 => format!("{label} {stamp}.{extension}"),
@@ -323,6 +350,20 @@ mod tests {
         assert_ne!(second, kept);
         assert_eq!(std::fs::read(&kept).unwrap(), unreadable);
         assert_eq!(std::fs::read(&second).unwrap(), b"{");
+    }
+    #[test]
+    fn emergency_copies_open_as_scores_and_never_replace_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("Levare");
+        let mut score = Score::default();
+        score.append_measure().unwrap();
+        let first = save_emergency_copy(&folder, &score).unwrap();
+        let second = save_emergency_copy(&folder, &Score::default()).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), Some(folder.as_path()));
+        assert_eq!(first.extension().unwrap(), EXTENSION);
+        assert_eq!(super::super::open(&first).unwrap().score, score);
+        assert_eq!(super::super::open(&second).unwrap().score, Score::default());
     }
     #[test]
     fn set_aside_names_carry_the_utc_date_and_time() {

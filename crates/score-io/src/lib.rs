@@ -18,7 +18,9 @@ use error::error;
 pub use error::{FileError, FileErrorKind};
 pub use names::file_name;
 pub use recent::RecentFiles;
-pub use recovery::{RecoveredScore, Recovery, load_recovery, set_aside_recovery};
+pub use recovery::{
+    RecoveredScore, Recovery, load_recovery, save_emergency_copy, set_aside_recovery,
+};
 use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};

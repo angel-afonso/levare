@@ -3711,8 +3711,37 @@ fn main() {
             eprintln!("Recuperación no disponible: {error}");
         }
         let pending = recovery.as_ref().ok().cloned();
-        cx.on_app_quit(move |_| {
-            if let Some(recovery) = &pending
+        let shortcuts = Shortcuts::load(cx);
+        shortcuts.install(cx);
+        let (bounds, min_size) = ui::window_frame::first_window(cx);
+        let window = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(min_size),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Levare".into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(16.), px(16.))),
+                    }),
+                    // Linux: Levare's title bar replaces the compositor's, when it
+                    // agrees (`ui::window_frame`). macOS and Windows ignore it.
+                    window_decorations: Some(WindowDecorations::Client),
+                    // The macOS bundle id: Linux desktops match the window to
+                    // Levare's desktop entry and icon by it.
+                    app_id: Some("dev.partitura.editor".into()),
+                    ..Default::default()
+                },
+                |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
+            )
+            .expect("open Levare window");
+        cx.on_app_quit(move |cx| {
+            // The window is gone after a close, which already asked about
+            // unsaved changes; the writer still finishes what it holds.
+            if window
+                .update(cx, |view, _, _| view.keep_unsaved_on_quit())
+                .is_err()
+                && let Some(recovery) = &pending
                 && let Err(error) = recovery.flush()
             {
                 eprintln!("No se pudo guardar la recuperación: {error}");
@@ -3720,29 +3749,6 @@ fn main() {
             async {}
         })
         .detach();
-        let shortcuts = Shortcuts::load(cx);
-        shortcuts.install(cx);
-        let (bounds, min_size) = ui::window_frame::first_window(cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(min_size),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Levare".into()),
-                    appears_transparent: true,
-                    traffic_light_position: Some(point(px(16.), px(16.))),
-                }),
-                // Linux: Levare's title bar replaces the compositor's, when it
-                // agrees (`ui::window_frame`). macOS and Windows ignore it.
-                window_decorations: Some(WindowDecorations::Client),
-                // The macOS bundle id: Linux desktops match the window to
-                // Levare's desktop entry and icon by it.
-                app_id: Some("dev.partitura.editor".into()),
-                ..Default::default()
-            },
-            |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
-        )
-        .expect("open Levare window");
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
