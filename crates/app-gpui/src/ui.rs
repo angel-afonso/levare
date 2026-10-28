@@ -402,8 +402,8 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
 }
 
 fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
-    div()
-        .h(px(44.))
+    let bar = div()
+        .h(px(window_frame::TITLEBAR_HEIGHT))
         .flex_shrink_0()
         .flex()
         .items_center()
@@ -470,13 +470,7 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
                     tab.child(div().text_color(rgb(BLUE)).child("●"))
                 }),
         )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()),
-        )
+        .child(window_frame::drag_area().flex_1().min_w_0().h_full())
         .child(command_search::search_box(view, cx))
         .child(
             command_button(
@@ -548,6 +542,8 @@ fn titlebar(view: &AppView, title: String, cx: &Context<AppView>) -> Div {
             .bg(rgb(TEXT))
             .text_color(rgb(FIELD)),
         )
+        .children(window_frame::window_controls(view));
+    window_frame::titlebar_frame(view, bar)
 }
 const MUSIC_SYMBOL_PADDING: f32 = 4.;
 

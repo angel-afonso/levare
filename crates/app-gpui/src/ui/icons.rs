@@ -46,6 +46,11 @@ pub enum Icon {
     ChevronDown,
     /// A folded group.
     ChevronRight,
+    /// Window caption buttons, where Levare draws its own title bar.
+    WindowMinimize,
+    WindowMaximize,
+    WindowRestore,
+    WindowClose,
 }
 
 impl Icon {
@@ -398,6 +403,18 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                 }
                 Icon::ChevronDown => line(&[(5., 7.), (9., 11.), (13., 7.)]),
                 Icon::ChevronRight => line(&[(7., 5.), (11., 9.), (7., 13.)]),
+                Icon::WindowMinimize => line(&[(4., 9.), (14., 9.)]),
+                Icon::WindowMaximize => {
+                    line(&[(4., 4.), (14., 4.), (14., 14.), (4., 14.), (4., 4.)])
+                }
+                Icon::WindowRestore => {
+                    line(&[(4., 6.), (12., 6.), (12., 14.), (4., 14.), (4., 6.)]);
+                    line(&[(6., 6.), (6., 4.), (14., 4.), (14., 12.), (12., 12.)]);
+                }
+                Icon::WindowClose => {
+                    line(&[(4., 4.), (14., 14.)]);
+                    line(&[(14., 4.), (4., 14.)]);
+                }
             }
             if let Ok(path) = path.build() {
                 window.paint_path(path, rgb(color));

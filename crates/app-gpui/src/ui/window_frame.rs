@@ -1,8 +1,24 @@
-//! The window itself: its first size, its title, and later the parts of its
-//! frame Levare draws per platform.
+//! The window itself: its first size, its title, and the parts of its frame
+//! Levare draws itself, per platform:
+//!
+//! - macOS keeps its traffic lights inside Levare's title bar; AppKit moves the
+//!   window from the bar's empty space.
+//! - Windows has no caption once the title bar is Levare's, so Levare draws the
+//!   minimize, maximize and close buttons and marks them, and the bar's empty
+//!   space, as window control areas. Windows' own hit testing then gives the
+//!   drag, snap layouts and double-click to maximize.
 
+use super::icons::{Icon, icon_sized};
 use super::*;
 
+/// Height of Levare's title bar; the Windows caption buttons fill it.
+pub const TITLEBAR_HEIGHT: f32 = 44.;
+/// Windows caption buttons follow the system's: 46 px wide.
+const CAPTION_WIDTH: f32 = 46.;
+/// Hover colour of the Windows close button, the system's red.
+const CLOSE_HOVER: u32 = 0xc42b1c;
+/// Thickness of the top resize edge on Windows, above the drag area.
+const TOP_RESIZE: f32 = 4.;
 /// The size the first window asks for, and its smallest size.
 const PREFERRED: (f32, f32) = (1440., 1000.);
 const MINIMUM: (f32, f32) = (960., 680.);
@@ -15,16 +31,18 @@ const SCREEN_MARGIN: (f32, f32) = (32., 96.);
 pub struct FrameState {
     /// The window title last sent to the platform.
     title: String,
+    maximized: bool,
 }
 
 impl FrameState {
-    /// Sends the title only when it changed: on X11 every title change is a
-    /// round trip to the server, and Levare renders every frame of playback.
+    /// Reads the frame state for this render and sends the title only when it
+    /// changed: on X11 every title change is a round trip to the server.
     pub fn sync(&mut self, window: &mut Window, title: String) {
         if title != self.title {
             window.set_window_title(&title);
             self.title = title;
         }
+        self.maximized = window.is_maximized();
     }
 }
 
@@ -53,6 +71,105 @@ fn fit_first_window(screen: Option<Size<Pixels>>) -> (Size<Pixels>, Size<Pixels>
         (screen.height - px(SCREEN_MARGIN.1)).max(px(MINIMUM.1 / 2.)),
     );
     (preferred.min(&room), minimum.min(&room))
+}
+
+/// Settings the title bar itself needs on each platform.
+pub fn titlebar_frame(view: &AppView, bar: Div) -> Div {
+    if cfg!(target_os = "windows") {
+        // Occluding keeps GPUI from handling presses on the bar's empty space
+        // and the caption buttons (the editor would take focus and swallow
+        // them), so Windows gets them and drags, snaps or closes the window.
+        bar.relative()
+            .occlude()
+            .pr_0()
+            .when(!view.ui.frame.maximized, |bar| {
+                // A strip with no control area, so Windows offers its top
+                // resize edge there instead of the drag area's caption.
+                bar.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .h(px(TOP_RESIZE))
+                        .occlude(),
+                )
+            })
+    } else {
+        bar
+    }
+}
+
+/// The title bar's empty space, which moves the window.
+pub fn drag_area() -> Stateful<Div> {
+    let area = div().id("titlebar-drag");
+    if cfg!(target_os = "windows") {
+        return area.window_control_area(WindowControlArea::Drag);
+    }
+    // macOS: AppKit moves the window. Linux has the compositor's title bar
+    // as well.
+    area.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
+}
+
+/// Minimize, maximize or restore, and close, at the right of the title bar,
+/// when the platform leaves them to Levare.
+pub fn window_controls(view: &AppView) -> Option<AnyElement> {
+    let frame = &view.ui.frame;
+    let maximize = if frame.maximized {
+        Icon::WindowRestore
+    } else {
+        Icon::WindowMaximize
+    };
+    if cfg!(target_os = "windows") {
+        return Some(
+            div()
+                .flex()
+                .h_full()
+                .flex_shrink_0()
+                .child(caption_button(
+                    "window-minimize",
+                    Icon::WindowMinimize,
+                    WindowControlArea::Min,
+                    HOVER,
+                ))
+                .child(caption_button(
+                    "window-maximize",
+                    maximize,
+                    WindowControlArea::Max,
+                    HOVER,
+                ))
+                .child(caption_button(
+                    "window-close",
+                    Icon::WindowClose,
+                    WindowControlArea::Close,
+                    CLOSE_HOVER,
+                ))
+                .into_any_element(),
+        );
+    }
+    None
+}
+
+/// A Windows caption button. It has no click handler: Windows hit-tests it
+/// through its control area and minimizes, maximizes or closes the window
+/// itself, which also gives Windows 11 its snap layouts on maximize.
+fn caption_button(
+    id: &'static str,
+    glyph: Icon,
+    area: WindowControlArea,
+    hover: u32,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .w(px(CAPTION_WIDTH))
+        .h_full()
+        .flex()
+        .flex_shrink_0()
+        .items_center()
+        .justify_center()
+        .hover(move |style| style.bg(rgb(hover)))
+        .window_control_area(area)
+        .child(icon_sized(glyph, TEXT, 14.))
 }
 
 #[cfg(test)]
