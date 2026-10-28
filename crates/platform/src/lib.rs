@@ -118,7 +118,15 @@ fn build<T: SizedSample + FromSample<f32>>(
     device
         .build_output_stream(
             config,
-            move |output: &mut [T], _| renderer.render(output, channels),
+            move |output: &mut [T], info: &cpal::OutputCallbackInfo| {
+                let time = info.timestamp();
+                renderer.set_output_latency(
+                    time.playback
+                        .duration_since(&time.callback)
+                        .unwrap_or_default(),
+                );
+                renderer.render(output, channels);
+            },
             move |_| failure.store(true, std::sync::atomic::Ordering::Release),
             None,
         )

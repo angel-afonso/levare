@@ -11,11 +11,16 @@ use std::sync::{
 
 const QUEUE_CAPACITY: usize = 64;
 const BLOCK: usize = 64;
+/// Changes of pace (start, pause, resume, loop wrap, end) remembered to tell
+/// which frame the listener hears. A few per second at most.
+const HISTORY: usize = 64;
 
 struct Shared {
     epoch: AtomicU64,
     started: AtomicU64,
     finished: AtomicU64,
+    /// The frame the listener hears now: the rendered frame less the
+    /// output latency.
     frame: AtomicU64,
     volume: AtomicU32,
     failed: Arc<AtomicBool>,
@@ -320,6 +325,14 @@ impl Control {
     }
 }
 
+/// Where the frame stood at a sample clock, and whether it moved with it.
+#[derive(Clone, Copy)]
+struct Pace {
+    clock: u64,
+    frame: u64,
+    moving: bool,
+}
+
 pub struct Renderer {
     commands: Consumer<Command>,
     shared: Arc<Shared>,
@@ -327,6 +340,15 @@ pub struct Renderer {
     active: Option<Active>,
     epoch: u64,
     frame: u64,
+    sample_rate: u32,
+    /// Frames between rendering a sample and the listener hearing it.
+    latency: u64,
+    /// Ring of the latest changes of pace since the current start.
+    history: [Pace; HISTORY],
+    history_len: usize,
+    history_next: usize,
+    /// The sample clock at which the plan ended, until the listener hears it.
+    ending: Option<u64>,
     next_message: usize,
     clock: u64,
     preview_off: Option<u64>,
@@ -373,6 +395,16 @@ impl Renderer {
             active: None,
             epoch: 1,
             frame: 0,
+            sample_rate,
+            latency: 0,
+            history: [Pace {
+                clock: 0,
+                frame: 0,
+                moving: false,
+            }; HISTORY],
+            history_len: 0,
+            history_next: 0,
+            ending: None,
             next_message: 0,
             clock: 0,
             preview_off: None,
@@ -404,6 +436,14 @@ impl Renderer {
     pub(crate) fn failure_flag(&self) -> Arc<AtomicBool> {
         self.shared.failed.clone()
     }
+    /// The time from rendering a sample to hearing it, as the device reports
+    /// it each callback. The position published to the interface lags the
+    /// rendered one by this much. Capped at one second against nonsense.
+    pub fn set_output_latency(&mut self, latency: std::time::Duration) {
+        let rate = u128::from(self.sample_rate);
+        let frames = latency.as_nanos().saturating_mul(rate) / 1_000_000_000;
+        self.latency = frames.min(rate) as u64;
+    }
     /// For offline exports only: permits native sample streaming to wait for disk.
     /// The live CPAL stream never enables this mode.
     pub fn offline(&mut self) {
@@ -430,7 +470,49 @@ impl Renderer {
             self.frame = 0;
             self.next_message = 0;
             self.epoch = epoch;
+            self.history_len = 0;
+            self.ending = None;
         }
+    }
+
+    /// Remember the pace from the current clock on, when it changed.
+    fn pace(&mut self, moving: bool) {
+        if self.history_len > 0 {
+            let last = self.history[(self.history_next + HISTORY - 1) % HISTORY];
+            let expected = if last.moving {
+                last.frame + (self.clock - last.clock)
+            } else {
+                last.frame
+            };
+            if last.moving == moving && expected == self.frame {
+                return;
+            }
+        }
+        self.history[self.history_next] = Pace {
+            clock: self.clock,
+            frame: self.frame,
+            moving,
+        };
+        self.history_next = (self.history_next + 1) % HISTORY;
+        self.history_len = (self.history_len + 1).min(HISTORY);
+    }
+
+    /// The frame that sounded at sample clock `clock`. Before the start, the
+    /// start itself: the previous playback's tail is not shown.
+    fn frame_at_clock(&self, clock: u64) -> u64 {
+        let mut oldest = self.frame;
+        for back in 1..=self.history_len {
+            let pace = self.history[(self.history_next + HISTORY - back) % HISTORY];
+            if pace.clock <= clock {
+                return if pace.moving {
+                    pace.frame + (clock - pace.clock)
+                } else {
+                    pace.frame
+                };
+            }
+            oldest = pace.frame;
+        }
+        oldest
     }
 
     fn update_mix(&mut self) {
@@ -484,6 +566,8 @@ impl Renderer {
                     self.looping = None;
                     self.preview_off = None;
                     self.preview = None;
+                    self.history_len = 0;
+                    self.ending = None;
                     self.shared.frame.store(start_frame, Ordering::Release);
                     self.shared.started.store(epoch, Ordering::Release);
                 }
@@ -556,8 +640,9 @@ impl Renderer {
         {
             // Control retains a strong owner. Dropping this reference cannot
             // destroy a plan or free its heap storage on the callback thread.
+            // The end is announced once it is heard, in `render`.
             self.active = None;
-            self.shared.finished.store(self.epoch, Ordering::Release);
+            self.ending = Some(self.clock);
         }
         if let Some((mut audition, start)) = self.preview {
             for index in 0..audition.keys.len() {
@@ -605,6 +690,7 @@ impl Renderer {
                 // Freeze the sample clock AND the synthesizer's envelopes,
                 // oscillator phase and cached block. Resume continues this
                 // very note; no new attack or callback allocations are needed.
+                self.pace(false);
                 let count = (total_frames - written).min(BLOCK);
                 for sample in &mut output[written * channels..(written + count) * channels] {
                     *sample = T::from_sample(0.);
@@ -614,6 +700,7 @@ impl Renderer {
                 continue;
             }
             self.due_messages();
+            self.pace(self.active.is_some());
             let mut count = (total_frames - written).min(BLOCK);
             if let Some(active) = &self.active {
                 let next = active
@@ -675,10 +762,21 @@ impl Renderer {
                 self.frame += count as u64;
             }
         }
-        if !self.shared.paused.load(Ordering::Acquire) {
+        let paused = self.shared.paused.load(Ordering::Acquire);
+        if !paused {
             self.due_messages();
         }
-        self.shared.frame.store(self.frame, Ordering::Release);
+        self.pace(self.active.is_some() && !paused);
+        // Heard by the end of this buffer's period: what was rendered
+        // `latency` frames of clock ago.
+        let heard = self.clock.saturating_sub(self.latency);
+        self.shared
+            .frame
+            .store(self.frame_at_clock(heard), Ordering::Release);
+        if self.ending.is_some_and(|end| end <= heard) {
+            self.ending = None;
+            self.shared.finished.store(self.epoch, Ordering::Release);
+        }
     }
 }
 
@@ -1376,6 +1474,67 @@ mod tests {
                 renderer.render(&mut output, 2);
             }
         });
+        assert!(!control.is_playing());
+    }
+
+    #[test]
+    fn the_position_follows_what_is_heard_through_the_output_latency() {
+        const LATENCY: u64 = 4_800; // 100 ms at 48 kHz.
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        let plan = plan();
+        let mut output = [0f32; 2048];
+        let mut render = |renderer: &mut Renderer, blocks: usize| {
+            assert_no_alloc(|| {
+                for _ in 0..blocks {
+                    renderer.set_output_latency(std::time::Duration::from_millis(100));
+                    renderer.render(&mut output, 2);
+                }
+            })
+        };
+        control.play_from_frame(plan.clone(), 12_000).unwrap();
+        // Nothing of this playback is heard yet: the start, not the tail
+        // of what played before.
+        render(&mut renderer, 2);
+        assert_eq!(control.position().unwrap().frame, 12_000);
+        render(&mut renderer, 8);
+        assert_eq!(
+            control.position().unwrap().frame,
+            12_000 + 10 * 1024 - LATENCY
+        );
+
+        // Paused, the sound already sent still plays out, then holds.
+        control.pause();
+        render(&mut renderer, 1);
+        let rendered = 12_000 + 10 * 1024;
+        assert_eq!(control.position().unwrap().frame, rendered + 1024 - LATENCY);
+        render(&mut renderer, 5);
+        assert_eq!(control.position().unwrap().frame, rendered);
+        control.resume();
+        render(&mut renderer, 1);
+        assert_eq!(control.position().unwrap().frame, rendered);
+
+        // A loop shows its end until its wrap is heard.
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        control.play(plan.clone()).unwrap();
+        control.set_loop(Some((0, 24_000))).unwrap();
+        render(&mut renderer, 27);
+        assert_eq!(control.position().unwrap().frame, 27 * 1024 - LATENCY);
+        render(&mut renderer, 3);
+        assert_eq!(
+            control.position().unwrap().frame,
+            30 * 1024 - LATENCY - 24_000
+        );
+
+        // The end is announced once it is heard.
+        control.set_loop(None).unwrap();
+        let end = plan.duration_frames as usize;
+        let mut blocks = 30;
+        while blocks * 1024 < 24_000 + end {
+            render(&mut renderer, 1);
+            blocks += 1;
+        }
+        assert!(control.is_playing());
+        render(&mut renderer, (LATENCY as usize).div_ceil(1024));
         assert!(!control.is_playing());
     }
 
