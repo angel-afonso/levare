@@ -43,6 +43,11 @@ windows = { version = "=0.61.3", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# Only a Windows host runs the resource compiler (see build.rs). The version
+# GPUI already uses for its own manifest.
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "=3.0.12"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "=0.26.0"
 objc = "=0.2.7"

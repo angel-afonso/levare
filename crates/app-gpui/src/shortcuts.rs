@@ -532,11 +532,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn commands_that_left_the_ribbon_stay_in_the_native_menus() {
-        // The clipboard and the panels left the ribbon (score-toolbar's
-        // `nothing_leaves_the_app` lists them); Edición and Vista keep them.
-        let shortcuts = Shortcuts {
+    fn builtin_shortcuts() -> Shortcuts {
+        // macOS aborts when two test threads read the keyboard layout at once.
+        static LAYOUT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _reading = LAYOUT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Shortcuts {
             registry: Registry::builtin(),
             keymap: Keymap::resolve(
                 &Registry::builtin(),
@@ -550,7 +552,11 @@ mod tests {
             path: None,
             problems: Vec::new(),
             recent: Vec::new(),
-        };
+        }
+    }
+
+    /// Every command the native menus run.
+    fn menu_commands(shortcuts: &Shortcuts) -> Vec<CommandId> {
         fn commands(items: &[MenuItem], found: &mut Vec<CommandId>) {
             for item in items {
                 match item {
@@ -570,6 +576,43 @@ mod tests {
         for menu in shortcuts.menus() {
             commands(&menu.items, &mut found);
         }
+        found
+    }
+
+    #[test]
+    fn every_menu_command_is_found_by_the_command_search() {
+        // Only macOS draws the native menus. On Windows and Linux the command
+        // search in the title bar is the way to the menu-only commands (select
+        // all, full screen, divide part, the update commands…), so it must
+        // find each one by its name.
+        struct Defaults;
+        impl score_toolbar::CommandStates for Defaults {
+            fn state(&self, _: CommandId) -> score_toolbar::CommandState {
+                score_toolbar::CommandState::default()
+            }
+        }
+        let shortcuts = builtin_shortcuts();
+        for command in menu_commands(&shortcuts) {
+            let label = shortcuts.spec(command).expect("registered").label;
+            let found = score_toolbar::search(
+                label,
+                &shortcuts.registry,
+                &shortcuts.keymap,
+                &Defaults,
+                usize::MAX,
+            );
+            assert!(
+                found.iter().any(|result| result.item.command == command),
+                "«{label}» ({command}) is not in the command search"
+            );
+        }
+    }
+
+    #[test]
+    fn commands_that_left_the_ribbon_stay_in_the_native_menus() {
+        // The clipboard and the panels left the ribbon (score-toolbar's
+        // `nothing_leaves_the_app` lists them); Edición and Vista keep them.
+        let found = menu_commands(&builtin_shortcuts());
         for command in [
             id::PASTE,
             id::COPY,

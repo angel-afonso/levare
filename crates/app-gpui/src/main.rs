@@ -1,3 +1,6 @@
+// Release builds on Windows open no console window next to Levare.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod agent;
 #[cfg(test)]
 mod agent_tests;
@@ -3482,12 +3485,15 @@ impl Render for AppView {
             .and_then(|p| p.file_stem())
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
-        window.set_window_title(&format!(
-            "{}{} · Levare",
-            title,
-            if self.document.is_dirty() { " •" } else { "" }
-        ));
-        div()
+        self.ui.frame.sync(
+            window,
+            format!(
+                "{}{} · Levare",
+                title,
+                if self.document.is_dirty() { " •" } else { "" }
+            ),
+        );
+        let root = div()
             .size_full()
             .flex()
             .flex_col()
@@ -3526,7 +3532,8 @@ impl Render for AppView {
                     this.choose_key(action.0, cx)
                 }),
             )
-            .child(ui::workspace(self, title, cx))
+            .child(ui::workspace(self, title, cx));
+        ui::window_frame::frame(&self.ui.frame, root)
     }
 }
 
@@ -3557,16 +3564,22 @@ fn main() {
         .detach();
         let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
-        let bounds = Bounds::centered(None, size(px(1440.), px(1000.)), cx);
+        let (bounds, min_size) = ui::window_frame::first_window(cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(960.), px(680.))),
+                window_min_size: Some(min_size),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Levare".into()),
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(16.), px(16.))),
                 }),
+                // Linux: Levare's title bar replaces the compositor's, when it
+                // agrees (`ui::window_frame`). macOS and Windows ignore it.
+                window_decorations: Some(WindowDecorations::Client),
+                // The macOS bundle id: Linux desktops match the window to
+                // Levare's desktop entry and icon by it.
+                app_id: Some("dev.partitura.editor".into()),
                 ..Default::default()
             },
             |window, cx| cx.new(|cx| AppView::new(window, cx, recovery, shortcuts)),
