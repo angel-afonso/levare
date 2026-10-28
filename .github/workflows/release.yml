@@ -393,6 +393,23 @@ jobs:
         working-directory: ${{ env.WORKSPACE }}
         run: cargo build --release --locked -p levare --target ${{ matrix.target }}
 
+      # .cargo/config.toml links the C runtime into levare.exe, so it starts
+      # on PCs without the Visual C++ Redistributable. Runners have it
+      # installed, so only the import table shows a build that needs it.
+      - name: Check the C runtime is linked in
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.WORKSPACE }}
+        run: |
+          rustup component add llvm-tools
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          readobj="$(cygpath -u "$(rustc --print sysroot)")/lib/rustlib/$host/bin/llvm-readobj.exe"
+          imports="$("$readobj" --coff-imports target/${{ matrix.target }}/release/levare.exe | sed -n 's/^ *Name: //p')"
+          echo "levare.exe imports:" $imports
+          if grep -iE '^(vcruntime|msvcp|ucrtbase|api-ms-win-crt)' <<< "$imports"; then
+            echo "::error::levare.exe needs the Visual C++ runtime DLLs above; check .cargo/config.toml."
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           name: sfizz-${{ runner.os }}
@@ -433,8 +450,8 @@ jobs:
           tar -C stage -czf "dist/$ARCHIVE.tar.gz" --owner=0 --group=0 levare
           tar -tzvf "dist/$ARCHIVE.tar.gz"
 
-      # Levare/ holds levare.exe and sfizz.dll, which needs nothing else (it
-      # links the C runtime statically).
+      # Levare/ holds levare.exe and sfizz.dll, which need nothing else (both
+      # link the C runtime statically).
       - name: Windows archive
         if: runner.os == 'Windows'
         working-directory: ${{ env.WORKSPACE }}

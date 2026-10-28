@@ -1,0 +1,8 @@
+# Link the C runtime into levare.exe (/MT), as sfizz.dll already does, so
+# Levare starts on Windows PCs without the Visual C++ Redistributable.
+# Release builds check its imports for the runtime's DLLs.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

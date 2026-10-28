@@ -37,8 +37,9 @@ signing; nothing reads it.
 
 - **macOS**: one universal app for Apple Silicon and Intel (both architectures built
   separately, then merged with `lipo`), macOS 11 or newer.
-- **Windows**: x86_64, built with MSVC. `sfizz.dll` links the C runtime statically,
-  so the folder needs no Visual C++ redistributable.
+- **Windows**: x86_64, built with MSVC. `levare.exe` (through `.cargo/config.toml`) and
+  `sfizz.dll` link the C runtime statically, so the folder needs no Visual C++
+  redistributable; the workflow fails if `levare.exe` imports the runtime's DLLs.
 - **Linux**: x86_64, built on Ubuntu 22.04, so it runs on distributions with glibc 2.35
   or newer (the build logs the newest glibc symbol it uses). It needs ALSA (PulseAudio and
   PipeWire are reached through ALSA), `libdbus-1-3` (real-time priority for the audio
