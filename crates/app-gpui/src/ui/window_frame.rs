@@ -1,5 +1,5 @@
-//! The window itself: its first size, and later the parts of its frame
-//! Levare draws per platform.
+//! The window itself: its first size, its title, and later the parts of its
+//! frame Levare draws per platform.
 
 use super::*;
 
@@ -9,6 +9,24 @@ const MINIMUM: (f32, f32) = (960., 680.);
 /// Room left around the first window for the taskbar, dock or menu bar, which
 /// GPUI's display bounds include.
 const SCREEN_MARGIN: (f32, f32) = (32., 96.);
+
+/// What the platform said about the frame at the last render.
+#[derive(Default)]
+pub struct FrameState {
+    /// The window title last sent to the platform.
+    title: String,
+}
+
+impl FrameState {
+    /// Sends the title only when it changed: on X11 every title change is a
+    /// round trip to the server, and Levare renders every frame of playback.
+    pub fn sync(&mut self, window: &mut Window, title: String) {
+        if title != self.title {
+            window.set_window_title(&title);
+            self.title = title;
+        }
+    }
+}
 
 /// The first window: the preferred size, shrunk to fit the primary display,
 /// and centered on it.

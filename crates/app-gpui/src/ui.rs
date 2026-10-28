@@ -87,6 +87,8 @@ pub struct UiState {
     pub ribbon_peek: bool,
     /// The last option used from each dropdown group, by group title.
     pub last_choice: std::collections::HashMap<&'static str, score_keymap::CommandId>,
+    /// The window frame's platform state and the title last sent.
+    pub frame: window_frame::FrameState,
 }
 impl Default for UiState {
     fn default() -> Self {
@@ -112,6 +114,7 @@ impl Default for UiState {
             ribbon_collapsed: false,
             ribbon_peek: false,
             last_choice: Default::default(),
+            frame: Default::default(),
         }
     }
 }

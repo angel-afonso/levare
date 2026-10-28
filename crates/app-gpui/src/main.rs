@@ -3484,11 +3484,14 @@ impl Render for AppView {
             .and_then(|p| p.file_stem())
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.document.editor.score().title().to_owned());
-        window.set_window_title(&format!(
-            "{}{} · Levare",
-            title,
-            if self.document.is_dirty() { " •" } else { "" }
-        ));
+        self.ui.frame.sync(
+            window,
+            format!(
+                "{}{} · Levare",
+                title,
+                if self.document.is_dirty() { " •" } else { "" }
+            ),
+        );
         div()
             .size_full()
             .flex()
