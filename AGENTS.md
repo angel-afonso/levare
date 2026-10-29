@@ -86,6 +86,8 @@ The title goes into `CHANGELOG.md` as is, so write it for the people who use Lev
   release pull request does both.
 - Don't create `v*` tags: when the release pull request is merged, the Release workflow
   tags and publishes the version.
+- Don't squash-merge pull requests: the squashed commit hides every conventional commit
+  from release-plz. Use a merge commit or rebase.
 
 ## Before calling something done
 

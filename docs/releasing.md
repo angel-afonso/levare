@@ -15,6 +15,19 @@ the commit messages (see `AGENTS.md`).
 To release: run Release PR, review the pull request (the changelog above all) and merge
 it. The push to `main` that makes does the rest.
 
+Merge pull requests with a merge commit or by rebasing, never by squashing; squash
+merging is turned off in the repository. A squash leaves one commit titled after the pull
+request, so release-plz sees none of its conventional commits.
+
+### A new crate
+
+release-plz finds each crate in the workspace as it was at the last `v*` tag and stops
+with `cannot find package "<name>" in workspace` when a crate was added since. Until the
+first release that includes it is tagged, give the crate a `git_tag_name` of its own in
+`release-plz.toml`, which no tag matches, so it counts as a first release (see
+`atomic-write` there). Then remove that line, or the next releases list all of the
+crate's commits again.
+
 ### A test build
 
 Running **Release** by hand (Actions → Release → Run workflow, or
