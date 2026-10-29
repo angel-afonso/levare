@@ -18,7 +18,9 @@ use score_platform::{
 fn error(value: impl std::fmt::Display) -> AudioError {
     AudioError::new(value)
 }
-#[cfg(test)]
+// assert_no_alloc leaves out its allocator in release builds (its default
+// `disable_release`), where the Release workflow runs the sfizz test.
+#[cfg(all(test, debug_assertions))]
 #[global_allocator]
 static TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 use score_core::{Instrument, Score};

@@ -24,9 +24,9 @@ request, so release-plz sees none of its conventional commits.
 release-plz finds each crate in the workspace as it was at the last `v*` tag and stops
 with `cannot find package "<name>" in workspace` when a crate was added since. Until the
 first release that includes it is tagged, give the crate a `git_tag_name` of its own in
-`release-plz.toml`, which no tag matches, so it counts as a first release (see
-`atomic-write` there). Then remove that line, or the next releases list all of the
-crate's commits again.
+`release-plz.toml` that no tag matches, such as `"<name>-v{{ version }}"`, so it counts
+as a first release. Then remove that line, or the next releases list all of the crate's
+commits again.
 
 ### A test build
 
