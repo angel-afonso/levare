@@ -8,6 +8,57 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/angel-afonso/levare/compare/v0.2.0...v0.3.0) - 2026-10-29
+
+### Added
+
+- *(file)* open scores from Finder, Explorer and the Linux file manager
+- *(updates)* say once that Levare checks for updates
+- *(window)* add an About Levare panel with version, credits and licenses
+- *(window)* tell the musician when Levare closed unexpectedly
+- *(window)* keep a log and crash reports in Levare's data folder
+- *(file)* [**breaking**] save scores as compressed .levare files
+
+### Changed
+
+- *(panels)* save the panel layout through the shared file writer
+- *(atomic-write)* share one safe file replacement across Levare
+- *(sound-store)* share the Windows busy-file check with atomic-write
+
+### Fixed
+
+- *(window)* ask about a past crash only after other startup questions
+- *(file)* write autosave, recovery and save failures to Levare's log
+- *(shortcuts)* draw slurs with Ctrl+drag on Linux, where Alt+drag moves the window
+- *(shortcuts)* [**breaking**] refuse Ctrl+Alt shortcuts that Windows reads as AltGr
+- *(agent)* treat text inside the score as content, not instructions
+- *(sounds)* [**breaking**] play sound packs only through Levare's own SFZ engine
+- *(file)* keep an emergency copy when Levare quits without autosave
+- *(updates)* stop restarting when the last autosave fails
+- *(file)* keep an unreadable recovery file instead of overwriting it
+- *(file)* explain open and save errors in Spanish
+- *(file)* add the .levare extension when the name has none
+- *(updates)* keep update settings intact when saving them
+- *(sounds)* keep the sound priority intact when saving it
+- *(file)* keep a score's permissions and symlink when saving
+- *(file)* say a cut-short .levare file is damaged instead of calling it MusicXML
+- *(file)* refuse MusicXML files that expand entities
+- *(file)* save large orchestral scores
+- *(shortcuts)* move the playback line to the start with Ctrl+Inicio (⌘↖) on any keyboard
+- *(shortcuts)* keep custom shortcuts intact when saving them
+- *(file)* export PDFs reliably while another program holds the file on Windows
+
+### Other
+
+- declare shared dependencies once for the whole workspace
+
+### Performance
+
+- redraw large scores without re-timing and comparing the whole score on every frame
+- *(layout)* keep the page view engraved when resizing the window, zooming or toggling panels
+- *(layout)* place hairpins without scanning every slur for each line of music
+- *(layout)* edit large orchestral scores in page view without engraving them twice
+
 ## [0.2.0](https://github.com/angel-afonso/levare/compare/v0.1.0...v0.2.0) - 2026-10-28
 
 ### Added
