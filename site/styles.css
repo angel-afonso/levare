@@ -655,7 +655,7 @@ tspan.fl { font-size: 18px; }
   .four.is-live .h2 { font-size: clamp(32px, 5vw, 48px); }
 }
 
-/* Roadmap: a staff where each bar is a version */
+/* Roadmap: a staff of what Levare does and what comes next */
 .road-head { align-items: end; margin-bottom: 40px; }
 .road-head .h2 { grid-column: 1 / 7; }
 .road-head p { grid-column: 8 / 13; }
@@ -666,7 +666,7 @@ tspan.fl { font-size: 18px; }
 .rnote { transform-box: fill-box; }
 .rnote.next { fill: var(--lmuted); }
 .rs-head rect { fill: var(--blue); }
-.road-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--g); margin-top: 24px; align-items: start; }
+.road-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--g); margin-top: 24px; align-items: start; }
 .rcol { padding: 28px; border-radius: 18px; }
 .rcol.now { background: var(--dark2); }
 .rcol.next { color: var(--lmuted); }
@@ -679,7 +679,6 @@ tspan.fl { font-size: 18px; }
 .ritems li::before { content: "\E0A4"; font-family: "Bravura"; font-size: 26px; line-height: 1; position: absolute; left: 4px; top: -7px; color: var(--light); }
 .rcol.next .ritems li::before { content: "\E0A3"; color: var(--lmuted); }
 .rcol.now .ritems li::before { color: var(--blue); }
-.fixes { margin-top: 18px; color: var(--lmuted); }
 .road-more { margin-top: 40px; }
 @media (max-width: 1100px) {
   .road-head .h2, .road-head p { grid-column: 1 / -1; }

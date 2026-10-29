@@ -68,7 +68,7 @@
     gsap.to('.hero .ln.l2', { xPercent: 7, ease: 'none', scrollTrigger: scrub('.hero', 'top top', 'bottom top') });
     // The score of the four ways settles onto the desk as it arrives.
     gsap.fromTo('.lens-grid', { '--rise': '90px', '--size': 0.93 }, { '--rise': '0px', '--size': 1, ease: 'none', scrollTrigger: scrub('.lens', 'top bottom', 'top 30%') });
-    // The roadmap: the playhead crosses the released bars and stops at today,
+    // The roadmap: the playhead crosses what is already in Levare and stops at today,
     // writing each note of what already shipped as it passes.
     const road = gsap.timeline({ scrollTrigger: scrub('.road-staff', 'top 85%', 'top 30%') });
     road.fromTo('.rs-head rect', { attr: { x: -2 } }, { attr: { x: 798 }, duration: 1, ease: 'none' }, 0);
