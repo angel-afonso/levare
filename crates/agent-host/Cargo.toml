@@ -13,7 +13,7 @@ futures.workspace = true
 axum.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
-getrandom = "=0.3.4"
+getrandom = "=0.4.3"
 dirs.workspace = true
 agent-client-protocol = { workspace = true, features = ["process"] }
 
