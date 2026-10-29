@@ -61,6 +61,12 @@ changelog_update = false
 name = "atomic-write"
 version_group = "levare"
 changelog_update = false
+# New since v0.2.0. With git_only, release-plz looks for each crate in the
+# workspace as it was at the last `v*` tag and stops when it is not there, so
+# a crate's own tag name, which no tag matches, makes this its first release.
+# Remove this line once v0.3.0 is tagged: left in, every release would list
+# all of atomic-write's commits again.
+git_tag_name = "atomic-write-v{{ version }}"
 
 [[package]]
 name = "levare-update"
