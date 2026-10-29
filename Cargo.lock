@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "agent-host"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "agent-tools",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "agent-tools"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "schemars 1.2.3",
  "score-core",
@@ -547,7 +547,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "atomic-write"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dunce",
  "tempfile",
@@ -3573,7 +3573,7 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "levare"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agent-host",
  "agent-tools",
@@ -3612,7 +3612,7 @@ dependencies = [
 
 [[package]]
 name = "levare-update"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "flate2",
  "minisign",
@@ -5692,7 +5692,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "score-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "imbl",
  "serde",
@@ -5701,7 +5701,7 @@ dependencies = [
 
 [[package]]
 name = "score-document"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
  "score-edit",
@@ -5711,7 +5711,7 @@ dependencies = [
 
 [[package]]
 name = "score-edit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
  "serde",
@@ -5720,7 +5720,7 @@ dependencies = [
 
 [[package]]
 name = "score-export"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "roxmltree",
  "score-core",
@@ -5732,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "score-io"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "atomic-write",
  "dunce",
@@ -5746,7 +5746,7 @@ dependencies = [
 
 [[package]]
 name = "score-keymap"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "atomic-write",
  "serde",
@@ -5756,7 +5756,7 @@ dependencies = [
 
 [[package]]
 name = "score-layout"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
  "serde_json",
@@ -5765,7 +5765,7 @@ dependencies = [
 
 [[package]]
 name = "score-pdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "atomic-write",
  "core-foundation 0.10.0",
@@ -5785,7 +5785,7 @@ dependencies = [
 
 [[package]]
 name = "score-platform"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "cpal",
@@ -5797,14 +5797,14 @@ dependencies = [
 
 [[package]]
 name = "score-playback"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
 ]
 
 [[package]]
 name = "score-sound-store"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "atomic-write",
  "libc",
@@ -5822,7 +5822,7 @@ dependencies = [
 
 [[package]]
 name = "score-sound-vsco"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "dunce",
@@ -5837,7 +5837,7 @@ dependencies = [
 
 [[package]]
 name = "score-text"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
  "score-edit",
@@ -5845,7 +5845,7 @@ dependencies = [
 
 [[package]]
 name = "score-toolbar"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "score-core",
  "score-keymap",
