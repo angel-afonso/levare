@@ -56,6 +56,9 @@ pub const FILE_MENU_WITH_APP_ITEMS: &[MenuEntry] = &[
     C(id::AUTOMATIC_UPDATES),
     C(id::ABOUT),
     S,
+    C(id::REPORT_PROBLEM),
+    C(id::SHOW_DIAGNOSTICS),
+    S,
     C(id::CLOSE),
     C(id::QUIT),
 ];
@@ -250,6 +253,8 @@ mod tests {
             id::RESTART_TO_UPDATE,
             id::AUTOMATIC_UPDATES,
             id::ABOUT,
+            id::REPORT_PROBLEM,
+            id::SHOW_DIAGNOSTICS,
             id::QUIT,
         ] {
             assert!(with_app.contains(&command), "{command}");

@@ -28,6 +28,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Reiniciar para actualizar |  |
 | — | — | Activar o desactivar la búsqueda automática de actualizaciones |  |
 | — | — | Acerca de Levare… |  |
+| — | — | Mostrar registros e informes de fallos |  |
+| — | — | Informar de un problema… |  |
 | `Esc` | `Esc` | Cerrar el panel abierto |  |
 
 ## Edición
