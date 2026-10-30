@@ -30,6 +30,10 @@ Releases are on [GitHub Releases](https://github.com/angel-afonso/levare/release
 Levare updates itself in place (see [Updates](#updates)), so keep it in a folder you
 can write to.
 
+Musicians testing Levare have a guide in Spanish on the website,
+[Probar Levare](https://angel-afonso.github.io/levare/probar.html) (`site/probar.html`):
+how to install it, what to try, what Levare does not do yet and how to report a problem.
+
 ## Running from source
 
 With the stable Rust toolchain that `rust-toolchain.toml` pins:

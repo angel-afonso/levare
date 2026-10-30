@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Probar Levare</title>
+<meta name="description" content="Cómo instalar Levare, qué probar, qué todavía no hace y cómo contar lo que falla.">
+<meta name="theme-color" content="#f4f2ec">
+<link rel="icon" type="image/png" href="assets/levare.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&amp;display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<!-- A guide for musicians who test Levare; linked from the issue form and sent to testers. -->
+<header class="nav wrap" id="top">
+  <a class="brand" href="./"><span class="logo" aria-hidden="true"></span>Levare</a>
+  <nav class="links" aria-label="Principal">
+    <a class="nl" href="#instalar">Instalar</a>
+    <a class="nl" href="#que-probar">Qué probar</a>
+    <a class="nl" href="#todavia-no">Qué todavía no hace</a>
+    <a class="btn btn-sm" href="#informar">Informar de un problema</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap doc">
+  <h1 class="h2">Probar Levare</h1>
+  <p class="doc-lead">Gracias por probar Levare. Esta guía es para quien lo prueba escribiendo música de verdad: cómo instalarlo, qué conviene probar, qué todavía no hace y cómo contar lo que falla.</p>
+  <p>Levare está en desarrollo. Funciona y guarda tus partituras, pero vas a encontrar fallos: encontrarlos es justo lo que buscamos.</p>
+
+  <h2 id="instalar">Instalar</h2>
+  <p>La versión actual es Levare %VERSION%.</p>
+  <dl>
+    <dt>macOS 11 o posterior</dt>
+    <dd>Descarga el <a href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-universal-apple-darwin.dmg">.dmg</a>, ábrelo y arrastra Levare a Aplicaciones. La primera vez macOS avisa de que no puede comprobar la app. Cierra el aviso, ve a <b>Ajustes del Sistema › Privacidad y seguridad</b>, baja hasta el mensaje sobre Levare y pulsa <b>Abrir igualmente</b>. En macOS 14 o anterior basta con clic derecho › Abrir.</dd>
+    <dt>Windows de 64 bits</dt>
+    <dd>Descarga el <a href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-x86_64-pc-windows-msvc.zip">.zip</a>, descomprímelo en una carpeta tuya (Documentos, por ejemplo, no Archivos de programa) y abre <code>levare.exe</code>. Si SmartScreen avisa: <b>Más información › Ejecutar de todas formas</b>.</dd>
+    <dt>Linux x86_64</dt>
+    <dd>Descarga el <a href="https://github.com/angel-afonso/levare/releases/download/%TAG%/levare-%TAG%-x86_64-unknown-linux-gnu.tar.gz">.tar.gz</a>, descomprímelo y ejecuta <code>./install.sh</code> para añadir Levare al menú de aplicaciones.</dd>
+  </dl>
+  <p>Levare te avisa cuando hay una versión nueva y se actualiza solo. Instala siempre la última antes de informar de un fallo: puede que ya esté arreglado.</p>
+
+  <h2 id="antes">Antes de empezar</h2>
+  <ul>
+    <li><b>Guarda copia</b> de cualquier partitura que te importe. Levare guarda una recuperación automática mientras trabajas, pero es una versión de prueba.</li>
+    <li>Un archivo <code>.levare</code> guardado con una versión nueva no se abre en una anterior. Si alguien más prueba Levare contigo, usad la misma versión.</li>
+    <li>Los atajos siguen a Sibelius. <b>Buscar comandos</b> (<kbd>⌘F</kbd> en macOS, <kbd>Ctrl+F</kbd> en Windows y Linux) encuentra cualquier orden por su nombre, y la <a href="https://github.com/angel-afonso/levare/blob/main/docs/atajos.md">lista de atajos</a> los tiene todos.</li>
+  </ul>
+
+  <h2 id="que-probar">Qué probar</h2>
+  <p>Lo más útil es que trabajes como siempre, con un encargo real o uno reciente. Si necesitas un punto de partida:</p>
+  <ol>
+    <li><b>Un arreglo desde cero.</b> Añade los instrumentos (<kbd>I</kbd>), escribe con la entrada de notas (<kbd>N</kbd>), pon dinámicas, articulaciones, ligaduras, cifrado, ensayos y repeticiones. Fíjate en lo que te frena o te obliga a usar el ratón.</li>
+    <li><b>Traer algo que ya tienes.</b> Exporta un arreglo a MusicXML desde Sibelius, Dorico, Finale o MuseScore y ábrelo en Levare (<b>Archivo › Abrir…</b>). Di qué se pierde o cambia.</li>
+    <li><b>Las partes.</b> <b>Archivo › Exportar partitura y partes…</b> crea una carpeta con la partitura general y una parte por instrumento, en PDF, MusicXML o ambos. Revisa las partes como si fueras a repartirlas: transposición, armaduras, saltos de página, legibilidad.</li>
+    <li><b>Escucharlo.</b> Reproduce (<kbd>P</kbd> desde la selección), prueba la mezcla (<kbd>M</kbd>) y los sonidos de <b>Más sonidos</b>, en la pestaña <b>Sonido</b> del panel derecho.</li>
+    <li><b>Llevarlo de vuelta.</b> Exporta MusicXML desde Levare y ábrelo en tu programa habitual.</li>
+  </ol>
+
+  <h2 id="todavia-no">Qué todavía no hace</h2>
+  <p>Esto ya lo sabemos; no hace falta informar de ello, aunque sí nos ayuda saber cuál te hace más falta:</p>
+  <ul>
+    <li>Silencios de varios compases en las partes.</li>
+    <li>Grupillos que no sean tresillos (dosillos, cuatrillos, quintillos, seisillos…).</li>
+    <li>Ver la partitura en Do o transpositora a voluntad.</li>
+    <li>MIDI: tocar desde un teclado MIDI, importar o exportar <code>.mid</code>.</li>
+    <li>Voces 3 y 4, plicas manuales.</li>
+    <li>Imprimir directamente: exporta el PDF e imprímelo.</li>
+    <li>Elegir tamaño de papel (Carta, A3…) o el tamaño del pentagrama.</li>
+    <li>Varias partituras abiertas en pestañas, buscar en la partitura, silencio y solo por parte.</li>
+  </ul>
+
+  <h2 id="informar">Cómo informar de un problema</h2>
+  <p>En macOS, <b>Ayuda › Informar de un problema…</b>; en Windows y Linux está en el menú <b>Archivo</b>. Abre un <a href="https://github.com/angel-afonso/levare/issues/new?template=fallo.yml">formulario en GitHub</a> (hace falta una cuenta gratuita) con tu versión y tu sistema ya puestos. Cuenta:</p>
+  <ul>
+    <li>qué hiciste, paso a paso;</li>
+    <li>qué esperabas y qué pasó;</li>
+    <li>si se repite.</li>
+  </ul>
+  <p>Adjunta la partitura si puedes: GitHub no acepta archivos <code>.levare</code> tal cual, así que comprímela en un <code>.zip</code>. Una captura o el PDF exportado también ayudan mucho.</p>
+  <p>Si no tienes cuenta de GitHub, envía lo mismo a quien te pasó Levare. Un fallo por informe, por favor: si encuentras tres, son tres informes.</p>
+
+  <h2 id="si-se-cierra">Si Levare se cierra de golpe</h2>
+  <p>Al volver a abrirlo, Levare recupera lo que no habías guardado (revísalo y guárdalo) y te avisa de que guardó un informe del fallo. <b>Mostrar registros e informes de fallos</b>, en el mismo menú que Informar de un problema, abre la carpeta donde están. Adjunta el <code>fallo-….txt</code> más reciente y <code>registro.log</code> a tu informe.</p>
+  <div class="doc-table">
+    <table>
+      <thead><tr><th>Sistema</th><th>Carpeta</th></tr></thead>
+      <tbody>
+        <tr><td>macOS</td><td><code>~/Library/Application Support/Levare</code></td></tr>
+        <tr><td>Windows</td><td><code>%LOCALAPPDATA%\Levare</code></td></tr>
+        <tr><td>Linux</td><td><code>~/.local/share/Levare</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer class="foot dk">
+  <div class="wrap fmeta">
+    <nav aria-label="Pie"><a href="./">Levare</a><a href="https://github.com/angel-afonso/levare/issues">Avisar de un problema</a><a href="https://github.com/angel-afonso/levare/releases">Versiones</a></nav>
+    <span></span>
+    <a class="r" href="#top">Volver arriba ↑</a>
+  </div>
+</footer>
+</body>
+</html>
