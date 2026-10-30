@@ -1,25 +1,28 @@
-# Escritura musical
+# Writing music
 
-Vocabulario de Levare para la notación de instrumentos de una orquesta.
+Levare's vocabulary for writing the instruments of an orchestra. The Spanish term in
+parentheses is the one the interface uses.
 
-## Lenguaje
+## Language
 
-**Parte**:
-La música de un instrumento o sección, que puede ocupar uno o varios pentagramas.
-_Evitar_: pentagrama como sinónimo de instrumento.
+**Part** (*parte*):
+The music of one instrument or section, which may take one or more staves.
+_Avoid_: staff as a synonym for instrument.
 
-**Altura escrita**:
-La nota que lee el intérprete en su parte, con la armadura y alteraciones correspondientes.
+**Written pitch** (*altura escrita*):
+The note the player reads in their part, with the matching key signature and accidentals.
 
-**Altura real**:
-La altura que suena cuando el instrumento interpreta una nota escrita.
-_Evitar_: altura escrita cuando se habla del resultado sonoro.
+**Sounding pitch** (*altura real*):
+The pitch that sounds when the instrument plays a written note.
+_Avoid_: written pitch when talking about what is heard.
 
-**Transposición instrumental**:
-El intervalo que se suma a una altura escrita para obtener la altura real.
+**Instrumental transposition** (*transposición instrumental*):
+The interval added to a written pitch to get the sounding pitch.
 
-**Tonalidad de la obra**:
-La tonalidad en altura real compartida por la orquesta; cada parte puede llevar una armadura escrita diferente.
+**Key of the piece** (*tonalidad de la obra*):
+The key in sounding pitch that the whole orchestra shares; each part may carry a different
+written key signature.
 
-**Percusión sin altura**:
-Un instrumento cuyo golpe no representa una nota de la escala, aunque se escriba en un pentagrama.
+**Unpitched percussion** (*percusión sin altura*):
+An instrument whose stroke does not stand for a note of the scale, even when it is written
+on a staff.

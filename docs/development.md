@@ -1,12 +1,12 @@
 # Levare development
 
-First delivery started on 2026-10-17 from `herramientas.md`.
+First delivery started on 2026-10-17 from `tools-and-integrations.md`.
 
 The sections follow the order of the deliveries. Schema and clipboard version numbers
 are the ones each delivery introduced; today the native schema is 29
 (`score-io::SCHEMA_VERSION`) and the clipboard format is 6. Shortcuts are written with
 the macOS glyphs; on Windows and Linux ⌘ is Ctrl and ⌥ is Alt, and
-[atajos.md](atajos.md) lists every default per platform.
+[shortcuts.md](shortcuts.md) lists every default per platform.
 
 ## Goal of this delivery
 
@@ -204,7 +204,7 @@ loading the playback engine.
   `vsco` feature (the VSCO CE adapter) is also on by default; without installed samples
   it doesn't appear and doesn't change the sound.
 
-Versions are pinned in `Cargo.lock`. The latency targets in `herramientas.md` are
+Versions are pinned in `Cargo.lock`. The latency targets in `tools-and-integrations.md` are
 still proposals: they haven't been measured yet.
 
 ## Ensemble score
@@ -668,7 +668,7 @@ reference the user provided; controls without an available musical function are 
 
 ### Side panels
 
-Design in `docs/superpowers/specs/2026-10-27-paneles-design.md`. Each panel answers one
+Design in `docs/superpowers/specs/2026-10-27-panels-design.md`. Each panel answers one
 question and no panel repeats what another already shows. With the ribbon there is
 repetition on purpose: the passage and note actions in Selección run the same commands as
 their ribbon buttons, at hand next to what is being looked at.
@@ -840,7 +840,7 @@ panel, the menus and the README:
 - **Resolution** (`keymap.rs`). Profile + changes + layout give the active shortcuts.
   The user's win; conflicts, unknown IDs and keys that can't be detected are reported in
   Preferencias instead of failing.
-- **Documentation** (`docs.rs`). [docs/atajos.md](atajos.md) is generated from the
+- **Documentation** (`docs.rs`). [docs/shortcuts.md](shortcuts.md) is generated from the
   registry and a test fails if it goes stale.
 
 In the app, `shortcuts.rs` turns each shortcut into a GPUI `KeyBinding` with a single

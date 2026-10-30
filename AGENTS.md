@@ -2,10 +2,20 @@
 
 ## Language
 
-Everything at the software level is written in English: code, comments, commit
-messages, the changelog, docs, pull requests and CI messages. The app's interface stays
-in Spanish: labels, menus, status messages and errors shown to the musician. Older docs
-in Spanish move to English when they are next changed.
+Everything at the software level is written in English: code, comments, test names,
+commit messages, the changelog, pull requests, CI messages and all documentation (the
+README, `docs/`, `CONTEXT.md`, ADRs, plans and specs).
+
+What musicians read stays in Spanish:
+
+- the app's interface: labels, menus, status messages and errors;
+- the website (`site/`), including the testers' guide `site/probar.html`;
+- the GitHub issue form (`.github/ISSUE_TEMPLATE/`) and the `README.txt` in the Linux
+  download.
+
+Some identifiers are Spanish words and stay that way, because saved data depends on
+them: command ids (`archivo.abrir`), which saved shortcuts name, and the files in the
+data folder and their keys (`atajos.json`, `registro.log`).
 
 ## Platforms
 
@@ -99,5 +109,5 @@ cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-`docs/atajos.md` is generated from `crates/keymap`; if you change commands or shortcuts,
-regenerate it with `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
+`docs/shortcuts.md` is generated from `crates/keymap`; if you change commands or shortcuts,
+regenerate it with `LEVARE_UPDATE_SHORTCUTS=1 cargo test -p score-keymap`.

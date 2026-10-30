@@ -6,7 +6,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 
 *Pending* commands already have their key and show a notice until the feature exists.
 
-> Generated from `crates/keymap`. To update it: `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
+> Generated from `crates/keymap`. To update it: `LEVARE_UPDATE_SHORTCUTS=1 cargo test -p score-keymap`.
 
 ## Archivo
 

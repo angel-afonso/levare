@@ -4,7 +4,7 @@ An inventory of the pieces Levare needs to be a solid alternative to Sibelius: c
 features, high stability and, above all, speed.
 
 > **Status:** reconnaissance inventory (2026-10-17). The first delivery is already
-> implemented; see [desarrollo.md](desarrollo.md) for its scope, the pinned versions
+> implemented; see [development.md](development.md) for its scope, the pinned versions
 > and the next stages. The sections below keep the full vision.
 >
 > **★** = no library solves it; it has to be built.
@@ -14,7 +14,7 @@ features, high stability and, above all, speed.
 ## 0. Starting point
 
 The workspace began as a skeleton. State after the first delivery (a snapshot; the
-current state is in [desarrollo.md](desarrollo.md)):
+current state is in [development.md](development.md)):
 
 | Crate | Intended role | State |
 |---|---|---|
@@ -164,4 +164,4 @@ Proposed budgets (to be confirmed):
   three, and each release ships for all three.
 - Sound: built-in sounds (GeneralUser GS and VSCO CE); external MIDI is still pending,
   with no library chosen (an unused `midir` dependency was removed).
-- Scope of each delivery: set by [desarrollo.md](desarrollo.md).
+- Scope of each delivery: set by [development.md](development.md).

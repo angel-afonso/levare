@@ -1,3 +1,0 @@
-# Alturas escritas por parte y transposición explícita
-
-Guardamos las notas en altura escrita y un intervalo escrito→sonoro por parte, manteniendo la tonalidad general en altura real, para que la edición y MusicXML expresen lo que lee cada intérprete. Frente a guardar todo en altura real y convertir en cada vista, esto mantiene estables las posiciones y alteraciones durante la edición; a cambio, reproducción y copiado entre instrumentos deben resolver el intervalo explícitamente. Los archivos anteriores al esquema 19 omiten ese intervalo y se leen con valor cero, incluso en contrabajo y guitarra, para conservar exactamente su notación y sonido anteriores; solo las partes nuevas reciben la transposición estándar del catálogo.

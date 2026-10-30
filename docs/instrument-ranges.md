@@ -1,74 +1,75 @@
-# Rangos instrumentales
+# Instrument ranges
 
-El editor marca en rojo las alturas fuera del registro de referencia de cada
-instrumento. Los límites son inclusivos y se comparan en **altura real**, con
-C4 como do central. La armadura escrita, la alteración explícita, la transposición
-almacenada en la parte y los armónicos intervienen en la comparación. Esto también
-permite abrir documentos antiguos o importados con otra transposición.
+The editor marks in red the pitches outside the reference range of each instrument.
+The limits are inclusive and are compared in **sounding pitch**, with C4 as middle C.
+The written key signature, the explicit accidental, the transposition stored in the
+part and harmonics all take part in the comparison. This also makes it possible to
+open old or imported documents with a different transposition.
 
-Son avisos de registro habitual profesional, no límites físicos absolutos ni
-niveles de dificultad. No impiden editar, guardar, reproducir o exportar. No se
-deducen del banco de sonidos y no se guardan colores en el documento. La tinta
-roja se aplica únicamente en el editor; la selección y la reproducción conservan
-el aviso. Las marcas, silencios y líneas del pentagrama conservan su color.
+These are warnings about the usual professional range, not absolute physical limits
+or difficulty levels. They do not prevent editing, saving, playing or exporting. They
+are not deduced from the sound bank and no colors are stored in the document. The red
+ink is applied only in the editor; selection and playback keep the warning. Marks,
+rests and staff lines keep their color.
 
-## Referencias y convenciones
+## References and conventions
 
-Los registros orquestales se basan en las secciones **Range** de
-[Vienna Academy](https://www.vsl.co.at/academy), especialmente
-[cuerdas](https://www.vsl.co.at/academy/strings/violin),
-[clarinetes](https://www.vsl.co.at/academy/woodwinds/clarinet),
-[flauta](https://www.vsl.co.at/academy/woodwinds/concert-flute),
-[corno](https://www.vsl.co.at/academy/brass/horn-f) y
-[trombón](https://www.vsl.co.at/academy/brass/tenor-trombone).
-Cuando el catálogo no distingue modelos, el editor adopta una referencia fija:
+Orchestral ranges are based on the **Range** sections of
+[Vienna Academy](https://www.vsl.co.at/academy), especially
+[strings](https://www.vsl.co.at/academy/strings/violin),
+[clarinets](https://www.vsl.co.at/academy/woodwinds/clarinet),
+[flute](https://www.vsl.co.at/academy/woodwinds/concert-flute),
+[horn](https://www.vsl.co.at/academy/brass/horn-f) and
+[trombone](https://www.vsl.co.at/academy/brass/tenor-trombone).
+When the catalog does not distinguish models, the editor adopts a fixed reference:
 
-- Flauta con pie de si: B3–D7; piccolo ordinario: D5–C8.
-- Contrabajo orquestal de cinco cuerdas: B0–G4; clarinete bajo con do grave:
-  B♭1–B5; saxofón barítono con la grave: C2–A4.
-- Saxofones con fa sostenido agudo escrito, sin registro altissimo.
-- Trombón tenor: E2–F5, sin incluir pedales; trombón bajo: B♭0–F5.
-- Tuba genérica: E1–F4. Timbales: conjunto habitual C2–A3; no se evalúan
-  la distribución entre tambores ni el tiempo necesario para afinarlos.
-- [Trompeta piccolo en si bemol](https://www.vsl.co.at/academy/brass/piccolo-trumpet)
-  de cuatro válvulas: D4–G6 en altura real (E3–A5 escrito).
-- Guitarra clásica de 19 trastes: E2–B5; piano de 88 teclas: A0–C8;
-  arpa de pedales: C1–G7.
-- Marimba de cinco octavas: C2–C7; vibráfono: F3–F6; celesta de cuatro
-  octavas sonoras: C4–C8. Órgano: teclados C2–C7 sin transposiciones de registros.
+- Flute with B foot: B3–D7; standard piccolo: D5–C8.
+- Five-string orchestral double bass: B0–G4; bass clarinet with low C:
+  B♭1–B5; baritone saxophone with low A: C2–A4.
+- Saxophones with written high F♯, without altissimo register.
+- Tenor trombone: E2–F5, not including pedal tones; bass trombone: B♭0–F5.
+- Generic tuba: E1–F4. Timpani: usual set: C2–A3; the distribution among drums
+  and the time needed to tune them are not evaluated.
+- Four-valve [B♭ piccolo trumpet](https://www.vsl.co.at/academy/brass/piccolo-trumpet):
+  D4–G6 in sounding pitch (E3–A5 written).
+- 19-fret classical guitar: E2–B5; 88-key piano: A0–C8;
+  pedal harp: C1–G7.
+- Five-octave marimba: C2–C7; vibraphone: F3–F6; celesta of four
+  sounding octaves: C4–C8. Organ: manuals C2–C7 without register transpositions.
 
-La tabla completa está junto al catálogo del modelo, en
-`crates/score-core/src/instrument_range.rs`. Cambiar de clave no cambia el
-registro. Cada cabeza escrita de un acorde se evalúa por separado, también
-en segunda voz y en ambos pentagramas de una parte.
+The full table sits next to the model's catalog, in
+`crates/score-core/src/instrument_range.rs`. Changing clef does not change the
+range. Each written notehead of a chord is evaluated separately, also
+in the second voice and in both staves of a part.
 
-## Armónicos
+## Harmonics
 
-Las notas con armónico natural se escriben a su altura sonora. Su límite
-inferior es el segundo parcial de la cuerda más grave. Los artificiales de cuarta
-suenan dos octavas por encima de la nota pisada; el rombo de contacto no cuenta
-como otra nota. Los máximos son D8 para violín, E7 para viola, A7 para violoncello
-y G6 para contrabajo, según las referencias de cuerda de Vienna Academy.
+Notes with a natural harmonic are written at their sounding pitch. Their lower
+limit is the second partial of the lowest string. Artificial harmonics at the fourth
+sound two octaves above the stopped note; the contact diamond does not count
+as another note. The maximums are D8 for violin, E7 for viola, A7 for cello
+and G6 for double bass, according to the Vienna Academy string references.
 
-El aviso comprueba el registro sonoro, no la existencia de cada parcial natural,
-la digitación de un acorde o la dificultad de una técnica.
+The warning checks the sounding range, not the existence of each natural partial,
+the fingering of a chord or the difficulty of a technique.
 
-## Rangos personalizados y revisión
+## Custom ranges and review
 
-**Revisión › Rangos › Editar rango…** permite sustituir la referencia habitual
-de la parte activa por límites propios en altura real. Se aceptan nombres
-científicos (`C4`, `F#3`, `B♭5`) o españoles (`Do4`, `Fa♯3`, `Si♭5`), desde C0
-hasta G9. Ambos extremos son inclusivos; el límite inferior no puede superar al
-superior. Los límites personalizados se aplican al sonido de todos los eventos,
-incluidos los armónicos. Restablecer elimina la excepción y recupera los límites
-habituales y el tratamiento específico de armónicos descrito arriba.
+**Revisión › Rangos › Editar rango…** (Review › Ranges › Edit range…) lets you
+replace the usual reference of the active part with your own limits in sounding
+pitch. Scientific names (`C4`, `F#3`, `B♭5`) or Spanish names (`Do4`, `Fa♯3`,
+`Si♭5`) are accepted, from C0 to G9. Both ends are inclusive; the lower limit cannot
+exceed the upper one. Custom limits apply to the sound of all events, including
+harmonics. **Restablecer rango habitual** (reset to the usual range) removes the
+exception and restores the usual limits and the specific treatment of harmonics
+described above.
 
-La excepción se guarda en la parte, se conserva al extraerla y admite historial.
-El formato nativo 26 mantiene la compatibilidad de lectura con los archivos
-anteriores, que conservan los valores habituales. MusicXML y PDF no incluyen
-estos límites de revisión. No cambian las notas, el sonido ni el grabado exportado.
+The exception is saved in the part, is kept when extracting it and supports history.
+Native format 26 keeps read compatibility with earlier files, which keep the usual
+values. MusicXML and PDF do not include these review limits. They do not change the
+notes, the sound or the exported engraving.
 
-El botón **Notas en rojo** cambia únicamente la visibilidad del aviso durante
-la sesión. **Comprobar** sigue encontrando notas fuera de rango cuando el color
-está oculto. La lista de avisos permite navegar a cada nota del acorde, filtrar
-por parte y revisar también problemas de repeticiones y saltos.
+The **Notas en rojo** (Red notes) button changes only the visibility of the warning
+during the session. **Comprobar** (Check) still finds out-of-range notes when the
+color is hidden. The warnings list lets you navigate to each note of the chord, filter
+by part and also review problems with repeats and jumps.

@@ -1,4 +1,4 @@
-//! The shortcut reference in `docs/atajos.md`, generated from the registry so
+//! The shortcut reference in `docs/shortcuts.md`, generated from the registry so
 //! the documentation cannot drift from the code.
 
 use crate::{
@@ -37,7 +37,7 @@ pub fn markdown(registry: &Registry, keymaps: &[Keymap; 3]) -> String {
          *Pending* commands already have their key and show a notice until the feature \
          exists.\n\n\
          > Generated from `crates/keymap`. To update it: \
-         `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.\n",
+         `LEVARE_UPDATE_SHORTCUTS=1 cargo test -p score-keymap`.\n",
         profile.name,
         profile.description,
         preferences(macos),
@@ -108,13 +108,11 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn docs_atajos_md_matches_the_registry() {
+    fn docs_shortcuts_md_matches_the_registry() {
         let registry = Registry::builtin();
         let expected = markdown(&registry, &default_keymaps(&registry, &UsLayout));
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/atajos.md");
-        if std::env::var_os("LEVARE_ACTUALIZAR_ATAJOS").is_some()
-            || std::env::var_os("PARTITURA_ACTUALIZAR_ATAJOS").is_some()
-        {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/shortcuts.md");
+        if std::env::var_os("LEVARE_UPDATE_SHORTCUTS").is_some() {
             std::fs::write(&path, &expected).unwrap();
         }
         // A Windows checkout may turn the file's line endings into CRLF.
@@ -123,8 +121,8 @@ mod tests {
             .replace("\r\n", "\n");
         assert!(
             current == expected,
-            "docs/atajos.md is out of date; run \
-             LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap"
+            "docs/shortcuts.md is out of date; run \
+             LEVARE_UPDATE_SHORTCUTS=1 cargo test -p score-keymap"
         );
     }
 }
