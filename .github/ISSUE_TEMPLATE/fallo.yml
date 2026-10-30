@@ -1,0 +1,65 @@
+# The form Levare's «Informar de un problema…» opens. The app fills in
+# `version` and `sistema` through the address (diagnostics::report_url), so
+# keep those ids. It is shown to musicians, so it stays in Spanish.
+name: Informar de un problema
+description: Algo no funciona, se ve mal o suena mal en Levare.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por probar Levare. Cuanto más concreto, antes se arregla.
+        Si puedes, adjunta la partitura donde pasa. GitHub no acepta archivos `.levare` tal cual:
+        comprímela en un `.zip` y arrástrala a la casilla «Archivos y capturas».
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué pasó
+      description: Lo que hiciste, paso a paso, y lo que pasó.
+      placeholder: |
+        1. Abrí la partitura del adjunto.
+        2. Copié el compás 12 del clarinete y lo pegué en la trompeta.
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: que-esperabas
+    attributes:
+      label: Qué esperabas
+      description: Lo que debería haber pasado o cómo debería verse.
+    validations:
+      required: true
+  - type: dropdown
+    id: frecuencia
+    attributes:
+      label: ¿Se repite?
+      options:
+        - Siempre que hago lo mismo
+        - A veces
+        - Solo una vez
+    validations:
+      required: true
+  - type: textarea
+    id: archivos
+    attributes:
+      label: Archivos y capturas
+      description: |
+        La partitura, una captura de pantalla o un PDF exportado.
+        Si Levare se cerró de golpe, adjunta también el informe del fallo:
+        Ayuda › Mostrar registros e informes de fallos (en Windows y Linux, en el menú Archivo)
+        abre la carpeta; envía el `fallo-….txt` más reciente y `registro.log`.
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Levare
+      description: Está en Acerca de Levare.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: input
+    id: sistema
+    attributes:
+      label: Sistema
+      description: Por ejemplo macOS 15, Windows 11 o Ubuntu 24.04.
+    validations:
+      required: true
