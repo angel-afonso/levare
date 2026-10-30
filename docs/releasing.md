@@ -118,9 +118,11 @@ Settings → Secrets and variables → Actions.
 | `APPLE_API_KEY` | No | The App Store Connect API key (`AuthKey_….p8`) in base64, for notarization. |
 | `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | With the above | Its Key ID and Issuer ID. |
 
-Without the Apple secrets the macOS app gets an ad-hoc signature and is not notarized:
-the first time it has to be opened with right-click → Open. With them, Gatekeeper opens
-it without a warning.
+Without the Apple secrets the macOS app gets an ad-hoc signature and is not notarized.
+The first time it is opened, Gatekeeper refuses it: on macOS 15 and later the user has to
+go to System Settings → Privacy & Security and click "Open Anyway"; on macOS 14 and
+earlier right-click → Open is enough. With the secrets, Gatekeeper opens it without a
+warning.
 
 The Windows and Linux builds are not code-signed. Windows SmartScreen may warn the first
 time `levare.exe` runs ("More info → Run anyway"). Updates are still verified by their

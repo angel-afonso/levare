@@ -14,7 +14,9 @@ Releases are on [GitHub Releases](https://github.com/angel-afonso/levare/release
 ([docs/releasing.md](docs/releasing.md#what-a-release-publishes) lists every file):
 
 - **macOS** (11 or newer, Apple Silicon and Intel): a universal `Levare.app`, as a
-  `.dmg` to drag into Applications and as a `.zip`.
+  `.dmg` to drag into Applications and as a `.zip`. Unless the release was notarized,
+  macOS refuses it the first time: allow it in System Settings → Privacy & Security →
+  "Open Anyway" (on macOS 14 and earlier, right-click → Open).
 - **Windows** (x86_64): a `.zip` with a `Levare` folder holding `levare.exe`,
   `sfizz.dll` and `licenses`. Unzip it anywhere you can write and run `levare.exe`; it
   needs no Visual C++ redistributable. The download is not code-signed, so SmartScreen
