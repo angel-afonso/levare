@@ -23,7 +23,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The version comes from rust-toolchain.toml.
       - name: Toolchain
@@ -39,7 +39,7 @@ jobs:
     name: Dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -64,7 +64,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # NTFS and Defender scanning make Windows builds slow; a trusted ReFS
       # Dev Drive avoids both. The build runs in its copy of the checkout.
@@ -154,7 +154,7 @@ jobs:
 
       - name: Upload launch results
         if: ${{ !cancelled() && runner.os != 'macOS' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: launch-${{ runner.os }}
           path: smoke/
