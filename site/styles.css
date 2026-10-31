@@ -686,3 +686,21 @@ tspan.fl { font-size: 18px; }
   .road-cols { grid-template-columns: 1fr; }
   .rcol { padding: 22px; }
 }
+
+/* probar.html: a guide to read, at a comfortable measure on the same paper. */
+.doc { max-width: 76ch; margin-inline: auto; padding-top: clamp(32px, 6vw, 72px); padding-bottom: clamp(72px, 9vw, 128px); }
+.doc .h2 { margin-bottom: 24px; }
+.doc h2 { font-size: clamp(24px, 1rem + 1.2vw, 32px); letter-spacing: -0.02em; margin: 56px 0 14px; scroll-margin-top: 24px; }
+.doc p, .doc ul, .doc ol, .doc dl { margin: 0 0 14px; }
+.doc ul, .doc ol { padding-left: 1.3em; }
+.doc li { margin-bottom: 8px; }
+.doc dt { font-weight: 600; margin-top: 16px; }
+.doc dd { margin: 4px 0 0; color: var(--ink2); }
+.doc a { text-underline-offset: 3px; }
+.doc a.btn { text-decoration: none; }
+.doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; background: var(--paper2); border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+.doc-lead { font-size: var(--t-lead); line-height: 1.25; letter-spacing: -0.02em; }
+.doc-table { overflow-x: auto; }
+.doc table { border-collapse: collapse; width: 100%; font-size: var(--t-small); }
+.doc th, .doc td { text-align: left; padding: 10px 12px 10px 0; border-bottom: 1px solid var(--paper3); }
+.doc th { font-weight: 600; }

@@ -423,6 +423,10 @@ impl Shortcuts {
                     Some(id::TOGGLE_AGENT_PANEL),
                 ]),
             },
+            Menu {
+                name: "Ayuda".into(),
+                items: self.items(&[Some(id::REPORT_PROBLEM), Some(id::SHOW_DIAGNOSTICS)]),
+            },
         ]
     }
 

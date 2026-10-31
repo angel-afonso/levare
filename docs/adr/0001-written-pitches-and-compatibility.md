@@ -1,0 +1,3 @@
+# Written pitches per part and explicit transposition
+
+We store notes at written pitch and a written→sounding interval per part, keeping the overall key in sounding pitch, so that editing and MusicXML express what each performer reads. Compared with storing everything in sounding pitch and converting in every view, this keeps positions and accidentals stable during editing; in exchange, playback and copying between instruments must resolve the interval explicitly. Files from before schema 19 omit that interval and are read with a value of zero, even for double bass and guitar, to preserve their earlier notation and sound exactly; only new parts receive the catalog's standard transposition.

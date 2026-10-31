@@ -258,8 +258,8 @@ jobs:
       # With the Apple secrets set, the app is signed with the Developer ID
       # certificate, notarized and stapled, so Gatekeeper opens it without a
       # warning. Without them it falls back to an ad-hoc signature (Apple
-      # Silicon refuses to run unsigned binaries) and users have to right-click
-      # → Open the first time.
+      # Silicon refuses to run unsigned binaries) and users have to allow it
+      # the first time (docs/releasing.md says how).
       - name: Sign and notarize
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}

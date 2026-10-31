@@ -14,7 +14,9 @@ Releases are on [GitHub Releases](https://github.com/angel-afonso/levare/release
 ([docs/releasing.md](docs/releasing.md#what-a-release-publishes) lists every file):
 
 - **macOS** (11 or newer, Apple Silicon and Intel): a universal `Levare.app`, as a
-  `.dmg` to drag into Applications and as a `.zip`.
+  `.dmg` to drag into Applications and as a `.zip`. Unless the release was notarized,
+  macOS refuses it the first time: allow it in System Settings → Privacy & Security →
+  "Open Anyway" (on macOS 14 and earlier, right-click → Open).
 - **Windows** (x86_64): a `.zip` with a `Levare` folder holding `levare.exe`,
   `sfizz.dll` and `licenses`. Unzip it anywhere you can write and run `levare.exe`; it
   needs no Visual C++ redistributable. The download is not code-signed, so SmartScreen
@@ -27,6 +29,10 @@ Releases are on [GitHub Releases](https://github.com/angel-afonso/levare/release
 
 Levare updates itself in place (see [Updates](#updates)), so keep it in a folder you
 can write to.
+
+Musicians testing Levare have a guide in Spanish on the website,
+[Probar Levare](https://angel-afonso.github.io/levare/probar.html) (`site/probar.html`):
+how to install it, what to try, what Levare does not do yet and how to report a problem.
 
 ## Running from source
 
@@ -261,7 +267,7 @@ siguiente».
 The shortcuts follow Sibelius's **Sibelius · portátil** (laptop) profile and work the
 same with or without a numeric keypad: the number row acts as the keypad. The full
 list for each platform, generated from the code, is in
-[docs/atajos.md](docs/atajos.md). Change them in **Preferencias de atajos…** (`⌘,` on
+[docs/shortcuts.md](docs/shortcuts.md). Change them in **Preferencias de atajos…** (`⌘,` on
 macOS, `Ctrl+,` on Windows and Linux; in the **Levare** menu on macOS and the
 **Archivo** menu elsewhere) or with the **Atajos** button in the title bar.
 
@@ -269,7 +275,7 @@ This README writes keys as on macOS. On Windows and Linux, ⌘ is Ctrl, ⌥ is A
 is Mayús, with a few exceptions where the platforms differ: ⌥⌘ shortcuts become
 Ctrl+Mayús (`⌥⌘T` is `Ctrl+Mayús+T`), **Ir al compás…** is `Ctrl+G`, full screen is
 `F11`, the playback line goes to the start with `Ctrl+Inicio`, and replaying the last
-playback is `Mayús+Alt+Espacio` on Linux. [docs/atajos.md](docs/atajos.md) has each
+playback is `Mayús+Alt+Espacio` on Linux. [docs/shortcuts.md](docs/shortcuts.md) has each
 key per platform. A shortcut you record with Ctrl+Alt and a letter, digit or symbol is
 refused on Windows and Linux, where Ctrl+Alt is AltGr or a desktop shortcut, and
 Preferences suggests Ctrl+Mayús instead; such shortcuts saved on macOS are skipped
@@ -588,7 +594,7 @@ Slurs and hairpins can be written in four ways:
   note to another of the same voice for a slur; `⌥⌘` (`Ctrl+Alt`) draws a crescendo and
   `⌥⇧⌘` (`Ctrl+Mayús+Alt`) a diminuendo. Linux does not use Alt alone because Xfce,
   Cinnamon and MATE move the window on Alt+drag; the full table is in
-  [docs/atajos.md](docs/atajos.md#mouse). While you drag, the score shows the result;
+  [docs/shortcuts.md](docs/shortcuts.md#mouse). While you drag, the score shows the result;
   if the end is not valid, the status bar explains why and nothing changes on release.
 - **Stretching an existing one:** click on a slur or hairpin; two round handles appear
   at its ends. Drag a handle to another note to lengthen or shorten it. Dragging the
@@ -1141,6 +1147,10 @@ can send it with a description of what you were doing. If the window cannot open
 usable GPU, a broken driver), the reason goes to the log and a report, and Windows also
 shows a message.
 
+The **Ayuda** menu on macOS, and the **Archivo** menu on Windows and Linux, has
+**Mostrar registros e informes de fallos**, which opens this folder, and **Informar de
+un problema…**, which opens the GitHub issue form with the version and system filled in.
+
 ## Correcting notes and bars
 
 Click a note to leave input and edit it: **A–G** replaces the chosen pitch; the values
@@ -1351,12 +1361,12 @@ To work only on the core, without graphics or audio dependencies:
 cargo test -p score-core -p score-edit -p score-layout -p score-io -p score-document -p score-keymap
 ```
 
-`docs/atajos.md` is generated from `crates/keymap`; after changing commands or
-shortcuts, regenerate it with `LEVARE_ACTUALIZAR_ATAJOS=1 cargo test -p score-keymap`.
+`docs/shortcuts.md` is generated from `crates/keymap`; after changing commands or
+shortcuts, regenerate it with `LEVARE_UPDATE_SHORTCUTS=1 cargo test -p score-keymap`.
 
 The architecture, decisions and next milestones are in
-[docs/desarrollo.md](docs/desarrollo.md). The reference inventory continues in
-[docs/herramientas.md](docs/herramientas.md).
+[docs/development.md](docs/development.md). The reference inventory continues in
+[docs/tools-and-integrations.md](docs/tools-and-integrations.md).
 
 ## Releasing
 

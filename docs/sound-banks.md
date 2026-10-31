@@ -1,119 +1,121 @@
-# Contrato común de bancos de sonido
+# Common sound bank contract
 
-La interpretación musical vive en `score-playback`: resuelve alturas, dinámicas,
-articulaciones, duración sonora, técnica, ligaduras de expresión y reguladores. Sus
-reglas están reunidas en `interpretation.rs`. `Audition::for_element` prepara una
-escucha breve usando la dinámica vigente (incluido el nivel de un regulador), la
-técnica heredada, la ligadura y la articulación de la nota. Comparte las reglas de
-intensidad y duración con el plan completo; su duración base se limita a 250 ms para
-escribir con fluidez. Los acordes enarmónicos no duplican ataques.
+Musical interpretation lives in `score-playback`: it resolves pitches, dynamics,
+articulations, sounding duration, technique, slurs and hairpins. Its rules are
+gathered in `interpretation.rs`. `Audition::for_element` prepares a short preview
+using the current dynamic (including the level of a hairpin), the inherited
+technique, the slur and the note's articulation. It shares the intensity and
+duration rules with the full plan; its base duration is capped at 250 ms so that
+writing stays fluid. Enharmonic chords do not duplicate attacks.
 
-## Duración sonora
+## Sounding duration
 
-| Indicación | Duración sonora |
+| Marking | Sounding duration |
 | --- | --- |
-| Sin indicación, acento o marcato | 92 % de la escrita, con un hueco máximo de 60 ms |
-| Tenuto | Completa |
-| Staccato | 50 % |
-| Bajo ligadura de expresión | Completa y solapada 25 ms con la nota siguiente |
-| Staccato bajo ligadura (portato) | 75 % |
-| Última nota de la ligadura | Según su propia indicación |
+| No marking, accent or marcato | 92% of the written duration, with a maximum gap of 60 ms |
+| Tenuto | Full |
+| Staccato | 50% |
+| Under a slur | Full, and overlapped 25 ms with the next note |
+| Staccato under a slur (portato) | 75% |
+| Last note of the slur | According to its own marking |
 
-El solapamiento solo se aplica si la nota siguiente empieza justo al terminar la
-anterior y no repite ninguna tecla: una nota repetida se vuelve a atacar a tiempo,
-sin fundirse como una unión. Las cadenas ligadas aplican la indicación final a la
-duración conjunta.
+The overlap only applies if the next note starts exactly when the previous one ends
+and does not repeat any key: a repeated note is struck again on time, without
+blending like a tie. Tied chains apply the final marking to the combined duration.
 
-## Interpretación natural
+## Natural interpretation
 
-El transporte usa **Natural** al iniciar la sesión; en Sonidos se puede elegir
-**Literal (exacta)**. La opción literal conserva exactamente el plan anterior y la
-audición breve siempre permanece literal. La interpretación natural funciona con
-cualquier banco de sonido.
+The transport uses **Natural** when the session starts; in «Sonidos» (Sounds) you can
+choose **Literal (exacta)** (exact). The literal option keeps the previous plan
+exactly, and the short audition always stays literal. Natural interpretation works
+with any sound bank.
 
-| Regla | Cambio en Natural |
+| Rule | Change in Natural |
 | --- | --- |
-| Acento métrico | Primer pulso +4; otros pulsos +1 (tercer pulso de 4/4 +2); subdivisiones −2. En 6/8, 9/8 y 12/8 el pulso agrupa tres corcheas. |
-| Contorno de frase | En frases de tres o más notas, hasta +4 según la altura respecto de los extremos de la frase. |
-| Final de frase | −3 en la última nota, salvo acento o marcato. |
-| Variación humana | Retraso de 0–5 ms y cambio de intensidad de −3 a +3; un acorde y ambas manos del piano comparten retraso. |
+| Metric accent | First beat +4; other beats +1 (third beat of 4/4 +2); subdivisions −2. In 6/8, 9/8 and 12/8 the beat groups three eighth notes. |
+| Phrase contour | In phrases of three or more notes, up to +4 depending on the pitch relative to the extremes of the phrase. |
+| Phrase ending | −3 on the last note, except accent or marcato. |
+| Human variation | Delay of 0–5 ms and intensity change of −3 to +3; a chord and both piano hands share the delay. |
 
-El resultado es determinista para una parte y un tiempo escrito: repetir la misma
-partitura produce los mismos ataques. La intensidad final se limita a 1–127. Los
-mensajes de expresión CC11 y sus niveles de referencia permanecen iguales en ambos
-estilos; Natural ajusta solo los ataques, sin modificar el tempo ni la duración
-escrita. Los arpegios conservan sus separaciones internas.
+The result is deterministic for a part and a written time: playing the same score
+again produces the same attacks. The final intensity is limited to 1–127. The CC11
+expression messages and their reference levels stay the same in both styles; Natural
+adjusts only the attacks, without changing the tempo or the written duration.
+Arpeggios keep their internal spacing.
 
 ## NoteEvent
 
-Cada ataque es un `NoteEvent`, igual en `Message::NoteOn`, `HeldNote` y la audición:
+Each attack is a `NoteEvent`, the same in `Message::NoteOn`, `HeldNote` and the
+audition:
 
-- `key`: tecla MIDI.
-- `level`: intensidad interpretada (1–127): dinámica escrita o de regulador, más el
-  refuerzo de acento (+16) o marcato (+24).
-- `instrument` y `technique`: instrumento de la parte y técnica heredada (arco o
-  pizzicato). El host no envía cambios de programa; cada banco elige el timbre a
-  partir de estos campos. GeneralUser los traduce a su programa General MIDI.
-- `articulation`: articulación escrita del ataque.
-- `legato`: la nota está bajo una ligadura de expresión. El plan ya programa el
-  solapamiento; un banco puede preferir grabaciones sostenidas o de legato.
+- `key`: MIDI key.
+- `level`: interpreted intensity (1–127): written or hairpin dynamic, plus the
+  accent (+16) or marcato (+24) boost.
+- `instrument` and `technique`: the part's instrument and the inherited technique
+  (arco or pizzicato). The host does not send program changes; each bank chooses the
+  timbre from these fields. GeneralUser translates them to its General MIDI program.
+- `articulation`: the attack's written articulation.
+- `legato`: the note is under a slur. The plan already schedules the overlap; a bank
+  may prefer sustained or legato recordings.
 
-Cada `NoteEvent` conserva su articulación y técnica por ataque. Cambiar de
-articulación en otro pentagrama no modifica esa nota. Los saltos recuperan la
-articulación del ataque original, y las notas partidas al pegar conservan el staccato
-del pasaje ligado. Un staccato interior de una cadena ligada no interrumpe la unión.
+Each `NoteEvent` keeps its articulation and technique per attack. Changing the
+articulation on another staff does not modify that note. Jumps recover the
+articulation of the original attack, and notes split when pasting keep the staccato
+of the slurred passage. An inner staccato in a tied chain does not break the tie.
 
-## Interface y adapters
+## Interface and adapters
 
-`score-platform::sound_engine` define dos contratos Rust:
+`score-platform::sound_engine` defines two Rust contracts:
 
-- **SoundBank**: identidad, nombre, descripción y `prepare(score, audition, rate)`.
-  Prepara un `Box<dyn SoundEngine>` o devuelve `AudioError`. Toda lectura de archivos,
-  carga de bibliotecas, reserva de memoria y creación de sintetizadores ocurre aquí,
-  antes de abrir el flujo de audio. Un fallo deja disponible la salida anterior.
-- **SoundEngine**: controladores MIDI comunes, `note_on(channel, NoteEvent)`,
-  `note_off`, `silence` y render estéreo. Recibe intensidad y duración ya interpretadas;
-  decide qué grabación usar, sin reinterpretar el ritmo ni aplicar el acento dos veces.
-  Un banco que no reconoce el instrumento del ataque devuelve `false`.
+- **SoundBank**: identity, name, description and `prepare(score, audition, rate)`.
+  It prepares a `Box<dyn SoundEngine>` or returns `AudioError`. All file reading,
+  library loading, memory allocation and synthesizer creation happens here, before
+  the audio stream is opened. A failure leaves the previous output available.
+- **SoundEngine**: common MIDI controllers, `note_on(channel, NoteEvent)`,
+  `note_off`, `silence` and stereo render. It receives intensity and duration that
+  are already interpreted; it decides which recording to use, without reinterpreting
+  the rhythm or applying the accent twice. A bank that does not recognize the
+  attack's instrument returns `false`.
 
-`GeneralMidi` es el adapter integrado. Los bancos extra tienen prioridad por ataque:
-si `note_on` devuelve `false`, no debe haber modificado su sonido y el host envía
-esa nota a GeneralUser. Los `note_off` pueden llegar a ambos adapters, incluidos
-aquellos que rechazaron el ataque, y deben ser inocuos para claves no activas.
+`GeneralMidi` is the built-in adapter. Extra banks take priority per attack: if
+`note_on` returns `false`, it must not have modified its sound, and the host sends
+that note to GeneralUser. `note_off` messages may reach both adapters, including
+those that rejected the attack, and must be harmless for inactive keys.
 
-El render **suma** audio seco a dos planos del mismo tamaño, de un máximo de 64 frames.
-Todos los métodos de audio deben ser acotados, sin bloqueos, lectura de disco, reservas
-de memoria ni cambios de propietario. El sintetizador preparado tiene un único dueño
-en el hilo de audio; solo se libera cuando su flujo se ha detenido. El host conserva
-el transporte, la mezcla, los formatos de salida y la reverberación compartida.
+Render **adds** dry audio into two planes of the same size, of at most 64 frames.
+All audio methods must be bounded, with no locks, disk reads, memory allocations or
+ownership changes. The prepared synthesizer has a single owner on the audio thread;
+it is only released once its stream has stopped. The host keeps the transport, the
+mix, the output formats and the shared reverb.
 
-Los canales son 0–31: 15 se reserva para audición y 9 para percusión. Los
-controladores son 7 (volumen), 10 (panorámica) y 11 (expresión). El segundo grupo de canales permite separar las
-manos del piano cuando tienen reguladores independientes.
+Channels are 0–31: 15 is reserved for audition and 9 for percussion. The controllers
+are 7 (volume), 10 (pan) and 11 (expression). The second group of channels makes it
+possible to separate the piano hands when they have independent hairpins.
 
-## Bibliotecas SFZ como extra
+## SFZ libraries as an extra
 
-`score-sound-vsco` depende del contrato de `score-platform`, y contiene los manifiestos,
-las rutas SFZ, el enlace sfizz y la selección de muestras. Puede cargar VSCO CE y otros
-paquetes de formato 2, incluido Virtual Playing Orchestra. Cuando hay varios, el banco
-combinado consulta cada paquete según la prioridad guardada en `sonidos.json`, antes
-del respaldo GeneralUser. En paquetes `cc1`, el nivel se envía a cada voz antes de
-su ataque; CC11 conserva el control continuo de expresión. Consulta la
-[guía de bibliotecas SFZ](sfz.md). `score-platform` no depende de ese paquete.
-El editor, la interfaz y el transporte solo conocen `SoundBank`.
+`score-sound-vsco` depends on the `score-platform` contract, and holds the
+manifests, the SFZ paths, the sfizz binding and the sample selection. It can load
+VSCO CE and other format 2 packages, including Virtual Playing Orchestra. When there
+are several, the combined bank queries each package according to the priority saved
+in `sonidos.json`, before the GeneralUser fallback. In `cc1` packages, the level is
+sent to each voice before its attack; CC11 keeps the continuous expression control.
+See the [SFZ libraries guide](sfz.md). `score-platform` does not depend on that
+package. The editor, the interface and the transport only know `SoundBank`.
 
-La única inscripción concreta está en `app-gpui/src/sound_banks.rs`, protegida por
-la característica `vsco`, activa por defecto. Sin esa opción
-(`--no-default-features --features runtime-shaders`), la app no compila ni incorpora
-el adapter ni su enlace SFZ. Como sfizz se carga en tiempo de ejecución, incluir el
-adapter no exige ninguna biblioteca nativa para compilar. Las partituras no contienen dependencias de proveedores.
+The only concrete registration is in `app-gpui/src/sound_banks.rs`, guarded by the
+`vsco` feature, enabled by default. Without that option
+(`--no-default-features --features runtime-shaders`), the app neither compiles nor
+includes the adapter or its SFZ binding. Since sfizz is loaded at runtime, including
+the adapter does not require any native library to build. Scores contain no vendor
+dependencies.
 
-Para añadir otro banco, implementa `SoundBank` y `SoundEngine` en su paquete y
-regístralo en ese punto de composición. El editor no necesita nuevas condiciones.
-Este contrato es interno a la compilación Rust; no es una ABI para cargar plugins
-Rust arbitrarios ni un host VST/AU.
+To add another bank, implement `SoundBank` and `SoundEngine` in its package and
+register it at that composition point. The editor needs no new conditions. This
+contract is internal to the Rust build; it is not an ABI for loading arbitrary Rust
+plugins nor a VST/AU host.
 
-## Verificación
+## Verification
 
 ```sh
 cargo test --workspace
@@ -122,7 +124,7 @@ cargo test -p score-sound-vsco -- --ignored
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-Los tests de contrato utilizan un banco independiente sin VSCO para comprobar el
-ataque, la duración de audición, el salto, la pausa y el respaldo sin duplicar notas.
-Los tests de audio de GeneralUser verifican diferencias reales entre dinámicas y
-acentos. Los tests nativos de VSCO son opcionales y requieren las muestras instaladas.
+The contract tests use a standalone bank without VSCO to check the attack, the
+audition duration, the jump, the rest and the fallback without duplicating notes.
+The GeneralUser audio tests verify real differences between dynamics and accents.
+The native VSCO tests are optional and require the samples to be installed.

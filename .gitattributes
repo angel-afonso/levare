@@ -1,5 +1,5 @@
 # Text files are checked out with LF on every platform, so generated files
-# such as docs/atajos.md compare equal on Windows too.
+# such as docs/shortcuts.md compare equal on Windows too.
 * text=auto eol=lf
 
 # Binaries.

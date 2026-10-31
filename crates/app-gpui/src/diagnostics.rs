@@ -26,6 +26,8 @@ const REPORT_SUFFIX: &str = ".txt";
 const KEPT_REPORTS: usize = 10;
 /// The newest report the musician was already told about.
 const SEEN: &str = "fallos.json";
+/// Where the musician reports a problem (`.github/ISSUE_TEMPLATE/fallo.yml`).
+const ISSUES: &str = "https://github.com/angel-afonso/levare/issues";
 
 /// Rotation and appending happen under it, so lines from several threads
 /// never interleave and two threads never rotate at once.
@@ -167,6 +169,33 @@ pub fn announce_unseen_crash(window: WindowHandle<AppView>, cx: &mut App) {
 
 fn directory() -> Option<PathBuf> {
     data_path(LOG).and_then(|log| log.parent().map(Path::to_path_buf))
+}
+
+/// The folder with the log and the crash reports, created if it is missing
+/// so the file manager always has something to open.
+pub fn folder() -> Option<PathBuf> {
+    directory().filter(|directory| fs::create_dir_all(directory).is_ok())
+}
+
+/// The form for a new issue, with this copy's version and system filled in.
+/// Nothing else goes in the address: the musician attaches files and writes
+/// the rest themselves.
+pub fn report_url() -> String {
+    report_url_for(
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    )
+}
+
+fn report_url_for(version: &str, os: &str, arch: &str) -> String {
+    let system = match os {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other => other,
+    };
+    format!("{ISSUES}/new?template=fallo.yml&version={version}&sistema={system}%20({arch})")
 }
 
 fn now() -> u64 {
@@ -312,6 +341,18 @@ fn utc(time: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_report_form_gets_the_version_and_system_only() {
+        assert_eq!(
+            report_url_for("0.3.0", "macos", "aarch64"),
+            "https://github.com/angel-afonso/levare/issues/new?template=fallo.yml\
+             &version=0.3.0&sistema=macOS%20(aarch64)"
+        );
+        assert!(
+            report_url_for("1.0.0", "windows", "x86_64").ends_with("sistema=Windows%20(x86_64)")
+        );
+    }
 
     #[test]
     fn timestamps_are_utc_calendar_dates() {

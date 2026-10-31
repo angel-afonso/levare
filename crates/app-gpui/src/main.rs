@@ -1645,6 +1645,11 @@ impl AppView {
             id::RESTART_TO_UPDATE => self.restart_to_update(cx),
             id::AUTOMATIC_UPDATES => self.toggle_automatic_updates(cx),
             id::ABOUT => self.open_about(cx),
+            id::REPORT_PROBLEM => cx.open_url(&diagnostics::report_url()),
+            id::SHOW_DIAGNOSTICS => match diagnostics::folder() {
+                Some(folder) => cx.open_with_system(&folder),
+                None => self.status = "No se encontró la carpeta de datos de Levare".into(),
+            },
 
             id::COPY => self.copy_music(false, cx),
             id::CUT => self.copy_music(true, cx),

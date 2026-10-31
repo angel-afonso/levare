@@ -51,7 +51,7 @@ The score itself (Bravura, staff lines, Times New Roman title) renders correctly
 | W+L | `update`: 3 install tests, `this_build_has_a_platform_key` | The updater is macOS-only (`ditto`, `codesign`, no platform key). | Fixed (`e774614`) |
 | W | `score-io`: 7 recovery tests | `lock_file` always fails off unix. | Fixed (`7666e37`) |
 | W | `agent-host`: 13 tests | `random_token` reads `/dev/urandom` (`agent-host/src/mcp.rs:115`), so the MCP server never starts. | Fixed (`75ca92f`) |
-| W | `keymap`: `docs_atajos_md_matches_the_registry` | Probably CRLF line endings from the Windows checkout; there is no `.gitattributes`. | Fixed (`a481639`, `.gitattributes`) |
+| W | `keymap`: `docs_shortcuts_md_matches_the_registry` | Probably CRLF line endings from the Windows checkout; there is no `.gitattributes`. | Fixed (`a481639`, `.gitattributes`) |
 
 ## Findings
 
