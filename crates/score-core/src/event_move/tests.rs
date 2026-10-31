@@ -1,5 +1,8 @@
 use super::*;
 
+/// A quarter note.
+const Q: u32 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -13,11 +16,11 @@ fn moving_into_free_time_leaves_rests_and_keeps_all_other_onsets() {
     let mut s = Score::default();
     let a = s.insert(0, 0, note(Step::C, Duration::Quarter)).unwrap();
     let b = s.insert(0, 1, note(Step::D, Duration::Quarter)).unwrap();
-    let moved = s.move_event(a, 0, 96).unwrap();
+    let moved = s.move_event(a, 0, 2 * Q).unwrap();
     assert_eq!(moved, a);
-    assert_eq!(s.event_tick(a), Some(96));
-    assert_eq!(s.event_tick(b), Some(48));
-    assert_eq!(s.measures()[0].voice_ticks(Voice::One), 144);
+    assert_eq!(s.event_tick(a), Some(u64::from(2 * Q)));
+    assert_eq!(s.event_tick(b), Some(u64::from(Q)));
+    assert_eq!(s.measures()[0].voice_ticks(Voice::One), 3 * Q);
     assert!(
         s.measures()[0]
             .voice_iter(Voice::One)
@@ -48,7 +51,7 @@ fn occupied_equal_slots_exchange_complete_chords_and_annotations_across_bars() {
         ..a
     };
     assert_eq!(s.event(new_b), Some(&original_b));
-    assert_eq!(s.event_tick(moved), Some(192));
+    assert_eq!(s.event_tick(moved), Some(u64::from(4 * Q)));
     assert_eq!(s.event_tick(new_b), Some(0));
     s.validate().unwrap();
 }
@@ -69,11 +72,11 @@ fn silence_splitting_and_self_overlapping_moves_keep_exact_ticks() {
         )
         .unwrap();
     let c = s.insert(0, 2, note(Step::D, Duration::Quarter)).unwrap();
-    let a = s.move_event(a, 0, 12).unwrap();
-    assert_eq!(s.event_tick(a), Some(12));
-    assert_eq!(s.event_tick(c), Some(144));
+    let a = s.move_event(a, 0, Q / 4).unwrap();
+    assert_eq!(s.event_tick(a), Some(u64::from(Q / 4)));
+    assert_eq!(s.event_tick(c), Some(u64::from(3 * Q)));
     assert!(s.event(b).is_none());
-    assert_eq!(s.measures()[0].voice_ticks(Voice::One), 192);
+    assert_eq!(s.measures()[0].voice_ticks(Voice::One), 4 * Q);
     s.validate().unwrap();
 }
 
@@ -84,7 +87,7 @@ fn rejects_incompatible_destinations_atomically_and_no_op_is_identical() {
     s.insert(1, 0, note(Step::D, Duration::Half)).unwrap();
     let before = s.clone();
     assert!(s.move_event(a, 1, 0).is_err());
-    assert!(s.move_event(a, 3, 168).is_err());
+    assert!(s.move_event(a, 3, 7 * Q / 2).is_err());
     assert!(s.move_event(a, usize::MAX, 0).is_err());
     assert!(s.move_event(a, 1, u32::MAX).is_err());
     assert!(s.move_event(a, 2, 2).is_err());
@@ -112,9 +115,9 @@ fn keys_voices_and_other_hands_remain_independent() {
     s.set_key_signature_at(1, KeySignature::new(1, KeyMode::Major).unwrap())
         .unwrap();
     let lower = s.part(part).unwrap().staff(StaffId::Lower).unwrap().clone();
-    let moved = s.move_event(a, 1, 16).unwrap();
+    let moved = s.move_event(a, 1, Q / 3).unwrap();
     assert_eq!(s.voice_of(moved), Some(Voice::Two));
-    assert_eq!(s.event_tick(moved), Some(208));
+    assert_eq!(s.event_tick(moved), Some(u64::from(13 * Q / 3)));
     assert_eq!(
         s.event(moved)
             .unwrap()
@@ -188,6 +191,6 @@ fn silent_destination_hairpin_anchors_are_protected_when_consumed_or_split() {
     .unwrap();
     let before = s.clone();
     assert!(s.move_event(a, 1, 0).is_err());
-    assert!(s.move_event(a, 1, 24).is_err());
+    assert!(s.move_event(a, 1, Q / 2).is_err());
     assert_eq!(s, before);
 }

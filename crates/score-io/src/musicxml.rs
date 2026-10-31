@@ -132,6 +132,7 @@ fn value(d: Duration) -> &'static str {
         NoteValue::Eighth => "eighth",
         NoteValue::Sixteenth => "16th",
         NoteValue::ThirtySecond => "32nd",
+        NoteValue::SixtyFourth => "64th",
     }
 }
 fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
@@ -486,7 +487,52 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
         xml.push_str("</part>\n");
     }
     xml.push_str("</score-partwise>\n");
-    Ok(xml.into_bytes())
+    Ok(coarsen_ticks(&xml).into_bytes())
+}
+
+/// Elements whose content is a length in ticks.
+const TICK_ELEMENTS: [&str; 3] = ["<duration>", "<offset>", "<offset sound=\"yes\">"];
+
+/// Divide every length by the largest unit that keeps it whole, starting from
+/// the 192 ticks per whole note that Levare exported before tuplets, so other
+/// programs read small numbers and older exports keep their divisions.
+fn coarsen_ticks(xml: &str) -> String {
+    // Where each number starts and ends, in document order.
+    let mut numbers: Vec<(usize, usize)> = TICK_ELEMENTS
+        .iter()
+        .chain(&["<divisions>"])
+        .flat_map(|open| {
+            xml.match_indices(open).map(move |(at, _)| {
+                let start = at + open.len();
+                (start, start + xml[start..].find('<').unwrap_or(0))
+            })
+        })
+        .collect();
+    numbers.sort_unstable();
+    let value = |&(start, end): &(usize, usize)| xml[start..end].parse::<u32>().ok();
+    let unit = numbers
+        .iter()
+        .filter(|&&(start, _)| !xml[..start].ends_with("<divisions>"))
+        .filter_map(value)
+        .fold(TICKS_PER_QUARTER / 48, gcd);
+    if unit == 1 {
+        return xml.to_owned();
+    }
+    let mut out = String::with_capacity(xml.len());
+    let mut copied = 0;
+    for number in &numbers {
+        if let Some(ticks) = value(number) {
+            out.push_str(&xml[copied..number.0]);
+            let _ = write!(out, "{}", ticks / unit);
+            copied = number.1;
+        }
+    }
+    out.push_str(&xml[copied..]);
+    out
+}
+
+fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 /// Flush and replace atomically, leaving an existing destination intact on error.
@@ -838,7 +884,7 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             "<voice>{number}</voice><type>{}</type>",
             value(f.duration)
         );
-        if f.duration.is_dotted() {
+        for _ in 0..f.duration.dots() {
             xml.push_str("<dot/>");
         }
         if let Some(&(p, _, _)) = pitches.get(tone)

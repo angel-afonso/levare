@@ -2552,6 +2552,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Eighth => 0xe1d7 + down,
                 score_core::NoteValue::Sixteenth => 0xe1d9 + down,
                 score_core::NoteValue::ThirtySecond => 0xe1db + down,
+                score_core::NoteValue::SixtyFourth => 0xe1dd + down,
             }
         } else {
             match event.duration.value() {
@@ -2561,6 +2562,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Eighth => 0xe4e6,
                 score_core::NoteValue::Sixteenth => 0xe4e7,
                 score_core::NoteValue::ThirtySecond => 0xe4e8,
+                score_core::NoteValue::SixtyFourth => 0xe4e9,
             }
         };
         let glyph_y = if event.pitches.first().is_none()
@@ -2895,11 +2897,12 @@ fn engrave_chord(
     }
     if !beamed && event.duration.value() != score_core::NoteValue::Whole {
         let stem_x = if down { onset } else { onset + metrics.head };
-        // A third flag needs half a space more stem to clear the notehead.
-        let length = if event.duration.value() == score_core::NoteValue::ThirtySecond {
-            40.
-        } else {
-            35.
+        // A third flag needs half a space more stem to clear the notehead,
+        // and a fourth another half.
+        let length = match event.duration.value() {
+            score_core::NoteValue::ThirtySecond => 40.,
+            score_core::NoteValue::SixtyFourth => 45.,
+            _ => 35.,
         };
         let end_y = if down { low + length } else { high - length };
         result.lines.push(Line {
@@ -2918,6 +2921,7 @@ fn engrave_chord(
             score_core::NoteValue::Eighth => Some(if down { 0xe241 } else { 0xe240 }),
             score_core::NoteValue::Sixteenth => Some(if down { 0xe243 } else { 0xe242 }),
             score_core::NoteValue::ThirtySecond => Some(if down { 0xe245 } else { 0xe244 }),
+            score_core::NoteValue::SixtyFourth => Some(if down { 0xe247 } else { 0xe246 }),
             _ => None,
         };
         if let Some(flag) = flag {

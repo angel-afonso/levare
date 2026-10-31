@@ -1,5 +1,8 @@
 use super::*;
 
+/// A quarter note.
+const Q: u32 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -30,7 +33,7 @@ fn writes_into_an_empty_bar_without_filling_the_remainder() {
     let mut score = Score::default();
     let ids = write(&mut score, 0, 0, note(Step::C, Duration::Quarter)).unwrap();
     assert_eq!(ids.len(), 1);
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 48);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
     score.validate().unwrap();
 }
 
@@ -99,13 +102,13 @@ fn replacing_a_whole_rest_leaves_a_dotted_half_rest() {
 fn overwriting_two_notes_keeps_neighbors_and_their_keys() {
     let mut score = Score::default();
     let ids = quarters(&mut score, 0, &[Step::C, Step::D, Step::E, Step::F]);
-    write(&mut score, 0, 48, note(Step::G, Duration::Half)).unwrap();
+    write(&mut score, 0, Q, note(Step::G, Duration::Half)).unwrap();
     let events = voice(&score, 0);
     assert_eq!(events.len(), 3);
     assert_eq!(events[0].0, ids[0]);
     assert_eq!(events[2].0, ids[3]);
     assert_eq!(events[1].1.pitches, note(Step::G, Duration::Half).pitches);
-    assert_eq!(score.event_tick(ids[3]), Some(144));
+    assert_eq!(score.event_tick(ids[3]), Some(u64::from(3 * Q)));
     score.validate().unwrap();
 }
 
@@ -113,7 +116,7 @@ fn overwriting_two_notes_keeps_neighbors_and_their_keys() {
 fn a_short_write_leaves_silence_before_the_next_note() {
     let mut score = Score::default();
     let ids = quarters(&mut score, 0, &[Step::C, Step::D, Step::E, Step::F]);
-    write(&mut score, 0, 48, note(Step::G, Duration::Eighth)).unwrap();
+    write(&mut score, 0, Q, note(Step::G, Duration::Eighth)).unwrap();
     let events = voice(&score, 0);
     assert_eq!(events.len(), 5);
     assert_eq!(events[0].0, ids[0]);
@@ -154,7 +157,7 @@ fn a_crescendo_and_its_offset_follow_a_replaced_start() {
     score
         .set_mark_offset(MarkRef::Connection(old), offset)
         .unwrap();
-    let new_start = write(&mut score, 0, 48, note(Step::G, Duration::Quarter)).unwrap()[0];
+    let new_start = write(&mut score, 0, Q, note(Step::G, Duration::Quarter)).unwrap()[0];
     let new = Connection {
         start: new_start,
         ..old
@@ -175,7 +178,7 @@ fn changing_a_tied_notes_pitch_prunes_the_old_tie() {
             kind: ConnectionKind::Tie,
         })
         .unwrap();
-    write(&mut score, 0, 48, note(Step::D, Duration::Quarter)).unwrap();
+    write(&mut score, 0, Q, note(Step::D, Duration::Quarter)).unwrap();
     assert!(score.connections().is_empty());
     score.validate().unwrap();
 }
@@ -187,7 +190,7 @@ fn a_write_inside_an_existing_note_fails_atomically() {
         .insert(0, 0, note(Step::C, Duration::Quarter))
         .unwrap();
     let before = score.clone();
-    let error = write(&mut score, 0, 24, note(Step::D, Duration::Eighth)).unwrap_err();
+    let error = write(&mut score, 0, Q / 2, note(Step::D, Duration::Eighth)).unwrap_err();
     assert_eq!(
         error.0,
         "La posición cae dentro de una nota; elige el inicio de una figura o un silencio"
@@ -203,7 +206,7 @@ fn writing_into_a_rest_preserves_later_onsets() {
     let later = score
         .insert(0, 1, note(Step::D, Duration::Quarter))
         .unwrap();
-    write(&mut score, 0, 48, note(Step::C, Duration::Quarter)).unwrap();
+    write(&mut score, 0, Q, note(Step::C, Duration::Quarter)).unwrap();
     let events = voice(&score, 0);
     assert!(events[0].1.pitches.is_empty());
     assert_eq!(events[0].1.duration, Duration::Quarter);
@@ -212,7 +215,7 @@ fn writing_into_a_rest_preserves_later_onsets() {
         note(Step::C, Duration::Quarter).pitches
     );
     assert_eq!(events[2].0, later);
-    assert_eq!(score.event_tick(later), Some(96));
+    assert_eq!(score.event_tick(later), Some(u64::from(2 * Q)));
     score.validate().unwrap();
 }
 
@@ -251,7 +254,7 @@ fn assert_tied(score: &Score, ids: &[ElementId]) {
 fn a_half_note_on_the_fourth_beat_extends_to_a_new_bar() {
     let mut score = score_with_bars(1);
     quarters(&mut score, 0, &[Step::C, Step::D, Step::E]);
-    let ids = write(&mut score, 0, 144, note(Step::G, Duration::Half)).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, note(Step::G, Duration::Half)).unwrap();
     assert_eq!(score.measures().len(), 2);
     assert_eq!(ids.len(), 2);
     assert_eq!((ids[0].measure, ids[1].measure), (0, 1));
@@ -266,21 +269,21 @@ fn dotted_half_from_beat_three_splits_into_half_and_quarter() {
     let ids = write(
         &mut score,
         0,
-        96,
+        2 * Q,
         note(Step::G, Duration::Half.with_dotted(true)),
     )
     .unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(score.event(ids[0]).unwrap().duration, Duration::Half);
     assert_eq!(score.event(ids[1]).unwrap().duration, Duration::Quarter);
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 192);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 4 * Q);
     assert_tied(&score, &ids);
 }
 
 #[test]
 fn whole_note_from_beat_two_splits_into_dotted_half_and_quarter() {
     let mut score = score_with_bars(2);
-    let ids = write(&mut score, 0, 48, note(Step::G, Duration::Whole)).unwrap();
+    let ids = write(&mut score, 0, Q, note(Step::G, Duration::Whole)).unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(
         score.event(ids[0]).unwrap().duration,
@@ -296,7 +299,7 @@ fn a_key_change_rewrites_the_second_pieces_written_accidental() {
     score
         .set_key_signature_at(1, KeySignature::new(1, KeyMode::Major).unwrap())
         .unwrap();
-    let ids = write(&mut score, 0, 144, note(Step::F, Duration::Half)).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, note(Step::F, Duration::Half)).unwrap();
     let first = score
         .event(ids[0])
         .unwrap()
@@ -329,7 +332,7 @@ fn a_crossbar_chord_keeps_both_pitches_in_each_tied_piece() {
         Pitch::new(Step::E, 4).unwrap(),
     ])
     .unwrap();
-    let ids = write(&mut score, 0, 144, event).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, event).unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(score.event(ids[0]).unwrap().pitches.len(), 2);
     assert_eq!(score.event(ids[1]).unwrap().pitches, event.pitches);
@@ -341,7 +344,7 @@ fn a_triplet_cannot_cross_the_bar_and_changes_nothing() {
     let mut score = score_with_bars(1);
     let before = score.clone();
     let event = note(Step::C, Duration::Quarter.with_triplet(true));
-    let error = write(&mut score, 0, 176, event).unwrap_err();
+    let error = write(&mut score, 0, 11 * Q / 3, event).unwrap_err();
     assert_eq!(error.0, "Un tresillo no puede cruzar la barra de compás");
     assert_eq!(score, before);
     score.validate().unwrap();
@@ -350,7 +353,7 @@ fn a_triplet_cannot_cross_the_bar_and_changes_nothing() {
 #[test]
 fn crossing_rests_split_without_creating_ties() {
     let mut score = score_with_bars(1);
-    let ids = write(&mut score, 0, 144, rest(Duration::Half)).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, rest(Duration::Half)).unwrap();
     assert_eq!(ids.len(), 2);
     assert_eq!(score.event(ids[0]).unwrap().duration, Duration::Quarter);
     assert_eq!(score.event(ids[1]).unwrap().duration, Duration::Quarter);
@@ -406,7 +409,7 @@ fn articulation_stays_first_and_fermata_with_its_offset_goes_last() {
     event.notation.articulation = Some(Articulation::Staccato);
     event.notation.fermata = true;
     event.notation.offsets.fermata = Some(Offset { dx: 12, dy: -5 });
-    let ids = write(&mut score, 0, 144, event).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, event).unwrap();
     assert_eq!(
         score.event(ids[0]).unwrap().notation.articulation,
         Some(Articulation::Staccato)
@@ -429,7 +432,7 @@ fn writing_past_the_maximum_measure_count_is_atomic() {
     let error = write(
         &mut score,
         MAX_MEASURES - 1,
-        144,
+        3 * Q,
         note(Step::C, Duration::Half),
     )
     .unwrap_err();
@@ -442,7 +445,7 @@ fn writing_past_the_maximum_measure_count_is_atomic() {
 fn the_second_tied_piece_replaces_only_the_first_next_bar_note() {
     let mut score = score_with_bars(2);
     let old = quarters(&mut score, 1, &[Step::E, Step::F, Step::G, Step::A]);
-    let ids = write(&mut score, 0, 144, note(Step::C, Duration::Half)).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, note(Step::C, Duration::Half)).unwrap();
     let events = voice(&score, 1);
     assert_eq!(events.len(), 4);
     assert_eq!(events[0].0, ids[1]);
@@ -461,7 +464,7 @@ fn artificial_harmonic_and_offset_are_kept_on_each_tied_piece() {
     event.notation.offsets.harmonic = Some(Offset { dx: 8, dy: -14 });
     event.notation.fermata = true;
     event.notation.offsets.fermata = Some(Offset { dx: 11, dy: 9 });
-    let ids = write(&mut score, 0, 144, event).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, event).unwrap();
     for &id in &ids {
         assert_eq!(
             score.event(id).unwrap().notation.harmonic,
@@ -505,7 +508,7 @@ fn an_existing_crossbar_tie_is_reused_after_both_ends_are_replaced() {
     score
         .set_mark_offset(MarkRef::Connection(slur), offset)
         .unwrap();
-    let ids = write(&mut score, 0, 144, note(Step::C, Duration::Half)).unwrap();
+    let ids = write(&mut score, 0, 3 * Q, note(Step::C, Duration::Half)).unwrap();
     let new_tie = Connection {
         start: ids[0],
         end: ids[1],

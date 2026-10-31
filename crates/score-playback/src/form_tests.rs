@@ -1,6 +1,9 @@
 use super::*;
 use score_core::{BarForm, Connection, ConnectionKind, Duration, Ending, Event, Notation};
 
+/// A quarter note.
+const Q: u64 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -89,8 +92,8 @@ fn repeat_plays_the_bars_twice() {
         Instance {
             bar: 0,
             written: 0,
-            performed: 384,
-            length: 192
+            performed: 8 * Q,
+            length: 4 * Q
         }
     );
 }
@@ -139,9 +142,12 @@ fn tick_at_returns_written_time_on_the_second_pass() {
         let frame = plan.spans[2].start;
         assert_eq!(plan.timeline.tick_at(frame, rate), 0.);
         assert_eq!(plan.element_at(frame), Some(plan.spans[0].element));
-        assert!((plan.timeline.tick_at(frame + u64::from(rate) / 4, rate) - 24.).abs() < 0.003);
+        assert!(
+            (plan.timeline.tick_at(frame + u64::from(rate) / 4, rate) - (Q / 2) as f64).abs()
+                < 0.003
+        );
         assert_eq!(plan.frame_for_element(plan.spans[2].element), Some(0));
-        assert_eq!(plan.timeline.frame_at(192, rate), plan.spans[1].start);
+        assert_eq!(plan.timeline.frame_at(4 * Q, rate), plan.spans[1].start);
     }
 }
 
@@ -412,7 +418,10 @@ fn jump_and_fine_keep_performed_duration_and_written_cursor() {
     );
     assert_eq!(plan.duration_frames, 6 * 96_000);
     assert_eq!(plan.timeline.tick_at(plan.spans[4].start, 48_000), 0.);
-    assert_eq!(plan.timeline.tick_at(plan.duration_frames, 48_000), 384.);
+    assert_eq!(
+        plan.timeline.tick_at(plan.duration_frames, 48_000),
+        (8 * Q) as f64
+    );
 }
 
 #[test]

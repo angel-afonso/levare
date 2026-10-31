@@ -2,6 +2,9 @@ use super::*;
 use score_core::{
     Connection, ConnectionKind, Harmonic, MarkKind, MarkRef, Notation, Pitches, Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn strings() -> Editor {
     let mut score = Score::default();
     let piano = score.parts()[0].id();
@@ -73,7 +76,7 @@ fn harmonic_clipboard_keeps_marks_on_tied_fragments_and_rejects_piano() {
     let clip = source.copy_selection().unwrap();
     let wire = serde_json::to_vec(&clip).unwrap();
     let clip: clipboard::MusicalClipboard = serde_json::from_slice(&wire).unwrap();
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     let mut piano = Editor::default();
     let before = piano.score().clone();
     assert!(piano.paste(&clip).is_err());
@@ -91,7 +94,7 @@ fn harmonic_clipboard_keeps_marks_on_tied_fragments_and_rejects_piano() {
         ids.iter()
             .map(|id| target.score().event(*id).unwrap().duration.ticks())
             .sum::<u32>(),
-        192
+        4 * Q
     );
     for id in ids {
         assert_eq!(

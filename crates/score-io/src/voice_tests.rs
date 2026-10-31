@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Duration, Event, Instrument, Pitch, Pitches, StaffId, Step, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 #[test]
 fn both_voices_and_divided_parts_round_trip_and_invalid_voice_indices_are_rejected() {
     let mut s = Score::default();
@@ -84,8 +87,8 @@ fn midbar_boundaries_migrate_bar_maps_round_trip_recover_and_reject_bad_orders()
         .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -104,8 +107,8 @@ fn midbar_boundaries_migrate_bar_maps_round_trip_recover_and_reject_bad_orders()
     recovery.flush().unwrap();
     assert_eq!(load_recovery(&path).unwrap().unwrap().score, s);
     s.insert_measure(0).unwrap();
-    assert!(s.part(p).unwrap().divisi_at_tick(1, 48));
+    assert!(s.part(p).unwrap().divisi_at_tick(1, Q));
     s.remove_measures(0, 1).unwrap();
-    assert!(s.part(p).unwrap().divisi_at_tick(0, 48));
-    assert!(!s.part(p).unwrap().divisi_at_tick(0, 144));
+    assert!(s.part(p).unwrap().divisi_at_tick(0, Q));
+    assert!(!s.part(p).unwrap().divisi_at_tick(0, 3 * Q));
 }

@@ -2,6 +2,9 @@ use super::*;
 use gpui::point;
 use score_core::{Duration, Event, Pitches, StaffId, Step};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn fixture() -> (Score, ElementId, Pitch) {
     let mut score = Score::default();
     let pitch = Pitch::new(Step::C, 4).unwrap();
@@ -262,7 +265,7 @@ fn time_drag_snaps_across_bars_views_zoom_and_scroll_without_changing_the_source
             let origin = point(px(-120.), px(230.));
             let start = head_position(&layout, id) + origin;
             let mut drag = NoteDrag::new(&score, id, pitch, start, origin, &layout).unwrap();
-            for (bar, tick) in [(1, 0), (2, 24), (3, 72)] {
+            for (bar, tick) in [(1, 0), (2, Q / 2), (3, 3 * Q / 2)] {
                 let point = time_pointer(&drag, bar, tick, origin);
                 drag.update_time(point, origin);
                 let target = drag.time_target.expect("valid time destination");
@@ -273,13 +276,13 @@ fn time_drag_snaps_across_bars_views_zoom_and_scroll_without_changing_the_source
                 assert_eq!(drag.base, score);
             }
             let moved_origin = origin + point(px(40.), px(-100.));
-            drag.update_time(time_pointer(&drag, 2, 24, moved_origin), moved_origin);
+            drag.update_time(time_pointer(&drag, 2, Q / 2, moved_origin), moved_origin);
             assert_eq!(
                 (
                     drag.time_target.unwrap().measure,
                     drag.time_target.unwrap().tick
                 ),
-                (2, 24)
+                (2, Q / 2)
             );
             drag.update_time(start, origin);
             assert!(drag.time_target.is_none());

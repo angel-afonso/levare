@@ -1,6 +1,9 @@
 use super::*;
 use std::io::Write;
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn wrap(instrument: &str, measures: &str) -> String {
     format!(
         "<score-partwise version=\"4.0\"><work><work-title>Prueba externa</work-title></work><part-list><score-part id=\"P1\"><part-name>{instrument}</part-name></score-part></part-list><part id=\"P1\">{measures}</part></score-partwise>"
@@ -169,7 +172,7 @@ fn foreign_piano_with_backups_chords_and_two_voices_keeps_exact_positions() {
             .find(|(_, _, _, e)| !e.pitches.is_empty())
             .unwrap()
             .1,
-        48
+        Q
     );
 }
 
@@ -336,14 +339,14 @@ fn pickups_and_directions_inside_sustained_notes_keep_their_lengths_and_onsets()
         ),
     );
     let result = import(&xml);
-    assert_eq!(result.score.time_at(0).capacity(), 48);
-    assert_eq!(result.score.time_at(1).capacity(), 144);
+    assert_eq!(result.score.time_at(0).capacity(), Q);
+    assert_eq!(result.score.time_at(1).capacity(), 3 * Q);
     let bar = &result.score.parts()[0].measures()[1];
     let (_, tick, _, _) = bar
         .timed_iter()
         .find(|(_, _, _, e)| e.notation.dynamic == Some(Dynamic::F))
         .unwrap();
-    assert_eq!(tick, 96);
+    assert_eq!(tick, 2 * Q);
     assert_eq!(result.score.connections().len(), 1);
 }
 

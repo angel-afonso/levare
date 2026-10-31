@@ -671,6 +671,8 @@ fn transport_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A quarter note.
+    const Q: u64 = score_core::TICKS_PER_QUARTER as u64;
 
     fn offline() -> Playback {
         Playback {
@@ -715,12 +717,15 @@ mod tests {
         let mut score = Score::default();
         let mut playback = offline();
         let cursor = score_edit::Cursor::default();
-        playback.seek(&score, 432).unwrap();
+        playback.seek(&score, 9 * Q).unwrap();
         assert!(!playback.is_playing());
         assert!(!playback.is_paused());
         playback.tick();
         let chosen = playback.position(&score, cursor);
-        assert_eq!((chosen.tick, chosen.measure, chosen.beat), (432., 2, 2.));
+        assert_eq!(
+            (chosen.tick, chosen.measure, chosen.beat),
+            ((9 * Q) as f64, 2, 2.)
+        );
         let moved_cursor = score_edit::Cursor {
             measure: 1,
             ..cursor
@@ -745,7 +750,7 @@ mod tests {
     fn the_frame_position_follows_edits_undo_tempo_and_repeats() {
         let mut editor = score_edit::Editor::default();
         let mut playback = offline();
-        playback.seek(editor.score(), 432).unwrap();
+        playback.seek(editor.score(), 9 * Q).unwrap();
         let fresh = |playback: &Playback, editor: &score_edit::Editor| {
             playback.position(editor.score(), editor.cursor()).seconds
         };
@@ -783,12 +788,12 @@ mod tests {
         let score = Score::default();
         let mut playback = offline();
         let cursor = score_edit::Cursor::default();
-        playback.seek(&score, 432).unwrap();
+        playback.seek(&score, 9 * Q).unwrap();
         let normal = playback.timeline(&score).frame_at(432, 48_000);
         playback.set_half_speed(true, &score, cursor).unwrap();
         assert!(playback.half_speed);
         assert_eq!(playback.timeline(&score).frame_at(432, 48_000), normal * 2);
-        assert_eq!(playback.position(&score, cursor).tick, 432.);
+        assert_eq!(playback.position(&score, cursor).tick, (9 * Q) as f64);
         assert!(!playback.is_playing());
         playback.set_half_speed(false, &score, cursor).unwrap();
         assert_eq!(playback.timeline(&score).frame_at(432, 48_000), normal);
@@ -805,7 +810,7 @@ mod tests {
         assert_eq!(playback.loop_frames(&score, 48_000), Some((0, whole)));
         // Bar 2 of 4/4 at quarter = 120: two seconds each.
         playback
-            .set_looping(true, Some((192, 384)), &score, cursor)
+            .set_looping(true, Some((4 * Q, 8 * Q)), &score, cursor)
             .unwrap();
         assert_eq!(
             playback.loop_frames(&score, 48_000),
@@ -818,7 +823,7 @@ mod tests {
         );
         // An empty passage loops the whole score; turning it off loops nothing.
         playback
-            .set_looping(true, Some((384, 384)), &score, cursor)
+            .set_looping(true, Some((8 * Q, 8 * Q)), &score, cursor)
             .unwrap();
         assert_eq!(playback.loop_frames(&score, 48_000).unwrap().0, 0);
         playback.set_looping(false, None, &score, cursor).unwrap();
@@ -922,7 +927,7 @@ mod tests {
         let mut playback = offline();
         assert!(playback.follow_repeats);
         playback.clock = Some((192_000, 48_000));
-        playback.seek_tick = Some(192);
+        playback.seek_tick = Some(4 * Q);
         playback.toggle_repeats();
         assert!(!playback.follow_repeats);
         assert!(playback.clock.is_none());

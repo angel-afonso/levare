@@ -191,7 +191,10 @@ fn splitmix64(mut value: u64) -> u64 {
 }
 
 pub(crate) fn human_variation(part_index: usize, written_tick: u64) -> (u64, i16) {
-    let seed = splitmix64((part_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ written_tick);
+    // Seeded with ticks of 192 per whole note, as before tuplets, so existing
+    // scores keep the same variation.
+    let tick = written_tick / u64::from(TICKS_PER_WHOLE / 192);
+    let seed = splitmix64((part_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ tick);
     let delay_ms = seed % (HUMAN_MAX_DELAY_MS + 1);
     let velocity =
         (splitmix64(seed) % (HUMAN_VELOCITY_SPREAD * 2 + 1)) as i16 - HUMAN_VELOCITY_SPREAD as i16;

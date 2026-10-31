@@ -136,6 +136,8 @@ impl Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A quarter note.
+    const Q: u64 = crate::TICKS_PER_QUARTER as u64;
     fn meter(numerator: u8, denominator: u8) -> TimeSignature {
         TimeSignature {
             numerator,
@@ -163,16 +165,19 @@ mod tests {
             (0..=4)
                 .map(|i| score.measure_start_tick(i))
                 .collect::<Vec<_>>(),
-            [0, 192, 336, 480, 624]
+            [0, 4 * Q, 7 * Q, 10 * Q, 13 * Q]
         );
-        assert_eq!(score.measure_at_tick(192), (1, 0));
-        assert_eq!(score.measure_at_tick(479), (2, 143));
-        assert_eq!(score.measure_at_tick(624), (4, 0));
+        assert_eq!(score.measure_at_tick(4 * Q), (1, 0));
+        assert_eq!(
+            score.measure_at_tick(10 * Q - 1),
+            (2, crate::TICKS_PER_QUARTER * 3 - 1)
+        );
+        assert_eq!(score.measure_at_tick(13 * Q), (4, 0));
         assert_eq!(score.time_at(2), meter(3, 4));
         assert_eq!(score.key_signature_at(2), key);
         assert_eq!(score.key_signature_at(3), KeySignature::default());
         score.set_time_signature_at(0, meter(2, 4)).unwrap();
-        assert_eq!(score.measure_start_tick(1), 96);
+        assert_eq!(score.measure_start_tick(1), 2 * Q);
         assert_eq!(score.time_at(1), meter(3, 4));
         score.validate().unwrap();
     }

@@ -34,6 +34,7 @@ pub(super) fn dots(
         score_core::NoteValue::Eighth
             | score_core::NoteValue::Sixteenth
             | score_core::NoteValue::ThirtySecond
+            | score_core::NoteValue::SixtyFourth
     );
     let x = right
         + if flagged && !event.pitches.is_empty() {

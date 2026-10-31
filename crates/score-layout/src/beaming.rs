@@ -61,6 +61,7 @@ fn levels(value: NoteValue) -> u8 {
         NoteValue::Eighth => 1,
         NoteValue::Sixteenth => 2,
         NoteValue::ThirtySecond => 3,
+        NoteValue::SixtyFourth => 4,
         _ => 0,
     }
 }

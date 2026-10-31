@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Duration, Event, Pitch, Pitches, Step, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -427,8 +430,8 @@ fn midbar_projection_routes_each_attack_cursor_and_staff_span_in_every_view() {
     }
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -447,7 +450,7 @@ fn midbar_projection_routes_each_attack_cursor_and_staff_span_in_every_view() {
                 m.origin.y
             );
             let event = m.content.events.iter().find(|e| e.id == id).unwrap();
-            assert_eq!(event.tick, i as u32 * 48);
+            assert_eq!(event.tick, i as u32 * Q);
             assert_eq!(
                 layout
                     .hit_pitch_in_voice(
@@ -507,8 +510,8 @@ fn sustained_notes_keep_their_duration_and_staff_through_midbar_division_labels(
         .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -527,7 +530,7 @@ fn sustained_notes_keep_their_duration_and_staff_through_midbar_division_labels(
             })
             .collect();
         fragments.sort_by_key(|f| f.0);
-        assert_eq!(fragments, [(0, 192, StaffId::Lower, Voice::Two)]);
+        assert_eq!(fragments, [(0, 4 * Q, StaffId::Lower, Voice::Two)]);
         assert!(
             !layout
                 .curves
@@ -600,15 +603,15 @@ fn redundant_boundary_labels_invalidate_cached_ink_and_reopening_resets_lower_ac
     );
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 24),
-        Some(DivisiPoint::new(0, 72)),
+        DivisiPoint::new(0, Q / 2),
+        Some(DivisiPoint::new(0, 3 * Q / 2)),
         true,
     )
     .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 120),
-        Some(DivisiPoint::new(0, 168)),
+        DivisiPoint::new(0, 5 * Q / 2),
+        Some(DivisiPoint::new(0, 7 * Q / 2)),
         true,
     )
     .unwrap();
@@ -649,10 +652,10 @@ fn projected_continuations_preserve_canonical_cursor_indices_and_attack_lookup()
         note(Step::D, Duration::Half),
     )
     .unwrap();
-    s.set_divisi_span(p, DivisiPoint::new(0, 48), None, true)
+    s.set_divisi_span(p, DivisiPoint::new(0, Q), None, true)
         .unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
-    for (index, tick) in [(1, 96), (2, 192)] {
+    for (index, tick) in [(1, 2 * Q), (2, 4 * Q)] {
         let m = layout.measure_on(p, StaffId::Lower, 0).unwrap();
         assert_eq!(
             layout
@@ -665,7 +668,7 @@ fn projected_continuations_preserve_canonical_cursor_indices_and_attack_lookup()
     s.set_divisi_span(
         p,
         DivisiPoint::new(0, 0),
-        Some(DivisiPoint::new(0, 48)),
+        Some(DivisiPoint::new(0, Q)),
         true,
     )
     .unwrap();

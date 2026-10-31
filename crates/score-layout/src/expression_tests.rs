@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Articulation, Connection, ConnectionKind, Dynamic, Event, Notation, Pitch, Step};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note() -> Event {
     Event {
         pitches: score_core::Pitches::single(Pitch::new(Step::C, 4)),
@@ -441,7 +444,7 @@ fn changed_signatures_print_in_each_staff_with_cancellation_and_refresh_cached_b
         let layout = engine.layout(&score, width);
         for staff in [StaffId::Upper, StaffId::Lower] {
             let bar = layout.measure_on(score.parts()[0].id(), staff, 1).unwrap();
-            assert_eq!(bar.start_tick, 192);
+            assert_eq!(bar.start_tick, u64::from(4 * Q));
             for symbol in ["\u{e086}", "\u{e088}", "\u{e262}"] {
                 assert!(
                     bar.content.glyphs.iter().any(|g| g.text == symbol),
@@ -449,7 +452,7 @@ fn changed_signatures_print_in_each_staff_with_cancellation_and_refresh_cached_b
                 );
             }
             let bar = layout.measure_on(score.parts()[0].id(), staff, 2).unwrap();
-            assert_eq!(bar.start_tick, 336);
+            assert_eq!(bar.start_tick, u64::from(7 * Q));
             assert!(bar.content.glyphs.iter().any(|g| g.text == "\u{e261}"));
         }
     }

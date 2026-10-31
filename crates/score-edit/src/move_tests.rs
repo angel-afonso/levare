@@ -1,6 +1,9 @@
 use super::*;
 use score_core::{Connection, ConnectionKind, Pitches, Step, Voice};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn event(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -21,13 +24,16 @@ fn move_has_one_history_entry_and_keeps_the_selected_chord_tone() {
         editor
             .execute(Command::MoveSelectedEvent {
                 measure: 2,
-                tick: 24
+                tick: Q / 2
             })
             .unwrap()
     );
     let moved = editor.selection().unwrap();
     assert_eq!(moved.measure, 2);
-    assert_eq!(editor.score().event_tick(moved), Some(408));
+    assert_eq!(
+        editor.score().event_tick(moved),
+        Some(u64::from(17 * Q / 2))
+    );
     assert_eq!(editor.selected_pitch(), Some(e));
     assert_eq!(editor.cursor().voice, Voice::One);
     let final_score = editor.score().clone();

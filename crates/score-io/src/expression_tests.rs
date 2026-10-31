@@ -223,7 +223,8 @@ fn schema_ten_round_trips_rhythms_and_legacy_values_keep_their_musical_meaning()
     for duration in [
         serde_json::json!({"value":"Quarter","dotted":2}),
         serde_json::json!({"value":"Quarter","triplet":"yes"}),
-        serde_json::json!({"value":"Quarter","dots":2}),
+        serde_json::json!({"value":"Quarter","dots":3}),
+        serde_json::json!({"value":"Quarter","tuplet":{"actual":3,"normal":3,"unit":"Quarter"}}),
     ] {
         let mut bad = value.clone();
         bad["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]["duration"] =
@@ -245,25 +246,28 @@ fn schema_ten_round_trips_rhythms_and_legacy_values_keep_their_musical_meaning()
 }
 
 #[test]
-fn the_largest_supported_bar_can_save_and_restore_all_768_shortest_events() {
+fn the_largest_supported_bar_can_save_and_restore_its_most_shortest_events() {
     let mut file: serde_json::Value =
         serde_json::from_slice(&encode(&Score::default()).unwrap()).unwrap();
     file["score"]["time"] = serde_json::json!({"numerator":16,"denominator":1});
     let mut s = decode(&serde_json::to_vec(&file).unwrap()).unwrap();
+    let sixty_fourth = score_core::NoteValue::SixtyFourth;
+    let shortest = Duration::SixtyFourth.with_tuplet(score_core::Tuplet::new(9, 5, sixty_fourth));
     for i in 0..score_core::MAX_EVENTS_PER_MEASURE {
         s.insert(
             0,
             i,
             Event {
                 pitches: Pitches::default(),
-                duration: Duration::ThirtySecond.with_triplet(true),
+                duration: shortest,
                 notation: Default::default(),
             },
         )
         .unwrap();
     }
-    assert_eq!(s.measures()[0].len(), 768);
-    assert_eq!(s.measures()[0].used_ticks(), s.time().capacity());
+    assert_eq!(shortest.ticks(), Duration::MIN_TICKS);
+    assert_eq!(s.measures()[0].len(), score_core::MAX_EVENTS_PER_MEASURE);
+    assert!(s.time().capacity() - s.measures()[0].used_ticks() < shortest.ticks());
     assert_eq!(decode(&encode(&s).unwrap()).unwrap(), s);
 }
 

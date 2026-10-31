@@ -4,6 +4,9 @@ use score_core::{
     Notation, TimeSignature, Tremolo, Voice,
 };
 
+/// A quarter note.
+const Q: u64 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -61,7 +64,7 @@ fn literal_style_keeps_the_orchestral_plan_exact() {
 #[test]
 fn metric_offset_follows_simple_and_compound_beats() {
     let mut score = Score::default();
-    for (tick, expected) in [(0, 4), (48, 1), (96, 2), (24, -2)] {
+    for (tick, expected) in [(0, 4), (Q, 1), (2 * Q, 2), (Q / 2, -2)] {
         assert_eq!(
             interpretation::metric_offset(&score, tick),
             expected,
@@ -77,7 +80,7 @@ fn metric_offset_follows_simple_and_compound_beats() {
             },
         )
         .unwrap();
-    assert_eq!(interpretation::metric_offset(&score, 48), 1);
+    assert_eq!(interpretation::metric_offset(&score, Q), 1);
     score
         .set_time_signature_at(
             0,
@@ -87,8 +90,8 @@ fn metric_offset_follows_simple_and_compound_beats() {
             },
         )
         .unwrap();
-    assert_eq!(interpretation::metric_offset(&score, 72), 1);
-    assert_eq!(interpretation::metric_offset(&score, 24), -2);
+    assert_eq!(interpretation::metric_offset(&score, 3 * Q / 2), 1);
+    assert_eq!(interpretation::metric_offset(&score, Q / 2), -2);
     score.append_measure().unwrap();
     score
         .set_time_signature_at(
@@ -101,7 +104,7 @@ fn metric_offset_follows_simple_and_compound_beats() {
         .unwrap();
     let next_bar = score.measure_start_tick(1);
     assert_eq!(interpretation::metric_offset(&score, next_bar), 4);
-    assert_eq!(interpretation::metric_offset(&score, next_bar + 48), 1);
+    assert_eq!(interpretation::metric_offset(&score, next_bar + Q), 1);
 }
 
 #[test]
@@ -247,7 +250,7 @@ fn phrase_slur_connects_notes_across_written_rests() {
     let plan =
         PlaybackPlan::with_style(&score, Tempo::default(), 48_000, false, Style::Natural).unwrap();
     assert_eq!(plan.sounds.len(), 3);
-    assert_eq!(plan.sounds[1].written_range.0, 96);
+    assert_eq!(plan.sounds[1].written_range.0, 2 * Q);
     let (_, variation) = interpretation::human_variation(0, plan.sounds[1].written_range.0);
     let metric = interpretation::metric_offset(&score, plan.sounds[1].written_range.0);
     assert_eq!(
@@ -257,7 +260,7 @@ fn phrase_slur_connects_notes_across_written_rests() {
             - variation,
         2
     );
-    assert_eq!(score.event_tick(second), Some(96));
+    assert_eq!(score.event_tick(second), Some(2 * Q));
 }
 
 #[test]

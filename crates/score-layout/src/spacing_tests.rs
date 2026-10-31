@@ -1,11 +1,11 @@
 use super::*;
 
 fn menuetto() -> Score {
-    let native: serde_json::Value = serde_json::from_slice(include_bytes!(
+    // Through the file format, so older documents are migrated.
+    score_io::decode(include_bytes!(
         "../../../examples/menuetto-y-trio-cuerdas.partitura"
     ))
-    .unwrap();
-    serde_json::from_value(native["score"].clone()).unwrap()
+    .unwrap()
 }
 
 #[test]

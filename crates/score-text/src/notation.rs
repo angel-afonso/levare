@@ -140,10 +140,11 @@ fn duration_text(duration: Duration) -> String {
         NoteValue::Eighth => 8,
         NoteValue::Sixteenth => 16,
         NoteValue::ThirtySecond => 32,
+        NoteValue::SixtyFourth => 64,
     };
     format!(
         "{value}{}{}",
-        if duration.is_dotted() { "." } else { "" },
+        ".".repeat(usize::from(duration.dots())),
         if duration.is_triplet() { "t" } else { "" }
     )
 }
@@ -300,24 +301,28 @@ impl Reader<'_> {
     fn duration(&mut self) -> Parsed<Duration> {
         let digits = self.digits();
         let value = match digits {
-            "" => return Err("falta la duración tras «:» (1, 2, 4, 8, 16 o 32)".into()),
+            "" => return Err("falta la duración tras «:» (1, 2, 4, 8, 16, 32 o 64)".into()),
             "1" => NoteValue::Whole,
             "2" => NoteValue::Half,
             "4" => NoteValue::Quarter,
             "8" => NoteValue::Eighth,
             "16" => NoteValue::Sixteenth,
             "32" => NoteValue::ThirtySecond,
+            "64" => NoteValue::SixtyFourth,
             other => {
                 return Err(format!(
-                    "duración «{other}» no válida; usa 1, 2, 4, 8, 16 o 32"
+                    "duración «{other}» no válida; usa 1, 2, 4, 8, 16, 32 o 64"
                 ));
             }
         };
-        let dotted = self.eat('.');
+        let mut dots = 0;
+        while dots < Duration::MAX_DOTS && self.eat('.') {
+            dots += 1;
+        }
         let triplet = self.eat('t');
         Ok(Duration::default()
             .with_value(value)
-            .with_dotted(dotted)
+            .with_dots(dots)
             .with_triplet(triplet))
     }
 }

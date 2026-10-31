@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Connection, ConnectionKind, Duration, Dynamic, Event, Notation, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -92,7 +95,7 @@ fn dividing_and_reuniting_preserve_shared_dynamics_techniques_hairpins_and_timin
     let before = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
     let level = score_core::DynamicEnvelope::new(&s, p, StaffId::Upper)
         .unwrap()
-        .level_at(48);
+        .level_at(u64::from(Q));
     s.set_part_divisi(p, true).unwrap();
     let moved = ElementId {
         staff: StaffId::Lower,
@@ -102,7 +105,7 @@ fn dividing_and_reuniting_preserve_shared_dynamics_techniques_hairpins_and_timin
     assert_eq!(
         score_core::DynamicEnvelope::new(&s, p, StaffId::Lower)
             .unwrap()
-            .level_at(48),
+            .level_at(u64::from(Q)),
         level
     );
     let after = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
@@ -244,8 +247,8 @@ fn sustained_midbar_divisi_and_unis_keep_exact_audio_including_expression() {
     let before = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();

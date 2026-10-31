@@ -9,6 +9,9 @@ use score_core::{Duration, ElementId, Event, Instrument, Pitch, Pitches, Score, 
 use score_edit::{Command, Editor};
 use score_keymap::{Category, CommandId, Registry, id};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 /// The tools over a bare editor; no registry command reaches it.
 struct EditorHost(Editor);
 
@@ -41,7 +44,7 @@ fn violin() -> Editor {
         editor
             .execute(Command::WriteAt {
                 measure: 0,
-                tick: beat as u32 * 48,
+                tick: beat as u32 * Q,
                 event: note(step),
             })
             .unwrap();
@@ -85,7 +88,7 @@ fn turn_finish_after_failure_leaves_single_undo() {
     let (selection, cursor) = (host.0.selected_ids(), host.0.cursor());
 
     let turn = Turn::start(&mut host.0);
-    for (tick, step) in [(0, Step::G), (48, Step::A)] {
+    for (tick, step) in [(0, Step::G), (Q, Step::A)] {
         host.0
             .execute(Command::WriteAt {
                 measure: 1,

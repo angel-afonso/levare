@@ -1262,8 +1262,11 @@ mod tests {
         assert_eq!(midi_key(Pitch::new(Step::C, 4).unwrap()), 60);
         assert_eq!(midi_key(Pitch::new(Step::A, 4).unwrap()), 69);
         assert_eq!(midi_key(Pitch::new(Step::B, 8).unwrap()), 119);
-        assert_eq!(Tempo::default().frame_at(48, 48_000), 24_000);
-        assert_eq!(Tempo::new(60).unwrap().frame_at(48, 44_100), 44_100);
+        assert_eq!(Tempo::default().frame_at(TICKS_PER_QUARTER, 48_000), 24_000);
+        assert_eq!(
+            Tempo::new(60).unwrap().frame_at(TICKS_PER_QUARTER, 44_100),
+            44_100
+        );
         assert!(Tempo::new(0).is_none());
     }
 

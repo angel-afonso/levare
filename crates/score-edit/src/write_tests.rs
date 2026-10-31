@@ -1,6 +1,9 @@
 use super::*;
 use score_core::{Pitches, Step};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn event(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -33,7 +36,7 @@ fn insert_in_the_middle_still_shifts_later_notes() {
         .map(|(_, e)| e.pitches.iter().next().unwrap().step)
         .collect();
     assert_eq!(steps, [Step::C, Step::E, Step::D]);
-    assert_eq!(editor.score().event_tick(d), Some(old_tick + 48));
+    assert_eq!(editor.score().event_tick(d), Some(old_tick + u64::from(Q)));
 }
 
 #[test]
@@ -187,7 +190,7 @@ fn write_at_tick_uses_the_cursor_part_staff_and_voice() {
     editor
         .execute(Command::WriteAt {
             measure: 0,
-            tick: 96,
+            tick: 2 * Q,
             event: event(Step::C, Duration::Quarter),
         })
         .unwrap();

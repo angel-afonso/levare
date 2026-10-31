@@ -3,6 +3,9 @@ use score_core::{
     Articulation, Connection, ConnectionKind, Dynamic, KeyMode, KeySignature, Notation, Pitches,
     Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -76,7 +79,7 @@ fn musical_copy_preserves_chords_marks_internal_links_and_implicit_bar_gaps() {
     assert_eq!(e.score(), &before);
     assert_eq!(
         clip.events.iter().map(|e| e.offset).collect::<Vec<_>>(),
-        [0, 48, 192]
+        [0, u64::from(Q), u64::from(4 * Q)]
     );
     assert_eq!(clip.links.len(), 2);
     e.select_staff(StaffId::Lower);
@@ -107,7 +110,7 @@ fn musical_copy_preserves_chords_marks_internal_links_and_implicit_bar_gaps() {
         .unwrap()
         .staff(StaffId::Lower)
         .unwrap();
-    assert_eq!(lower.measures()[0].used_ticks(), 192);
+    assert_eq!(lower.measures()[0].used_ticks(), 4 * Q);
     assert!(
         lower.measures()[0]
             .iter()
@@ -278,7 +281,7 @@ fn clipboard_carries_inherited_technique_splits_once_and_rejects_incompatible_de
     e.select(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.initial_technique, T::Pizzicato);
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     assert_eq!(clip.events[0].event.notation.technique, None);
     let mut target = Score::default();
     let violin = target.add_part(Instrument::Violin).unwrap();
@@ -330,7 +333,7 @@ fn hairpin_paste_remaps_end_to_first_split_note_and_carries_completed_levels() {
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.links.len(), 1);
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     let mut dst = Editor::default();
     dst.execute(Command::Insert(note(Step::G, Duration::Half)))
         .unwrap();
@@ -342,7 +345,7 @@ fn hairpin_paste_remaps_end_to_first_split_note_and_carries_completed_levels() {
         .find(|c| c.kind.is_hairpin())
         .unwrap();
     let tick = dst.score().event_tick(copied.end).unwrap();
-    assert_eq!(tick, 144);
+    assert_eq!(tick, u64::from(3 * Q));
     assert_eq!(copied.end.measure, 0); // The half note is split here and into bar 2.
     dst.score().validate().unwrap();
     e.select(c);
@@ -371,7 +374,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     e.select(a);
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     let mut dst = Editor::default();
     dst.paste(&clip).unwrap();
     let events: Vec<_> = dst.score().measures()[0]
@@ -395,11 +398,16 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     old.events[1].event.duration = Duration::Quarter;
     old.events[1].offset = 16;
     let upgraded = old.clone().upgraded().unwrap();
-    assert_eq!(upgraded.events[1].offset, 48);
-    assert_eq!(upgraded.version, 6);
+    assert_eq!(upgraded.events[1].offset, u64::from(Q));
+    assert_eq!(upgraded.version, 7);
+    // Version 6 counted 192 ticks per whole note.
+    let mut six = old.clone();
+    six.version = 6;
+    six.events[1].offset = 48;
+    assert_eq!(six.upgraded().unwrap().events[1].offset, u64::from(Q));
     let mut dst = Editor::default();
     dst.paste(&old).unwrap();
-    assert_eq!(dst.score().measures()[0].used_ticks(), 96);
+    assert_eq!(dst.score().measures()[0].used_ticks(), 2 * Q);
     // A duration crossing a bar is split with ties without losing dotted length.
     let mut src = Editor::default();
     src.execute(Command::Insert(note(
@@ -420,7 +428,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
         ids.iter()
             .map(|id| dst.score().event(*id).unwrap().duration.ticks())
             .sum::<u32>(),
-        72
+        3 * Q / 2
     );
     assert_eq!(
         dst.score()

@@ -1,5 +1,8 @@
 use super::*;
 
+/// A quarter note.
+const Q: u32 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -88,7 +91,7 @@ fn connection_offset_follows_measure_and_event_rewrites_then_removal() {
     let shifted = score.connections()[0];
     assert_eq!(shifted.start.measure, 1);
     assert_eq!(score.mark_offset(MarkRef::Connection(shifted)), offset);
-    let moved = score.move_event(shifted.end, 1, 96).unwrap();
+    let moved = score.move_event(shifted.end, 1, 2 * Q).unwrap();
     let rewritten = score.connections()[0];
     assert_eq!(rewritten.end, moved);
     assert_eq!(score.mark_offset(MarkRef::Connection(rewritten)), offset);

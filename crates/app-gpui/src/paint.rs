@@ -1048,6 +1048,9 @@ fn paint_time_target(
             score_core::NoteValue::ThirtySecond => {
                 Some(if stem.down { "\u{e245}" } else { "\u{e244}" })
             }
+            score_core::NoteValue::SixtyFourth => {
+                Some(if stem.down { "\u{e247}" } else { "\u{e246}" })
+            }
             _ => None,
         };
         if let Some(glyph) = glyph {

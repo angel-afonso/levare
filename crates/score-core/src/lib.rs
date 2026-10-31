@@ -238,7 +238,7 @@ impl fmt::Display for Pitch {
 }
 
 mod duration;
-pub use duration::{Duration, NoteValue, TICKS_PER_QUARTER, TICKS_PER_WHOLE};
+pub use duration::{Duration, NoteValue, TICKS_PER_QUARTER, TICKS_PER_WHOLE, Tuplet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeSignature {

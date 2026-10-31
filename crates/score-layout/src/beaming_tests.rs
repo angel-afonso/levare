@@ -3,6 +3,9 @@ use score_core::{
     Articulation, Connection, ConnectionKind, Duration, Dynamic, Event, NoteValue, Pitch, Pitches,
     Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(Step::C, 4)),
@@ -64,8 +67,8 @@ fn eighths_and_sixteenths_group_by_quarter_beats_with_independent_hands() {
                 group
                     .elements
                     .iter()
-                    .map(|id| s.event_tick(*id).unwrap() / 48)
-                    .all(|beat| beat == s.event_tick(group.elements[0]).unwrap() / 48)
+                    .map(|id| s.event_tick(*id).unwrap() / u64::from(Q))
+                    .all(|beat| beat == s.event_tick(group.elements[0]).unwrap() / u64::from(Q))
             );
             for stem in &group.stems {
                 assert_eq!(stem.down, group.stems[0].down);

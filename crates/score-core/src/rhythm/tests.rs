@@ -1,7 +1,19 @@
 use super::*;
+use crate::TICKS_PER_WHOLE;
 
-/// Largest supported bar (16/1), the longest span any caller spells.
-const LONGEST: usize = 16 * crate::TICKS_PER_WHOLE as usize;
+/// The tables below ran at 192 ticks per whole note; they are kept in that
+/// unit, and so is the longest span any caller spells, a 16/1 bar.
+const OLD_SCALE: u32 = TICKS_PER_WHOLE / 192;
+const LONGEST: usize = 16 * 192;
+
+fn old_ticks(d: &Duration) -> usize {
+    (d.ticks() / OLD_SCALE) as usize
+}
+
+/// Whole to thirty-second, the values that existed with those tables.
+fn old_values() -> Vec<Duration> {
+    Duration::ALL[..6].to_vec()
+}
 
 fn sorted(mut durations: Vec<Duration>) -> Vec<Duration> {
     durations.sort_by_key(|d| (Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
@@ -16,13 +28,13 @@ fn old_fewest(durations: Vec<Duration>, capacity: usize) -> Vec<Option<Vec<Durat
     result[0] = Some(Vec::new());
     for tick in 1..=capacity {
         let mut best: Option<Vec<Duration>> = None;
-        for &d in &durations {
-            let length = d.ticks() as usize;
+        for d in &durations {
+            let length = old_ticks(d);
             if length <= tick
                 && let Some(rest) = &result[tick - length]
                 && best.as_ref().is_none_or(|b| b.len() > rest.len() + 1)
             {
-                let mut parts = vec![d];
+                let mut parts = vec![*d];
                 parts.extend(rest);
                 best = Some(parts);
             }
@@ -40,27 +52,41 @@ fn old_longest_fitting(durations: Vec<Duration>, capacity: usize) -> Vec<Option<
     for tick in 1..=capacity {
         representable[tick] = durations
             .iter()
-            .any(|d| d.ticks() as usize <= tick && representable[tick - d.ticks() as usize]);
+            .any(|d| old_ticks(d) <= tick && representable[tick - old_ticks(d)]);
     }
     (0..=capacity)
         .map(|ticks| {
             durations
                 .iter()
                 .copied()
-                .find(|d| d.ticks() as usize <= ticks && representable[ticks - d.ticks() as usize])
+                .find(|d| old_ticks(d) <= ticks && representable[ticks - old_ticks(d)])
         })
         .collect()
 }
 
 fn palettes() -> [(&'static str, Vec<Duration>, Palette); 3] {
+    let modified = old_values()
+        .into_iter()
+        .flat_map(|d| {
+            [
+                d,
+                d.with_dotted(true),
+                d.with_triplet(true),
+                d.with_dotted(true).with_triplet(true),
+            ]
+        })
+        .collect();
     [
-        ("plain", Duration::ALL.to_vec(), Palette::plain()),
+        ("plain", old_values(), Palette::plain()),
         (
             "triplets",
-            Duration::ALL.map(|d| d.with_triplet(true)).to_vec(),
+            old_values()
+                .into_iter()
+                .map(|d| d.with_triplet(true))
+                .collect(),
             Palette::triplets(),
         ),
-        ("modified", Duration::all_modified(), Palette::modified()),
+        ("modified", modified, Palette::modified()),
     ]
 }
 
@@ -70,9 +96,9 @@ fn fewest_matches_the_old_tables_for_every_span() {
         let old = old_fewest(durations, LONGEST);
         for (ticks, expected) in old.into_iter().enumerate() {
             assert_eq!(
-                palette.fewest(ticks as u32),
+                palette.fewest(ticks as u32 * OLD_SCALE),
                 expected,
-                "{name} palette, {ticks} ticks"
+                "{name} palette, {ticks} old ticks"
             );
         }
     }
@@ -84,38 +110,45 @@ fn longest_fitting_matches_the_old_paste_splitter_for_every_span() {
         let old = old_longest_fitting(durations, LONGEST);
         for (ticks, expected) in old.into_iter().enumerate() {
             assert_eq!(
-                palette.longest_fitting(ticks as u32),
+                palette.longest_fitting(ticks as u32 * OLD_SCALE),
                 expected,
-                "{name} palette, {ticks} ticks"
+                "{name} palette, {ticks} old ticks"
             );
         }
     }
 }
 
 #[test]
-fn generated_rests_spell_with_the_full_palette() {
-    // Rests used plain, dotted and triplet values; the dotted triplets that
-    // `Duration::all_modified` adds last as long as plain values.
-    let rests = Palette::new(
-        Duration::ALL
-            .into_iter()
-            .flat_map(|d| [d, d.with_dotted(true), d.with_triplet(true)]),
-    );
-    assert_eq!(rests.durations(), Palette::modified().durations());
+fn spans_are_spelled_without_sixty_fourths() {
+    for palette in [Palette::plain(), Palette::triplets(), Palette::modified()] {
+        assert!(
+            palette
+                .durations()
+                .iter()
+                .all(|d| d.value() != NoteValue::SixtyFourth)
+        );
+    }
 }
 
 #[test]
 fn unreachable_spans_have_no_spelling() {
     let plain = Palette::plain();
+    let thirty_second = Duration::ThirtySecond.ticks();
     assert_eq!(plain.fewest(0), Some(Vec::new()));
     assert_eq!(plain.longest_fitting(0), None);
     // Shorter than a thirty-second, or not a whole number of them.
-    for ticks in [1, 5, 7, 50] {
+    for ticks in [
+        1,
+        thirty_second / 2,
+        thirty_second * 3 / 2,
+        thirty_second * 8 + 1,
+    ] {
         assert_eq!(plain.fewest(ticks), None, "{ticks} ticks");
         assert_eq!(plain.longest_fitting(ticks), None, "{ticks} ticks");
     }
     // A triplet thirty-second is the shortest value; half of it is not.
-    assert_eq!(Palette::modified().fewest(2), None);
+    let shortest = Duration::ThirtySecond.with_triplet(true).ticks();
+    assert_eq!(Palette::modified().fewest(shortest / 2), None);
 }
 
 #[test]
@@ -124,7 +157,7 @@ fn tables_count_steps_not_ticks() {
     let plain = Palette::plain();
     assert_eq!(plain.step, Duration::ThirtySecond.ticks());
     assert_eq!(
-        plain.fewest(LONGEST as u32),
+        plain.fewest(16 * TICKS_PER_WHOLE),
         Some(vec![Duration::Whole; 16])
     );
 }

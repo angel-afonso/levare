@@ -1,6 +1,6 @@
 //! Spelling a span of time as written values: generated rests, and notes cut
 //! at a barline, a staff change or a divisi point.
-use crate::Duration;
+use crate::{Duration, NoteValue};
 use std::cmp::Reverse;
 
 /// The values a span may be spelled with, longest first. Tables are indexed
@@ -21,15 +21,15 @@ impl Palette {
         let step = durations.iter().map(|d| d.ticks()).fold(0, gcd);
         Self { durations, step }
     }
-    /// Every value Levare writes: plain, dotted and triplet.
+    /// Plain, dotted and triplet values.
     pub fn modified() -> Self {
-        Self::new(Duration::all_modified())
+        Self::new(spelled().flat_map(|d| [d, d.with_dotted(true), d.with_triplet(true)]))
     }
     pub fn plain() -> Self {
-        Self::new(Duration::ALL)
+        Self::new(spelled())
     }
     pub fn triplets() -> Self {
-        Self::new(Duration::ALL.map(|d| d.with_triplet(true)))
+        Self::new(spelled().map(|d| d.with_triplet(true)))
     }
     pub fn durations(&self) -> &[Duration] {
         &self.durations
@@ -89,6 +89,14 @@ impl Palette {
     fn len(&self, d: Duration) -> usize {
         (d.ticks() / self.step) as usize
     }
+}
+
+/// Spans are spelled without sixty-fourths: with them, a dotted thirty-second
+/// and a thirty-second would become a sixteenth and a sixty-fourth.
+fn spelled() -> impl Iterator<Item = Duration> {
+    Duration::ALL
+        .into_iter()
+        .filter(|d| d.value() != NoteValue::SixtyFourth)
 }
 
 fn gcd(a: u32, b: u32) -> u32 {

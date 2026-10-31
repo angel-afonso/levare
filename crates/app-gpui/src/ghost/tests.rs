@@ -2,6 +2,9 @@ use super::*;
 use score_core::{Event, Instrument, Pitches};
 use score_layout::{LayoutEngine, ViewMode};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn geometry(score: &Score, scale: f32) -> Layout {
     let mut layout = LayoutEngine::default().layout_view(score, 1000., ViewMode::Continuous);
     layout.scale = scale;
@@ -35,7 +38,7 @@ fn treble_lines_map_to_their_pitches() {
             (0., Step::F, 5),
             (-10., Step::A, 5),
         ] {
-            let point = pointer(&layout, PartId(0), StaffId::Upper, 96, y);
+            let point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, y);
             let ghost = at(&score, &layout, point, Voice::One, Duration::Quarter);
             assert_eq!(ghost.pitch, Pitch::new(step, octave).unwrap());
             assert_eq!(ghost.y - ghost.staff_top, y);
@@ -48,7 +51,7 @@ fn alto_clef_middle_line_is_middle_c() {
     let score = single(Instrument::Viola);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 96, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, 20.);
         assert_eq!(
             at(&score, &layout, point, Voice::One, Duration::Quarter).pitch,
             Pitch::new(Step::C, 4).unwrap()
@@ -61,7 +64,7 @@ fn bass_clef_and_ledger_lines() {
     let score = single(Instrument::Cello);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 96, 60.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, 60.);
         assert_eq!(
             at(&score, &layout, point, Voice::One, Duration::Quarter).pitch,
             Pitch::new(Step::C, 2).unwrap()
@@ -74,10 +77,10 @@ fn ticks_snap_to_the_entry_duration_grid_in_empty_bars() {
     let score = single(Instrument::Violin);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 115, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 12 * Q / 5, 20.);
         let quarter = at(&score, &layout, point, Voice::One, Duration::Quarter);
         let eighth = at(&score, &layout, point, Voice::One, Duration::Eighth);
-        assert_eq!(quarter.tick, 96);
+        assert_eq!(quarter.tick, 2 * Q);
         assert_eq!(eighth.tick % Duration::Eighth.ticks(), 0);
         assert_ne!(eighth.tick, quarter.tick);
     }
@@ -102,9 +105,12 @@ fn ticks_never_fall_inside_a_written_note() {
         .unwrap();
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 48, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, Q, 20.);
         let tick = at(&score, &layout, point, Voice::One, Duration::Quarter).tick;
-        assert!(tick == 0 || tick == 96, "tick {tick} entered a held note");
+        assert!(
+            tick == 0 || tick == 2 * Q,
+            "tick {tick} entered a held note"
+        );
     }
 }
 
@@ -113,7 +119,7 @@ fn percussion_has_no_ghost() {
     let score = single(Instrument::SnareDrum);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 96, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, 20.);
         assert!(ghost_at(&score, &layout, point, Voice::One, Duration::Quarter).is_none());
     }
 }
@@ -123,7 +129,7 @@ fn outside_any_staff_is_none() {
     let score = single(Instrument::Violin);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let mut point = pointer(&layout, PartId(0), StaffId::Upper, 96, 20.);
+        let mut point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, 20.);
         point.y = -1000.;
         assert!(ghost_at(&score, &layout, point, Voice::One, Duration::Quarter).is_none());
     }
@@ -148,7 +154,7 @@ fn voice_two_uses_its_own_region_and_canonical_staff() {
         .unwrap();
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 96, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 2 * Q, 20.);
         let ghost = at(&score, &layout, point, Voice::Two, Duration::Quarter);
         assert_eq!(ghost.voice, Voice::Two);
         assert_eq!(ghost.staff, StaffId::Upper);
@@ -161,7 +167,7 @@ fn updated_duration_and_zoom_recompute_the_click_target() {
     let score = single(Instrument::Violin);
     for scale in [0.5, 1., 2.] {
         let layout = geometry(&score, scale);
-        let point = pointer(&layout, PartId(0), StaffId::Upper, 115, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Upper, 12 * Q / 5, 20.);
         let quarter = at(&score, &layout, point, Voice::One, Duration::Quarter);
         let eighth = at(&score, &layout, point, Voice::One, Duration::Eighth);
         assert_eq!(quarter.duration, Duration::Quarter);
@@ -195,7 +201,7 @@ fn divisi_lower_row_targets_the_upper_source_and_forced_voice_two() {
         let lower = layout.measure_on(PartId(0), StaffId::Lower, 0).unwrap();
         assert_eq!(lower.source_staff, StaffId::Upper);
         assert_eq!(lower.source_voice, Some(Voice::Two));
-        let point = pointer(&layout, PartId(0), StaffId::Lower, 96, 20.);
+        let point = pointer(&layout, PartId(0), StaffId::Lower, 2 * Q, 20.);
         let ghost = at(&score, &layout, point, Voice::One, Duration::Quarter);
         assert_eq!(ghost.staff, StaffId::Upper);
         assert_eq!(ghost.voice, Voice::Two);

@@ -56,12 +56,23 @@ impl MusicalClipboard {
         if self.version == 5 {
             self.version = 6;
         }
+        if self.version == 6 {
+            // Version 7 counts ticks 3360 times finer, with 645 120 per whole.
+            let scale = u64::from(score_core::TICKS_PER_WHOLE / 192);
+            for item in &mut self.events {
+                item.offset = item
+                    .offset
+                    .checked_mul(scale)
+                    .ok_or(ScoreError("Pasaje demasiado largo"))?;
+            }
+            self.version = 7;
+        }
         self.validate()?;
         Ok(self)
     }
 
     pub fn validate(&self) -> Result<(), ScoreError> {
-        if self.format != "partitura-clipboard" || !(1..=6).contains(&self.version) {
+        if self.format != "partitura-clipboard" || !(1..=7).contains(&self.version) {
             return Err(ScoreError(
                 "El portapapeles no contiene música compatible de Levare",
             ));
@@ -145,7 +156,7 @@ impl Editor {
             .collect();
         let result = MusicalClipboard {
             format: "partitura-clipboard".into(),
-            version: 6,
+            version: 7,
             initial_technique: score.technique_at(first).unwrap(),
             key: score.written_key_at(first.part, first.measure),
             transposition: score.part(first.part).unwrap().transposition(),

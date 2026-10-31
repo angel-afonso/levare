@@ -137,6 +137,8 @@ impl Dynamic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A quarter note.
+    const Q: u64 = crate::TICKS_PER_QUARTER as u64;
     fn note() -> Event {
         Event {
             pitches: Pitches::single(Pitch::new(Step::C, 4)),
@@ -221,12 +223,12 @@ mod tests {
             })
             .unwrap();
             let e = DynamicEnvelope::new(&s, a.part, a.staff).unwrap();
-            assert_eq!(e.level_at(48), interior.velocity());
-            assert_eq!(e.level_at(96), end_level);
+            assert_eq!(e.level_at(Q), interior.velocity());
+            assert_eq!(e.level_at(2 * Q), end_level);
             assert!(if kind == ConnectionKind::Crescendo {
-                e.level_at(72) > interior.velocity()
+                e.level_at(3 * Q / 2) > interior.velocity()
             } else {
-                e.level_at(72) < interior.velocity()
+                e.level_at(3 * Q / 2) < interior.velocity()
             });
         }
     }
@@ -255,18 +257,18 @@ mod tests {
         assert_eq!(
             [
                 levels.level_at(0),
-                levels.level_at(48),
-                levels.level_at(96),
-                levels.level_at(144),
-                levels.level_at(189)
+                levels.level_at(Q),
+                levels.level_at(2 * Q),
+                levels.level_at(3 * Q),
+                levels.level_at(4 * Q - 1)
             ],
             [56, 78, 100, 72, 72]
         );
         s.set_dynamic(ids[1], Some(Dynamic::Mf)).unwrap();
         let levels = DynamicEnvelope::new(&s, ids[0].part, ids[0].staff).unwrap();
-        assert_eq!(levels.level_at(24), 72);
-        assert_eq!(levels.level_at(72), 94);
+        assert_eq!(levels.level_at(Q / 2), 72);
+        assert_eq!(levels.level_at(3 * Q / 2), 94);
         let lower = DynamicEnvelope::new(&s, ids[0].part, StaffId::Lower).unwrap();
-        assert_eq!(lower.level_at(48), 88);
+        assert_eq!(lower.level_at(Q), 88);
     }
 }

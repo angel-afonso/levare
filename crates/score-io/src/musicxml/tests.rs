@@ -1,6 +1,9 @@
 use super::*;
 use roxmltree::{Document, Node};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn child<'a, 'b>(node: Node<'a, 'b>, tag: &str) -> Option<Node<'a, 'b>> {
     node.children().find(|n| n.has_tag_name(tag))
 }
@@ -18,6 +21,15 @@ fn note(step: Step, octave: u8, duration: Duration) -> Event {
     }
 }
 fn check_timing(doc: &Document<'_>, score: &Score) {
+    // Durations are written in divisions of a quarter note, not in ticks.
+    let divisions: u32 = doc
+        .descendants()
+        .find(|n| n.has_tag_name("divisions"))
+        .and_then(|n| n.text())
+        .unwrap()
+        .parse()
+        .unwrap();
+    let ticks_per_division = TICKS_PER_QUARTER / divisions;
     for part in doc
         .root_element()
         .children()
@@ -28,7 +40,7 @@ fn check_timing(doc: &Document<'_>, score: &Score) {
             .filter(|n| n.has_tag_name("measure"))
             .enumerate()
         {
-            let cap = i32::try_from(score.time_at(bar).capacity()).unwrap();
+            let cap = i32::try_from(score.time_at(bar).capacity() / ticks_per_division).unwrap();
             let mut cursor = 0;
             let mut last = 0;
             for element in measure.children().filter(Node::is_element) {
@@ -102,8 +114,8 @@ fn midbar_divisi_splits_a_sustained_second_voice_and_returns_to_the_first_staff(
     score
         .set_divisi_span(
             part,
-            DivisiPoint::new(0, 48),
-            Some(DivisiPoint::new(0, 144)),
+            DivisiPoint::new(0, Q),
+            Some(DivisiPoint::new(0, 3 * Q)),
             true,
         )
         .unwrap();
@@ -787,6 +799,38 @@ fn thirty_seconds_with_dots_and_triplets_round_trip() {
         .take(durations.len())
         .collect();
     assert_eq!(read, durations);
+}
+
+#[test]
+fn divisions_stay_at_48_per_quarter_until_a_rhythm_needs_more() {
+    let divisions = |durations: &[Duration]| {
+        let mut score = Score::default();
+        for (index, &duration) in durations.iter().enumerate() {
+            score.insert(0, index, note(Step::C, 5, duration)).unwrap();
+        }
+        let text = xml(&score);
+        let document = Document::parse(&text).unwrap();
+        check_timing(&document, &score);
+        let found = document
+            .descendants()
+            .find(|n| n.has_tag_name("divisions"))
+            .and_then(|n| n.text())
+            .unwrap()
+            .to_owned();
+        (found, text)
+    };
+    let (plain, text) = divisions(&[Duration::Quarter, Duration::SixtyFourth]);
+    assert_eq!(plain, "48");
+    assert!(text.contains("<type>64th</type>"));
+    // A double-dotted sixty-fourth is 7/64 of a quarter: 21 of 192 divisions.
+    let (dotted, text) = divisions(&[Duration::SixtyFourth.with_dots(2)]);
+    assert_eq!(dotted, "192");
+    assert_eq!(text.matches("<dot/>").count(), 2);
+    let quintuplet = Duration::Sixteenth.with_tuplet(score_core::Tuplet::usual(
+        5,
+        score_core::NoteValue::Sixteenth,
+    ));
+    assert_eq!(divisions(&[quintuplet; 5]).0, "240");
 }
 
 #[test]

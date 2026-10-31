@@ -5696,6 +5696,7 @@ version = "0.3.0"
 dependencies = [
  "imbl",
  "serde",
+ "serde_json",
  "slotmap",
 ]
 
@@ -5759,6 +5760,7 @@ name = "score-layout"
 version = "0.3.0"
 dependencies = [
  "score-core",
+ "score-io",
  "serde_json",
  "ttf-parser 0.25.1",
 ]

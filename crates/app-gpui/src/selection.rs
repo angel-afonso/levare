@@ -1616,8 +1616,11 @@ mod tests {
         score
             .set_divisi_span(
                 part,
-                score_core::DivisiPoint::new(0, 48),
-                Some(score_core::DivisiPoint::new(0, 144)),
+                score_core::DivisiPoint::new(0, score_core::TICKS_PER_QUARTER),
+                Some(score_core::DivisiPoint::new(
+                    0,
+                    3 * score_core::TICKS_PER_QUARTER,
+                )),
                 true,
             )
             .unwrap();
@@ -1647,8 +1650,12 @@ mod tests {
             );
         }
         let lower = layout.measure_on(part, StaffId::Lower, 0).unwrap();
-        let (voice, index) =
-            lower.insertion_near(score_core::Voice::Two, lower.content.x_at_tick(96.));
+        let (voice, index) = lower.insertion_near(
+            score_core::Voice::Two,
+            lower
+                .content
+                .x_at_tick(f64::from(2 * score_core::TICKS_PER_QUARTER)),
+        );
         assert_eq!(voice, score_core::Voice::Two);
         assert_eq!(index, 2);
     }

@@ -4,6 +4,9 @@ use score_core::{
     Syllable,
 };
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn note(step: Step) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 5)),
@@ -135,6 +138,9 @@ fn other_programs_lyrics_and_harmonies_import_with_their_meaning() {
     );
     assert_eq!(found[1].1, [(0, "lu ya".to_owned(), Join::Word)]);
     // The harmony's offset puts it on the rest after the eighth.
-    assert_eq!((found[2].0, found[2].2.as_deref()), (72, Some("D7(♭9)")));
+    assert_eq!(
+        (found[2].0, found[2].2.as_deref()),
+        (u64::from(3 * Q / 2), Some("D7(♭9)"))
+    );
     assert!(result.warnings.iter().any(|w| w.contains("silencios")));
 }

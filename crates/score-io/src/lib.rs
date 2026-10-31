@@ -25,7 +25,7 @@ use score_core::Score;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 
-pub const SCHEMA_VERSION: u32 = 29;
+pub const SCHEMA_VERSION: u32 = 30;
 /// Enough for the largest score the model allows (`MAX_PARTS` parts of
 /// `MAX_MEASURES` bars at orchestral density is about 60 MiB of compact JSON),
 /// including the indented JSON that older versions wrote.
@@ -305,6 +305,13 @@ fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
     if envelope["version"].as_u64() == Some(28) {
         // Grace notes, octave lines, pedal, trills, glissandi and staff texts
         // default to absent; thirty-seconds did not exist.
+        envelope["version"] = 29.into();
+    }
+    if envelope["version"].as_u64() == Some(29) {
+        // Ticks became 3360 times finer, with 645 120 per whole note, and
+        // divisi points are stored in ticks. Durations keep their old form,
+        // which `Duration` still reads.
+        scale_divisi_points(&mut envelope["score"])?;
         envelope["version"] = SCHEMA_VERSION.into();
     }
     if envelope["version"].as_u64() != Some(u64::from(SCHEMA_VERSION)) {
@@ -313,6 +320,40 @@ fn decode_json(bytes: &[u8]) -> Result<Score, FileError> {
     let file: NativeFile = serde_json::from_value(envelope).map_err(FileError::damaged)?;
     file.score.validate()?;
     Ok(file.score)
+}
+
+fn scale_divisi_points(score: &mut serde_json::Value) -> Result<(), FileError> {
+    let scale = u64::from(score_core::TICKS_PER_WHOLE / 192);
+    let Some(parts) = score
+        .get_mut("parts")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+    for part in parts {
+        let Some(bars) = part
+            .get_mut("divisi_changes")
+            .and_then(serde_json::Value::as_object_mut)
+        else {
+            continue;
+        };
+        for points in bars.values_mut() {
+            let Some(old) = points.as_object() else {
+                continue;
+            };
+            let mut scaled = serde_json::Map::new();
+            for (tick, divided) in old {
+                let tick = tick
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|tick| tick.checked_mul(scale))
+                    .ok_or_else(|| FileError::damaged(format!("divisi point {tick}")))?;
+                scaled.insert(tick.to_string(), divided.clone());
+            }
+            *points = scaled.into();
+        }
+    }
+    Ok(())
 }
 
 pub fn load(path: &Path) -> Result<Score, FileError> {
@@ -834,3 +875,6 @@ mod rehearsal_tests;
 
 #[cfg(test)]
 mod offset_tests;
+
+#[cfg(test)]
+mod resolution_tests;
