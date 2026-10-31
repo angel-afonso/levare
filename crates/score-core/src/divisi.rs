@@ -455,33 +455,8 @@ impl Score {
 }
 
 pub(super) fn divisi_rhythm_pieces(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
-    static PIECES: std::sync::OnceLock<Vec<Option<Vec<Duration>>>> = std::sync::OnceLock::new();
-    let pieces = PIECES.get_or_init(|| {
-        let mut durations = Duration::all_modified();
-        durations.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-        let mut result = vec![None; 289];
-        result[0] = Some(Vec::new());
-        for tick in 1..result.len() {
-            let mut best: Option<Vec<Duration>> = None;
-            for &d in &durations {
-                let length = usize::from(d.ticks());
-                if length <= tick
-                    && let Some(rest) = &result[tick - length]
-                    && best.as_ref().is_none_or(|b| b.len() > rest.len() + 1)
-                {
-                    let mut parts = vec![d];
-                    parts.extend(rest);
-                    best = Some(parts);
-                }
-            }
-            result[tick] = best;
-        }
-        result
-    });
-    pieces
-        .get(usize::from(ticks))
-        .cloned()
-        .flatten()
+    crate::Palette::modified()
+        .fewest(u32::from(ticks))
         .ok_or(ScoreError(
             "Este punto divide una figura en valores aún no admitidos. Elige otra posición rítmica",
         ))

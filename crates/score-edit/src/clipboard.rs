@@ -230,16 +230,9 @@ impl Editor {
                     + 1,
             };
         }
-        let capacity = 3072u64; // largest supported bar, for reusable rhythm decomposition tables
-        let plain_pieces = RhythmPieces::new(Duration::ALL.to_vec(), capacity as usize);
-        let triplet_pieces = RhythmPieces::new(
-            Duration::ALL
-                .into_iter()
-                .map(|d| d.with_triplet(true))
-                .collect(),
-            capacity as usize,
-        );
-        let gap_pieces = RhythmPieces::new(Duration::all_modified(), capacity as usize);
+        let plain_pieces = score_core::Palette::plain();
+        let triplet_pieces = score_core::Palette::triplets();
+        let gap_pieces = score_core::Palette::modified();
         let prefix: u64 = next
             .score
             .part(next.cursor.part)
@@ -303,8 +296,10 @@ impl Editor {
         let mut ties = Vec::new();
         for (index, item) in clip.events.iter().enumerate() {
             while tick < base + item.offset {
-                let duration = gap_pieces
-                    .choose((base + item.offset - tick).min(remaining_in_bar(&next.score, tick)))?;
+                let duration = split_piece(
+                    &gap_pieces,
+                    (base + item.offset - tick).min(remaining_in_bar(&next.score, tick)),
+                )?;
                 let rest = Event {
                     pitches: Pitches::default(),
                     duration,
@@ -341,7 +336,7 @@ impl Editor {
                     } else {
                         &plain_pieces
                     };
-                    pieces.choose(remaining.min(available))?
+                    split_piece(pieces, remaining.min(available))?
                 };
                 let length = u64::from(duration.ticks());
                 let is_first = first.is_none();
@@ -453,32 +448,13 @@ impl Editor {
         Ok(clip.events.len())
     }
 }
-/// A bounded decomposition table prevents greedy dead ends and rejects rhythms
-/// that cannot be split at this destination before committing any changes.
-struct RhythmPieces {
-    durations: Vec<Duration>,
-    representable: Vec<bool>,
-}
-impl RhythmPieces {
-    fn new(mut durations: Vec<Duration>, capacity: usize) -> Self {
-        durations.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-        let mut representable = vec![false; capacity + 1];
-        representable[0] = true;
-        for tick in 1..=capacity {
-            representable[tick] = durations.iter().any(|d| {
-                usize::from(d.ticks()) <= tick && representable[tick - usize::from(d.ticks())]
-            });
-        }
-        Self {
-            durations,
-            representable,
-        }
-    }
-    fn choose(&self, ticks: u64) -> Result<Duration, ScoreError> {
-        let ticks = ticks as usize;
-        self.durations.iter().copied().find(|d| usize::from(d.ticks()) <= ticks && self.representable.get(ticks - usize::from(d.ticks())) == Some(&true))
-            .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))
-    }
+/// The next piece of a rhythm split at this destination; choosing only pieces
+/// that leave a spellable remainder rejects impossible splits before any change.
+fn split_piece(pieces: &score_core::Palette, ticks: u64) -> Result<Duration, ScoreError> {
+    u32::try_from(ticks)
+        .ok()
+        .and_then(|ticks| pieces.longest_fitting(ticks))
+        .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))
 }
 fn insert_piece(next: &mut Snapshot, tick: u64, event: Event) -> Result<ElementId, ScoreError> {
     let measure = next.score.measure_at_tick(tick).0;

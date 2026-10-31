@@ -64,6 +64,8 @@ pub use voice::Voice;
 mod divisi;
 pub use divisi::{DivisiPoint, Division};
 mod pitches;
+mod rhythm;
+pub use rhythm::Palette;
 mod signatures;
 pub use pitches::{MAX_CHORD_NOTES, Pitches};
 

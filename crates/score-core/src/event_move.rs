@@ -278,39 +278,11 @@ fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), Score
 
 /// Minimal rhythmic spelling in the same order used for generated rests.
 pub(crate) fn notatable(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
-    if ticks == 0 {
-        return Ok(Vec::new());
-    }
-    let mut values: Vec<_> = Duration::ALL
-        .into_iter()
-        .flat_map(|d| [d, d.with_dotted(true), d.with_triplet(true)])
-        .collect();
-    values.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-    values.dedup_by_key(|d| d.ticks());
-    let mut best = vec![None; usize::from(ticks) + 1];
-    best[0] = Some((0usize, Duration::Quarter));
-    for n in 1..=ticks {
-        for &duration in &values {
-            if duration.ticks() <= n
-                && let Some((count, _)) = best[usize::from(n - duration.ticks())]
-            {
-                let at = &mut best[usize::from(n)];
-                if at.is_none_or(|(old, _)| count + 1 < old) {
-                    *at = Some((count + 1, duration));
-                }
-            }
-        }
-    }
-    let mut remaining = ticks;
-    let mut durations = Vec::new();
-    while remaining > 0 {
-        let (_, duration) = best[usize::from(remaining)].ok_or(ScoreError(
+    crate::Palette::modified()
+        .fewest(u32::from(ticks))
+        .ok_or(ScoreError(
             "Ese desplazamiento crea un silencio que todavía no se puede representar",
-        ))?;
-        durations.push(duration);
-        remaining -= duration.ticks();
-    }
-    Ok(durations)
+        ))
 }
 
 #[cfg(test)]

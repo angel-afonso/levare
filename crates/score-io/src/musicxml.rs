@@ -995,25 +995,8 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
 
 /// Exact spelling for a note cut by a mid-bar staff change; ties join the pieces.
 fn durations(ticks: u16) -> Result<Vec<Duration>, FileError> {
-    let mut values = Duration::all_modified();
-    values.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-    let mut best = vec![None; usize::from(ticks) + 1];
-    best[0] = Some(Vec::new());
-    for tick in 1..best.len() {
-        for &d in &values {
-            let len = usize::from(d.ticks());
-            if len <= tick
-                && let Some(rest) = &best[tick - len]
-                && best[tick].as_ref().is_none_or(|b| b.len() > rest.len() + 1)
-            {
-                let mut next = vec![d];
-                next.extend(rest);
-                best[tick] = Some(next);
-            }
-        }
-    }
-    best.pop()
-        .flatten()
+    score_core::Palette::modified()
+        .fewest(u32::from(ticks))
         .ok_or_else(|| error("No se puede representar el corte de divisi en MusicXML"))
 }
 
