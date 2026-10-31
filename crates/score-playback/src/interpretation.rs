@@ -115,11 +115,11 @@ pub(crate) fn metric_offset(score: &Score, written_tick: u64) -> i8 {
     metric_offset_in_bar(score.time_at(measure), within)
 }
 
-fn metric_offset_in_bar(time: TimeSignature, within: u16) -> i8 {
+fn metric_offset_in_bar(time: TimeSignature, within: u32) -> i8 {
     if within == 0 {
         return DOWNBEAT_BOOST;
     }
-    let mut pulse = TICKS_PER_WHOLE / u16::from(time.denominator);
+    let mut pulse = TICKS_PER_WHOLE / u32::from(time.denominator);
     if time.denominator == 8 && [6, 9, 12].contains(&time.numerator) {
         pulse *= 3;
     }
@@ -238,7 +238,7 @@ pub(crate) fn shape(
             continue;
         }
         let measure = starts.partition_point(|start| *start <= sound.written_range.0) - 1;
-        let within = (sound.written_range.0 - starts[measure]) as u16;
+        let within = (sound.written_range.0 - starts[measure]) as u32;
         let metric = metric_offset_in_bar(score.time_at(measure), within);
         offsets[index] += i16::from(metric);
     }

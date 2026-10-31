@@ -142,13 +142,13 @@ fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
         p.octave()
     );
 }
-fn direction(xml: &mut String, body: &str, tick: u16, voice: u8, staff: u8, sound: &str) {
+fn direction(xml: &mut String, body: &str, tick: u32, voice: u8, staff: u8, sound: &str) {
     let _ = writeln!(
         xml,
         "<direction><direction-type>{body}</direction-type><offset sound=\"yes\">{tick}</offset><voice>{voice}</voice><staff>{staff}</staff>{sound}</direction>"
     );
 }
-fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
+fn words(xml: &mut String, text: &str, tick: u32, voice: u8, staff: u8) {
     direction(
         xml,
         &format!("<words font-style=\"italic\">{}</words>", escape(text)),
@@ -159,7 +159,7 @@ fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
     );
 }
 /// A chord symbol: root, kind with its printed suffix, and bass.
-fn harmony(xml: &mut String, chord: ChordSymbol, tick: u16, staff: u8) {
+fn harmony(xml: &mut String, chord: ChordSymbol, tick: u32, staff: u8) {
     let root = |name: &str, root: ChordRoot| {
         format!(
             "<{name}><{name}-step>{:?}</{name}-step><{name}-alter>{}</{name}-alter></{name}>",
@@ -187,7 +187,7 @@ fn harmony(xml: &mut String, chord: ChordSymbol, tick: u16, staff: u8) {
     );
 }
 /// Written words: an expression in italics below, an instruction above.
-fn staff_text(xml: &mut String, words: Words, kind: TextKind, tick: u16, voice: u8, staff: u8) {
+fn staff_text(xml: &mut String, words: Words, kind: TextKind, tick: u32, voice: u8, staff: u8) {
     let (placement, style) = match kind {
         TextKind::Expression => ("below", " font-style=\"italic\""),
         TextKind::Technique => ("above", ""),
@@ -309,7 +309,7 @@ fn navigation_directions(xml: &mut String, score: &Score, bar: usize) {
     }
 }
 
-fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u16) -> u8 {
+fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u32) -> u8 {
     if staff == StaffId::Lower
         || (part.has_passage_divisi() && voice == Voice::Two && part.divisi_at_tick(bar, tick))
     {
@@ -994,9 +994,9 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
 }
 
 /// Exact spelling for a note cut by a mid-bar staff change; ties join the pieces.
-fn durations(ticks: u16) -> Result<Vec<Duration>, FileError> {
+fn durations(ticks: u32) -> Result<Vec<Duration>, FileError> {
     score_core::Palette::modified()
-        .fewest(u32::from(ticks))
+        .fewest(ticks)
         .ok_or_else(|| error("No se puede representar el corte de divisi en MusicXML"))
 }
 

@@ -236,7 +236,7 @@ fn note_summary(score: &Score, editor: &Editor, id: ElementId) -> Option<NoteSum
     let onset = score
         .event_tick(id)
         .map_or(0, |tick| tick - score.measure_start_tick(id.measure));
-    let beat_ticks = f32::from(TICKS_PER_WHOLE) / f32::from(score.time_at(id.measure).denominator);
+    let beat_ticks = TICKS_PER_WHOLE as f32 / f32::from(score.time_at(id.measure).denominator);
     Some(NoteSummary {
         part: score.part_name(id.part),
         bar: id.measure + 1,

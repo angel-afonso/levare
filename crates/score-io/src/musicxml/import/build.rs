@@ -97,9 +97,9 @@ fn append_rest(
     part: PartId,
     bar: usize,
     lane: u8,
-    tick: u16,
-    length: u16,
-    anchors: &mut BTreeMap<(usize, u8, u16), ElementId>,
+    tick: u32,
+    length: u32,
+    anchors: &mut BTreeMap<(usize, u8, u32), ElementId>,
 ) -> Result<(), FileError> {
     let mut at = tick;
     for duration in super::super::durations(length)? {
@@ -236,7 +236,7 @@ fn normalize_techniques(
     }
     let divided = score.part(part).unwrap().is_divisi();
     let scope = |lane: u8| if divided || lane < 2 { 0u8 } else { 1 };
-    let mut words: [BTreeMap<(usize, u16), PlayingTechnique>; 2] = Default::default();
+    let mut words: [BTreeMap<(usize, u32), PlayingTechnique>; 2] = Default::default();
     for (bar, b) in data.bars.iter().enumerate() {
         for m in &b.directions {
             if let MarkType::Technique(t) = m.kind {
@@ -374,7 +374,7 @@ pub(super) fn score(
             time = [1, 2, 4, 8, 16]
                 .into_iter()
                 .find_map(|denominator| {
-                    let unit = TICKS_PER_WHOLE / u16::from(denominator);
+                    let unit = TICKS_PER_WHOLE / u32::from(denominator);
                     if used % unit != 0 {
                         return None;
                     }
@@ -408,8 +408,7 @@ pub(super) fn score(
             .collect();
         if let Some(tempo) = marks.first() {
             if marks.iter().any(|m| {
-                u32::from(m.bpm) * u32::from(m.beat.ticks())
-                    != u32::from(tempo.bpm) * u32::from(tempo.beat.ticks())
+                u32::from(m.bpm) * m.beat.ticks() != u32::from(tempo.bpm) * tempo.beat.ticks()
             }) {
                 warnings
                     .add("Los tempos simultáneos distintos se unifican con el primero indicado");
@@ -490,7 +489,7 @@ pub(super) fn score(
                     .or_default()
                     .push((index, e));
             }
-            let mut cuts: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+            let mut cuts: BTreeMap<u8, BTreeSet<u32>> = BTreeMap::new();
             for m in &b.directions {
                 if m.tick >= score.time_at(bar).capacity() {
                     continue;
@@ -511,7 +510,7 @@ pub(super) fn score(
             }
             for (lane, mut events) in streams {
                 events.sort_by_key(|(_, e)| e.onset);
-                let mut cursor = 0u16;
+                let mut cursor = 0u32;
                 let lane_cuts = cuts.get(&lane).cloned().unwrap_or_default();
                 for (raw_index, raw) in events {
                     if raw.onset < cursor {
@@ -642,7 +641,7 @@ pub(super) fn score(
         }
         // Explicit per-event ties and slurs are paired in their independent native lanes.
         let mut starts: HashMap<(u8, ConnectionKind, String), ElementId> = HashMap::new();
-        let mut rolls: BTreeMap<(usize, u16, String), Vec<(ElementId, Arpeggio)>> = BTreeMap::new();
+        let mut rolls: BTreeMap<(usize, u32, String), Vec<(ElementId, Arpeggio)>> = BTreeMap::new();
         for (bar, b) in data.bars.iter().enumerate() {
             for (raw_index, raw) in b.events.iter().enumerate() {
                 let &(first, last, lane) = placed.get(&(bar, raw_index)).unwrap();

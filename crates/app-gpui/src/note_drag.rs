@@ -20,13 +20,13 @@ pub(super) struct NoteDrag {
     pub geometry: score_layout::Layout,
     mode: Motion,
     pub time_target: Option<TimeTarget>,
-    last_time: Option<(usize, u16)>,
+    last_time: Option<(usize, u32)>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TimeTarget {
     pub measure: usize,
-    pub tick: u16,
+    pub tick: u32,
     pub swap: bool,
     pub duration: score_core::Duration,
 }
@@ -163,7 +163,7 @@ impl NoteDrag {
 
     /// Keep the grabbed rhythmic offset and pitch row while snapping time to
     /// sixteenths (triplet sixteenths for tuplets) or an existing voice onset.
-    fn time_at(&self, position: Point<Pixels>, origin: Point<Pixels>) -> Option<(usize, u16)> {
+    fn time_at(&self, position: Point<Pixels>, origin: Point<Pixels>) -> Option<(usize, u32)> {
         let voice = self.base.voice_of(self.id)?;
         let source = self.geometry.event_measure(self.id)?;
         let head = source
@@ -197,15 +197,14 @@ impl NoteDrag {
         let raw = measure.content.tick_at_x(local_x);
         // The grid is a sixteenth, or a thirty-second for the notes that short.
         let duration = self.base.event(self.id)?.duration;
-        let fine = duration.value() == score_core::NoteValue::ThirtySecond;
-        let quantum = match (fine, duration.is_triplet()) {
-            (false, false) => 12,
-            (false, true) => 8,
-            (true, false) => 6,
-            (true, true) => 4,
+        let grid = if duration.value() == score_core::NoteValue::ThirtySecond {
+            score_core::Duration::ThirtySecond
+        } else {
+            score_core::Duration::Sixteenth
         };
+        let quantum = grid.with_triplet(duration.is_triplet()).ticks();
         let capacity = self.base.time_at(measure.index).capacity();
-        let mut tick = ((raw / f64::from(quantum)).round() as u16 * quantum).min(capacity);
+        let mut tick = ((raw / f64::from(quantum)).round() as u32 * quantum).min(capacity);
         if let Some(event) = measure
             .content
             .events

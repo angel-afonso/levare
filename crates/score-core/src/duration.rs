@@ -1,8 +1,8 @@
 //! Written note values and exact single-dot / 3:2 time modifications.
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub const TICKS_PER_WHOLE: u16 = 192;
-pub const TICKS_PER_QUARTER: u16 = TICKS_PER_WHOLE / 4;
+pub const TICKS_PER_WHOLE: u32 = 192;
+pub const TICKS_PER_QUARTER: u32 = TICKS_PER_WHOLE / 4;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NoteValue {
     Whole,
@@ -22,7 +22,7 @@ pub struct Duration {
 #[allow(non_upper_case_globals)]
 impl Duration {
     /// A thirty-second note in a triplet.
-    pub const MIN_TICKS: u16 = 4;
+    pub const MIN_TICKS: u32 = 4;
     pub const Whole: Self = Self::plain(NoteValue::Whole);
     pub const Half: Self = Self::plain(NoteValue::Half);
     pub const Quarter: Self = Self::plain(NoteValue::Quarter);
@@ -62,14 +62,14 @@ impl Duration {
     pub fn with_value(self, value: NoteValue) -> Self {
         Self { value, ..self }
     }
-    pub fn ticks(self) -> u16 {
+    pub fn ticks(self) -> u32 {
         let mut ticks = match self.value {
-            NoteValue::Whole => 192,
-            NoteValue::Half => 96,
-            NoteValue::Quarter => 48,
-            NoteValue::Eighth => 24,
-            NoteValue::Sixteenth => 12,
-            NoteValue::ThirtySecond => 6,
+            NoteValue::Whole => TICKS_PER_WHOLE,
+            NoteValue::Half => TICKS_PER_WHOLE / 2,
+            NoteValue::Quarter => TICKS_PER_WHOLE / 4,
+            NoteValue::Eighth => TICKS_PER_WHOLE / 8,
+            NoteValue::Sixteenth => TICKS_PER_WHOLE / 16,
+            NoteValue::ThirtySecond => TICKS_PER_WHOLE / 32,
         };
         if self.dotted {
             ticks = ticks * 3 / 2;

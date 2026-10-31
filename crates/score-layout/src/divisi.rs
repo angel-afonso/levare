@@ -2,7 +2,7 @@
 use super::*;
 use score_core::{Division, MarkRef, Part};
 
-pub(super) fn regions(part: &Part, staff: StaffId, bar: usize, capacity: u16) -> Vec<VoiceRegion> {
+pub(super) fn regions(part: &Part, staff: StaffId, bar: usize, capacity: u32) -> Vec<VoiceRegion> {
     let voices: &[Voice] =
         if !part.instrument().is_grand_staff() && !part.is_divisi() && part.bar_has_divisi(bar) {
             if staff == StaffId::Upper {

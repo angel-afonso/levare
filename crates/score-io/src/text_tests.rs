@@ -98,7 +98,7 @@ fn texts_round_trip_through_musicxml_with_their_placement() {
 
 #[test]
 fn imported_words_take_their_kind_from_placement_style_and_meaning() {
-    let direction = |attributes: &str, words: &str, tick: u16| {
+    let direction = |attributes: &str, words: &str, tick: u32| {
         format!(
             "<direction{attributes}><direction-type>{words}</direction-type><offset>{tick}</offset></direction>"
         )

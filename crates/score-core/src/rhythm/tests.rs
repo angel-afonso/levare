@@ -17,7 +17,7 @@ fn old_fewest(durations: Vec<Duration>, capacity: usize) -> Vec<Option<Vec<Durat
     for tick in 1..=capacity {
         let mut best: Option<Vec<Duration>> = None;
         for &d in &durations {
-            let length = usize::from(d.ticks());
+            let length = d.ticks() as usize;
             if length <= tick
                 && let Some(rest) = &result[tick - length]
                 && best.as_ref().is_none_or(|b| b.len() > rest.len() + 1)
@@ -38,15 +38,16 @@ fn old_longest_fitting(durations: Vec<Duration>, capacity: usize) -> Vec<Option<
     let mut representable = vec![false; capacity + 1];
     representable[0] = true;
     for tick in 1..=capacity {
-        representable[tick] = durations.iter().any(|d| {
-            usize::from(d.ticks()) <= tick && representable[tick - usize::from(d.ticks())]
-        });
+        representable[tick] = durations
+            .iter()
+            .any(|d| d.ticks() as usize <= tick && representable[tick - d.ticks() as usize]);
     }
     (0..=capacity)
         .map(|ticks| {
-            durations.iter().copied().find(|d| {
-                usize::from(d.ticks()) <= ticks && representable[ticks - usize::from(d.ticks())]
-            })
+            durations
+                .iter()
+                .copied()
+                .find(|d| d.ticks() as usize <= ticks && representable[ticks - d.ticks() as usize])
         })
         .collect()
 }
@@ -121,7 +122,7 @@ fn unreachable_spans_have_no_spelling() {
 fn tables_count_steps_not_ticks() {
     // A whole 16/1 bar of plain values: one step per thirty-second.
     let plain = Palette::plain();
-    assert_eq!(plain.step, u32::from(Duration::ThirtySecond.ticks()));
+    assert_eq!(plain.step, Duration::ThirtySecond.ticks());
     assert_eq!(
         plain.fewest(LONGEST as u32),
         Some(vec![Duration::Whole; 16])

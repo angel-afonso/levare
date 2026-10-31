@@ -7,18 +7,18 @@ use score_core::{
 };
 
 /// Ticks in one beat: a unit of the time signature's denominator.
-pub(super) fn beat_unit(score: &Score, measure: usize) -> u16 {
-    TICKS_PER_WHOLE / u16::from(score.time_at(measure).denominator.max(1))
+pub(super) fn beat_unit(score: &Score, measure: usize) -> u32 {
+    TICKS_PER_WHOLE / u32::from(score.time_at(measure).denominator.max(1))
 }
 
 /// A beat number as the agent writes it back: `2`, `2.5`.
-pub(super) fn beat_label(tick: u16, unit: u16) -> String {
-    let beat = format!("{:.3}", f32::from(tick) / f32::from(unit) + 1.);
+pub(super) fn beat_label(tick: u32, unit: u32) -> String {
+    let beat = format!("{:.3}", tick as f32 / unit as f32 + 1.);
     beat.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 /// A length in beats with a fraction, as a musician counts it: `4½`, `2¾`.
-pub(super) fn beats(ticks: u16, unit: u16) -> String {
+pub(super) fn beats(ticks: u32, unit: u32) -> String {
     let (whole, rest) = (ticks / unit, ticks % unit);
     if rest == 0 {
         return whole.to_string();
@@ -47,7 +47,7 @@ pub(super) fn beats(ticks: u16, unit: u16) -> String {
     }
 }
 
-fn gcd(a: u16, b: u16) -> u16 {
+fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
@@ -305,7 +305,7 @@ pub(super) fn place(score: &Score, id: ElementId) -> String {
     let mut text = format!("{}, compás {}", part_label(score, id.part), id.measure + 1);
     if let Some(tick) = score
         .event_tick(id)
-        .map(|tick| (tick - score.measure_start_tick(id.measure)) as u16)
+        .map(|tick| (tick - score.measure_start_tick(id.measure)) as u32)
     {
         text.push_str(&format!(
             ", tiempo {}",

@@ -90,7 +90,7 @@ fn harmonic_clipboard_keeps_marks_on_tied_fragments_and_rejects_piano() {
     assert_eq!(
         ids.iter()
             .map(|id| target.score().event(*id).unwrap().duration.ticks())
-            .sum::<u16>(),
+            .sum::<u32>(),
         192
     );
     for id in ids {

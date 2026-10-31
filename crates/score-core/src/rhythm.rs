@@ -18,7 +18,7 @@ impl Palette {
         durations.sort_by_key(|d| (Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
         // A dotted triplet lasts as long as its plain value, which sorts first.
         durations.dedup_by_key(|d| d.ticks());
-        let step = durations.iter().map(|d| u32::from(d.ticks())).fold(0, gcd);
+        let step = durations.iter().map(|d| d.ticks()).fold(0, gcd);
         Self { durations, step }
     }
     /// Every value Levare writes: plain, dotted and triplet.
@@ -87,7 +87,7 @@ impl Palette {
             .flatten()
     }
     fn len(&self, d: Duration) -> usize {
-        (u32::from(d.ticks()) / self.step) as usize
+        (d.ticks() / self.step) as usize
     }
 }
 

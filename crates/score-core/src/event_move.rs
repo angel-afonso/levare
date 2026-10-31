@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy)]
 struct Item {
-    tick: u16,
+    tick: u32,
     id: Option<ElementId>,
     event: Event,
 }
@@ -17,7 +17,7 @@ impl Score {
         &mut self,
         id: ElementId,
         measure: usize,
-        tick: u16,
+        tick: u32,
     ) -> Result<ElementId, ScoreError> {
         let event = *self.event(id).ok_or(ScoreError("La nota no existe"))?;
         if event.pitches.is_empty() {
@@ -25,7 +25,7 @@ impl Score {
         }
         let voice = self.voice_of(id).ok_or(ScoreError("La voz no existe"))?;
         let source_tick =
-            (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u16;
+            (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u32;
         if measure >= self.measures().len()
             || tick
                 .checked_add(event.duration.ticks())
@@ -259,7 +259,7 @@ pub(crate) fn moved_pitches(
     )
 }
 
-fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), ScoreError> {
+fn push_rests(items: &mut Vec<Item>, start: u32, ticks: u32) -> Result<(), ScoreError> {
     let mut at = start;
     for duration in notatable(ticks)? {
         items.push(Item {
@@ -277,12 +277,10 @@ fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), Score
 }
 
 /// Minimal rhythmic spelling in the same order used for generated rests.
-pub(crate) fn notatable(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
-    crate::Palette::modified()
-        .fewest(u32::from(ticks))
-        .ok_or(ScoreError(
-            "Ese desplazamiento crea un silencio que todavía no se puede representar",
-        ))
+pub(crate) fn notatable(ticks: u32) -> Result<Vec<Duration>, ScoreError> {
+    crate::Palette::modified().fewest(ticks).ok_or(ScoreError(
+        "Ese desplazamiento crea un silencio que todavía no se puede representar",
+    ))
 }
 
 #[cfg(test)]

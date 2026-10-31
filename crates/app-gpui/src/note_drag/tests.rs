@@ -224,7 +224,7 @@ fn head_position(layout: &score_layout::Layout, id: ElementId) -> Point<Pixels> 
     )
 }
 
-fn time_pointer(drag: &NoteDrag, bar: usize, tick: u16, origin: Point<Pixels>) -> Point<Pixels> {
+fn time_pointer(drag: &NoteDrag, bar: usize, tick: u32, origin: Point<Pixels>) -> Point<Pixels> {
     let source = drag.geometry.event_measure(drag.id).unwrap();
     let head = source
         .content

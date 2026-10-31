@@ -285,11 +285,11 @@ impl Score {
                 .voice_ticks(voice);
             let total = totals
                 .entry((id.part, id.staff, id.measure, voice))
-                .or_insert(i32::from(used));
-            *total += i32::from(duration.ticks()) - i32::from(old.ticks());
+                .or_insert(i64::from(used));
+            *total += i64::from(duration.ticks()) - i64::from(old.ticks());
         }
         for ((_, _, bar, _), used) in totals {
-            if used > i32::from(self.time_at(bar).capacity()) {
+            if used > i64::from(self.time_at(bar).capacity()) {
                 return Err(ScoreError("La duración nueva no cabe en el compás"));
             }
         }

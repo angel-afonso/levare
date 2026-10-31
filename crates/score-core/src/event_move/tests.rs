@@ -86,7 +86,7 @@ fn rejects_incompatible_destinations_atomically_and_no_op_is_identical() {
     assert!(s.move_event(a, 1, 0).is_err());
     assert!(s.move_event(a, 3, 168).is_err());
     assert!(s.move_event(a, usize::MAX, 0).is_err());
-    assert!(s.move_event(a, 1, u16::MAX).is_err());
+    assert!(s.move_event(a, 1, u32::MAX).is_err());
     assert!(s.move_event(a, 2, 2).is_err());
     assert_eq!(s, before);
     assert_eq!(s.move_event(a, 0, 0).unwrap(), a);

@@ -67,7 +67,7 @@ pub enum Command {
     /// Overwrite at a tick of the cursor's part, staff and voice.
     WriteAt {
         measure: usize,
-        tick: u16,
+        tick: u32,
         event: Event,
     },
     SetPartDivisi(bool),
@@ -115,7 +115,7 @@ pub enum Command {
     ReplacePitch(Pitch),
     MoveSelectedEvent {
         measure: usize,
-        tick: u16,
+        tick: u32,
     },
     SetDuration(score_core::NoteValue),
     InsertMeasure,
@@ -852,7 +852,7 @@ impl Editor {
                     .staff(c.staff)
                     .unwrap()
                     .measures()[c.measure];
-                let mut tick: u16 = bar
+                let mut tick: u32 = bar
                     .voice_iter(c.voice)
                     .take(c.index)
                     .map(|(_, e)| e.duration.ticks())
@@ -2121,7 +2121,7 @@ impl Editor {
     pub fn select_divisi_position(&mut self, point: score_core::DivisiPoint) {
         if let Some(id) = self.selection() {
             let start = (self.score().event_tick(id).unwrap()
-                - self.score().measure_start_tick(id.measure)) as u16;
+                - self.score().measure_start_tick(id.measure)) as u32;
             let end = start + self.score().event(id).unwrap().duration.ticks();
             if point.measure == id.measure && start <= point.tick && point.tick < end {
                 self.state.divisi_anchor = Some(point);
@@ -2149,7 +2149,7 @@ impl Snapshot {
             },
             |id| {
                 (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
-                    as u16
+                    as u32
             },
         );
         if tick == self.score.time_at(self.cursor.measure).capacity()
@@ -2168,7 +2168,7 @@ impl Snapshot {
                 score_core::DivisiPoint::new(
                     id.measure,
                     (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
-                        as u16,
+                        as u32,
                 )
             };
             let a = position(anchor);

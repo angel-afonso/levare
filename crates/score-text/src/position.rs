@@ -82,26 +82,26 @@ const BEAT_TOLERANCE: f32 = 0.001;
 
 /// Tick of a 1-based beat in a measure, counted in units of the time
 /// signature's denominator (eighth notes in 6/8).
-pub fn beat_tick(score: &Score, measure: usize, beat: f32) -> Result<u16, String> {
+pub fn beat_tick(score: &Score, measure: usize, beat: f32) -> Result<u32, String> {
     if measure >= score.measures().len() {
         return Err(format!("El compás {} no existe.", measure + 1));
     }
     let time = score.time_at(measure);
-    let unit = TICKS_PER_WHOLE / u16::from(time.denominator.max(1));
+    let unit = TICKS_PER_WHOLE / u32::from(time.denominator.max(1));
     if !beat.is_finite() || beat < 1. {
         return Err(format!(
             "El tiempo {beat} no es válido: los tiempos empiezan en 1."
         ));
     }
-    let ticks = (beat - 1.) * f32::from(unit);
+    let ticks = (beat - 1.) * unit as f32;
     // Onset labels carry three decimals of a beat, so accept what they round to.
-    if (ticks - ticks.round()).abs() > BEAT_TOLERANCE * f32::from(unit) {
+    if (ticks - ticks.round()).abs() > BEAT_TOLERANCE * unit as f32 {
         return Err(format!(
             "El tiempo {beat} no cae en una posición exacta del compás {}.",
             measure + 1
         ));
     }
-    let tick = ticks.round() as u16;
+    let tick = ticks.round() as u32;
     if tick >= time.capacity() {
         return Err(format!(
             "El compás {} es de {}/{}: el tiempo debe estar entre 1 y {} (recibido {beat}).",
@@ -121,7 +121,7 @@ pub fn event_at(
     staff: StaffId,
     voice: Voice,
     measure: usize,
-    tick: u16,
+    tick: u32,
 ) -> Result<ElementId, String> {
     let name = part_label(score, part);
     let Some(source) = score.part(part).and_then(|p| p.staff(staff)) else {
@@ -154,7 +154,7 @@ pub fn event_at(
     if onsets.is_empty() {
         return Err(format!("No hay eventos en el {place}."));
     }
-    let unit = TICKS_PER_WHOLE / u16::from(score.time_at(measure).denominator.max(1));
+    let unit = TICKS_PER_WHOLE / u32::from(score.time_at(measure).denominator.max(1));
     let beats: Vec<_> = onsets
         .iter()
         .map(|(start, _)| beat_label(*start, unit))
@@ -166,8 +166,8 @@ pub fn event_at(
     ))
 }
 
-fn beat_label(tick: u16, unit: u16) -> String {
-    let beat = format!("{:.3}", f32::from(tick) / f32::from(unit) + 1.);
+fn beat_label(tick: u32, unit: u32) -> String {
+    let beat = format!("{:.3}", tick as f32 / unit as f32 + 1.);
     beat.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 

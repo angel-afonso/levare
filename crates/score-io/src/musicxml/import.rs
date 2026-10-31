@@ -64,7 +64,7 @@ fn integer(n: Node<'_, '_>, name: &str) -> Result<i32, FileError> {
     }
     Ok(x as i32)
 }
-fn ticks(value: f64, divisions: f64) -> Result<u16, FileError> {
+fn ticks(value: f64, divisions: f64) -> Result<u32, FileError> {
     let exact = value * f64::from(TICKS_PER_QUARTER) / divisions;
     if !exact.is_finite()
         || exact < 0.0
@@ -75,7 +75,7 @@ fn ticks(value: f64, divisions: f64) -> Result<u16, FileError> {
             "MusicXML: una duración no cabe en la resolución rítmica admitida",
         ));
     }
-    Ok(exact.round() as u16)
+    Ok(exact.round() as u32)
 }
 fn parse_xml(data: &str) -> Result<Document<'_>, FileError> {
     if declares_entities(data) {
@@ -505,8 +505,8 @@ struct PartData {
 }
 #[derive(Clone)]
 struct RawEvent {
-    onset: u16,
-    length: u16,
+    onset: u32,
+    length: u32,
     written: Option<Duration>,
     staff: u8,
     voice: String,
@@ -524,7 +524,7 @@ struct Tone {
 }
 #[derive(Clone)]
 struct Mark {
-    tick: u16,
+    tick: u32,
     staff: u8,
     voice: Option<String>,
     kind: MarkType,
@@ -576,7 +576,7 @@ fn read_part(
             implicit: parent.attribute("implicit") == Some("yes"),
             ..Bar::default()
         };
-        let mut cursor = 0u16;
+        let mut cursor = 0u32;
         let mut last_note = None;
         // Grace notes wait for the next note of their voice and staff.
         let mut graces: Vec<(String, usize, Pitch, bool)> = Vec::new();
@@ -858,7 +858,7 @@ fn attributes(
     n: Node<'_, '_>,
     state: &mut State,
     bar: &mut Bar,
-    cursor: u16,
+    cursor: u32,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
     if let Some(d) = child(n, "divisions") {
@@ -1135,7 +1135,7 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
 /// A chord symbol over the staff at its offset from the cursor.
 fn read_harmony(
     n: Node<'_, '_>,
-    cursor: u16,
+    cursor: u32,
     state: &State,
     bar: &mut Bar,
     warnings: &mut Warnings,
@@ -1199,7 +1199,7 @@ fn read_harmony(
         None => None,
     };
     bar.directions.push(Mark {
-        tick: tickf.round() as u16,
+        tick: tickf.round() as u32,
         staff,
         voice: None,
         kind: MarkType::Chord(ChordSymbol {
@@ -1213,7 +1213,7 @@ fn read_harmony(
 
 fn read_note(
     n: Node<'_, '_>,
-    onset: u16,
+    onset: u32,
     state: &State,
     warnings: &mut Warnings,
     chord_parent: Option<&RawEvent>,
@@ -1590,7 +1590,7 @@ fn navigation_sound(sound: Node<'_, '_>, bar: &mut Bar) {
 
 fn read_direction(
     n: Node<'_, '_>,
-    cursor: u16,
+    cursor: u32,
     state: &State,
     bar: &mut Bar,
     warnings: &mut Warnings,
@@ -1604,7 +1604,7 @@ fn read_direction(
     {
         return Err(error("MusicXML: posición de indicación fuera de rango"));
     }
-    let tick = tickf.round() as u16;
+    let tick = tickf.round() as u32;
     let staff = (staff_index(text(n, "staff").unwrap_or("1"))? + 1) as u8;
     let voice = text(n, "voice").map(str::to_owned);
     let has_metronome = n

@@ -213,7 +213,7 @@ fn triplet_beams_follow_tuplet_limits_and_keep_numbers_and_partial_brackets() {
     ] {
         let mut s = Score::default();
         let part = s.parts()[0].id();
-        let count = usize::from(s.time().capacity() / duration.ticks());
+        let count = (s.time().capacity() / duration.ticks()) as usize;
         ids(&mut s, part, StaffId::Upper, 0, &vec![duration; count]);
         let layout = LayoutEngine::default().layout_compact(&s, 960.);
         let m = layout.measure(part, 0).unwrap();

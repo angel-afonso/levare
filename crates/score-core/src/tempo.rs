@@ -20,7 +20,7 @@ impl TempoBeat {
         Self::DottedQuarter,
         Self::DottedEighth,
     ];
-    pub fn ticks(self) -> u16 {
+    pub fn ticks(self) -> u32 {
         match self {
             Self::Half => 96,
             Self::Quarter => 48,

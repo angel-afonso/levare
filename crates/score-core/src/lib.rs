@@ -255,8 +255,8 @@ impl Default for TimeSignature {
     }
 }
 impl TimeSignature {
-    pub fn capacity(self) -> u16 {
-        u16::from(self.numerator) * TICKS_PER_WHOLE / u16::from(self.denominator.max(1))
+    pub fn capacity(self) -> u32 {
+        u32::from(self.numerator) * TICKS_PER_WHOLE / u32::from(self.denominator.max(1))
     }
     pub fn is_valid(self) -> bool {
         (1..=16).contains(&self.numerator) && [1, 2, 4, 8, 16].contains(&self.denominator)
@@ -319,7 +319,7 @@ impl Measure {
     pub fn is_empty(&self) -> bool {
         self.order.is_empty() && self.second_order.is_empty()
     }
-    pub fn used_ticks(&self) -> u16 {
+    pub fn used_ticks(&self) -> u32 {
         Voice::ALL
             .into_iter()
             .map(|v| self.voice_ticks(v))
@@ -375,7 +375,7 @@ pub struct Part {
     #[serde(default, skip_serializing_if = "is_false")]
     divided: bool,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    divisi_changes: std::collections::BTreeMap<usize, std::collections::BTreeMap<u16, bool>>,
+    divisi_changes: std::collections::BTreeMap<usize, std::collections::BTreeMap<u32, bool>>,
     staves: Vector<Staff>,
 }
 fn is_false(value: &bool) -> bool {
@@ -980,11 +980,11 @@ impl Score {
                         }
                         Self::validate_grace(event)?;
                         Self::validate_lyrics(event)?;
-                        ticks[usize::from(voice.number() - 1)] += u32::from(event.duration.ticks());
+                        ticks[usize::from(voice.number() - 1)] += event.duration.ticks();
                     }
                     if ticks
                         .into_iter()
-                        .any(|ticks| ticks > u32::from(self.time_at(index).capacity()))
+                        .any(|ticks| ticks > self.time_at(index).capacity())
                     {
                         return Err(ScoreError("Compás excedido"));
                     }

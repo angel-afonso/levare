@@ -447,7 +447,7 @@ fn midbar_projection_routes_each_attack_cursor_and_staff_span_in_every_view() {
                 m.origin.y
             );
             let event = m.content.events.iter().find(|e| e.id == id).unwrap();
-            assert_eq!(event.tick, i as u16 * 48);
+            assert_eq!(event.tick, i as u32 * 48);
             assert_eq!(
                 layout
                     .hit_pitch_in_voice(

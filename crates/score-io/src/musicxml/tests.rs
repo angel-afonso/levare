@@ -28,7 +28,7 @@ fn check_timing(doc: &Document<'_>, score: &Score) {
             .filter(|n| n.has_tag_name("measure"))
             .enumerate()
         {
-            let cap = i32::from(score.time_at(bar).capacity());
+            let cap = i32::try_from(score.time_at(bar).capacity()).unwrap();
             let mut cursor = 0;
             let mut last = 0;
             for element in measure.children().filter(Node::is_element) {

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 pub const MAX_CLIPBOARD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_EVENTS: usize = 65_536;
-const MAX_TICKS: u64 = score_core::MAX_MEASURES as u64 * 3072;
+const MAX_TICKS: u64 = score_core::MAX_MEASURES as u64 * 16 * score_core::TICKS_PER_WHOLE as u64;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MusicalClipboard {
     pub format: String,

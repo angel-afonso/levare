@@ -28,7 +28,7 @@ pub fn position(
     let tick = if let Some((frame, rate)) = clock.filter(|(_, rate)| *rate > 0) {
         timeline.tick_at(frame, rate)
     } else {
-        let local: u16 = score
+        let local: u32 = score
             .part(cursor.part)
             .and_then(|p| p.staff(cursor.staff))
             .and_then(|s| s.measures().get(cursor.measure))
@@ -77,12 +77,12 @@ pub fn ruler_tick(score: &Score, x: f32, width: f32) -> u64 {
     let measure = score.measure_at_tick(raw).0.min(score.measures().len() - 1);
     let begin = score.measure_start_tick(measure);
     let time = score.time_at(measure);
-    let beat = u64::from(score_core::TICKS_PER_WHOLE / u16::from(time.denominator));
+    let beat = u64::from(score_core::TICKS_PER_WHOLE / u32::from(time.denominator));
     let local = (((raw - begin) as f64 / beat as f64).round() as u64 * beat)
         .min(u64::from(time.capacity()));
     if begin + local >= total {
         let last = score.time_at(score.measures().len() - 1);
-        total - u64::from(score_core::TICKS_PER_WHOLE / u16::from(last.denominator))
+        total - u64::from(score_core::TICKS_PER_WHOLE / u32::from(last.denominator))
     } else {
         begin + local
     }
@@ -105,8 +105,8 @@ pub fn score_tick(
         .content
         .tick_at_x(point.x / layout.scale - measure.origin.x);
     let time = score.time_at(bar);
-    let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
-    let mut local = ((raw / f64::from(beat)).round() as u16 * beat).min(time.capacity());
+    let beat = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
+    let mut local = ((raw / f64::from(beat)).round() as u32 * beat).min(time.capacity());
     if bar + 1 == score.measures().len() {
         local = local.min(time.capacity() - beat);
     }
@@ -458,9 +458,9 @@ mod tests {
             layout.scale = scale;
             for m in &layout.measures {
                 let time = score.time_at(m.index);
-                let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+                let beat = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
                 for b in 0..time.numerator {
-                    let tick = u16::from(b) * beat;
+                    let tick = u32::from(b) * beat;
                     let point = score_layout::Point {
                         x: (m.origin.x + m.content.x_at_tick(f64::from(tick))) * scale,
                         y: (m.origin.y + 40.) * scale,

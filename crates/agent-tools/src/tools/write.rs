@@ -70,11 +70,11 @@ fn parse_bar(score: &Score, measure: usize, text: &str) -> Result<Vec<WrittenEve
     let time = score.time_at(measure);
     let capacity = time.capacity();
     let unit = super::text::beat_unit(score, measure);
-    let total: u32 = events
+    let total: u64 = events
         .iter()
-        .map(|written| u32::from(written.event.duration.ticks()))
+        .map(|written| u64::from(written.event.duration.ticks()))
         .sum();
-    let total = u16::try_from(total).unwrap_or(u16::MAX);
+    let total = u32::try_from(total).unwrap_or(u32::MAX);
     if total != capacity {
         let (verb, difference) = if total > capacity {
             ("sobra", total - capacity)

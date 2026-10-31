@@ -418,7 +418,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     assert_eq!(ids.len(), 2);
     assert_eq!(
         ids.iter()
-            .map(|id| u32::from(dst.score().event(*id).unwrap().duration.ticks()))
+            .map(|id| dst.score().event(*id).unwrap().duration.ticks())
             .sum::<u32>(),
         72
     );

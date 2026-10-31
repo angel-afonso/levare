@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy)]
 struct Item {
-    tick: u16,
+    tick: u32,
     old: Option<ElementId>,
     event: Event,
     piece: Option<usize>,
@@ -13,11 +13,11 @@ struct Item {
 #[derive(Clone, Copy)]
 struct Piece {
     measure: usize,
-    tick: u16,
+    tick: u32,
     duration: Duration,
 }
 
-fn rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), ScoreError> {
+fn rests(items: &mut Vec<Item>, start: u32, ticks: u32) -> Result<(), ScoreError> {
     let mut at = start;
     for duration in event_move::notatable(ticks)? {
         items.push(Item {
@@ -43,7 +43,7 @@ impl Score {
         staff: StaffId,
         measure: usize,
         voice: Voice,
-        tick: u16,
+        tick: u32,
         event: Event,
     ) -> Result<Vec<ElementId>, ScoreError> {
         self.part(part)

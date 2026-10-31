@@ -12,7 +12,7 @@ fn single(instrument: Instrument) -> Score {
     Score::new("".into(), &[instrument], 2).unwrap()
 }
 
-fn pointer(layout: &Layout, part: PartId, staff: StaffId, tick: u16, y: f32) -> Point {
+fn pointer(layout: &Layout, part: PartId, staff: StaffId, tick: u32, y: f32) -> Point {
     let placed = layout.measure_on(part, staff, 0).unwrap();
     Point {
         x: (placed.origin.x + placed.content.x_at_tick(f64::from(tick))) * layout.scale,

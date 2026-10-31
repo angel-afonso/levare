@@ -22,7 +22,7 @@ impl Score {
     ) -> Result<(), ScoreError> {
         self.event(id)
             .ok_or(ScoreError("Selecciona una nota o silencio"))?;
-        let tick = (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u16;
+        let tick = (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u32;
         let part = self.part_mut(id.part)?;
         if !part.instrument.is_grand_staff() && !part.divided {
             if let Some(mark) = mark {
@@ -145,10 +145,10 @@ impl Score {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DivisiPoint {
     pub measure: usize,
-    pub tick: u16,
+    pub tick: u32,
 }
 impl DivisiPoint {
-    pub const fn new(measure: usize, tick: u16) -> Self {
+    pub const fn new(measure: usize, tick: u32) -> Self {
         Self { measure, tick }
     }
 }
@@ -156,7 +156,7 @@ impl Part {
     pub fn divisi_at(&self, bar: usize) -> bool {
         self.divisi_at_tick(bar, 0)
     }
-    pub fn divisi_at_tick(&self, bar: usize, tick: u16) -> bool {
+    pub fn divisi_at_tick(&self, bar: usize, tick: u32) -> bool {
         self.divisi_changes
             .get(&bar)
             .and_then(|map| map.range(..=tick).next_back())
@@ -173,7 +173,7 @@ impl Part {
     pub fn divisi_change_at(&self, bar: usize) -> Option<Division> {
         self.divisi_change_at_tick(bar, 0)
     }
-    pub fn divisi_change_at_tick(&self, bar: usize, tick: u16) -> Option<Division> {
+    pub fn divisi_change_at_tick(&self, bar: usize, tick: u32) -> Option<Division> {
         self.divisi_changes.get(&bar)?.get(&tick).map(|v| {
             if *v {
                 Division::Divisi
@@ -182,7 +182,7 @@ impl Part {
             }
         })
     }
-    pub fn divisi_changes_in(&self, bar: usize) -> impl Iterator<Item = (u16, Division)> + '_ {
+    pub fn divisi_changes_in(&self, bar: usize) -> impl Iterator<Item = (u32, Division)> + '_ {
         self.divisi_changes.get(&bar).into_iter().flat_map(|m| {
             m.iter().map(|(&tick, &v)| {
                 (
@@ -211,7 +211,7 @@ impl Part {
                 .divisi_changes_in(bar)
                 .all(|(_, v)| v == Division::Divisi)
     }
-    pub fn divisi_intervals(&self, bar: usize, capacity: u16) -> Vec<(u16, u16)> {
+    pub fn divisi_intervals(&self, bar: usize, capacity: u32) -> Vec<(u32, u32)> {
         let mut result = Vec::new();
         let mut start = 0;
         let mut active = self.divisi_at(bar);
@@ -252,7 +252,7 @@ impl Part {
         source: StaffId,
         voice: Voice,
         bar: usize,
-        _tick: u16,
+        _tick: u32,
     ) -> StaffId {
         if self.instrument.is_grand_staff() || self.divided {
             source
@@ -315,7 +315,7 @@ impl Part {
         }
         measure
     }
-    fn remove_divisi_boundary(&mut self, bar: usize, tick: u16) {
+    fn remove_divisi_boundary(&mut self, bar: usize, tick: u32) {
         if let Some(map) = self.divisi_changes.get_mut(&bar) {
             map.remove(&tick);
             if map.is_empty() {
@@ -454,12 +454,10 @@ impl Score {
     }
 }
 
-pub(super) fn divisi_rhythm_pieces(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
-    crate::Palette::modified()
-        .fewest(u32::from(ticks))
-        .ok_or(ScoreError(
-            "Este punto divide una figura en valores aún no admitidos. Elige otra posición rítmica",
-        ))
+pub(super) fn divisi_rhythm_pieces(ticks: u32) -> Result<Vec<Duration>, ScoreError> {
+    crate::Palette::modified().fewest(ticks).ok_or(ScoreError(
+        "Este punto divide una figura en valores aún no admitidos. Elige otra posición rítmica",
+    ))
 }
 impl Part {
     pub(super) fn validate_divisi_cuts(&self) -> Result<(), ScoreError> {

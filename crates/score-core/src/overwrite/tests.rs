@@ -19,7 +19,7 @@ fn rest(duration: Duration) -> Event {
 fn write(
     score: &mut Score,
     measure: usize,
-    tick: u16,
+    tick: u32,
     event: Event,
 ) -> Result<Vec<ElementId>, ScoreError> {
     score.overwrite(PartId(0), StaffId::Upper, measure, Voice::One, tick, event)

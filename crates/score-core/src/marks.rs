@@ -343,7 +343,7 @@ impl Score {
                 if part.has_passage_divisi() {
                     part.divisi_change_at_tick(
                         id.measure,
-                        (self.event_tick(id)? - self.measure_start_tick(id.measure)) as u16,
+                        (self.event_tick(id)? - self.measure_start_tick(id.measure)) as u32,
                     )
                     .map(MarkKind::Division)
                 } else {

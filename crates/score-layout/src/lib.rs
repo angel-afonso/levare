@@ -107,8 +107,8 @@ fn label_words(text: &'static str) -> score_core::Words {
 #[derive(Clone, Debug)]
 pub struct EventPosition {
     pub voice: Voice,
-    pub tick: u16,
-    pub end_tick: u16,
+    pub tick: u32,
+    pub end_tick: u32,
     pub id: ElementId,
     pub pitch: Option<score_core::Pitch>,
     pub center: Point,
@@ -132,7 +132,7 @@ pub struct MeasureLayout {
     pub cursor_x: Vec<f32>,
     pub second_cursor_x: Vec<f32>,
     /// Shared rhythmic onsets, including bar end, for a continuous playhead.
-    pub time_positions: Vec<(u16, f32)>,
+    pub time_positions: Vec<(u32, f32)>,
     pub top: f32,
     pub bottom: f32,
     pub ink_top: f32,
@@ -180,11 +180,11 @@ impl MeasureLayout {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VoiceRegion {
     pub voice: Voice,
-    pub start: u16,
-    pub end: u16,
+    pub start: u32,
+    pub end: u32,
 }
 impl VoiceRegion {
-    pub fn contains(&self, voice: Voice, tick: u16) -> bool {
+    pub fn contains(&self, voice: Voice, tick: u32) -> bool {
         self.voice == voice && self.start <= tick && tick < self.end
     }
 }
@@ -197,7 +197,7 @@ pub struct PlacedMeasure {
     pub source_staff: StaffId,
     pub source_voice: Option<Voice>,
     pub regions: Vec<VoiceRegion>,
-    pub source_onsets: [Vec<u16>; 2],
+    pub source_onsets: [Vec<u32>; 2],
     pub part: PartId,
     pub index: usize,
     pub origin: Point,
@@ -436,7 +436,7 @@ impl Layout {
         &self,
         point: Point,
         preferred: Voice,
-    ) -> Option<(ElementId, Option<score_core::Pitch>, u16)> {
+    ) -> Option<(ElementId, Option<score_core::Pitch>, u32)> {
         let point = Point {
             x: point.x / self.scale,
             y: point.y / self.scale,
@@ -581,15 +581,15 @@ impl Layout {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Rhythm {
-    ticks: Vec<u16>,
+    ticks: Vec<u32>,
     positions: Vec<f32>,
 }
 impl Rhythm {
-    fn ticks(score: &Score, index: usize, metrics: &Metrics) -> (Vec<u16>, Vec<f32>, f32) {
+    fn ticks(score: &Score, index: usize, metrics: &Metrics) -> (Vec<u32>, Vec<f32>, f32) {
         let mut ticks = vec![0, score.time_at(index).capacity()];
         let mut wide = HashSet::new();
-        let mut left = HashMap::<u16, f32>::new();
-        let mut right = HashMap::<u16, f32>::new();
+        let mut left = HashMap::<u32, f32>::new();
+        let mut right = HashMap::<u32, f32>::new();
         let piano_arpeggios: HashSet<_> = score
             .piano_arpeggios()
             .iter()
@@ -676,12 +676,12 @@ impl Rhythm {
             .collect();
         (ticks, gaps, left.get(&0).copied().unwrap_or(0.))
     }
-    fn new(grid: (Vec<u16>, Vec<f32>, f32), prefix: f32, width: f32, trailing: f32) -> Self {
+    fn new(grid: (Vec<u32>, Vec<f32>, f32), prefix: f32, width: f32, trailing: f32) -> Self {
         let (ticks, gaps, leading) = grid;
         let prefix = prefix + leading;
         let weights: Vec<f32> = ticks
             .windows(2)
-            .map(|pair| f32::from(pair[1] - pair[0]).sqrt())
+            .map(|pair| ((pair[1] - pair[0]) as f32).sqrt())
             .collect();
         let minimum = gaps.iter().sum::<f32>();
         let scale =
@@ -694,7 +694,7 @@ impl Rhythm {
         }
         Self { ticks, positions }
     }
-    fn x(&self, tick: u16) -> f32 {
+    fn x(&self, tick: u32) -> f32 {
         self.positions[self
             .ticks
             .binary_search(&tick)
@@ -772,7 +772,7 @@ fn connector_repeat_start_strokes(
 
 struct CacheEntry {
     regions: Vec<VoiceRegion>,
-    boundaries: Vec<(u16, score_core::Division)>,
+    boundaries: Vec<(u32, score_core::Division)>,
     source: (StaffId, Option<Voice>),
     measure: Measure,
     time: TimeSignature,
@@ -808,7 +808,7 @@ struct Engraving<'a> {
     time_changed: bool,
     rhythm: &'a Rhythm,
     hidden: &'a HashSet<score_core::EventId>,
-    accidental_resets: &'a [u16],
+    accidental_resets: &'a [u32],
 }
 
 struct Metrics {
@@ -2114,7 +2114,7 @@ fn measure_accidentals(
 fn measure_accidentals_with_resets(
     measure: &Measure,
     key: KeySignature,
-    resets: &[u16],
+    resets: &[u32],
 ) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
     // Unmarked pitches follow the key; explicit signs override it. Remember local
     // notation per octave and reset to the signature at each measure boundary.
@@ -2245,7 +2245,7 @@ fn engrave_accidentals(
     }
 }
 
-fn voice_offset(measure: &Measure, voice: Voice, tick: u16) -> f32 {
+fn voice_offset(measure: &Measure, voice: Voice, tick: u32) -> f32 {
     if voice != Voice::Two {
         return 0.;
     }

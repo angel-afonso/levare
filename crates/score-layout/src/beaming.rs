@@ -35,7 +35,7 @@ impl MeasureLayout {
 }
 struct Note {
     element: ElementId,
-    tick: u16,
+    tick: u32,
     onset: f32,
     high: f32,
     low: f32,
@@ -66,7 +66,7 @@ fn levels(value: NoteValue) -> u8 {
 }
 /// Simple meters follow their denominator beats. Compound meters use three
 /// denominator units; odd short meters use explicit, documented defaults.
-fn beats(time: TimeSignature) -> Vec<u16> {
+fn beats(time: TimeSignature) -> Vec<u32> {
     let n = time.numerator;
     let units: Vec<u8> = if n.is_multiple_of(3) && (n > 3 || time.denominator >= 8) {
         vec![3; usize::from(n / 3)]
@@ -85,10 +85,10 @@ fn beats(time: TimeSignature) -> Vec<u16> {
     } else {
         vec![1; usize::from(n)]
     };
-    let unit = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+    let unit = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
     let mut boundaries = vec![0];
     for group in units {
-        boundaries.push(boundaries.last().unwrap() + u16::from(group) * unit);
+        boundaries.push(boundaries.last().unwrap() + u32::from(group) * unit);
     }
     boundaries
 }

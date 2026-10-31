@@ -41,7 +41,7 @@ fn violin() -> Editor {
         editor
             .execute(Command::WriteAt {
                 measure: 0,
-                tick: beat as u16 * 48,
+                tick: beat as u32 * 48,
                 event: note(step),
             })
             .unwrap();

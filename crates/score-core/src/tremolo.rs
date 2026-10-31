@@ -38,7 +38,7 @@ impl Tremolo {
             Self::Three => "\u{e222}",
         }
     }
-    pub const fn repetition_ticks(self) -> u16 {
+    pub const fn repetition_ticks(self) -> u32 {
         match self {
             Self::One => 24,
             Self::Two => 12,

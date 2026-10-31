@@ -35,7 +35,7 @@ impl Measure {
             .iter()
             .filter_map(|id| self.events.get(*id).map(|event| (*id, event)))
     }
-    pub fn timed_iter(&self) -> impl Iterator<Item = (Voice, u16, EventId, &Event)> {
+    pub fn timed_iter(&self) -> impl Iterator<Item = (Voice, u32, EventId, &Event)> {
         Voice::ALL.into_iter().flat_map(move |voice| {
             self.voice_iter(voice).scan(0, move |tick, (id, event)| {
                 let start = *tick;
@@ -58,7 +58,7 @@ impl Measure {
     pub fn voice_index_of(&self, voice: Voice, id: EventId) -> Option<usize> {
         self.voice_order(voice).iter().position(|key| *key == id)
     }
-    pub fn voice_ticks(&self, voice: Voice) -> u16 {
+    pub fn voice_ticks(&self, voice: Voice) -> u32 {
         self.voice_iter(voice)
             .map(|(_, e)| e.duration.ticks())
             .sum()

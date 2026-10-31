@@ -42,7 +42,7 @@ impl Score {
         self.measure_start_tick(self.measures().len())
     }
     /// At a boundary, the new bar owns the tick. It may be just past the score.
-    pub fn measure_at_tick(&self, tick: u64) -> (usize, u16) {
+    pub fn measure_at_tick(&self, tick: u64) -> (usize, u32) {
         let (mut start, mut begin, mut time) = (0, 0, self.time);
         for (&bar, &next) in &self.time_changes {
             let end = begin + (bar - start) as u64 * u64::from(time.capacity());
@@ -56,7 +56,7 @@ impl Score {
         let capacity = u64::from(time.capacity());
         (
             start + ((tick - begin) / capacity) as usize,
-            ((tick - begin) % capacity) as u16,
+            ((tick - begin) % capacity) as u32,
         )
     }
     pub fn set_time_signature_at(

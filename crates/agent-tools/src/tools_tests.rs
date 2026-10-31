@@ -52,7 +52,7 @@ fn violin(measures: usize) -> FakeHost {
             editor
                 .execute(Command::WriteAt {
                     measure,
-                    tick: beat as u16 * 48,
+                    tick: beat as u32 * 48,
                     event: note(step),
                 })
                 .unwrap();
