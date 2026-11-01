@@ -182,8 +182,12 @@ fn format_round_trips() {
         .unwrap();
     let part = editor.score().parts()[0].id();
     let text = format_voice(editor.score(), part, StaffId::Upper, 0, Voice::One);
-    // Writing the triplet eighth filled the rest of its group.
-    assert_eq!(text, "C4:4.{f} R:8 [Eb4 G4 C5]:4~ [Eb4 G4 C5]:8t R:4t");
+    // Writing the triplet eighth filled the rest of its group with a quarter
+    // counted in its eighths.
+    assert_eq!(
+        text,
+        "C4:4.{f} R:8 [Eb4 G4 C5]:4~ [Eb4 G4 C5]:8t R:4(3:2/8)"
+    );
     let parsed = parse_voice(&text).unwrap();
     assert_eq!(parsed.len(), events.len() + 1);
     for (parsed, original) in parsed.iter().zip(events) {
