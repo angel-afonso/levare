@@ -2166,7 +2166,7 @@ impl AppView {
         if self.document.editor.selection().is_some() {
             self.edit(
                 if triplet {
-                    Command::SetTriplet(enabled)
+                    Command::SetTuplet(enabled.then_some((3, 2)))
                 } else {
                     Command::SetDotted(enabled)
                 },

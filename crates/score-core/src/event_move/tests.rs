@@ -194,3 +194,57 @@ fn silent_destination_hairpin_anchors_are_protected_when_consumed_or_split() {
     assert!(s.move_event(a, 1, Q / 2).is_err());
     assert_eq!(s, before);
 }
+
+#[test]
+fn a_tuplet_event_moves_within_its_group_and_nowhere_else() {
+    let mut s = Score::default();
+    let sixteenth = Duration::Sixteenth.with_tuplet(Tuplet::usual(5, NoteValue::Sixteenth));
+    let first = s
+        .overwrite(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            0,
+            note(Step::C, sixteenth),
+        )
+        .unwrap()[0];
+    let plain = s
+        .overwrite(
+            PartId(0),
+            StaffId::Upper,
+            0,
+            Voice::One,
+            2 * Q,
+            note(Step::E, Duration::Quarter),
+        )
+        .unwrap()[0];
+    let before = s.clone();
+    for (measure, tick) in [(0, Q), (0, 9 * Q / 10), (1, 0)] {
+        let error = s.move_event(first, measure, tick).unwrap_err();
+        assert!(error.0.starts_with("Una figura de grupillo"), "{}", error.0);
+    }
+    let error = s.move_event(plain, 0, Q / 5).unwrap_err();
+    assert!(
+        error
+            .0
+            .starts_with("Esa posición está dentro de un grupillo"),
+        "{}",
+        error.0
+    );
+    assert_eq!(s, before);
+    let moved = s.move_event(first, 0, 2 * Q / 5).unwrap();
+    assert_eq!(s.event_tick(moved), Some(u64::from(2 * Q / 5)));
+    let bar = &s.measures()[0];
+    let groups = bar.tuplet_groups(Voice::One);
+    assert_eq!(groups.len(), 1);
+    assert!(groups[0].is_complete());
+    assert_eq!((groups[0].start, groups[0].end), (0, Q));
+    assert!(
+        groups[0]
+            .events
+            .iter()
+            .all(|&e| bar.event(e).unwrap().duration.tuplet() == sixteenth.tuplet())
+    );
+    s.validate().unwrap();
+}

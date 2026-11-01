@@ -64,7 +64,7 @@ fn old_longest_fitting(durations: Vec<Duration>, capacity: usize) -> Vec<Option<
         .collect()
 }
 
-fn palettes() -> [(&'static str, Vec<Duration>, Palette); 3] {
+fn palettes() -> [(&'static str, Vec<Duration>, Palette); 2] {
     let modified = old_values()
         .into_iter()
         .flat_map(|d| {
@@ -78,14 +78,6 @@ fn palettes() -> [(&'static str, Vec<Duration>, Palette); 3] {
         .collect();
     [
         ("plain", old_values(), Palette::plain()),
-        (
-            "triplets",
-            old_values()
-                .into_iter()
-                .map(|d| d.with_triplet(true))
-                .collect(),
-            Palette::triplets(),
-        ),
         ("modified", modified, Palette::modified()),
     ]
 }
@@ -120,7 +112,7 @@ fn longest_fitting_matches_the_old_paste_splitter_for_every_span() {
 
 #[test]
 fn spans_are_spelled_without_sixty_fourths() {
-    for palette in [Palette::plain(), Palette::triplets(), Palette::modified()] {
+    for palette in [Palette::plain(), Palette::modified()] {
         assert!(
             palette
                 .durations()

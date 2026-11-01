@@ -345,7 +345,7 @@ fn a_triplet_cannot_cross_the_bar_and_changes_nothing() {
     let before = score.clone();
     let event = note(Step::C, Duration::Quarter.with_triplet(true));
     let error = write(&mut score, 0, 11 * Q / 3, event).unwrap_err();
-    assert_eq!(error.0, "Un tresillo no puede cruzar la barra de compás");
+    assert_eq!(error.0, "Un grupillo no puede cruzar la barra de compás");
     assert_eq!(score, before);
     score.validate().unwrap();
 }
@@ -529,4 +529,177 @@ fn an_existing_crossbar_tie_is_reused_after_both_ends_are_replaced() {
     assert!(score.connections().contains(&new_slur));
     assert_eq!(score.mark_offset(MarkRef::Connection(new_slur)), offset);
     assert_tied(&score, &ids);
+}
+
+fn quintuplet(value: Duration) -> Duration {
+    value.with_tuplet(Tuplet::usual(5, NoteValue::Sixteenth))
+}
+
+/// Each event of the first bar: its onset, duration and whether it sounds.
+fn bar(score: &Score) -> Vec<(u32, Duration, bool)> {
+    score.measures()[0]
+        .timed_iter()
+        .filter(|(voice, ..)| *voice == Voice::One)
+        .map(|(_, tick, _, event)| (tick, event.duration, !event.pitches.is_empty()))
+        .collect()
+}
+
+fn group_sizes(score: &Score) -> Vec<usize> {
+    score.measures()[0]
+        .tuplet_groups(Voice::One)
+        .iter()
+        .map(|group| group.events.len())
+        .collect()
+}
+
+#[test]
+fn writing_a_tuplet_value_fills_the_rest_of_its_group_with_its_rests() {
+    let mut score = Score::default();
+    let sixteenth = quintuplet(Duration::Sixteenth);
+    write(&mut score, 0, 0, note(Step::C, sixteenth)).unwrap();
+    // The fewest rests, as with other gaps: a quarter in the quintuplet.
+    assert_eq!(
+        bar(&score),
+        [
+            (0, sixteenth, true),
+            (Q / 5, quintuplet(Duration::Quarter), false)
+        ]
+    );
+    assert_eq!(group_sizes(&score), [2]);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+    score.validate().unwrap();
+}
+
+#[test]
+fn writing_inside_a_group_with_the_same_tuplet_overwrites_within_it() {
+    let mut score = Score::default();
+    let sixteenth = quintuplet(Duration::Sixteenth);
+    write(&mut score, 0, 0, note(Step::C, sixteenth)).unwrap();
+    write(&mut score, 0, Q / 5, note(Step::D, sixteenth)).unwrap();
+    let events = bar(&score);
+    assert_eq!(events.iter().filter(|e| e.2).count(), 2);
+    assert_eq!((events[1].0, events[1].2), (Q / 5, true));
+    assert_eq!(group_sizes(&score), [events.len()]);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+}
+
+#[test]
+fn gaps_inside_a_group_are_filled_with_its_rests() {
+    let mut score = Score::default();
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::C, quintuplet(Duration::Eighth)),
+    )
+    .unwrap();
+    // An eighth of the five, then three sixteenths' worth of rests.
+    assert_eq!(group_sizes(&score), [3]);
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::D, quintuplet(Duration::Sixteenth)),
+    )
+    .unwrap();
+    let events = bar(&score);
+    assert_eq!(events[1], (Q / 5, quintuplet(Duration::Sixteenth), false));
+    assert_eq!(group_sizes(&score).iter().sum::<usize>(), events.len());
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+}
+
+#[test]
+fn a_value_that_would_pass_the_end_of_its_group_is_refused() {
+    let mut score = Score::default();
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::C, quintuplet(Duration::Sixteenth)),
+    )
+    .unwrap();
+    let before = score.clone();
+    let error = write(
+        &mut score,
+        0,
+        4 * Q / 5,
+        note(Step::D, quintuplet(Duration::Eighth)),
+    )
+    .unwrap_err();
+    assert_eq!(error.0, "La figura no cabe en el grupillo");
+    assert_eq!(score, before);
+}
+
+#[test]
+fn a_plain_value_on_a_groups_first_event_replaces_the_whole_group() {
+    let mut score = Score::default();
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::C, quintuplet(Duration::Sixteenth)),
+    )
+    .unwrap();
+    write(&mut score, 0, 0, note(Step::D, Duration::Eighth)).unwrap();
+    assert_eq!(
+        bar(&score),
+        [
+            (0, Duration::Eighth, true),
+            (Q / 2, Duration::Eighth, false)
+        ]
+    );
+    assert!(group_sizes(&score).is_empty());
+}
+
+#[test]
+fn writing_a_plain_value_strictly_inside_a_group_is_refused() {
+    let mut score = Score::default();
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::C, quintuplet(Duration::Sixteenth)),
+    )
+    .unwrap();
+    let before = score.clone();
+    let error = write(&mut score, 0, Q / 5, note(Step::D, Duration::Sixteenth)).unwrap_err();
+    assert!(error.0.starts_with("Dentro de un grupillo"), "{}", error.0);
+    assert_eq!(score, before);
+}
+
+#[test]
+fn a_new_group_cannot_reach_past_the_barline() {
+    let mut score = Score::default();
+    let error = write(
+        &mut score,
+        0,
+        7 * Q / 2,
+        note(Step::C, Duration::Eighth.with_triplet(true)),
+    )
+    .unwrap_err();
+    assert_eq!(error.0, "Un grupillo no puede cruzar la barra de compás");
+}
+
+#[test]
+fn a_value_that_cuts_a_group_is_refused_and_one_that_covers_it_replaces_it() {
+    let mut score = Score::default();
+    write(
+        &mut score,
+        0,
+        Q,
+        note(Step::C, quintuplet(Duration::Sixteenth)),
+    )
+    .unwrap();
+    let before = score.clone();
+    let dotted = note(Step::D, Duration::Quarter.with_dotted(true));
+    let error = write(&mut score, 0, 0, dotted).unwrap_err();
+    assert!(
+        error.0.starts_with("La figura corta un grupillo"),
+        "{}",
+        error.0
+    );
+    assert_eq!(score, before);
+    write(&mut score, 0, 0, note(Step::D, Duration::Half)).unwrap();
+    assert!(group_sizes(&score).is_empty());
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 2 * Q);
 }

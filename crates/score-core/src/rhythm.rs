@@ -28,8 +28,9 @@ impl Palette {
     pub fn plain() -> Self {
         Self::new(spelled())
     }
-    pub fn triplets() -> Self {
-        Self::new(spelled().map(|d| d.with_triplet(true)))
+    /// Plain values inside one tuplet, down to sixty-fourths.
+    pub fn in_tuplet(tuplet: crate::Tuplet) -> Self {
+        Self::new(Duration::ALL.map(|d| d.with_tuplet(Some(tuplet))))
     }
     pub fn durations(&self) -> &[Duration] {
         &self.durations
@@ -89,6 +90,61 @@ impl Palette {
     fn len(&self, d: Duration) -> usize {
         (d.ticks() / self.step) as usize
     }
+}
+
+/// A stretch of a bar that belongs to one tuplet group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TupletSpan {
+    pub start: u32,
+    pub end: u32,
+    pub tuplet: crate::Tuplet,
+}
+
+impl From<&crate::TupletGroup> for TupletSpan {
+    fn from(group: &crate::TupletGroup) -> Self {
+        Self {
+            start: group.start,
+            end: group.end,
+            tuplet: group.tuplet,
+        }
+    }
+}
+
+/// Rests for a gap, with their onsets: in the tuplet of each group it falls
+/// in, and plain values elsewhere.
+pub(crate) fn rests_for_gap(
+    start: u32,
+    ticks: u32,
+    spans: &[TupletSpan],
+) -> Result<Vec<(u32, Duration)>, crate::ScoreError> {
+    let end = start + ticks;
+    let mut at = start;
+    let mut rests = Vec::new();
+    while at < end {
+        let span = spans.iter().find(|s| s.start <= at && at < s.end);
+        let stop = match span {
+            Some(span) => span.end.min(end),
+            None => spans
+                .iter()
+                .map(|s| s.start)
+                .filter(|&s| s > at)
+                .min()
+                .unwrap_or(end)
+                .min(end),
+        };
+        let palette = match span {
+            Some(span) => Palette::in_tuplet(span.tuplet),
+            None => Palette::modified(),
+        };
+        let durations = palette.fewest(stop - at).ok_or(crate::ScoreError(
+            "Ese desplazamiento crea un silencio que todavía no se puede representar",
+        ))?;
+        for duration in durations {
+            rests.push((at, duration));
+            at += duration.ticks();
+        }
+    }
+    Ok(rests)
 }
 
 /// Spans are spelled without sixty-fourths: with them, a dotted thirty-second

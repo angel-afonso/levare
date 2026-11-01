@@ -1,5 +1,6 @@
 //! Write into occupied time while preserving unaffected event identities.
 use super::*;
+use crate::rhythm::{self, TupletSpan};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy)]
@@ -17,11 +18,22 @@ struct Piece {
     duration: Duration,
 }
 
-fn rests(items: &mut Vec<Item>, start: u32, ticks: u32) -> Result<(), ScoreError> {
-    let mut at = start;
-    for duration in event_move::notatable(ticks)? {
+const NO_ROOM_IN_TUPLET: &str = "La figura no cabe en el grupillo";
+const INSIDE_A_TUPLET: &str =
+    "Dentro de un grupillo solo caben sus figuras; empieza en su primera nota para sustituirlo";
+const CUTS_A_TUPLET: &str =
+    "La figura corta un grupillo; empieza en su primera nota para sustituirlo";
+const TUPLET_ACROSS_BAR: &str = "Un grupillo no puede cruzar la barra de compás";
+
+fn rests(
+    items: &mut Vec<Item>,
+    start: u32,
+    ticks: u32,
+    spans: &[TupletSpan],
+) -> Result<(), ScoreError> {
+    for (tick, duration) in rhythm::rests_for_gap(start, ticks, spans)? {
         items.push(Item {
-            tick: at,
+            tick,
             old: None,
             event: Event {
                 pitches: Pitches::default(),
@@ -30,7 +42,6 @@ fn rests(items: &mut Vec<Item>, start: u32, ticks: u32) -> Result<(), ScoreError
             },
             piece: None,
         });
-        at += duration.ticks();
     }
     Ok(())
 }
@@ -85,8 +96,8 @@ impl Score {
             }
             let capacity = next.time_at(bar).capacity();
             let chunk = remaining.min(capacity - at);
-            if chunk < remaining && event.duration.is_triplet() {
-                return Err(ScoreError("Un tresillo no puede cruzar la barra de compás"));
+            if chunk < remaining && event.duration.tuplet().is_some() {
+                return Err(ScoreError(TUPLET_ACROSS_BAR));
             }
             let mut durations = if pieces.is_empty() && chunk == remaining {
                 vec![event.duration]
@@ -144,10 +155,52 @@ impl Score {
         let mut written_ids = vec![None; pieces.len()];
         for (&bar, items) in &mut by_bar {
             let start = items[0].tick;
-            let zone_end =
+            let mut zone_end =
                 items.last().unwrap().tick + items.last().unwrap().event.duration.ticks();
             let source = &next.part(part).unwrap().staff(staff).unwrap().measures[bar];
             let old_length = source.voice_ticks(voice);
+            let groups = source.tuplet_groups(voice);
+            let written_tuplet = items[0].event.duration.tuplet();
+            // The group the written value continues, and where the gaps the
+            // edit leaves are filled with that group's rests.
+            let mut inside = None;
+            let mut spans = Vec::new();
+            let mut fill_to = zone_end;
+            match groups.iter().find(|g| g.start <= start && start < g.end) {
+                Some(group) if Some(group.tuplet) == written_tuplet => {
+                    if zone_end > group.end {
+                        return Err(ScoreError(NO_ROOM_IN_TUPLET));
+                    }
+                    inside = Some(group);
+                    spans.push(TupletSpan::from(group));
+                }
+                // From its first event, another value replaces the group.
+                Some(group) if group.start == start => fill_to = fill_to.max(group.end),
+                Some(_) => return Err(ScoreError(INSIDE_A_TUPLET)),
+                None => {}
+            }
+            if inside.is_none()
+                && let Some(tuplet) = written_tuplet
+            {
+                // A new group: the rest of it is filled with its rests.
+                let end = start + tuplet.span();
+                if end > next.time_at(bar).capacity() {
+                    return Err(ScoreError(TUPLET_ACROSS_BAR));
+                }
+                spans.push(TupletSpan { start, end, tuplet });
+                fill_to = fill_to.max(end);
+            }
+            if fill_to > zone_end {
+                rests(items, zone_end, fill_to - zone_end, &spans)?;
+                zone_end = fill_to;
+            }
+            for group in &groups {
+                let covered = start <= group.start && group.end <= zone_end;
+                let overlaps = group.start < zone_end && start < group.end;
+                if overlaps && !covered && inside != Some(group) {
+                    return Err(ScoreError(CUTS_A_TUPLET));
+                }
+            }
             let mut retained = Vec::new();
             let mut original = None;
             for (_, onset, key, value) in source.timed_iter().filter(|(v, _, _, _)| *v == voice) {
@@ -180,10 +233,10 @@ impl Score {
                             "La posición cae dentro de una nota; elige el inicio de una figura o un silencio",
                         ));
                     }
-                    rests(&mut retained, onset, start - onset)?;
+                    rests(&mut retained, onset, start - onset, &spans)?;
                 }
                 if right > zone_end {
-                    rests(&mut retained, zone_end, right - zone_end)?;
+                    rests(&mut retained, zone_end, right - zone_end, &spans)?;
                 }
             }
             old_at_start.insert(bar, original);
@@ -195,7 +248,7 @@ impl Score {
                 if item.tick < cursor {
                     return Err(ScoreError("La figura se solapa con otra nota"));
                 }
-                rests(&mut filled, cursor, item.tick - cursor)?;
+                rests(&mut filled, cursor, item.tick - cursor, &spans)?;
                 cursor = item.tick + item.event.duration.ticks();
                 filled.push(item);
             }
@@ -203,6 +256,7 @@ impl Score {
                 &mut filled,
                 cursor,
                 old_length.max(zone_end).saturating_sub(cursor),
+                &spans,
             )?;
             let target = &mut next.part_mut(part)?.staff_mut(staff)?.measures[bar];
             let old_keys: Vec<_> = target.voice_order(voice).iter().copied().collect();

@@ -228,7 +228,7 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     e.select(ids[0]);
     e.extend_selection(ids[2]);
     let original = e.score().clone();
-    e.execute(Command::SetTriplet(true)).unwrap();
+    e.execute(Command::SetTuplet(Some((3, 2)))).unwrap();
     assert!(
         ids.iter()
             .all(|id| e.score().event(*id).unwrap().duration.is_triplet())
@@ -250,7 +250,7 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     e.undo();
     assert_eq!(e.score(), &triplets);
     // On a full bar, a failed range edit cannot leave the first notes modified.
-    e.execute(Command::SetTriplet(false)).unwrap();
+    e.execute(Command::SetTuplet(None)).unwrap();
     e.navigate(true);
     e.execute(Command::Insert(e.note(Step::D))).unwrap();
     e.select_all();

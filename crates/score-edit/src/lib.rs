@@ -4,6 +4,7 @@ use score_core::{
 };
 
 pub mod clipboard;
+
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
@@ -21,6 +22,8 @@ mod range_tests;
 mod selection;
 #[cfg(test)]
 mod text_tests;
+#[cfg(test)]
+mod tuplet_tests;
 #[cfg(test)]
 mod write_tests;
 
@@ -76,7 +79,13 @@ pub enum Command {
     SetArpeggioBothHands(bool),
     SetDynamic(Option<score_core::Dynamic>),
     SetDotted(bool),
-    SetTriplet(bool),
+    /// No dots, one or two on the selection.
+    SetDots(u8),
+    /// A tuplet ratio, `actual` in the time of `normal`, counted in each
+    /// selected value; `None` takes the tuplet away. On a single event this
+    /// starts a group there, or turns its whole group into rests; on a
+    /// passage it changes each value.
+    SetTuplet(Option<(u8, u8)>),
     SetTechnique(Option<score_core::PlayingTechnique>),
     AddConnection(score_core::Connection),
     RemoveConnections(score_core::ConnectionKind),
@@ -569,7 +578,7 @@ impl Editor {
                 }
                 next.score.set_technique(id, value)?;
             }
-            Command::SetDotted(value) | Command::SetTriplet(value) => {
+            Command::SetDotted(_) | Command::SetDots(_) => {
                 let ids = self.selected_ids();
                 if ids.is_empty() {
                     return Err(ScoreError("Selecciona notas, acordes o silencios"));
@@ -578,10 +587,10 @@ impl Editor {
                     .into_iter()
                     .filter_map(|id| {
                         let old = next.score.event(id).unwrap().duration;
-                        let new = if matches!(command, Command::SetDotted(_)) {
-                            old.with_dotted(value)
-                        } else {
-                            old.with_triplet(value)
+                        let new = match command {
+                            Command::SetDotted(value) => old.with_dotted(value),
+                            Command::SetDots(dots) => old.with_dots(dots),
+                            _ => unreachable!(),
                         };
                         (new != old).then_some((id, new))
                     })
@@ -590,6 +599,56 @@ impl Editor {
                     return Ok(false);
                 }
                 next.score.set_durations(&edits)?;
+            }
+            Command::SetTuplet(ratio) => {
+                let ids = self.selected_ids();
+                let tuplet = |value| {
+                    ratio
+                        .map(|(actual, normal)| {
+                            score_core::Tuplet::new(actual, normal, value)
+                                .ok_or(ScoreError("Esa proporción de grupillo no es válida"))
+                        })
+                        .transpose()
+                };
+                match ids[..] {
+                    [] => return Err(ScoreError("Selecciona notas, acordes o silencios")),
+                    [id] => {
+                        let Some(written) = set_tuplet_at(&mut next.score, id, &tuplet)? else {
+                            return Ok(false);
+                        };
+                        let index = next
+                            .score
+                            .part(written.part)
+                            .unwrap()
+                            .staff(written.staff)
+                            .unwrap()
+                            .measures()[written.measure]
+                            .voice_index_of(next.cursor.voice, written.event)
+                            .unwrap();
+                        next.selection = Some(written);
+                        next.range_anchor = None;
+                        next.tone = 0;
+                        next.cursor = Cursor {
+                            measure: written.measure,
+                            index: index + 1,
+                            ..next.cursor
+                        };
+                    }
+                    _ => {
+                        let mut edits = Vec::new();
+                        for id in ids {
+                            let old = next.score.event(id).unwrap().duration;
+                            let new = old.with_tuplet(tuplet(old.value())?);
+                            if new != old {
+                                edits.push((id, new));
+                            }
+                        }
+                        if edits.is_empty() {
+                            return Ok(false);
+                        }
+                        next.score.set_durations(&edits)?;
+                    }
+                }
             }
 
             Command::SetDynamic(value) => {
@@ -1309,7 +1368,8 @@ impl Editor {
                 | Command::SetEnding(_)
                 | Command::RemoveEndings
                 | Command::SetDotted(_)
-                | Command::SetTriplet(_)
+                | Command::SetDots(_)
+                | Command::SetTuplet(_)
                 | Command::ToggleMark(
                     score_core::MarkKind::Harmonic(_) | score_core::MarkKind::Tremolo(_)
                 )
@@ -1586,6 +1646,59 @@ fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
         .find(|d| (0..=62).contains(d))
         .and_then(|d| Pitch::new(step, (d / 7) as u8))
         .unwrap_or(reference)
+}
+
+/// Starts a group of `tuplet` at one event, Sibelius style: the event keeps
+/// its value inside the tuplet and the rest of the group becomes rests, over
+/// whatever followed. Without a tuplet, its whole group becomes plain rests.
+/// The event written first, or `None` if nothing changes.
+fn set_tuplet_at(
+    score: &mut Score,
+    id: ElementId,
+    tuplet: &dyn Fn(score_core::NoteValue) -> Result<Option<score_core::Tuplet>, ScoreError>,
+) -> Result<Option<ElementId>, ScoreError> {
+    let event = *score
+        .event(id)
+        .ok_or(ScoreError("Selecciona notas, acordes o silencios"))?;
+    let voice = score.voice_of(id).unwrap();
+    let tick = (score.event_tick(id).unwrap() - score.measure_start_tick(id.measure)) as u32;
+    let written = match tuplet(event.duration.value())? {
+        Some(tuplet) if event.duration.tuplet() == Some(tuplet) => return Ok(None),
+        Some(tuplet) => {
+            let event = Event {
+                duration: event.duration.with_tuplet(Some(tuplet)),
+                ..event
+            };
+            score.overwrite(id.part, id.staff, id.measure, voice, tick, event)?
+        }
+        None => {
+            let Some(group) = score
+                .part(id.part)
+                .unwrap()
+                .staff(id.staff)
+                .unwrap()
+                .measures()[id.measure]
+                .tuplet_groups(voice)
+                .into_iter()
+                .find(|group| group.events.contains(&id.event))
+            else {
+                return Ok(None);
+            };
+            let rests = score_core::Palette::modified()
+                .fewest(group.end - group.start)
+                .ok_or(ScoreError(
+                    "Este grupillo no ocupa un tiempo que puedan llenar silencios normales",
+                ))?;
+            let rest = Event {
+                pitches: score_core::Pitches::default(),
+                duration: rests[0],
+                notation: score_core::Notation::default(),
+            };
+            // A plain value on its first event replaces the whole group.
+            score.overwrite(id.part, id.staff, id.measure, voice, group.start, rest)?
+        }
+    };
+    Ok(Some(written[0]))
 }
 
 #[cfg(test)]

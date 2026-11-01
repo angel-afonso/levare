@@ -242,7 +242,6 @@ impl Editor {
             };
         }
         let plain_pieces = score_core::Palette::plain();
-        let triplet_pieces = score_core::Palette::triplets();
         let gap_pieces = score_core::Palette::modified();
         let prefix: u64 = next
             .score
@@ -341,13 +340,10 @@ impl Editor {
                 let available = remaining_in_bar(&next.score, tick);
                 let duration = if first.is_none() && remaining <= available {
                     event.duration
+                } else if event.duration.tuplet().is_some() {
+                    return Err(ScoreError("Un grupillo no puede cruzar la barra de compás"));
                 } else {
-                    let pieces = if event.duration.is_triplet() {
-                        &triplet_pieces
-                    } else {
-                        &plain_pieces
-                    };
-                    split_piece(pieces, remaining.min(available))?
+                    split_piece(&plain_pieces, remaining.min(available))?
                 };
                 let length = u64::from(duration.ticks());
                 let is_first = first.is_none();

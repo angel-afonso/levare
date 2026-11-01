@@ -453,8 +453,9 @@ fn unrepresentable_paste_boundaries_fail_without_partial_music_or_panics() {
         )))
         .unwrap();
     }
-    // 184 ticks leaves eight: a straight quarter cannot be divided there using
-    // the supported straight note values. No new bars or events may escape.
+    // 23 triplet sixteenths leave a third of a sixteenth: a straight quarter
+    // cannot be divided there using the supported straight note values. No
+    // new bars or events may escape.
     let before = dst.score().clone();
     let selected = dst.selected_ids();
     assert!(dst.paste(&clip).is_err());
@@ -587,4 +588,33 @@ fn copying_between_concert_and_transposing_instruments_keeps_sounding_pitch() {
             assert!(dest.score().measures()[0].is_empty());
         }
     }
+}
+
+#[test]
+fn a_tuplet_that_would_cross_the_barline_is_not_pasted() {
+    let mut src = Editor::default();
+    src.execute(Command::Write(note(
+        Step::C,
+        Duration::Eighth.with_triplet(true),
+    )))
+    .unwrap();
+    let first = src.selection().unwrap();
+    let last = ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 1)
+            .unwrap(),
+        ..first
+    };
+    src.select(first);
+    src.extend_selection(last);
+    let clip = src.copy_selection().unwrap();
+    let mut dst = Editor::default();
+    for duration in [Duration::Half, Duration::Quarter, Duration::Eighth] {
+        dst.execute(Command::Write(note(Step::E, duration)))
+            .unwrap();
+    }
+    let before = dst.score().clone();
+    let error = dst.paste(&clip).unwrap_err();
+    assert_eq!(error.0, "Un grupillo no puede cruzar la barra de compás");
+    assert_eq!(dst.score(), &before);
 }
