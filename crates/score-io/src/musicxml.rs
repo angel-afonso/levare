@@ -20,6 +20,9 @@ struct PartIndex {
     shared_arpeggios: HashMap<ElementId, (Arpeggio, u8)>,
     /// Syllables that continue a word begun before them, by verse.
     continued: HashSet<(ElementId, u8)>,
+    /// Events that start and stop a tuplet group.
+    tuplet_starts: HashSet<ElementId>,
+    tuplet_stops: HashSet<ElementId>,
 }
 impl PartIndex {
     fn new(score: &Score, part: &Part) -> Self {
@@ -101,6 +104,22 @@ impl PartIndex {
                 }
             }
         }
+        for staff in part.staves() {
+            for (bar, measure) in staff.measures().iter().enumerate() {
+                for voice in Voice::ALL {
+                    for group in measure.tuplet_groups(voice) {
+                        let id = |event| ElementId {
+                            part: part.id(),
+                            staff: staff.id(),
+                            measure: bar,
+                            event,
+                        };
+                        index.tuplet_starts.insert(id(group.events[0]));
+                        index.tuplet_stops.insert(id(*group.events.last().unwrap()));
+                    }
+                }
+            }
+        }
         index
     }
     fn endpoints(&self, id: ElementId) -> &[(ConnectionKind, bool)] {
@@ -125,7 +144,10 @@ fn escape(text: &str) -> String {
     out
 }
 fn value(d: Duration) -> &'static str {
-    match d.value() {
+    type_name(d.value())
+}
+fn type_name(value: NoteValue) -> &'static str {
+    match value {
         NoteValue::Whole => "whole",
         NoteValue::Half => "half",
         NoteValue::Quarter => "quarter",
@@ -897,8 +919,22 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             };
             let _ = write!(xml, "<accidental>{sign}</accidental>");
         }
-        if f.duration.is_triplet() {
-            xml.push_str("<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>");
+        if let Some(tuplet) = f.duration.tuplet() {
+            let _ = write!(
+                xml,
+                "<time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes>",
+                tuplet.actual(),
+                tuplet.normal()
+            );
+            // The unit is said when it is not the note's own value.
+            if tuplet.unit() != f.duration.value() {
+                let _ = write!(
+                    xml,
+                    "<normal-type>{}</normal-type>",
+                    type_name(tuplet.unit())
+                );
+            }
+            xml.push_str("</time-modification>");
         }
         if f.two_voices && !pitches.is_empty() && f.duration.value() != NoteValue::Whole {
             xml.push_str(if f.voice == Voice::One {
@@ -917,6 +953,14 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             }
             if tie_start {
                 xml.push_str("<tied type=\"start\"/>");
+            }
+        }
+        if tone == 0 && f.duration.tuplet().is_some() {
+            if f.first && index.tuplet_starts.contains(&f.id) {
+                xml.push_str("<tuplet type=\"start\"/>");
+            }
+            if f.last && index.tuplet_stops.contains(&f.id) {
+                xml.push_str("<tuplet type=\"stop\"/>");
             }
         }
         if tone == 0 {

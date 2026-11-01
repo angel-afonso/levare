@@ -653,6 +653,12 @@ fn read_part(
                     } else {
                         None
                     };
+                    if let Some(what) = unsupported_tuplet(n) {
+                        return Err(error(format!(
+                            "MusicXML: {what} en el compás {}",
+                            index + 1
+                        )));
+                    }
                     let mut event = read_note(n, cursor, &state, warnings, chord_parent)?;
                     if child(n, "chord").is_none() {
                         let staff = usize::from(event.staff - 1);
@@ -1821,29 +1827,70 @@ fn text_kind(direction: Node<'_, '_>, words: Node<'_, '_>, text: &str) -> TextKi
     }
 }
 
-fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
-    let base = match text(n, "type")? {
-        "whole" => Duration::Whole,
-        "half" => Duration::Half,
-        "quarter" => Duration::Quarter,
-        "eighth" => Duration::Eighth,
-        "16th" => Duration::Sixteenth,
-        "32nd" => Duration::ThirtySecond,
+fn note_value(name: &str) -> Option<NoteValue> {
+    Some(match name {
+        "whole" => NoteValue::Whole,
+        "half" => NoteValue::Half,
+        "quarter" => NoteValue::Quarter,
+        "eighth" => NoteValue::Eighth,
+        "16th" => NoteValue::Sixteenth,
+        "32nd" => NoteValue::ThirtySecond,
+        "64th" => NoteValue::SixtyFourth,
         _ => return None,
+    })
+}
+
+/// The ratio of a note's `<time-modification>`, counted in its
+/// `<normal-type>` or else in the note's own value; `Err` when Levare
+/// cannot write it.
+fn tuplet_from_xml(n: Node<'_, '_>, value: NoteValue) -> Result<Option<Tuplet>, ()> {
+    let Some(m) = child(n, "time-modification") else {
+        return Ok(None);
     };
+    let count = |tag| text(m, tag).and_then(|t| t.trim().parse::<u8>().ok());
+    if child(m, "normal-dot").is_some() {
+        return Err(());
+    }
+    let unit = match text(m, "normal-type") {
+        Some(name) => note_value(name).ok_or(())?,
+        None => value,
+    };
+    let (actual, normal) = (
+        count("actual-notes").ok_or(())?,
+        count("normal-notes").ok_or(())?,
+    );
+    Tuplet::new(actual, normal, unit).map(Some).ok_or(())
+}
+
+/// Whether a note opens two tuplets at once, or one whose ratio Levare
+/// cannot write, as nested tuplets do.
+fn unsupported_tuplet(n: Node<'_, '_>) -> Option<&'static str> {
+    let starts = n
+        .descendants()
+        .filter(|t| t.has_tag_name("tuplet") && t.attribute("type") == Some("start"))
+        .count();
+    if starts > 1 {
+        return Some("grupillos anidados");
+    }
+    let value = text(n, "type").and_then(note_value)?;
+    tuplet_from_xml(n, value)
+        .is_err()
+        .then_some("un grupillo que Levare no admite")
+}
+
+fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
+    let value = note_value(text(n, "type")?)?;
     let dots = n.children().filter(|c| c.has_tag_name("dot")).count();
-    if dots > 1 {
+    if dots > usize::from(Duration::MAX_DOTS) {
         return None;
     }
-    let triplet = if let Some(m) = child(n, "time-modification") {
-        if text(m, "actual-notes") != Some("3") || text(m, "normal-notes") != Some("2") {
-            return None;
-        }
-        true
-    } else {
-        false
-    };
-    Some(base.with_dotted(dots == 1).with_triplet(triplet))
+    let tuplet = tuplet_from_xml(n, value).ok()?;
+    Some(
+        Duration::Quarter
+            .with_value(value)
+            .with_dots(dots as u8)
+            .with_tuplet(tuplet),
+    )
 }
 
 #[cfg(test)]

@@ -942,3 +942,87 @@ fn octave_lines_pedal_trills_and_glissandi_round_trip() {
     };
     assert_eq!(spans(&result.score), spans(&score));
 }
+
+#[test]
+fn tuplets_double_dots_and_sixty_fourths_round_trip_with_every_onset() {
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    let mut write = |bar, tick, duration| {
+        score
+            .overwrite(
+                part,
+                StaffId::Upper,
+                bar,
+                Voice::One,
+                tick,
+                note(Step::C, 5, duration),
+            )
+            .unwrap();
+    };
+    let tuplet = |value: Duration, actual, normal, unit| {
+        value.with_tuplet(score_core::Tuplet::new(actual, normal, unit))
+    };
+    let sixteenth = NoteValue::Sixteenth;
+    let five = tuplet(Duration::Sixteenth, 5, 4, sixteenth);
+    let six = tuplet(Duration::Sixteenth, 6, 4, sixteenth);
+    for i in 0..5 {
+        write(0, i * Q / 5, five);
+    }
+    for i in 0..6 {
+        write(0, Q + i * Q / 6, six);
+    }
+    write(0, 2 * Q, Duration::Eighth.with_dots(2));
+    write(0, 2 * Q + 7 * Q / 8, Duration::ThirtySecond);
+    for i in 0..4 {
+        write(0, 3 * Q + i * Q / 16, Duration::SixtyFourth);
+    }
+    // Two eighths in the time of three, then seven sixteenths in the time of eight.
+    let duplet = tuplet(Duration::Eighth, 2, 3, NoteValue::Eighth);
+    write(1, 0, duplet);
+    write(1, 3 * Q / 4, duplet);
+    let seven = tuplet(Duration::Sixteenth, 7, 8, sixteenth);
+    for i in 0..7 {
+        write(1, 3 * Q / 2 + i * 2 * Q / 7, seven);
+    }
+    let nine = tuplet(Duration::Sixteenth, 9, 8, sixteenth);
+    for i in 0..9 {
+        write(2, i * 2 * Q / 9, nine);
+    }
+    // A quarter and an eighth sharing one triplet of eighths.
+    let in_eighths =
+        |value: Duration| value.with_tuplet(Some(score_core::Tuplet::triplet(NoteValue::Eighth)));
+    write(2, 2 * Q, in_eighths(Duration::Quarter));
+    write(2, 2 * Q + 2 * Q / 3, in_eighths(Duration::Eighth));
+
+    let text = xml(&score);
+    let document = Document::parse(&text).unwrap();
+    check_timing(&document, &score);
+    assert!(text.contains("<normal-type>eighth</normal-type>"));
+    assert_eq!(
+        text.matches("<tuplet type=\"start\"/>").count(),
+        text.matches("<tuplet type=\"stop\"/>").count()
+    );
+    let imported = decode(text.as_bytes()).unwrap().score;
+    for bar in 0..3 {
+        let rhythm = |score: &Score| -> Vec<_> {
+            score.parts()[0].measures()[bar]
+                .timed_iter()
+                .filter(|(voice, ..)| *voice == Voice::One)
+                .map(|(_, tick, _, event)| (tick, event.duration, event.pitches.is_empty()))
+                .collect()
+        };
+        let (written, read) = (rhythm(&score), rhythm(&imported));
+        assert_eq!(read[..written.len()], written, "bar {}", bar + 1);
+        // The export spells the rest of each bar, which Levare leaves implicit.
+        assert!(read[written.len()..].iter().all(|(_, _, rest)| *rest));
+        // Event ids differ after import; where groups lie and what they hold do not.
+        let groups = |score: &Score| -> Vec<_> {
+            score.parts()[0].measures()[bar]
+                .tuplet_groups(Voice::One)
+                .into_iter()
+                .map(|g| (g.start, g.end, g.tuplet, g.events.len()))
+                .collect()
+        };
+        assert_eq!(groups(&imported), groups(&score), "bar {}", bar + 1);
+    }
+}
