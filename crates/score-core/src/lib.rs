@@ -65,7 +65,7 @@ mod divisi;
 pub use divisi::{DivisiPoint, Division};
 mod pitches;
 mod rhythm;
-pub use rhythm::Palette;
+pub use rhythm::{Palette, rests_by_beat};
 mod tuplet;
 pub use tuplet::TupletGroup;
 mod signatures;

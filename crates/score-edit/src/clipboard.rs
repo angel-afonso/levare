@@ -242,7 +242,6 @@ impl Editor {
             };
         }
         let plain_pieces = score_core::Palette::plain();
-        let gap_pieces = score_core::Palette::modified();
         let prefix: u64 = next
             .score
             .part(next.cursor.part)
@@ -306,18 +305,25 @@ impl Editor {
         let mut ties = Vec::new();
         for (index, item) in clip.events.iter().enumerate() {
             while tick < base + item.offset {
-                let duration = split_piece(
-                    &gap_pieces,
-                    (base + item.offset - tick).min(remaining_in_bar(&next.score, tick)),
-                )?;
-                let rest = Event {
-                    pitches: Pitches::default(),
-                    duration,
-                    notation: Notation::default(),
-                };
-                let id = insert_piece(&mut next, tick, rest)?;
-                all_ids.push(id);
-                tick += u64::from(duration.ticks());
+                // The gap up to the barline, in rests that keep to its beats.
+                let (bar, local) = next.score.measure_at_tick(tick);
+                let span = (base + item.offset - tick).min(remaining_in_bar(&next.score, tick));
+                let rests = score_core::rests_by_beat(
+                    next.score.time_at(bar),
+                    local,
+                    u32::try_from(span).unwrap_or(u32::MAX),
+                )
+                .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))?;
+                for duration in rests {
+                    let rest = Event {
+                        pitches: Pitches::default(),
+                        duration,
+                        notation: Notation::default(),
+                    };
+                    let id = insert_piece(&mut next, tick, rest)?;
+                    all_ids.push(id);
+                    tick += u64::from(duration.ticks());
+                }
             }
             let mut event = item.event;
             if index == 0

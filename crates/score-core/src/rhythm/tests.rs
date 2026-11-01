@@ -153,3 +153,67 @@ fn tables_count_steps_not_ticks() {
         Some(vec![Duration::Whole; 16])
     );
 }
+
+fn meter(numerator: u8, denominator: u8) -> TimeSignature {
+    TimeSignature {
+        numerator,
+        denominator,
+    }
+}
+
+/// The rests for `ticks` from `start` in a bar of `time`.
+fn rests(time: TimeSignature, start: u32, ticks: u32) -> Vec<Duration> {
+    rests_by_beat(time, start, ticks).unwrap()
+}
+
+#[test]
+fn simple_time_rests_keep_to_the_beat_except_a_half_on_either_half_of_four_four() {
+    let q = Duration::Quarter.ticks();
+    let (quarter, half, eighth) = (Duration::Quarter, Duration::Half, Duration::Eighth);
+    let sixteenth = Duration::Sixteenth;
+    let four = meter(4, 4);
+    // After a quarter: a quarter to finish beat 2, then the second half.
+    assert_eq!(rests(four, q, 3 * q), [quarter, half]);
+    // After a dotted quarter: an eighth, then the half.
+    assert_eq!(rests(four, 3 * q / 2, 5 * q / 2), [eighth, half]);
+    assert_eq!(rests(four, 0, 3 * q), [half, quarter]);
+    assert_eq!(rests(four, 0, 4 * q), [Duration::Whole]);
+    // Never a half across the middle of the bar.
+    assert_eq!(rests(four, q, 2 * q), [quarter, quarter]);
+    // Inside a beat each rest starts on its own value.
+    assert_eq!(rests(four, q / 4, 3 * q / 4), [sixteenth, eighth]);
+    let three = meter(3, 4);
+    assert_eq!(rests(three, q, 2 * q), [quarter, quarter]);
+    assert_eq!(rests(three, 0, 2 * q), [quarter, quarter]);
+    // In 2/2 the beat is a half.
+    assert_eq!(rests(meter(2, 2), q, 3 * q), [quarter, half]);
+}
+
+#[test]
+fn compound_time_rests_fill_dotted_beats() {
+    let e = Duration::Eighth.ticks();
+    let dotted_quarter = Duration::Quarter.with_dotted(true);
+    let six = meter(6, 8);
+    // An eighth note, a quarter rest to finish the beat, then the next beat.
+    assert_eq!(rests(six, e, 5 * e), [Duration::Quarter, dotted_quarter]);
+    // A rest before a note on the third eighth.
+    assert_eq!(rests(six, 0, 2 * e), [Duration::Quarter]);
+    assert_eq!(rests(six, 3 * e, 3 * e), [dotted_quarter]);
+    // Half of 12/8 under one dotted half.
+    assert_eq!(
+        rests(meter(12, 8), 0, 9 * e),
+        [Duration::Half.with_dotted(true), dotted_quarter]
+    );
+}
+
+#[test]
+fn what_a_triplet_leaves_takes_the_fewest_values() {
+    let q = Duration::Quarter.ticks();
+    let four = meter(4, 4);
+    assert_eq!(
+        rests(four, q / 3, 2 * q / 3 + q),
+        [Duration::Quarter.with_triplet(true), Duration::Quarter]
+    );
+    // Before a note a third into the beat, not sixteenths and a remainder.
+    assert_eq!(rests(four, 0, q / 3), [Duration::Eighth.with_triplet(true)]);
+}

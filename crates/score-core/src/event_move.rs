@@ -127,10 +127,10 @@ impl Score {
                         ));
                     }
                     if at < tick {
-                        push_rests(&mut items, at, tick - at, &spans)?;
+                        push_rests(&mut items, self.time_at(bar), at, tick - at, &spans)?;
                     }
                     if right > end {
-                        push_rests(&mut items, end, right - end, &spans)?;
+                        push_rests(&mut items, self.time_at(bar), end, right - end, &spans)?;
                     }
                 } else {
                     items.push(Item {
@@ -175,11 +175,17 @@ impl Score {
                 if item.tick < at {
                     return Err(ScoreError("La figura se solapa con otra nota"));
                 }
-                push_rests(&mut filled, at, item.tick - at, &spans)?;
+                push_rests(&mut filled, self.time_at(bar), at, item.tick - at, &spans)?;
                 at = item.tick + item.event.duration.ticks();
                 filled.push(item);
             }
-            push_rests(&mut filled, at, lengths[&bar].saturating_sub(at), &spans)?;
+            push_rests(
+                &mut filled,
+                self.time_at(bar),
+                at,
+                lengths[&bar].saturating_sub(at),
+                &spans,
+            )?;
             let target = &mut next.part_mut(id.part)?.staff_mut(id.staff)?.measures[bar];
             let old: Vec<_> = target.voice_order(voice).iter().copied().collect();
             let mut order = Vector::new();
@@ -286,11 +292,12 @@ pub(crate) fn moved_pitches(
 
 fn push_rests(
     items: &mut Vec<Item>,
+    time: TimeSignature,
     start: u32,
     ticks: u32,
     spans: &[TupletSpan],
 ) -> Result<(), ScoreError> {
-    for (tick, duration) in crate::rhythm::rests_for_gap(start, ticks, spans)? {
+    for (tick, duration) in crate::rhythm::rests_for_gap(time, start, ticks, spans)? {
         items.push(Item {
             tick,
             id: None,

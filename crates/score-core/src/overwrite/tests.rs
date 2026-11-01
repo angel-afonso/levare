@@ -83,19 +83,36 @@ fn quarters(score: &mut Score, bar: usize, steps: &[Step]) -> Vec<ElementId> {
 }
 
 #[test]
-fn replacing_a_whole_rest_leaves_a_dotted_half_rest() {
+fn replacing_a_whole_rest_leaves_rests_by_beat() {
     let mut score = Score::default();
     score.insert(0, 0, rest(Duration::Whole)).unwrap();
     write(&mut score, 0, 0, note(Step::C, Duration::Quarter)).unwrap();
     let events = voice(&score, 0);
-    assert_eq!(events.len(), 2);
     assert_eq!(
         events[0].1.pitches,
         note(Step::C, Duration::Quarter).pitches
     );
-    assert!(events[1].1.pitches.is_empty());
-    assert_eq!(events[1].1.duration, Duration::Half.with_dotted(true));
+    // A quarter rest finishes beat 2 and a half rest the second half, never
+    // a dotted half from beat 2.
+    let rests: Vec<_> = events[1..].iter().map(|e| e.1.duration).collect();
+    assert_eq!(rests, [Duration::Quarter, Duration::Half]);
+    assert!(events[1..].iter().all(|e| e.1.pitches.is_empty()));
     score.validate().unwrap();
+}
+
+#[test]
+fn a_dotted_quarter_over_a_whole_rest_leaves_an_eighth_then_a_half() {
+    let mut score = Score::default();
+    score.insert(0, 0, rest(Duration::Whole)).unwrap();
+    write(
+        &mut score,
+        0,
+        0,
+        note(Step::C, Duration::Quarter.with_dotted(true)),
+    )
+    .unwrap();
+    let rests: Vec<_> = voice(&score, 0)[1..].iter().map(|e| e.1.duration).collect();
+    assert_eq!(rests, [Duration::Eighth, Duration::Half]);
 }
 
 #[test]

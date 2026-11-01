@@ -1,6 +1,6 @@
 //! Spelling a span of time as written values: generated rests, and notes cut
 //! at a barline, a staff change or a divisi point.
-use crate::{Duration, NoteValue};
+use crate::{Duration, NoteValue, TimeSignature};
 use std::cmp::Reverse;
 
 /// The values a span may be spelled with, longest first. Tables are indexed
@@ -111,8 +111,9 @@ impl From<&crate::TupletGroup> for TupletSpan {
 }
 
 /// Rests for a gap, with their onsets: in the tuplet of each group it falls
-/// in, and plain values elsewhere.
+/// in, and plain values by the beats of `time` elsewhere.
 pub(crate) fn rests_for_gap(
+    time: TimeSignature,
     start: u32,
     ticks: u32,
     spans: &[TupletSpan],
@@ -132,11 +133,11 @@ pub(crate) fn rests_for_gap(
                 .unwrap_or(end)
                 .min(end),
         };
-        let palette = match span {
-            Some(span) => Palette::in_tuplet(span.tuplet),
-            None => Palette::modified(),
-        };
-        let durations = palette.fewest(stop - at).ok_or(crate::ScoreError(
+        let durations = match span {
+            Some(span) => Palette::in_tuplet(span.tuplet).fewest(stop - at),
+            None => rests_by_beat(time, at, stop - at),
+        }
+        .ok_or(crate::ScoreError(
             "Ese desplazamiento crea un silencio que todavía no se puede representar",
         ))?;
         for duration in durations {
@@ -145,6 +146,82 @@ pub(crate) fn rests_for_gap(
         }
     }
     Ok(rests)
+}
+
+/// Rests for `ticks` from `start` in a bar of `time`, written as Sibelius,
+/// Dorico and MuseScore write them: no rest crosses a beat, except a half
+/// rest on either half of a 4/4 bar (a dotted half in 12/8), and inside a
+/// beat each rest starts on a multiple of its own value, so the beat's
+/// subdivision shows. In compound time a rest may finish its beat from any
+/// eighth: an eighth note and a quarter rest. Spans off that grid, such as
+/// what a triplet leaves, take the fewest values.
+pub fn rests_by_beat(time: TimeSignature, start: u32, ticks: u32) -> Option<Vec<Duration>> {
+    let unit = crate::TICKS_PER_WHOLE / u32::from(time.denominator.max(1));
+    let compound = time.denominator >= 8 && time.numerator > 3 && time.numerator.is_multiple_of(3);
+    let beat = if compound { 3 * unit } else { unit };
+    // Two beats under one rest: halves of 4/4 (or 4/2, 4/8) and of 12/8.
+    let pairs = (!compound && time.numerator == 4) || (compound && time.numerator == 12);
+    let value_of = |length: u32| {
+        Duration::ALL
+            .into_iter()
+            .flat_map(|d| [d, d.with_dotted(true)])
+            .find(|d| d.ticks() == length)
+    };
+    // A whole empty 4/4 bar is one whole rest.
+    if start == 0 && ticks == time.capacity() && ticks == crate::TICKS_PER_WHOLE {
+        return Some(vec![Duration::Whole]);
+    }
+    let end = start + ticks;
+    let mut at = start;
+    let mut rests = Vec::new();
+    while at < end {
+        let beat_start = at - at % beat;
+        if at == beat_start {
+            let pair = 2 * beat;
+            if pairs
+                && at.is_multiple_of(pair)
+                && at + pair <= end
+                && let Some(rest) = value_of(pair)
+            {
+                rests.push(rest);
+                at += pair;
+                continue;
+            }
+            if at + beat <= end
+                && let Some(rest) = value_of(beat)
+            {
+                rests.push(rest);
+                at += beat;
+                continue;
+            }
+        }
+        let stop = end.min(beat_start + beat);
+        // Finishing a compound beat in one rest: an eighth and a quarter rest.
+        if compound
+            && stop == beat_start + beat
+            && let Some(rest) = Duration::ALL.into_iter().find(|d| d.ticks() == stop - at)
+        {
+            rests.push(rest);
+            at = stop;
+            continue;
+        }
+        let within = at - beat_start;
+        let grid = Duration::SixtyFourth.ticks();
+        if !within.is_multiple_of(grid) || !(stop - at).is_multiple_of(grid) {
+            // Off the plain grid: whatever spells the rest of the beat.
+            rests.extend(Palette::modified().fewest(stop - at)?);
+            at = stop;
+            continue;
+        }
+        // On the grid of sixty-fourths a value aligned to itself always fits.
+        let rest = Duration::ALL
+            .into_iter()
+            .find(|d| within.is_multiple_of(d.ticks()) && at + d.ticks() <= stop)
+            .unwrap();
+        rests.push(rest);
+        at += rest.ticks();
+    }
+    Some(rests)
 }
 
 /// Spans are spelled without sixty-fourths: with them, a dotted thirty-second

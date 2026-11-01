@@ -27,11 +27,12 @@ const TUPLET_ACROSS_BAR: &str = "Un grupillo no puede cruzar la barra de compás
 
 fn rests(
     items: &mut Vec<Item>,
+    time: TimeSignature,
     start: u32,
     ticks: u32,
     spans: &[TupletSpan],
 ) -> Result<(), ScoreError> {
-    for (tick, duration) in rhythm::rests_for_gap(start, ticks, spans)? {
+    for (tick, duration) in rhythm::rests_for_gap(time, start, ticks, spans)? {
         items.push(Item {
             tick,
             old: None,
@@ -154,6 +155,7 @@ impl Score {
         }
         let mut written_ids = vec![None; pieces.len()];
         for (&bar, items) in &mut by_bar {
+            let time = next.time_at(bar);
             let start = items[0].tick;
             let mut zone_end =
                 items.last().unwrap().tick + items.last().unwrap().event.duration.ticks();
@@ -191,7 +193,7 @@ impl Score {
                 fill_to = fill_to.max(end);
             }
             if fill_to > zone_end {
-                rests(items, zone_end, fill_to - zone_end, &spans)?;
+                rests(items, time, zone_end, fill_to - zone_end, &spans)?;
                 zone_end = fill_to;
             }
             for group in &groups {
@@ -233,10 +235,10 @@ impl Score {
                             "La posición cae dentro de una nota; elige el inicio de una figura o un silencio",
                         ));
                     }
-                    rests(&mut retained, onset, start - onset, &spans)?;
+                    rests(&mut retained, time, onset, start - onset, &spans)?;
                 }
                 if right > zone_end {
-                    rests(&mut retained, zone_end, right - zone_end, &spans)?;
+                    rests(&mut retained, time, zone_end, right - zone_end, &spans)?;
                 }
             }
             old_at_start.insert(bar, original);
@@ -248,12 +250,13 @@ impl Score {
                 if item.tick < cursor {
                     return Err(ScoreError("La figura se solapa con otra nota"));
                 }
-                rests(&mut filled, cursor, item.tick - cursor, &spans)?;
+                rests(&mut filled, time, cursor, item.tick - cursor, &spans)?;
                 cursor = item.tick + item.event.duration.ticks();
                 filled.push(item);
             }
             rests(
                 &mut filled,
+                time,
                 cursor,
                 old_length.max(zone_end).saturating_sub(cursor),
                 &spans,
