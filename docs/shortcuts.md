@@ -303,13 +303,13 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Vista continua |  |
 | — | — | Vista de pentagrama |  |
 | `⌘F` | `Ctrl+F` | Buscar comandos… |  |
-| `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Escribir |  |
-| `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Articulaciones |  |
-| `⌥⌘3` | `Ctrl+Mayús+3` | Pestaña Dinámicas |  |
+| `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Inicio |  |
+| `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Entrada de notas |  |
+| `⌥⌘3` | `Ctrl+Mayús+3` | Pestaña Notaciones |  |
 | `⌥⌘4` | `Ctrl+Mayús+4` | Pestaña Texto |  |
-| `⌥⌘5` | `Ctrl+Mayús+5` | Pestaña Partitura |  |
-| — | — | Pestaña Partitura (saltos de página) |  |
-| `⌥⌘6` | `Ctrl+Mayús+6` | Pestaña Reproducción |  |
+| — | — | Pestaña Texto (dinámicas) |  |
+| `⌥⌘5` | `Ctrl+Mayús+5` | Pestaña Reproducción |  |
+| `⌥⌘6` | `Ctrl+Mayús+6` | Pestaña Diseño |  |
 | `⌥⌘7` | `Ctrl+Mayús+7` | Pestaña Revisión |  |
 | `⌥⌘8` | `Ctrl+Mayús+8` | Pestaña Vista |  |
 | — | — | Plegar o desplegar la cinta |  |

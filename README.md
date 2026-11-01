@@ -119,20 +119,24 @@ five-instrument ensemble.
   field (`⌘F` on macOS, `Ctrl+F` on Windows and Linux) finds every command by name,
   including those that are only in the macOS menus, such as selecting all or full
   screen. Where this README names a menu other than **Archivo**, use the search there.
-- **Ribbon:** eight tabs, one per task (`⌥⌘1`–`8`, or `Ctrl+Mayús+1`–`8` on Windows and
-  Linux, open them).
-  **Escribir** gathers what you choose for each note: note input and octave, duration,
-  dot and triplet, the rarer values in **Más figuras** (sixty-fourth, double dot, the
-  other tuplets), accidental, tie and slur, voice, and chords by interval. The rest is
-  on the `0` key, in **Edición** and in the command search.
-  **Articulaciones**: articulations and fermata, grace notes, arpeggios, tremolos and
-  string technique. **Dinámicas**: *ppp* to *fff*, hairpins, lines (8va, pedal, trill,
-  glissando) and divisi. **Texto**: title and credits, tempo, staff text, lyrics and
-  chord symbols, rehearsal marks and their style. **Partitura**: instruments, bars,
-  changes of clef, key and time signature, repeats, da capo and segno, and system and
-  page breaks. **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Revisión**: check, warnings, instrument range and comments. **Vista**: page
-  mode, zoom and collapsing the ribbon.
+- **Ribbon:** eight tabs laid out as in Sibelius (`⌥⌘1`–`8`, or `Ctrl+Mayús+1`–`8` on
+  Windows and Linux, open them).
+  **Inicio**: clipboard (paste, copy, cut and repeat), instruments, divisi, bars, and
+  selecting the whole staff or going to a bar.
+  **Entrada de notas** gathers what you choose for each note, as MuseScore's note input
+  toolbar does: note input and octave, duration, dot, triplet and rest, the rarer values
+  in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental, tie and
+  slur, voice, and chords by interval.
+  **Notaciones**: changes of clef, key and time signature, repeats and barlines,
+  articulations and fermata, hairpins, lines (8va, pedal, trill, glissando), string
+  technique, grace notes, arpeggios and tremolos. Like Sibelius' galleries, repeats,
+  lines, grace notes, arpeggios and tremolos each open from one dropdown.
+  **Texto**: title and credits, tempo, dynamics from *ppp* to *fff*, staff text, lyrics
+  and chord symbols, rehearsal marks and their style, and the signs and jumps in
+  **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
+  sounds. **Diseño**: system and page breaks and resetting what was moved by hand.
+  **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
+  zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
   chosen, and mutually exclusive options (duration, accidental, voice) share a track.
   Each symbol has its name and key below it, and each group has its title underneath.
@@ -411,7 +415,7 @@ and does not change playback.
 
 ## Clef changes
 
-In **Partitura › Cambios › Clave…** (`Q`) you can choose treble, bass, alto or tenor
+In **Notaciones › Cambios › Clave…** (`Q`) you can choose treble, bass, alto or tenor
 clef for the active instrument. Choose the start of the piece or the current bar: the
 clef holds until the next change. On piano and other two-staff instruments, each staff
 keeps its own clef; the branches of a divisi section share the instrument's clef. Notes
@@ -470,7 +474,7 @@ outside the passage are not copied.
 
 ## Dots and tuplets
 
-In **Escribir › Duración** choose the value and in **Escribir › Modificar** turn on
+In **Entrada de notas › Duración** choose the value and in **Entrada de notas › Modificar** turn on
 **Puntillo** or **Tresillo**. The rarer values share the **Más figuras** dropdown next
 to it, as Sibelius keeps them on its second keypad layout: **Semifusa**, **Doble
 puntillo**, the tuplets of 2 and 4 to 9 notes and **Otro grupillo…**. Default shortcuts:
@@ -533,8 +537,8 @@ scores. They change neither durations nor playback. Example:
 
 ## Ties, slurs, dynamics and articulations
 
-The ribbon (**Escribir** for ties and slurs, **Articulaciones** for articulations,
-arpeggios and technique, **Dinámicas** for dynamics and hairpins), the **Selección**
+The ribbon (**Entrada de notas** for ties and slurs, **Notaciones** for articulations,
+hairpins, arpeggios and technique, **Texto** for dynamics), the **Selección**
 tab of the right panel (to remove them) and the **Expresión** menu edit these marks on
 notes and chords of any staff. All changes are saved and support undo/redo. Example:
 [`examples/piano-expresion.partitura`](examples/piano-expresion.partitura).
@@ -565,7 +569,7 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   tied chain the initial attack is kept; a final staccato shortens the chain's combined
   sounding duration to 50 %. This keeps the sound when a value is split while pasting.
 
-- **Arpeggios:** select a chord and choose **Articulaciones › Arpegio** (also in the
+- **Arpeggios:** select a chord and choose **Notaciones › Arpegio** (also in the
   **Expresión** menu). There are normal, upward and downward markings. The Bravura line
   fits the chord's height and sits to the left of its accidentals. Normal and upward
   sound from low to high; downward, from high to low. The notes are staggered without
@@ -581,12 +585,12 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   split across bars, the arpeggio stays on the first fragment.
   Example: [`examples/piano-arpegios.partitura`](examples/piano-arpegios.partitura).
 
-- **Fermata:** in **Articulaciones › Articulación** or the **Expresión** menu. It goes
+- **Fermata:** in **Notaciones › Articulación** or the **Expresión** menu. It goes
   on notes or rests, alongside any articulation. In playback, that moment lasts twice
   as long in every part and the music continues afterwards; the ruler and the clock
   account for it.
 
-- **Grace notes:** in **Articulaciones › Nota de adorno**, select the note and choose
+- **Grace notes:** in **Notaciones › Nota de adorno**, select the note and choose
   **Acciaccatura** (small, slashed, almost no time) or **Appoggiatura** (leans on the
   note and takes half its value). The grace note starts at the note's pitch; `;` adds
   another, up to four, written beamed with two beams. The new one stays selected:
@@ -650,7 +654,7 @@ All support Undo/Redo, and Esc cancels a drag in progress.
 Select a passage with **Shift+click** or **Shift+arrows** and press **H** for a
 crescendo (`<`) or **Shift+H** for a diminuendo (`>`). You can also select the first
 note, press the hairpin, select the last one and press the same button or shortcut
-again. **Esc** cancels the pending start. The actions are in **Dinámicas › Regulador**
+again. **Esc** cancels the pending start. The actions are in **Notaciones › Regulador**
 and the **Expresión** menu. The shortcuts can be changed in Preferences.
 
 The hairpin goes from the start of the first note to the start of the last one. It can
@@ -673,7 +677,7 @@ Example: [`examples/reguladores.partitura`](examples/reguladores.partitura).
 
 ## Lines: 8va, 8vb, pedal, trill and glissando
 
-On the ribbon, in **Dinámicas › Líneas**, select a passage (or a single note) and
+On the ribbon, in **Notaciones › Líneas**, select a passage (or a single note) and
 choose the line. It is drawn from the first note to the end of the last one, breaks at
 line changes and each kind takes its own lane, outside the notes, slurs and dynamics.
 
@@ -755,7 +759,7 @@ them.
 ## Pizzicato and arco
 
 Select a note, chord or rest of **violin, viola, cello or double bass**. On the
-ribbon, in **Articulaciones › Técnica de cuerda**, or in the **Expresión** menu, choose
+ribbon, in **Notaciones › Técnica de cuerda**, or in the **Expresión** menu, choose
 **pizz.** to play by plucking the string and **arco** to return to the usual sound. The
 marking appears in italics above the staff and holds until the instrument's next mark,
 also when playing from a selection. A mark on a rest prepares the next entry.
@@ -772,7 +776,7 @@ Example:
 ## String harmonics
 
 Select a note or a passage and use **Expresión › Armónico natural** or **Armónico
-artificial**, also available on the ribbon (**Articulaciones › Técnica de cuerda**).
+artificial**, also available on the ribbon (**Notaciones › Técnica de cuerda**).
 Press the same option again to remove it; you can also select the circle or the
 diamond and delete only that mark. Undo history, the clipboard, autosave and PDF export
 keep them.
@@ -877,7 +881,7 @@ piano, flute and cello.
 
 ## Two voices and divisi
 
-Choose **Voz 1** or **Voz 2** in **Escribir › Voz** or with **⌥1 / ⌥2**. Each voice has
+Choose **Voz 1** or **Voz 2** in **Entrada de notas › Voz** or with **⌥1 / ⌥2**. Each voice has
 its own notes, rests and durations within the same bar; it does not use up the other's
 rhythmic space. Choosing an empty voice turns on writing from the start of the bar. If
 it already contains music, its first note is selected: use the arrows to go through it
@@ -893,7 +897,7 @@ For an instrumental section, **div.** opens two staves from the selected note or
 voice 1 in **Divisi I** and voice 2 in **Divisi II**, keeping the clef. **unis.** marks
 the return to playing together at the chosen position. Notes keep their voice,
 identity, rhythm and connections; changing the layout does not change playback. The
-buttons are in **Dinámicas › Divisi** (**Dividir** and **Unir**) and the Expresión
+buttons are in **Inicio › Divisi** (**Dividir** and **Unir**) and the Expresión
 menu; they also work on an empty bar.
 
 To divide only a range, select its notes with **Shift + click** or by dragging and
@@ -972,7 +976,7 @@ instruments, the pages grow to keep it.
 
 ## Sharps, flats and naturals
 
-In **Escribir › Alteración**, choose Armadura, **♯**, **♭** or **♮** before writing. That
+In **Entrada de notas › Alteración**, choose Armadura, **♯**, **♭** or **♮** before writing. That
 option holds for the next notes and for those you add to the chord with ⇧+letter.
 Armadura uses the chosen key; ♮ forces a natural note with an explicit natural sign.
 
@@ -1002,7 +1006,7 @@ also in the **Tonalidad** menu. There are 30 options, from seven flats to seven 
 including the relative minors. The key signature appears after the clef in every
 system, on every staff.
 
-With **Escribir › Alteración › Armadura**, notes and chords use its sharps or flats in
+With **Entrada de notas › Alteración › Armadura**, notes and chords use its sharps or flats in
 every octave: in G major, writing F produces F♯ without repeating a sharp before each
 note. **Aplicar ♮** (`7`) writes an F natural; **Seguir armadura** or pressing `7` again
 turns it back into F♯. The Selección tab shows the written pitch and, if the part
@@ -1196,7 +1200,7 @@ un problema…**, which opens the GitHub issue form with the version and system 
 ## Correcting notes and bars
 
 Click a note to leave input and edit it: **A–G** replaces the chosen pitch; the values
-in **Escribir › Duración** change its duration, including any dot or triplet it already
+in **Entrada de notas › Duración** change its duration, including any dot or triplet it already
 had. In chords the rest of the notes are kept. If the new duration does not fit, the
 operation is refused entirely. **N** turns new note input back on.
 
@@ -1205,7 +1209,7 @@ following notes keep their beat. **Edición › Eliminar notas y su tiempo** and
 **Cortar** remove the elements and move the following ones earlier within the bar.
 Everything supports undo and redo.
 
-In **Partitura › Compases**, **Antes** (⇧⌘B) adds an empty bar before the current one
+In **Inicio › Compases**, **Antes** (⇧⌘B) adds an empty bar before the current one
 and **Eliminar** (⌘Backspace) deletes the bars the selection spans, or the current one
 if there is no passage. They affect every instrument and hand; they move the markings
 with the music and keep the effective time signature, key and tempo of the first bar
@@ -1213,9 +1217,9 @@ kept. At least one bar always remains.
 
 ## Repeats, endings and jumps
 
-In **Partitura › Repeticiones** write the start and end of a repeat, first and second
-endings, the double barline and the final barline. **Da capo y segno** has Segno, Coda
-and Fine, and the **D.C. / D.S.** dropdown gathers To Coda and the jumps; the
+In **Notaciones › Repeticiones** write the start and end of a repeat, first and second
+endings, the double barline and the final barline. In **Texto**, the **D.C. / D.S.**
+dropdown gathers Segno, Coda, Fine, To Coda and the jumps; the
 **Repeticiones** menu also gathers the six D.C./D.S. variants and the options to remove
 the form.
 
@@ -1234,7 +1238,7 @@ written order.
 
 ## Single-note and chord tremolos
 
-Select a note, chord or passage without rests and choose **Articulaciones › Trémolo**:
+Select a note, chord or passage without rests and choose **Notaciones › Trémolo**:
 one, two or three strokes. The mark crosses the stem; on whole notes it goes above the
 head. Another variant replaces the previous one and pressing the active one again
 removes it. You can also select the mark and delete it while keeping the note. Each

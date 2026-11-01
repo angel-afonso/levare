@@ -217,12 +217,12 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
 /// macOS keeps Sibelius' ⌥⌘ combinations.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_MACOS: &[(&str, CommandId)] = &[
-    ("alt-secondary-1", id::TAB_NOTE_INPUT),
-    ("alt-secondary-2", id::TAB_NOTATION),
-    ("alt-secondary-3", id::TAB_DYNAMICS),
+    ("alt-secondary-1", id::TAB_HOME),
+    ("alt-secondary-2", id::TAB_NOTE_INPUT),
+    ("alt-secondary-3", id::TAB_NOTATION),
     ("alt-secondary-4", id::TAB_TEXT),
-    ("alt-secondary-5", id::TAB_HOME),
-    ("alt-secondary-6", id::TAB_PLAYBACK),
+    ("alt-secondary-5", id::TAB_PLAYBACK),
+    ("alt-secondary-6", id::TAB_LAYOUT),
     ("alt-secondary-7", id::TAB_REVIEW),
     ("alt-secondary-8", id::TAB_VIEW),
     ("alt-secondary-t", id::TEMPO_TEXT),
@@ -236,12 +236,12 @@ const SIBELIUS_LAPTOP_MACOS: &[(&str, CommandId)] = &[
 /// switches workspaces. Ctrl+Mayús takes its place; full screen is F11.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_WINDOWS: &[(&str, CommandId)] = &[
-    ("shift-secondary-1", id::TAB_NOTE_INPUT),
-    ("shift-secondary-2", id::TAB_NOTATION),
-    ("shift-secondary-3", id::TAB_DYNAMICS),
+    ("shift-secondary-1", id::TAB_HOME),
+    ("shift-secondary-2", id::TAB_NOTE_INPUT),
+    ("shift-secondary-3", id::TAB_NOTATION),
     ("shift-secondary-4", id::TAB_TEXT),
-    ("shift-secondary-5", id::TAB_HOME),
-    ("shift-secondary-6", id::TAB_PLAYBACK),
+    ("shift-secondary-5", id::TAB_PLAYBACK),
+    ("shift-secondary-6", id::TAB_LAYOUT),
     ("shift-secondary-7", id::TAB_REVIEW),
     ("shift-secondary-8", id::TAB_VIEW),
     ("shift-secondary-t", id::TEMPO_TEXT),
@@ -254,12 +254,12 @@ const SIBELIUS_LAPTOP_WINDOWS: &[(&str, CommandId)] = &[
 /// window menu or the launcher, so it never reaches the app.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_LINUX: &[(&str, CommandId)] = &[
-    ("shift-secondary-1", id::TAB_NOTE_INPUT),
-    ("shift-secondary-2", id::TAB_NOTATION),
-    ("shift-secondary-3", id::TAB_DYNAMICS),
+    ("shift-secondary-1", id::TAB_HOME),
+    ("shift-secondary-2", id::TAB_NOTE_INPUT),
+    ("shift-secondary-3", id::TAB_NOTATION),
     ("shift-secondary-4", id::TAB_TEXT),
-    ("shift-secondary-5", id::TAB_HOME),
-    ("shift-secondary-6", id::TAB_PLAYBACK),
+    ("shift-secondary-5", id::TAB_PLAYBACK),
+    ("shift-secondary-6", id::TAB_LAYOUT),
     ("shift-secondary-7", id::TAB_REVIEW),
     ("shift-secondary-8", id::TAB_VIEW),
     ("shift-secondary-t", id::TEMPO_TEXT),

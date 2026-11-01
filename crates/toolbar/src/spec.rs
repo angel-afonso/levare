@@ -3,16 +3,16 @@
 
 use score_keymap::{CommandId, id};
 
-/// One tab per task, in the order they appear and ⌥⌘1–8 (Ctrl+Mayús+1–8 on
-/// Windows and Linux) open them.
+/// The tabs of Sibelius that Levare has functions for, in Sibelius' order,
+/// which ⌥⌘1–8 (Ctrl+Mayús+1–8 on Windows and Linux) follow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabId {
-    Write,
-    Articulations,
-    Dynamics,
+    Home,
+    NoteInput,
+    Notations,
     Text,
-    Score,
     Playback,
+    Layout,
     Review,
     View,
 }
@@ -20,28 +20,27 @@ pub enum TabId {
 impl TabId {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Write => "Escribir",
-            Self::Articulations => "Articulaciones",
-            Self::Dynamics => "Dinámicas",
+            Self::Home => "Inicio",
+            Self::NoteInput => "Entrada de notas",
+            Self::Notations => "Notaciones",
             Self::Text => "Texto",
-            Self::Score => "Partitura",
             Self::Playback => "Reproducción",
+            Self::Layout => "Diseño",
             Self::Review => "Revisión",
             Self::View => "Vista",
         }
     }
 
-    /// The command that shows this tab. Published ids keep their old names:
-    /// `TAB_NOTE_INPUT` opens Escribir, `TAB_NOTATION` Articulaciones and
-    /// `TAB_HOME` Partitura.
+    /// The command that shows this tab. `TAB_DYNAMICS`, published when
+    /// Dinámicas was a tab, opens Texto, where Sibelius writes dynamics.
     pub fn command(self) -> CommandId {
         match self {
-            Self::Write => id::TAB_NOTE_INPUT,
-            Self::Articulations => id::TAB_NOTATION,
-            Self::Dynamics => id::TAB_DYNAMICS,
+            Self::Home => id::TAB_HOME,
+            Self::NoteInput => id::TAB_NOTE_INPUT,
+            Self::Notations => id::TAB_NOTATION,
             Self::Text => id::TAB_TEXT,
-            Self::Score => id::TAB_HOME,
             Self::Playback => id::TAB_PLAYBACK,
+            Self::Layout => id::TAB_LAYOUT,
             Self::Review => id::TAB_REVIEW,
             Self::View => id::TAB_VIEW,
         }
@@ -199,7 +198,7 @@ const VOICE_HINT: &str = "Dos voces: plicas arriba para la voz 1 y abajo para la
 const DIVISI_HINT: &str = "div. abre dos pentagramas desde la posición elegida; unis. vuelve a uno. También dentro de un compás.";
 const HARMONIC_HINT: &str = "Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo.";
 
-// Escribir
+// Entrada de notas
 
 const ENTRY: GroupSpec = GroupSpec {
     dropdown: false,
@@ -289,6 +288,12 @@ const MODIFY: GroupSpec = GroupSpec {
             "Tresillo",
             "Tres figuras en el tiempo de dos. Sobre una nota empieza un tresillo y rellena el grupo con silencios; otra vez, convierte el grupo en silencios.",
         )),
+        tile(
+            id::REST,
+            Music("\u{e4e5}"),
+            "Silencio",
+            "Escribe un silencio de la duración elegida.",
+        ),
     ],
 };
 /// The rarer values, from one dropdown next to Modificar, as Sibelius keeps
@@ -483,7 +488,7 @@ const INTERVALS: GroupSpec = GroupSpec {
     ],
 };
 
-// Articulaciones
+// Notaciones
 
 const ARTICULATIONS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -519,7 +524,7 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
     ],
 };
 const GRACES: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Nota de adorno",
     visual: Music("\u{e560}"),
     priority: 5,
@@ -544,7 +549,7 @@ const GRACES: GroupSpec = GroupSpec {
     ],
 };
 const ARPEGGIOS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Arpegio",
     visual: Music("\u{e63c}"),
     priority: 3,
@@ -574,7 +579,7 @@ const ARPEGGIOS: GroupSpec = GroupSpec {
     ],
 };
 const TREMOLOS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Trémolo",
     visual: Music("\u{e221}"),
     priority: 2,
@@ -625,7 +630,7 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     ],
 };
 
-// Dinámicas
+// Dynamics go to Texto, hairpins and lines to Notaciones, divisi to Inicio
 
 const DYNAMICS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -694,7 +699,7 @@ const HAIRPINS: GroupSpec = GroupSpec {
     ],
 };
 const LINES: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Líneas",
     visual: Music("\u{e511}"),
     priority: 4,
@@ -748,7 +753,7 @@ const HEADER: GroupSpec = GroupSpec {
     controls: &[large(
         id::SCORE_INFO,
         Label("Aa"),
-        "Título y créditos",
+        "Título…",
         "Título, subtítulo, compositor, arreglista y demás créditos.",
     )],
 };
@@ -835,7 +840,7 @@ const REHEARSAL: GroupSpec = GroupSpec {
 };
 /// How every rehearsal mark of the score is numbered.
 const REHEARSAL_STYLE: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Estilo de ensayo",
     visual: Label("A"),
     priority: 2,
@@ -861,7 +866,57 @@ const REHEARSAL_STYLE: GroupSpec = GroupSpec {
     ],
 };
 
-// Partitura
+// Inicio
+
+/// Sibelius opens Inicio with the clipboard; Repetir sits beside it as the
+/// one-key copy and paste.
+const CLIPBOARD: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Portapapeles",
+    visual: Icon("clipboard"),
+    priority: 5,
+    controls: &[
+        large(
+            id::PASTE,
+            Icon("clipboard"),
+            "Pegar",
+            "Pega lo copiado a partir de la selección.",
+        ),
+        tile(id::COPY, Icon("copy"), "Copiar", "Copia la selección."),
+        tile(
+            id::CUT,
+            Icon("cut"),
+            "Cortar",
+            "Copia la selección y la quita de la partitura.",
+        ),
+        tile(
+            id::REPEAT,
+            Icon("repeat"),
+            "Repetir",
+            "Repite justo después la nota, el acorde o el silencio seleccionado.",
+        ),
+    ],
+};
+const SELECT: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Seleccionar",
+    visual: Visual::Staff,
+    priority: 3,
+    controls: &[
+        tile(
+            id::SELECT_ALL,
+            Visual::Staff,
+            "Todo",
+            "Selecciona el pentagrama entero.",
+        ),
+        tile(
+            id::GO_TO_BAR,
+            Label("#"),
+            "Ir al compás…",
+            "Lleva la selección al compás que indiques.",
+        ),
+    ],
+};
 
 const INSTRUMENTS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -910,6 +965,9 @@ const BARS: GroupSpec = GroupSpec {
         ),
     ],
 };
+
+// Clefs and barlines go to Notaciones, Fine and the jumps to Texto
+
 /// What starts or changes the staff itself.
 const CHANGES: GroupSpec = GroupSpec {
     dropdown: false,
@@ -937,8 +995,10 @@ const CHANGES: GroupSpec = GroupSpec {
         ),
     ],
 };
+/// Repeats, endings and barlines from one dropdown, like Sibelius' barline
+/// gallery.
 const REPEATS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Repeticiones",
     visual: Music("\u{e041}"),
     priority: 4,
@@ -981,9 +1041,11 @@ const REPEATS: GroupSpec = GroupSpec {
         )),
     ],
 };
+/// The signs and the jumps back to them, from one dropdown as Sibelius
+/// keeps its repeat text in one gallery.
 const SIGNS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Da capo y segno",
+    dropdown: true,
+    title: "D.C. / D.S.",
     visual: Music("\u{e047}"),
     priority: 3,
     controls: &[
@@ -1005,15 +1067,6 @@ const SIGNS: GroupSpec = GroupSpec {
             "Fine",
             "Donde termina la obra tras volver.",
         )),
-    ],
-};
-/// The jumps back, chosen from a dropdown next to their signs.
-const JUMPS: GroupSpec = GroupSpec {
-    dropdown: true,
-    title: "D.C. / D.S.",
-    visual: Text("D.C."),
-    priority: 3,
-    controls: &[
         toggle(tile(
             id::DA_CAPO,
             Text("D.C."),
@@ -1058,6 +1111,8 @@ const JUMPS: GroupSpec = GroupSpec {
         )),
     ],
 };
+// Diseño
+
 /// The user's own system and page ends, after the selected bar.
 const BREAKS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -1078,6 +1133,19 @@ const BREAKS: GroupSpec = GroupSpec {
             "El siguiente compás empieza una página nueva.",
         )),
     ],
+};
+
+const POSITION: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Posición",
+    visual: Icon("undo"),
+    priority: 1,
+    controls: &[tile(
+        id::RESET_POSITION,
+        Icon("undo"),
+        "Restablecer",
+        "Devuelve a su sitio lo que has movido a mano.",
+    )],
 };
 
 // Reproducción
@@ -1332,16 +1400,22 @@ const RIBBON: GroupSpec = GroupSpec {
     ))],
 };
 
-/// Levare's ribbon, one tab per task. File is not a tab: it is the
-/// dropdown in `menu`. Undo and redo live in the title bar's quick access;
-/// the clipboard lives in Edición and its keys, the panels in the header.
-/// There are no remove buttons: select the mark's note in the score and
-/// press its active control again, or delete the selection.
-/// A tab without real functions is not shown: Parts returns when its
+/// Levare's ribbon, laid out as Sibelius': Inicio, Entrada de notas,
+/// Notaciones, Texto, Reproducción, Diseño, Revisión and Vista. File is not
+/// a tab: it is the dropdown in `menu`. Undo and redo live in the title
+/// bar's quick access, the panels in the header. Durations, accidentals and
+/// voices stay in Entrada de notas, where MuseScore keeps its note input
+/// toolbar, instead of Sibelius' separate keypad. There are no remove
+/// buttons: select the mark's note in the score and press its active control
+/// again, or delete the selection. Apariencia and Partes return when their
 /// functions exist.
 pub const TABS: &[TabSpec] = &[
     TabSpec {
-        id: TabId::Write,
+        id: TabId::Home,
+        groups: &[CLIPBOARD, INSTRUMENTS, DIVISI, BARS, SELECT],
+    },
+    TabSpec {
+        id: TabId::NoteInput,
         groups: &[
             ENTRY,
             DURATION,
@@ -1355,31 +1429,39 @@ pub const TABS: &[TabSpec] = &[
         ],
     },
     TabSpec {
-        id: TabId::Articulations,
-        groups: &[ARTICULATIONS, GRACES, ARPEGGIOS, TREMOLOS, TECHNIQUE],
-    },
-    TabSpec {
-        id: TabId::Dynamics,
-        groups: &[DYNAMICS, HAIRPINS, LINES, DIVISI],
+        id: TabId::Notations,
+        groups: &[
+            CHANGES,
+            REPEATS,
+            ARTICULATIONS,
+            HAIRPINS,
+            LINES,
+            TECHNIQUE,
+            GRACES,
+            ARPEGGIOS,
+            TREMOLOS,
+        ],
     },
     TabSpec {
         id: TabId::Text,
         groups: &[
             HEADER,
             TEMPO,
+            DYNAMICS,
             STAFF_TEXT,
             LYRICS,
             REHEARSAL,
             REHEARSAL_STYLE,
+            SIGNS,
         ],
-    },
-    TabSpec {
-        id: TabId::Score,
-        groups: &[INSTRUMENTS, BARS, CHANGES, REPEATS, SIGNS, JUMPS, BREAKS],
     },
     TabSpec {
         id: TabId::Playback,
         groups: &[TRANSPORT, PRACTICE, SOUND],
+    },
+    TabSpec {
+        id: TabId::Layout,
+        groups: &[BREAKS, POSITION],
     },
     TabSpec {
         id: TabId::Review,
@@ -1480,7 +1562,6 @@ mod tests {
             DIVISI,
             REPEATS,
             SIGNS,
-            JUMPS,
         ] {
             for visual in
                 std::iter::once(group.visual).chain(group.controls.iter().map(|c| c.visual))
@@ -1647,12 +1728,12 @@ mod tests {
     #[test]
     fn every_tab_has_a_spec() {
         for id in [
-            TabId::Write,
-            TabId::Articulations,
-            TabId::Dynamics,
+            TabId::Home,
+            TabId::NoteInput,
+            TabId::Notations,
             TabId::Text,
-            TabId::Score,
             TabId::Playback,
+            TabId::Layout,
             TabId::Review,
             TabId::View,
         ] {
@@ -1699,13 +1780,14 @@ mod task_tests {
     use crate::menu::{BAR_MARK_CONTEXT_MENU, FILE_MENU, MARK_CONTEXT_MENU, NOTE_CONTEXT_MENU};
     use score_keymap::{KeySequence, Platform, Profile, Registry};
 
+    /// Sibelius' order, without Apariencia and Partes.
     const ORDER: [(TabId, &str); 8] = [
-        (TabId::Write, "Escribir"),
-        (TabId::Articulations, "Articulaciones"),
-        (TabId::Dynamics, "Dinámicas"),
+        (TabId::Home, "Inicio"),
+        (TabId::NoteInput, "Entrada de notas"),
+        (TabId::Notations, "Notaciones"),
         (TabId::Text, "Texto"),
-        (TabId::Score, "Partitura"),
         (TabId::Playback, "Reproducción"),
+        (TabId::Layout, "Diseño"),
         (TabId::Review, "Revisión"),
         (TabId::View, "Vista"),
     ];
@@ -1855,13 +1937,9 @@ mod task_tests {
         id::TOGGLE_RIBBON,
     ];
 
-    /// Left the ribbon for the app's native Edición and Vista menus
+    /// Left the ribbon for the app's native Vista menu
     /// (`app-gpui/src/shortcuts.rs`, which checks they are still there).
     const NATIVE_MENUS: &[CommandId] = &[
-        id::SELECT_ALL,
-        // Left the ribbon to make room for Más figuras; in Edición beside
-        // Puntillo and Tresillo, on the 0 key and in the command search.
-        id::REST,
         id::TOGGLE_INSTRUMENTS_PANEL,
         id::TOGGLE_INSPECTOR,
         id::FULL_SCREEN,
@@ -1874,7 +1952,7 @@ mod task_tests {
     }
 
     #[test]
-    fn tabs_follow_the_task_order() {
+    fn tabs_follow_sibelius_order() {
         let tabs: Vec<_> = TABS.iter().map(|tab| (tab.id, tab.id.label())).collect();
         assert_eq!(tabs, ORDER);
     }
@@ -1938,17 +2016,44 @@ mod task_tests {
         }
     }
 
+    /// Sibelius' Inicio, with the clipboard and the selection: the commands
+    /// that once left the ribbon for Edición are back. Silencio returns to
+    /// Entrada de notas, beside the dot, as on MuseScore's toolbar.
+    #[test]
+    fn home_and_note_input_hold_the_editing_tools_of_sibelius() {
+        let commands = |id| -> Vec<_> {
+            tab(id)
+                .groups
+                .iter()
+                .flat_map(|group| group.controls)
+                .map(|control| control.command)
+                .collect()
+        };
+        let home = commands(TabId::Home);
+        for command in [
+            id::PASTE,
+            id::COPY,
+            id::CUT,
+            id::REPEAT,
+            id::SELECT_ALL,
+            id::GO_TO_BAR,
+            id::ADD_INSTRUMENT,
+            id::DELETE_BAR,
+            id::DIVISI,
+        ] {
+            assert!(home.contains(&command), "{command}");
+        }
+        let note_input = commands(TabId::NoteInput);
+        assert!(note_input.contains(&id::REST));
+        assert!(commands(TabId::Text).contains(&id::DYNAMIC_MF));
+        assert!(commands(TabId::Notations).contains(&id::CRESCENDO));
+        assert!(commands(TabId::Layout).contains(&id::RESET_POSITION));
+    }
+
     #[test]
     fn old_tab_shortcuts_open_a_tab() {
         let registry = Registry::builtin();
-        for command in [
-            id::TAB_HOME,
-            id::TAB_LAYOUT,
-            id::TAB_NOTATION,
-            id::TAB_DYNAMICS,
-        ] {
-            assert!(registry.get(command.as_str()).is_some(), "{command}");
-        }
+        assert!(registry.get(id::TAB_DYNAMICS.as_str()).is_some());
         for (platform, modifier) in [
             (Platform::MacOs, "alt"),
             (Platform::Windows, "shift"),
@@ -1960,7 +2065,7 @@ mod task_tests {
                     KeySequence::parse(&format!("{modifier}-secondary-{}", index + 1)).unwrap();
                 assert_eq!(profile.keys_for(tab.command()), vec![keys], "{tab:?}");
             }
-            assert!(profile.keys_for(id::TAB_LAYOUT).is_empty());
+            assert!(profile.keys_for(id::TAB_DYNAMICS).is_empty());
         }
     }
 }

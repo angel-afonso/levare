@@ -102,7 +102,7 @@ impl Default for UiState {
             compact: false,
             zoom: 0.7,
             view_mode: Default::default(),
-            tab: score_toolbar::TabId::Write,
+            tab: score_toolbar::TabId::NoteInput,
             right: RightTab::default(),
             parts_mode: PartsMode::default(),
             folded_families: Default::default(),

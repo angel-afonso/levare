@@ -764,8 +764,9 @@ score-keymap          registry (labels, pending) and active map (keys)
 AppView::run          single point of execution · ui/command_state.rs implements CommandStates
 ```
 
-- **Description** (`spec.rs`): eight tabs by task (`TabId`: Escribir, Articulaciones,
-  Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), their groups and controls.
+- **Description** (`spec.rs`): eight tabs in Sibelius' order (`TabId`: Inicio, Entrada
+  de notas, Notaciones, Texto, Reproducción, Diseño, Revisión, Vista), their groups and
+  controls.
   Each control is a `CommandId` with a size (large or tile), a function (`Role`: choice,
   toggle or action), a glyph, a short name and a hint. It contains no status texts or
   keys.
