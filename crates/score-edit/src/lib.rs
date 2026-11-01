@@ -8,6 +8,8 @@ pub mod clipboard;
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
+mod duration_tests;
+#[cfg(test)]
 mod grace_tests;
 #[cfg(test)]
 mod group_tests;
@@ -595,10 +597,13 @@ impl Editor {
                         (new != old).then_some((id, new))
                     })
                     .collect();
-                if edits.is_empty() {
-                    return Ok(false);
+                match edits[..] {
+                    [] => return Ok(false),
+                    [(id, duration)] if self.state.range_anchor.is_none() => {
+                        rewrite_duration(&mut next, id, duration)?;
+                    }
+                    _ => next.score.set_durations(&edits)?,
                 }
-                next.score.set_durations(&edits)?;
             }
             Command::SetTuplet(ratio) => {
                 let ids = self.selected_ids();
@@ -1047,10 +1052,13 @@ impl Editor {
                         (old != new).then_some((id, new))
                     })
                     .collect();
-                if edits.is_empty() {
-                    return Ok(false);
+                match edits[..] {
+                    [] => return Ok(false),
+                    [(id, duration)] if self.state.range_anchor.is_none() => {
+                        rewrite_duration(&mut next, id, duration)?;
+                    }
+                    _ => next.score.set_durations(&edits)?,
                 }
-                next.score.set_durations(&edits)?;
             }
 
             Command::InsertMeasure => {
@@ -1646,6 +1654,49 @@ fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
         .find(|d| (0..=62).contains(d))
         .and_then(|d| Pitch::new(step, (d / 7) as u8))
         .unwrap_or(reference)
+}
+
+/// A new duration for one selected event, as Sibelius changes it: the event
+/// keeps its onset, marks and links; a longer one writes over what follows,
+/// across the barline with a tie if needed, and a shorter one leaves rests.
+/// Later music never moves.
+fn rewrite_duration(
+    next: &mut Snapshot,
+    id: ElementId,
+    duration: Duration,
+) -> Result<(), ScoreError> {
+    let event = *next
+        .score
+        .event(id)
+        .ok_or(ScoreError("Selecciona notas, acordes o silencios"))?;
+    let voice = next.score.voice_of(id).unwrap();
+    let tick =
+        (next.score.event_tick(id).unwrap() - next.score.measure_start_tick(id.measure)) as u32;
+    let written = next.score.overwrite(
+        id.part,
+        id.staff,
+        id.measure,
+        voice,
+        tick,
+        Event { duration, ..event },
+    )?;
+    let first = written[0];
+    let index = next
+        .score
+        .part(first.part)
+        .unwrap()
+        .staff(first.staff)
+        .unwrap()
+        .measures()[first.measure]
+        .voice_index_of(voice, first.event)
+        .unwrap();
+    next.selection = Some(first);
+    next.cursor = Cursor {
+        measure: first.measure,
+        index: index + 1,
+        ..next.cursor
+    };
+    Ok(())
 }
 
 /// Starts a group of `tuplet` at one event, Sibelius style: the event keeps

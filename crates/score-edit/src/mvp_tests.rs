@@ -138,18 +138,26 @@ fn replace_selected_tone_erase_preserves_time_and_ripple_delete_undoes() {
     assert_eq!(editor.score(), &before);
 }
 #[test]
-fn duration_edit_rejects_overflow_atomically_and_preserves_chord_identity() {
+fn duration_edit_ties_past_the_barline_and_preserves_chord_identity() {
     let mut editor = Editor::default();
     for step in [Step::C, Step::D, Step::E, Step::F] {
         editor.execute(Command::Insert(editor.note(step))).unwrap();
     }
     let last = editor.selection().unwrap();
     let before = editor.score().clone();
+    // A half note on beat 4 goes on into the next bar, as in Sibelius.
+    editor
+        .execute(Command::SetDuration(NoteValue::Half))
+        .unwrap();
+    assert_eq!(editor.selection(), Some(last));
     assert!(
         editor
-            .execute(Command::SetDuration(NoteValue::Half))
-            .is_err()
+            .score()
+            .connections()
+            .iter()
+            .any(|c| c.start == last && c.kind == score_core::ConnectionKind::Tie)
     );
+    editor.undo();
     assert_eq!(editor.score(), &before);
     editor
         .execute(Command::SetDuration(NoteValue::Eighth))

@@ -121,24 +121,19 @@ fn a_tuplet_inside_another_group_is_refused_unless_it_starts_it() {
 #[test]
 fn two_dots_lengthen_a_value_by_three_quarters() {
     let (mut editor, ids) = four_quarters();
-    editor.select(ids[3]);
-    editor
-        .execute(Command::SetDuration(NoteValue::Eighth))
-        .unwrap();
-    editor.select(ids[0]);
-    editor
-        .execute(Command::SetDuration(NoteValue::Half))
-        .unwrap_err();
-    editor.execute(Command::SetDots(2)).unwrap_err();
-    editor.select(ids[2]);
-    editor
-        .execute(Command::SetDuration(NoteValue::Eighth))
-        .unwrap();
     editor.select(ids[1]);
     editor.execute(Command::SetDots(2)).unwrap();
     let duration = editor.score().event(ids[1]).unwrap().duration;
     assert_eq!(duration.dots(), 2);
     assert_eq!(duration.ticks(), 7 * Q / 4);
+    // It takes three quarters of the next note, which leaves a sixteenth rest.
+    assert_eq!(
+        bar(&editor)[2..],
+        [
+            (11 * Q / 4, Duration::Sixteenth, false),
+            (3 * Q, Duration::Quarter, true)
+        ]
+    );
 }
 
 #[test]

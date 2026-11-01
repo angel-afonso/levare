@@ -266,8 +266,16 @@ impl Score {
             let old_keys: Vec<_> = target.voice_order(voice).iter().copied().collect();
             let mut order = Vector::new();
             let events = Arc::make_mut(&mut target.events);
+            // The written value takes the place of the event it starts on, so
+            // a note given a new duration keeps its identity.
+            let mut reuse = original;
             for item in filled {
                 let key = if let Some(old) = item.old {
+                    events[old.event] = item.event;
+                    old.event
+                } else if item.piece.is_some()
+                    && let Some(old) = reuse.take()
+                {
                     events[old.event] = item.event;
                     old.event
                 } else {
