@@ -245,6 +245,7 @@ pub mod id {
         STEP_TIME = "entrada.paso-a-paso";
         MIDI_INPUT = "entrada.teclado-midi";
 
+        SIXTY_FOURTH = "duracion.semifusa";
         THIRTY_SECOND = "duracion.fusa";
         SIXTEENTH = "duracion.semicorchea";
         EIGHTH = "duracion.corchea";
@@ -252,7 +253,16 @@ pub mod id {
         HALF = "duracion.blanca";
         WHOLE = "duracion.redonda";
         DOT = "duracion.puntillo";
+        DOUBLE_DOT = "duracion.doble-puntillo";
+        DUPLET = "duracion.dosillo";
         TRIPLET = "duracion.tresillo";
+        QUADRUPLET = "duracion.cuatrillo";
+        QUINTUPLET = "duracion.quintillo";
+        SEXTUPLET = "duracion.seisillo";
+        SEPTUPLET = "duracion.septillo";
+        OCTUPLET = "duracion.octillo";
+        NONUPLET = "duracion.nonillo";
+        OTHER_TUPLET = "duracion.grupillo";
 
         NATURAL = "alteracion.becuadro";
         SHARP = "alteracion.sostenido";
@@ -516,14 +526,24 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::STEP_TIME, C::NoteInput, "Entrada paso a paso", S, false, R),
     spec(id::MIDI_INPUT, C::NoteInput, "Entrada con teclado MIDI", G, false, P),
 
+    spec(id::SIXTY_FOURTH, C::Duration, "Semifusa", S, false, R),
     spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, R),
     spec(id::SIXTEENTH, C::Duration, "Semicorchea", S, false, R),
     spec(id::EIGHTH, C::Duration, "Corchea", S, false, R),
     spec(id::QUARTER, C::Duration, "Negra", S, false, R),
     spec(id::HALF, C::Duration, "Blanca", S, false, R),
     spec(id::WHOLE, C::Duration, "Redonda", S, false, R),
+    spec(id::DUPLET, C::Duration, "Dosillo (2:3)", S, false, R),
     spec(id::TRIPLET, C::Duration, "Tresillo (3:2)", S, false, R),
+    spec(id::QUADRUPLET, C::Duration, "Cuatrillo (4:3)", S, false, R),
+    spec(id::QUINTUPLET, C::Duration, "Quintillo (5:4)", S, false, R),
+    spec(id::SEXTUPLET, C::Duration, "Seisillo (6:4)", S, false, R),
+    spec(id::SEPTUPLET, C::Duration, "Septillo (7:4)", S, false, R),
+    spec(id::OCTUPLET, C::Duration, "Octillo (8:6)", S, false, R),
+    spec(id::NONUPLET, C::Duration, "Nonillo (9:8)", S, false, R),
+    spec(id::OTHER_TUPLET, C::Duration, "Otro grupillo…", S, false, R),
     spec(id::DOT, C::Duration, "Puntillo", S, false, R),
+    spec(id::DOUBLE_DOT, C::Duration, "Doble puntillo", S, false, R),
 
     spec(id::NATURAL, C::Accidentals, "Becuadro", S, false, R),
     spec(id::SHARP, C::Accidentals, "Sostenido", S, false, R),

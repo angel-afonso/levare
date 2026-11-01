@@ -287,14 +287,74 @@ const MODIFY: GroupSpec = GroupSpec {
             id::TRIPLET,
             Music("\u{e883}"),
             "Tresillo",
-            "Tres figuras en el tiempo de dos. Los tresillos se agrupan de tres en tres con la misma figura.",
+            "Tres figuras en el tiempo de dos. Sobre una nota empieza un tresillo y rellena el grupo con silencios; otra vez, convierte el grupo en silencios.",
         )),
-        tile(
-            id::REST,
-            Music("\u{e4e5}"),
-            "Silencio",
-            "Escribe un silencio con la duración elegida.",
-        ),
+    ],
+};
+/// The rarer values, from one dropdown next to Modificar, as Sibelius keeps
+/// them on its second keypad layout. Each tuplet acts like Tresillo.
+const TUPLET_HINT: &str = "Sobre una nota empieza el grupillo y rellena el grupo con silencios; otra vez, convierte el grupo en silencios.";
+const MORE_VALUES: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Más figuras",
+    visual: Music("\u{e885}"),
+    priority: 6,
+    controls: &[
+        toggle(tile(
+            id::SIXTY_FOURTH,
+            Music("\u{e1dd}"),
+            "Semifusa",
+            "Un dieciseisavo de tiempo.",
+        )),
+        toggle(tile(
+            id::DOUBLE_DOT,
+            Music("\u{e1e7}\u{e1e7}"),
+            "Doble puntillo",
+            "Alarga la figura tres cuartos de su valor.",
+        )),
+        toggle(tile(id::DUPLET, Music("\u{e882}"), "Dosillo", TUPLET_HINT)),
+        toggle(tile(
+            id::QUADRUPLET,
+            Music("\u{e884}"),
+            "Cuatrillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::QUINTUPLET,
+            Music("\u{e885}"),
+            "Quintillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::SEXTUPLET,
+            Music("\u{e886}"),
+            "Seisillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::SEPTUPLET,
+            Music("\u{e887}"),
+            "Septillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::OCTUPLET,
+            Music("\u{e888}"),
+            "Octillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::NONUPLET,
+            Music("\u{e889}"),
+            "Nonillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::OTHER_TUPLET,
+            Label("n:m"),
+            "Otro grupillo",
+            "Elige cuántas notas y en el tiempo de cuántas, en la pestaña Selección.",
+        )),
     ],
 };
 const ACCIDENTALS: GroupSpec = GroupSpec {
@@ -1286,6 +1346,7 @@ pub const TABS: &[TabSpec] = &[
             ENTRY,
             DURATION,
             MODIFY,
+            MORE_VALUES,
             ACCIDENTALS,
             TIES,
             VOICES,
@@ -1402,6 +1463,7 @@ mod tests {
             CHANGES,
             DURATION,
             MODIFY,
+            MORE_VALUES,
             ACCIDENTALS,
             TIES,
             VOICES,
@@ -1565,7 +1627,9 @@ mod tests {
             assert!(!commands.contains(&absent), "{absent}");
         }
         for present in [
-            id::REST,
+            id::SIXTY_FOURTH,
+            id::DOUBLE_DOT,
+            id::OTHER_TUPLET,
             id::FOLLOW_KEY,
             id::ENTRY_OCTAVE_UP,
             id::ENTRY_OCTAVE_DOWN,
@@ -1795,6 +1859,9 @@ mod task_tests {
     /// (`app-gpui/src/shortcuts.rs`, which checks they are still there).
     const NATIVE_MENUS: &[CommandId] = &[
         id::SELECT_ALL,
+        // Left the ribbon to make room for Más figuras; in Edición beside
+        // Puntillo and Tresillo, on the 0 key and in the command search.
+        id::REST,
         id::TOGGLE_INSTRUMENTS_PANEL,
         id::TOGGLE_INSPECTOR,
         id::FULL_SCREEN,
@@ -1826,6 +1893,27 @@ mod task_tests {
                 assert!(control.hint.ends_with('.'), "{what}: {}", control.hint);
             }
         }
+    }
+
+    #[test]
+    fn more_values_holds_the_rare_rhythms_and_every_tuplet_but_the_triplet() {
+        let commands: Vec<_> = MORE_VALUES.controls.iter().map(|c| c.command).collect();
+        assert_eq!(
+            commands,
+            [
+                id::SIXTY_FOURTH,
+                id::DOUBLE_DOT,
+                id::DUPLET,
+                id::QUADRUPLET,
+                id::QUINTUPLET,
+                id::SEXTUPLET,
+                id::SEPTUPLET,
+                id::OCTUPLET,
+                id::NONUPLET,
+                id::OTHER_TUPLET,
+            ]
+        );
+        assert!(MODIFY.controls.iter().any(|c| c.command == id::TRIPLET));
     }
 
     #[test]

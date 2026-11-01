@@ -230,8 +230,21 @@ impl CommandStates for AppView {
             id::EIGHTH => value(NoteValue::Eighth),
             id::SIXTEENTH => value(NoteValue::Sixteenth),
             id::THIRTY_SECOND => value(NoteValue::ThirtySecond),
-            id::DOT => CommandState::checked(duration.is_dotted()),
-            id::TRIPLET => CommandState::checked(duration.is_triplet()),
+            id::SIXTY_FOURTH => value(NoteValue::SixtyFourth),
+            id::DOT => CommandState::checked(duration.dots() == 1),
+            id::DOUBLE_DOT => CommandState::checked(duration.dots() == 2),
+            // Lit for a ratio no other button sets, or while its editor is open.
+            id::OTHER_TUPLET => CommandState::checked(
+                self.tuplet_picker.is_some()
+                    || tuplet_ratio(duration).is_some_and(|ratio| {
+                        !TUPLET_COMMANDS
+                            .iter()
+                            .any(|(id, _)| tuplet_command_ratio(*id) == Some(ratio))
+                    }),
+            ),
+            command if tuplet_command_ratio(command).is_some() => {
+                CommandState::checked(tuplet_ratio(duration) == tuplet_command_ratio(command))
+            }
 
             id::NATURAL => accidental(Some(Accidental::Natural)),
             id::SHARP => accidental(Some(Accidental::Sharp)),

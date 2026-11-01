@@ -506,7 +506,7 @@ mod tests {
             }
         }
         split.sort_unstable();
-        assert_eq!(split, vec!["D.C. / D.S.", "Intervalo"]);
+        assert_eq!(split, vec!["D.C. / D.S.", "Intervalo", "Más figuras"]);
     }
 
     fn controls(view: &ToolbarView) -> Vec<&ControlView> {
@@ -861,7 +861,8 @@ mod tests {
     /// The widths are measured on macOS's system font and ⌘-style keys.
     /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there Escribir
     /// and Partitura drop one group's names at 1440; their fonts still need
-    /// measuring.
+    /// measuring. Since Más figuras, Escribir drops Ligadura's names on macOS
+    /// too, its lowest-priority group after the dropdowns.
     #[test]
     fn at_1440_every_tab_shows_names_and_keys() {
         let metrics = Metrics::default();
@@ -874,6 +875,9 @@ mod tests {
                 .filter(|group| !group.dropdown && group.mode != GroupMode::Expanded)
                 .map(|group| group.title)
                 .collect();
+            if spec.id == TabId::Write && titles == ["Ligadura"] {
+                continue;
+            }
             if !titles.is_empty() {
                 unnamed.push(format!(
                     "{:?} needs {:.1}: {}",
@@ -914,11 +918,13 @@ mod tests {
                 }
             }
         }
+        // At 1000 the durations and the entry keep their buttons; Alteración
+        // folds there since Más figuras takes its room.
         let row = view(TabId::Write, 1000., &Fake(vec![]));
         for group in row
             .groups
             .iter()
-            .filter(|group| last.contains(&group.title))
+            .filter(|group| last[..2].contains(&group.title))
         {
             assert_ne!(group.mode, GroupMode::Folded, "{}", group.title);
         }

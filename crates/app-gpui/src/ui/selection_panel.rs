@@ -571,6 +571,14 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
             "Métrica".into(),
             format!("{scope} hasta el siguiente cambio."),
         ),
+        EditorKind::Tuplet => (
+            "Otro grupillo".into(),
+            if editor.selection().is_some() {
+                "Empieza en la nota seleccionada.".into()
+            } else {
+                "Para las próximas notas.".into()
+            },
+        ),
         EditorKind::Tempo => (
             "Tempo".into(),
             format!("{scope} hasta el siguiente cambio."),
@@ -602,6 +610,7 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
         EditorKind::Clef => clef_picker::panel(view, cx),
         EditorKind::Key => key_picker(view, cx),
         EditorKind::Time => time_picker(view, cx),
+        EditorKind::Tuplet => tuplet_picker(view, cx),
         EditorKind::Tempo => tempo_editor::panel(view, cx),
         EditorKind::Text => staff_text::panel(view, cx),
         EditorKind::Lyric => staff_text::lyric_panel(view, cx),

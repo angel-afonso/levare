@@ -254,6 +254,7 @@ impl AppView {
         self.header_editor = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.reveal_editor_tab();
     }

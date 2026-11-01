@@ -97,6 +97,8 @@ struct AppView {
     about: bool,
     key_picker: bool,
     time_picker: bool,
+    /// Otro grupillo's ratio while its editor is open.
+    tuplet_picker: Option<(u8, u8)>,
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
     command_search: Option<ui::CommandSearch>,
@@ -353,6 +355,7 @@ impl AppView {
             about: false,
             key_picker: false,
             time_picker: false,
+            tuplet_picker: None,
             clef_picker: false,
             tempo_picker: None,
             command_search: None,
@@ -1743,8 +1746,22 @@ impl AppView {
             id::ENTRY_OCTAVE_UP => self.change_entry_octave(1, cx),
             id::ENTRY_OCTAVE_DOWN => self.change_entry_octave(-1, cx),
 
-            id::DOT => self.toggle_rhythm(false, cx),
-            id::TRIPLET => self.toggle_rhythm(true, cx),
+            id::DOT => self.toggle_dots(1, cx),
+            id::DOUBLE_DOT => self.toggle_dots(2, cx),
+            id::OTHER_TUPLET => self.toggle_tuplet_picker(cx),
+            id::DUPLET
+            | id::TRIPLET
+            | id::QUADRUPLET
+            | id::QUINTUPLET
+            | id::SEXTUPLET
+            | id::SEPTUPLET
+            | id::OCTUPLET
+            | id::NONUPLET => {
+                if let Some(ratio) = ui::tuplet_command_ratio(command) {
+                    self.toggle_tuplet(ratio, cx);
+                }
+            }
+            id::SIXTY_FOURTH => self.choose_duration(score_core::Duration::SixtyFourth, cx),
             id::SIXTEENTH => self.choose_duration(score_core::Duration::Sixteenth, cx),
             id::THIRTY_SECOND => self.choose_duration(score_core::Duration::ThirtySecond, cx),
             id::EIGHTH => self.choose_duration(score_core::Duration::Eighth, cx),
@@ -2148,53 +2165,100 @@ impl AppView {
         }
     }
 
-    fn toggle_rhythm(&mut self, triplet: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming || self.agent_locked() {
-            return;
-        }
-        let current = self
-            .document
+    /// The duration Puntillo and the tuplets act on: the selected note's,
+    /// or the next notes'.
+    fn rhythm_target(&self) -> score_core::Duration {
+        self.document
             .editor
             .selection()
             .and_then(|id| self.document.editor.score().event(id))
-            .map_or(self.document.editor.duration, |e| e.duration);
-        let enabled = !(if triplet {
-            current.is_triplet()
+            .map_or(self.document.editor.duration, |e| e.duration)
+    }
+    fn selected_duration(&self) -> Option<score_core::Duration> {
+        self.document
+            .editor
+            .selection()
+            .and_then(|id| self.document.editor.score().event(id))
+            .map(|event| event.duration)
+    }
+
+    /// One dot or two: pressing the active count takes the dots away.
+    fn toggle_dots(&mut self, dots: u8, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        let dots = if self.rhythm_target().dots() == dots {
+            0
         } else {
-            current.is_dotted()
-        });
+            dots
+        };
         if self.document.editor.selection().is_some() {
-            self.edit(
-                if triplet {
-                    Command::SetTuplet(enabled.then_some((3, 2)))
-                } else {
-                    Command::SetDotted(enabled)
-                },
-                cx,
-            );
-            let now = self
-                .document
-                .editor
-                .selection()
-                .and_then(|id| self.document.editor.score().event(id))
-                .unwrap()
-                .duration;
-            if (if triplet {
-                now.is_triplet()
-            } else {
-                now.is_dotted()
-            }) != enabled
+            self.edit(Command::SetDots(dots), cx);
+            if self
+                .selected_duration()
+                .is_none_or(|now| now.dots() != dots)
+            {
+                return;
+            }
+        }
+        self.document.editor.duration = self.document.editor.duration.with_dots(dots);
+        self.status = format!("Entrada: {}", self.document.editor.duration.label());
+        cx.notify();
+    }
+
+    /// A tuplet ratio on the selection and the next notes; pressing the
+    /// active one takes it away.
+    fn toggle_tuplet(&mut self, ratio: (u8, u8), cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        let ratio_of = |d: score_core::Duration| d.tuplet().map(|t| (t.actual(), t.normal()));
+        let target = (ratio_of(self.rhythm_target()) != Some(ratio)).then_some(ratio);
+        if self.document.editor.selection().is_some() {
+            self.edit(Command::SetTuplet(target), cx);
+            if self
+                .selected_duration()
+                .is_none_or(|now| ratio_of(now) != target)
             {
                 return;
             }
         }
         let entry = self.document.editor.duration;
-        self.document.editor.duration = if triplet {
-            entry.with_triplet(enabled)
-        } else {
-            entry.with_dotted(enabled)
-        };
+        let tuplet = target
+            .and_then(|(actual, normal)| score_core::Tuplet::new(actual, normal, entry.value()));
+        self.document.editor.duration = entry.with_tuplet(tuplet);
         self.status = format!("Entrada: {}", self.document.editor.duration.label());
+        cx.notify();
+    }
+    fn toggle_tuplet_picker(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.tuplet_picker.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
+            return;
+        }
+        if self.tuplet_picker.take().is_none() {
+            let current = self
+                .rhythm_target()
+                .tuplet()
+                .map_or((5, 4), |t| (t.actual(), t.normal()));
+            self.cancel_editor();
+            self.tuplet_picker = Some(current);
+            self.show_editor_tab();
+        }
+        cx.notify();
+    }
+    /// Otro grupillo's Aplicar: always sets the ratio, never takes it away.
+    fn apply_tuplet(&mut self, ratio: (u8, u8), cx: &mut Context<Self>) {
+        let ratio_of = |d: score_core::Duration| d.tuplet().map(|t| (t.actual(), t.normal()));
+        if ratio_of(self.rhythm_target()) != Some(ratio) {
+            self.toggle_tuplet(ratio, cx);
+        }
+        if ratio_of(self.rhythm_target()) == Some(ratio) {
+            self.tuplet_picker = None;
+        }
         cx.notify();
     }
     fn choose_duration(&mut self, duration: score_core::Duration, cx: &mut Context<Self>) {
@@ -2366,6 +2430,7 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -2754,6 +2819,7 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3104,6 +3170,7 @@ impl AppView {
             (self.clef_picker, Kind::Clef),
             (self.key_picker, Kind::Key),
             (self.time_picker, Kind::Time),
+            (self.tuplet_picker.is_some(), Kind::Tuplet),
             (self.text_editor.is_some(), Kind::Text),
             (self.lyric_editor.is_some(), Kind::Lyric),
             (self.chord_editor.is_some(), Kind::Chord),
@@ -3138,10 +3205,14 @@ impl AppView {
         {
             return true;
         }
+        if self.tuplet_picker.take().is_some() {
+            return true;
+        }
         if self.clef_picker || self.key_picker || self.time_picker {
             self.clef_picker = false;
             self.key_picker = false;
             self.time_picker = false;
+            self.tuplet_picker = None;
             return true;
         }
         if self.tempo_picker.take().is_some() {
@@ -3206,6 +3277,7 @@ impl AppView {
         self.header_editor = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.instrument_picker = None;
         if self.tempo_picker.is_some() {
@@ -3229,6 +3301,7 @@ impl AppView {
             self.tempo_picker = None;
             self.key_picker = false;
             self.time_picker = false;
+            self.tuplet_picker = None;
             self.clef_picker = false;
             self.instrument_picker = None;
             self.show_editor_tab();
@@ -3309,6 +3382,7 @@ impl AppView {
         }
         self.clef_picker = !self.clef_picker;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.key_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3352,6 +3426,7 @@ impl AppView {
         }
         self.key_picker = !self.key_picker;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3373,6 +3448,7 @@ impl AppView {
             return;
         }
         self.time_picker = !self.time_picker;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3412,6 +3488,7 @@ impl AppView {
         self.edit(Command::SetTimeSignatureAt(bar, time), cx);
         if self.document.editor.score().time_at(bar) == time {
             self.time_picker = false;
+            self.tuplet_picker = None;
             self.clef_picker = false;
             self.tempo_picker = None;
             self.header_editor = None;

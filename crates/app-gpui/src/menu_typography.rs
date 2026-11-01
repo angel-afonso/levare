@@ -297,7 +297,16 @@ mod titles {
             id::SHARP => "\u{e262}",
             id::FLAT => "\u{e260}",
             id::DOT => "\u{e1e7}",
+            id::DOUBLE_DOT => "\u{e1e7}\u{e1e7}",
+            id::SIXTY_FOURTH => "\u{e1dd}",
+            id::DUPLET => "\u{e882}",
             id::TRIPLET => "\u{e883}",
+            id::QUADRUPLET => "\u{e884}",
+            id::QUINTUPLET => "\u{e885}",
+            id::SEXTUPLET => "\u{e886}",
+            id::SEPTUPLET => "\u{e887}",
+            id::OCTUPLET => "\u{e888}",
+            id::NONUPLET => "\u{e889}",
             _ => return None,
         })
     }

@@ -384,10 +384,15 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 97);
+        assert_eq!(font.outlines.len(), 111);
         assert!(font.covers("\u{e069}\u{e044}\u{e047}\u{e048}"));
         // Thirty-second notes, flags and rests, and the grace note symbols.
         assert!(font.covers("\u{e1db}\u{e1dc}\u{e244}\u{e245}\u{e4e8}\u{e560}\u{e562}"));
+        // Sixty-fourths and every tuplet number.
+        assert!(font.covers("\u{e1dd}\u{e1de}\u{e246}\u{e247}\u{e4e9}"));
+        assert!(font.covers(
+            "\u{e880}\u{e881}\u{e882}\u{e883}\u{e884}\u{e885}\u{e886}\u{e887}\u{e888}\u{e889}"
+        ));
         assert!(font.covers("\u{e511}\u{e51c}\u{e650}\u{e566}\u{eaa4}\u{e585}"));
         assert!(font.outlines.values().all(
             |(outline, advance, bounds)| !outline.segments.is_empty()

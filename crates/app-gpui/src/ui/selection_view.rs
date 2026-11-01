@@ -15,6 +15,8 @@ pub enum EditorKind {
     Clef,
     Key,
     Time,
+    /// Otro grupillo: any ratio for the selection or the next notes.
+    Tuplet,
     Tempo,
     Text,
     Lyric,

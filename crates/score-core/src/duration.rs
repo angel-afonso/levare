@@ -83,7 +83,8 @@ impl Tuplet {
     fn with_unit(self, unit: NoteValue) -> Self {
         Self { unit, ..self }
     }
-    fn name(self) -> &'static str {
+    /// «tresillo», «quintillo»…: what musicians call a group of `actual`.
+    pub fn name(self) -> &'static str {
         match self.actual {
             2 => "dosillo",
             3 => "tresillo",

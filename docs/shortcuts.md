@@ -96,14 +96,24 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 
 | macOS | Windows and Linux | Command | Status |
 |---|---|---|---|
+| — | — | Semifusa |  |
 | `1` | `1` | Fusa |  |
 | `2` | `2` | Semicorchea |  |
 | `3` | `3` | Corchea |  |
 | `4` | `4` | Negra |  |
 | `5` | `5` | Blanca |  |
 | `6` | `6` | Redonda |  |
+| `⌘2` | `Ctrl+2` | Dosillo (2:3) |  |
 | `⌘3` | `Ctrl+3` | Tresillo (3:2) |  |
+| `⌘4` | `Ctrl+4` | Cuatrillo (4:3) |  |
+| `⌘5` | `Ctrl+5` | Quintillo (5:4) |  |
+| `⌘6` | `Ctrl+6` | Seisillo (6:4) |  |
+| `⌘7` | `Ctrl+7` | Septillo (7:4) |  |
+| `⌘8` | `Ctrl+8` | Octillo (8:6) |  |
+| `⌘9` | `Ctrl+9` | Nonillo (9:8) |  |
+| — | — | Otro grupillo… |  |
 | `.` | `.` | Puntillo |  |
+| — | — | Doble puntillo |  |
 
 ## Alteraciones
 

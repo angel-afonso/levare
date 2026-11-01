@@ -1112,6 +1112,132 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
             ))
         })
 }
+/// Otro grupillo: how many notes in the time of how many, counted in the
+/// selected value or the next notes'.
+fn tuplet_picker(view: &AppView, cx: &Context<AppView>) -> Div {
+    const SCOPE: &str = "Sobre una nota empieza el grupillo y rellena el grupo con silencios; sin selección, se aplica a las próximas notas.";
+    let Some((actual, normal)) = view.tuplet_picker else {
+        return div();
+    };
+    let valid = score_core::Tuplet::new(actual, normal, score_core::NoteValue::Quarter).is_some();
+    let stepper =
+        |name: &'static str, label: String, minus: fn(&mut (u8, u8)), plus: fn(&mut (u8, u8))| {
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(act(
+                    view,
+                    format!("tuplet-{name}-minus"),
+                    "−",
+                    false,
+                    cx,
+                    move |v, _, cx| {
+                        if let Some(ratio) = v.tuplet_picker.as_mut() {
+                            minus(ratio);
+                        }
+                        cx.notify();
+                    },
+                ))
+                .child(div().flex_1().text_center().text_size(px(12.)).child(label))
+                .child(act(
+                    view,
+                    format!("tuplet-{name}-plus"),
+                    "+",
+                    false,
+                    cx,
+                    move |v, _, cx| {
+                        if let Some(ratio) = v.tuplet_picker.as_mut() {
+                            plus(ratio);
+                        }
+                        cx.notify();
+                    },
+                ))
+        };
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(caption("Habituales"))
+        .child(
+            div().flex().flex_wrap().gap_1().children(
+                [
+                    (2, 3),
+                    (3, 2),
+                    (4, 3),
+                    (5, 4),
+                    (6, 4),
+                    (7, 4),
+                    (7, 8),
+                    (8, 6),
+                    (9, 8),
+                ]
+                .into_iter()
+                .map(|(a, n)| {
+                    choice(
+                        view,
+                        format!("tuplet-{a}-{n}"),
+                        format!("{a}:{n}"),
+                        (actual, normal) == (a, n),
+                        cx,
+                        move |v, _, cx| {
+                            v.tuplet_picker = Some((a, n));
+                            cx.notify();
+                        },
+                    )
+                    .w(px(44.))
+                }),
+            ),
+        )
+        .child(caption("Personalizado").mt_2())
+        .child(stepper(
+            "actual",
+            format!("Notas: {actual}"),
+            |r| r.0 = r.0.saturating_sub(1).max(2),
+            |r| r.0 = (r.0 + 1).min(score_core::Tuplet::MAX_ACTUAL),
+        ))
+        .child(stepper(
+            "normal",
+            format!("En el tiempo de: {normal}"),
+            |r| r.1 = r.1.saturating_sub(1).max(1),
+            |r| r.1 = (r.1 + 1).min(2 * score_core::Tuplet::MAX_ACTUAL),
+        ))
+        .when(!valid, |picker| {
+            picker.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(MUTED))
+                    .child("Elige un número distinto de notas, de la mitad al doble del tiempo."),
+            )
+        })
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .mt_2()
+                .child(
+                    act(
+                        view,
+                        "apply-tuplet",
+                        format!("Aplicar {actual}:{normal}"),
+                        valid,
+                        cx,
+                        move |v, _, cx| {
+                            if valid {
+                                v.apply_tuplet((actual, normal), cx);
+                            }
+                        },
+                    )
+                    .tooltip(described_hint(
+                        format!("Aplicar {actual}:{normal}"),
+                        None,
+                        SCOPE,
+                    )),
+                )
+                .child(close_editor("Cancelar", cx)),
+        )
+}
 /// ‹ «Página X de Y» › in the status bar, in Page view only; the hint
 /// gives the bars on the page.
 fn page_navigation(pages: status_bar::Pages, cx: &Context<AppView>) -> Div {
@@ -1617,6 +1743,26 @@ fn active_duration(view: &AppView) -> Duration {
         .and_then(|id| editor.score().event(id))
         .map_or(editor.duration, |e| e.duration)
 }
+/// The ribbon's tuplets and how many notes each one writes.
+const TUPLET_COMMANDS: [(CommandId, u8); 8] = [
+    (id::DUPLET, 2),
+    (id::TRIPLET, 3),
+    (id::QUADRUPLET, 4),
+    (id::QUINTUPLET, 5),
+    (id::SEXTUPLET, 6),
+    (id::SEPTUPLET, 7),
+    (id::OCTUPLET, 8),
+    (id::NONUPLET, 9),
+];
+/// The usual ratio a tuplet command sets, such as 5:4 for Quintillo.
+pub(crate) fn tuplet_command_ratio(command: CommandId) -> Option<(u8, u8)> {
+    let (_, actual) = TUPLET_COMMANDS.iter().find(|(id, _)| *id == command)?;
+    let tuplet = score_core::Tuplet::usual(*actual, score_core::NoteValue::Quarter)?;
+    Some((tuplet.actual(), tuplet.normal()))
+}
+fn tuplet_ratio(duration: Duration) -> Option<(u8, u8)> {
+    duration.tuplet().map(|t| (t.actual(), t.normal()))
+}
 fn selected_connection(view: &AppView, kind: ConnectionKind) -> bool {
     view.document.editor.selection().is_some_and(|id| {
         view.document
@@ -2015,4 +2161,32 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_color(rgb(if bar.unsaved { BLUE } else { MUTED }))
                 .child(bar.document),
         )
+}
+
+#[cfg(test)]
+mod tuplet_command_tests {
+    use super::{TUPLET_COMMANDS, id, tuplet_command_ratio};
+
+    #[test]
+    fn each_tuplet_button_sets_its_usual_ratio() {
+        let ratios: Vec<_> = TUPLET_COMMANDS
+            .iter()
+            .map(|(command, _)| tuplet_command_ratio(*command).unwrap())
+            .collect();
+        assert_eq!(
+            ratios,
+            [
+                (2, 3),
+                (3, 2),
+                (4, 3),
+                (5, 4),
+                (6, 4),
+                (7, 4),
+                (8, 6),
+                (9, 8)
+            ]
+        );
+        assert_eq!(tuplet_command_ratio(id::DOT), None);
+        assert_eq!(tuplet_command_ratio(id::OTHER_TUPLET), None);
+    }
 }
