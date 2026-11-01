@@ -453,11 +453,22 @@ In **Escribir › Duración** choose the value and in **Escribir › Modificar**
 Preferences. They are also in the **Edición** menu. The modes stay on for the following
 notes and rests until you press them again; changing the base value keeps the modes.
 
-With a note or chord selected its duration changes; with a passage selected it applies
-to all its values in a single operation. The dot adds half (for example, dotted
-quarter = quarter + eighth). The triplet uses a **3:2** ratio: three triplet eighths
-last exactly one quarter. You can combine dot and triplet. Playback, ties, hairpins and
-both piano hands use these exact durations.
+With a note or chord selected, **Puntillo** changes its duration; with a passage
+selected, both modes apply to all its values in a single operation. With a single note,
+chord or rest selected, **Tresillo** starts a triplet there, as in Sibelius: the note
+keeps its value inside the triplet and the rest of the group becomes rests, over
+whatever followed. Pressing it again on any note of a triplet turns the whole group into
+rests. The dot adds half (for example, dotted quarter = quarter + eighth). The triplet
+uses a **3:2** ratio: three triplet eighths last exactly one quarter. You can combine
+dot and triplet. Playback, ties, hairpins and both piano hands use these exact
+durations.
+
+Writing a triplet value where no triplet is open fills the rest of its group with
+rests, which the next notes overwrite. Inside a triplet only values of that triplet fit,
+up to the end of the group; another value written on its first note replaces the whole
+group, and written on a later note it is refused. A triplet cannot cross the barline,
+nor can other music cut one in half: write from its first note to replace it. A note of
+a triplet moves only within its group.
 
 The engraving places the dots outside the lines and groups up to three consecutive,
 equal triplet values with a **3**, above the beam when the group is complete or with a
