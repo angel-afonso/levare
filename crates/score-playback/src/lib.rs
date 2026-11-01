@@ -1361,6 +1361,8 @@ mod line_tests;
 mod text_tests;
 #[cfg(test)]
 mod tremolo_tests;
+#[cfg(test)]
+mod tuplet_tests;
 
 #[cfg(test)]
 mod style_tests;
