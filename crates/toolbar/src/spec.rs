@@ -732,6 +732,40 @@ const DYNAMICS: GroupSpec = GroupSpec {
         ),
     ],
 };
+/// Accents and sudden changes, from one dropdown beside the levels.
+const MORE_DYNAMICS: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Más dinámicas",
+    visual: Music("\u{e524}\u{e522}\u{e525}"),
+    priority: 3,
+    controls: &[
+        mark(
+            MarkKind::Dynamic(D::Sfz),
+            "sfz",
+            "Acento fuerte en la nota; luego sigue el nivel de antes.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Rfz),
+            "rfz",
+            "Refuerza la nota; luego sigue el nivel de antes.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Fp),
+            "fp",
+            "Ataque forte y enseguida piano.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Sfp),
+            "sfp",
+            "Sforzando y enseguida piano.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Niente),
+            "niente",
+            "Desde o hasta el silencio, al principio o al final de un regulador.",
+        ),
+    ],
+};
 /// Hairpins and lines, from one dropdown as Sibelius' Lines gallery.
 const LINES: GroupSpec = GroupSpec {
     dropdown: true,
@@ -1493,6 +1527,7 @@ pub const TABS: &[TabSpec] = &[
             HEADER,
             TEMPO,
             DYNAMICS,
+            MORE_DYNAMICS,
             STAFF_TEXT,
             LYRICS,
             REHEARSAL,

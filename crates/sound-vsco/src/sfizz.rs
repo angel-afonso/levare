@@ -1046,7 +1046,7 @@ mod tests {
             bounds.iter().filter(|b| **b <= level).count() - 1
         };
         // ppp, pp, p, mp, mf, f, ff, fff.
-        let dynamics = score_core::Dynamic::ALL.map(|d| u32::from(d.velocity()));
+        let dynamics = score_core::Dynamic::LEVELS.map(|d| u32::from(d.velocity()));
         let two = "lovel=0 hivel=62 lovel=63 hivel=127";
         assert_eq!(dynamics.map(|v| layer(two, v)), [0, 0, 0, 0, 1, 1, 1, 1]);
         let three = "lovel=0 hivel=41 lovel=42 hivel=83 lovel=84 hivel=127";

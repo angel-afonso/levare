@@ -135,9 +135,36 @@ pub enum Dynamic {
     F,
     Ff,
     Fff,
+    /// Sforzato: a strong accent on the note; the level goes on as before.
+    Sfz,
+    /// Rinforzando: a reinforced note; the level goes on as before.
+    Rfz,
+    /// Forte, then piano at once.
+    Fp,
+    /// Sforzando, then piano at once.
+    Sfp,
+    /// Nothing: where a hairpin starts from or fades to silence.
+    Niente,
 }
 impl Dynamic {
-    pub const ALL: [Self; 8] = [
+    /// Every dynamic, in the order the ribbon and menus list them.
+    pub const ALL: [Self; 13] = [
+        Self::Ppp,
+        Self::Pp,
+        Self::P,
+        Self::Mp,
+        Self::Mf,
+        Self::F,
+        Self::Ff,
+        Self::Fff,
+        Self::Sfz,
+        Self::Rfz,
+        Self::Fp,
+        Self::Sfp,
+        Self::Niente,
+    ];
+    /// The levels that last until the next dynamic, from softest to loudest.
+    pub const LEVELS: [Self; 8] = [
         Self::Ppp,
         Self::Pp,
         Self::P,
@@ -157,9 +184,19 @@ impl Dynamic {
             Self::F => "f",
             Self::Ff => "ff",
             Self::Fff => "fff",
+            Self::Sfz => "sfz",
+            Self::Rfz => "rfz",
+            Self::Fp => "fp",
+            Self::Sfp => "sfp",
+            Self::Niente => "niente",
         }
     }
+    /// The attack's level on the MIDI velocity scale when the mark stands
+    /// alone, after mezzoforte.
     pub fn velocity(self) -> u8 {
+        self.attack(Self::Mf.velocity_of_level())
+    }
+    fn velocity_of_level(self) -> u8 {
         match self {
             Self::Ppp => 32,
             Self::Pp => 44,
@@ -169,6 +206,32 @@ impl Dynamic {
             Self::F => 100,
             Self::Ff => 112,
             Self::Fff => 124,
+            Self::Sfz | Self::Rfz | Self::Fp | Self::Sfp => 0,
+            // Silence on the expression scale; an attack still needs 1.
+            Self::Niente => 1,
+        }
+    }
+    /// The level the music keeps after this mark, from `before`, the level
+    /// it had: a level replaces it, an accent leaves it, fp and sfp fall to
+    /// piano.
+    pub fn after(self, before: u8) -> u8 {
+        match self {
+            Self::Sfz | Self::Rfz => before,
+            Self::Fp | Self::Sfp => Self::P.velocity_of_level(),
+            level => level.velocity_of_level(),
+        }
+    }
+    /// The level of the marked note's attack, from `before`.
+    pub fn attack(self, before: u8) -> u8 {
+        match self {
+            Self::Sfz => before
+                .saturating_add(24)
+                .max(Self::F.velocity_of_level())
+                .min(127),
+            Self::Rfz => before.saturating_add(16).min(127),
+            Self::Fp => Self::F.velocity_of_level(),
+            Self::Sfp => Self::Ff.velocity_of_level(),
+            level => level.velocity_of_level(),
         }
     }
     pub const fn glyph(self) -> &'static str {
@@ -181,6 +244,11 @@ impl Dynamic {
             Self::F => "\u{e522}",
             Self::Ff => "\u{e522}\u{e522}",
             Self::Fff => "\u{e522}\u{e522}\u{e522}",
+            Self::Sfz => "\u{e524}\u{e522}\u{e525}",
+            Self::Rfz => "\u{e523}\u{e522}\u{e525}",
+            Self::Fp => "\u{e522}\u{e520}",
+            Self::Sfp => "\u{e524}\u{e522}\u{e520}",
+            Self::Niente => "\u{e526}",
         }
     }
 }

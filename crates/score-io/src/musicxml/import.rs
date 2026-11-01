@@ -1660,9 +1660,13 @@ fn read_direction(
                 }
                 "dynamics" => {
                     let dynamic = d.children().filter(Node::is_element).find_map(|n| {
-                        Dynamic::ALL
-                            .into_iter()
-                            .find(|a| a.label() == n.tag_name().name())
+                        // Accents Levare writes one way, and niente's «n».
+                        match n.tag_name().name() {
+                            "sf" | "sffz" | "fz" => Some(Dynamic::Sfz),
+                            "rf" => Some(Dynamic::Rfz),
+                            "n" => Some(Dynamic::Niente),
+                            name => Dynamic::ALL.into_iter().find(|a| a.label() == name),
+                        }
                     });
                     if dynamic.is_none() {
                         warnings.add("Algunas dinámicas no admitidas no se importan");

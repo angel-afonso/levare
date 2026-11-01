@@ -64,7 +64,7 @@ pub enum Placement {
 }
 
 impl MarkKind {
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 51] = [
         Self::Division(Division::Divisi),
         Self::Division(Division::Unison),
         Self::Arpeggio(Arpeggio::Normal),
@@ -92,6 +92,11 @@ impl MarkKind {
         Self::Dynamic(Dynamic::F),
         Self::Dynamic(Dynamic::Ff),
         Self::Dynamic(Dynamic::Fff),
+        Self::Dynamic(Dynamic::Sfz),
+        Self::Dynamic(Dynamic::Rfz),
+        Self::Dynamic(Dynamic::Fp),
+        Self::Dynamic(Dynamic::Sfp),
+        Self::Dynamic(Dynamic::Niente),
         Self::Technique(PlayingTechnique::Pizzicato),
         Self::Technique(PlayingTechnique::Arco),
         Self::Harmonic(Harmonic::Natural),
@@ -144,6 +149,11 @@ impl MarkKind {
                 Dynamic::F => "Forte",
                 Dynamic::Ff => "Fortissimo",
                 Dynamic::Fff => "Fortississimo",
+                Dynamic::Sfz => "Sforzato",
+                Dynamic::Rfz => "Rinforzando",
+                Dynamic::Fp => "Fortepiano",
+                Dynamic::Sfp => "Sforzando piano",
+                Dynamic::Niente => "Niente",
             },
             Self::Technique(PlayingTechnique::Pizzicato) => "Pizzicato",
             Self::Technique(PlayingTechnique::Arco) => "Arco",

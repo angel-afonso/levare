@@ -173,3 +173,35 @@ fn a_breath_or_caesura_cuts_the_note_and_its_slur_before_the_next() {
     assert_eq!(release(Some(Pause::Breath)), 18_000);
     assert_eq!(release(Some(Pause::Caesura)), 12_000);
 }
+
+#[test]
+fn sfz_and_fp_strike_their_note_and_leave_the_level_they_name() {
+    use score_core::Dynamic;
+    let mut score = Score::default();
+    let ids: Vec<_> = (0..4)
+        .map(|index| {
+            score
+                .insert(0, index, note(Step::C, 4, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    score.set_dynamic(ids[0], Some(Dynamic::P)).unwrap();
+    score.set_dynamic(ids[1], Some(Dynamic::Sfz)).unwrap();
+    score.set_dynamic(ids[2], Some(Dynamic::Fp)).unwrap();
+    let levels: Vec<u8> = plan(&score)
+        .messages
+        .iter()
+        .filter_map(|m| match m.message {
+            Message::NoteOn(note) => Some(note.level),
+            _ => None,
+        })
+        .collect();
+    let (p, f) = (Dynamic::P.velocity(), Dynamic::F.velocity());
+    // Small metric weights shape every attack alike, so compare with p.
+    assert!(
+        levels[1] >= f - 4 && levels[1] > levels[0] + 30,
+        "{levels:?}"
+    );
+    assert!(levels[2] >= f - 4, "{levels:?}");
+    assert!(levels[3].abs_diff(p) <= 6, "{levels:?}");
+}

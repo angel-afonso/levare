@@ -165,6 +165,11 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Dinámica f |  |
 | — | — | Dinámica ff |  |
 | — | — | Dinámica fff |  |
+| — | — | Dinámica sfz |  |
+| — | — | Dinámica rfz |  |
+| — | — | Dinámica fp |  |
+| — | — | Dinámica sfp |  |
+| — | — | Dinámica niente |  |
 | — | — | Quitar dinámica |  |
 | `⌘E` | `Ctrl+E` | Texto de expresión… |  |
 | `⌘T` | `Ctrl+T` | Texto de técnica… |  |

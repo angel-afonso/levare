@@ -312,6 +312,18 @@ impl PlaybackPlan {
                         }
                     }
                 }
+                // The level each dynamic leaves, and its own note's attack:
+                // sfz keeps the level and strikes harder, fp falls to piano.
+                let mf = score_core::Dynamic::Mf.velocity();
+                let mut running = mf;
+                let levels: std::collections::BTreeMap<u64, (u8, u8)> = dynamics
+                    .iter()
+                    .map(|(&tick, mark): (&u64, &score_core::Dynamic)| {
+                        let attack = mark.attack(running);
+                        running = mark.after(running);
+                        (tick, (attack, running))
+                    })
+                    .collect();
                 let manner = interpretation::Manner::new(&instructions);
                 let mut voice_ranges = Vec::new();
                 for voice in score_core::Voice::ALL {
@@ -364,10 +376,13 @@ impl PlaybackPlan {
                                 .range(..=written_tick)
                                 .next_back()
                                 .map_or(PlayingTechnique::Arco, |(_, mark)| *mark);
-                            let dynamic = dynamics
+                            let (attack, dynamic) = levels
                                 .range(..=written_tick)
                                 .next_back()
-                                .map_or(score_core::Dynamic::Mf, |(_, mark)| *mark);
+                                .map_or((mf, mf), |(&at, &(attack, after))| {
+                                    (if at == written_tick { attack } else { after }, after)
+                                });
+                            let strike = attack.saturating_sub(dynamic);
                             let articulation = event.notation.articulation;
                             let pause = event.notation.pause;
                             let (muted, legato) = manner.at(written_tick);
@@ -432,8 +447,9 @@ impl PlaybackPlan {
                                         } else {
                                             articulation
                                         },
-                                        boost: interpretation::accent_boost(articulation),
-                                        reference_level: dynamic.velocity(),
+                                        boost: interpretation::accent_boost(articulation)
+                                            .saturating_add(strike),
+                                        reference_level: dynamic,
                                         technique,
                                         harmonic: event.notation.harmonic,
                                         instrument: part.instrument(),
@@ -461,10 +477,9 @@ impl PlaybackPlan {
                                         written_range: (written_tick, tick),
                                         channel,
                                         pitches,
-                                        level: interpretation::level(
-                                            dynamic.velocity(),
-                                            articulation,
-                                        ),
+                                        level: interpretation::level(dynamic, articulation)
+                                            .saturating_add(strike)
+                                            .min(127),
                                     });
                                     if let Some(grace) = event.notation.grace {
                                         interpretation::graces(

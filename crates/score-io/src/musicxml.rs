@@ -165,6 +165,13 @@ fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
         p.octave()
     );
 }
+/// MusicXML's element for a dynamic: its label, except niente's «n».
+fn dynamic_tag(dynamic: Dynamic) -> &'static str {
+    match dynamic {
+        Dynamic::Niente => "n",
+        other => other.label(),
+    }
+}
 /// MusicXML's name for a written sign.
 fn accidental_name(sign: Accidental) -> &'static str {
     match sign {
@@ -710,7 +717,7 @@ fn directions(
             if let Some(dynamic) = event.notation.dynamic {
                 direction(
                     xml,
-                    &format!("<dynamics><{}/></dynamics>", dynamic.label()),
+                    &format!("<dynamics><{}/></dynamics>", dynamic_tag(dynamic)),
                     tick,
                     number,
                     staff,

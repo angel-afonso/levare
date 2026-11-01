@@ -515,6 +515,7 @@ mod tests {
                 "Estilo de ensayo",
                 "Intervalo",
                 "Líneas",
+                "Más dinámicas",
                 "Más figuras",
                 "Nota de adorno",
                 "Repetición",
@@ -883,6 +884,8 @@ mod tests {
     /// keypad, so on macOS too Modificar, Alteración and Acorde show only
     /// their symbols and keys there, over their group's title: the dot, the
     /// tuplet, the rest, the five signs and the chord read without names.
+    /// Texto's dynamics are named as they are drawn, so they drop names that
+    /// only repeat them.
     #[test]
     fn at_1440_every_tab_shows_names_and_keys() {
         let metrics = Metrics::default();
@@ -896,6 +899,9 @@ mod tests {
                 .map(|group| group.title)
                 .collect();
             if spec.id == TabId::NoteInput && titles == ["Modificar", "Alteración", "Acorde"] {
+                continue;
+            }
+            if spec.id == TabId::Text && titles == ["Dinámica"] {
                 continue;
             }
             if !titles.is_empty() {

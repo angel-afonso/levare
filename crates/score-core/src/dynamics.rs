@@ -32,7 +32,7 @@ impl DynamicEnvelope {
                 for (_, onset, _, event) in bar.timed_iter() {
                     let tick = begin + u64::from(onset);
                     if let Some(mark) = event.notation.dynamic {
-                        marks.insert(tick, mark.velocity());
+                        marks.insert(tick, mark);
                     }
                 }
             }
@@ -56,6 +56,8 @@ impl DynamicEnvelope {
         swells.sort_by_key(|swell| swell.start);
         let mut segments = Vec::new();
         let mut cursor = 0;
+        // Each mark leaves a level that depends on the one before it: an
+        // accent such as sfz keeps it, fp falls to piano.
         let mut level = Dynamic::Mf.velocity();
         let mut marks = marks.into_iter().peekable();
         let mut push = |start, end, from, to| {
@@ -74,15 +76,16 @@ impl DynamicEnvelope {
                 let (tick, mark) = marks.next().unwrap();
                 push(cursor, tick, level, level);
                 cursor = tick;
-                level = mark;
+                level = mark.after(level);
             }
             push(cursor, start, level, level);
             cursor = start;
             while marks.peek().is_some_and(|(tick, _)| *tick <= end) {
                 let (tick, mark) = marks.next().unwrap();
-                push(cursor, tick, level, mark);
+                let next = mark.after(level);
+                push(cursor, tick, level, next);
                 cursor = tick;
-                level = mark;
+                level = next;
             }
             if cursor < end {
                 let fallback = Dynamic::nearest(level)
@@ -97,7 +100,7 @@ impl DynamicEnvelope {
         for (tick, mark) in marks {
             push(cursor, tick, level, level);
             cursor = tick;
-            level = mark;
+            level = mark.after(level);
         }
         // Include the entire notated timeline, even incomplete/empty final bars.
         let end = score.total_ticks();
@@ -122,15 +125,17 @@ impl DynamicEnvelope {
     }
 }
 impl Dynamic {
+    /// The level of `LEVELS` closest to `level`.
     pub fn nearest(level: u8) -> Self {
-        Self::ALL
+        Self::LEVELS
             .into_iter()
             .min_by_key(|d| d.velocity().abs_diff(level))
             .unwrap()
     }
+    /// A level `steps` levels louder or softer, within ppp–fff.
     pub fn shifted(self, steps: i8) -> Self {
-        let index = Self::ALL.iter().position(|d| *d == self).unwrap() as i8;
-        Self::ALL[(index + steps).clamp(0, 7) as usize]
+        let index = Self::LEVELS.iter().position(|d| *d == self).unwrap_or(4) as i8;
+        Self::LEVELS[(index + steps).clamp(0, 7) as usize]
     }
 }
 
@@ -146,6 +151,40 @@ mod tests {
             notation: Default::default(),
         }
     }
+    #[test]
+    fn accents_keep_the_level_fp_falls_to_piano_and_niente_fades_to_silence() {
+        let mut s = Score::default();
+        let ids: Vec<_> = (0..4).map(|i| s.insert(0, i, note()).unwrap()).collect();
+        s.set_dynamic(ids[0], Some(Dynamic::P)).unwrap();
+        s.set_dynamic(ids[1], Some(Dynamic::Sfz)).unwrap();
+        s.set_dynamic(ids[2], Some(Dynamic::Fp)).unwrap();
+        let e = DynamicEnvelope::new(&s, ids[0].part, ids[0].staff).unwrap();
+        let p = Dynamic::P.velocity();
+        assert_eq!(e.level_at(Q), p, "sfz leaves piano");
+        assert_eq!(e.level_at(2 * Q), p, "fp falls to piano");
+        assert_eq!(Dynamic::Sfz.attack(p), Dynamic::F.velocity());
+        assert_eq!(Dynamic::Sfz.attack(Dynamic::F.velocity()), 124);
+        assert_eq!(Dynamic::Rfz.attack(p), p + 16);
+        assert_eq!(Dynamic::Fp.attack(p), Dynamic::F.velocity());
+        assert_eq!(Dynamic::Sfp.attack(p), Dynamic::Ff.velocity());
+
+        // Dim. al niente: the hairpin fades from piano to silence.
+        s.set_dynamic(ids[1], None).unwrap();
+        s.set_dynamic(ids[2], None).unwrap();
+        s.set_dynamic(ids[3], Some(Dynamic::Niente)).unwrap();
+        s.add_connection(Connection {
+            start: ids[0],
+            end: ids[3],
+            kind: ConnectionKind::Diminuendo,
+        })
+        .unwrap();
+        let e = DynamicEnvelope::new(&s, ids[0].part, ids[0].staff).unwrap();
+        assert!(e.level_at(3 * Q / 2) < p);
+        assert_eq!(e.level_at(3 * Q), 1);
+        assert_eq!(Dynamic::nearest(1), Dynamic::Ppp);
+        assert_eq!(Dynamic::Niente.shifted(1), Dynamic::F);
+    }
+
     #[test]
     fn hairpins_validate_ranges_allow_rests_and_touching_but_reject_overlap_and_other_staves() {
         let mut s = Score::default();

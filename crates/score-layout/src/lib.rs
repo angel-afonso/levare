@@ -627,7 +627,7 @@ impl Rhythm {
                     if let Some(mark) = event.notation.dynamic {
                         let (l, _, r, _) = metrics.bounds(mark.glyph(), false);
                         let width =
-                            (r - l).max(mark.label().chars().count() as f32 * 14. + 6.) + 6.;
+                            (r - l).max(mark.glyph().chars().count() as f32 * 14. + 6.) + 6.;
                         right
                             .entry(tick)
                             .and_modify(|v| *v = v.max(width))

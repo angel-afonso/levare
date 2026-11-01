@@ -644,7 +644,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         let y = dynamic_lane;
         // Bravura's dynamic letters are up to 1.8 spaces wide; f rises 1.8
         // spaces and p descends 0.6 below the baseline.
-        let width = mark.label().chars().count() as f32 * 14.;
+        let width = mark.glyph().chars().count() as f32 * 14.;
         result.marks.push(MarkBox {
             mark: MarkRef::Dynamic(id),
             glyph: Some(result.glyphs.len()),
@@ -667,7 +667,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         let after = event
             .notation
             .dynamic
-            .map_or(0., |mark| mark.label().chars().count() as f32 * 14. + 6.);
+            .map_or(0., |mark| mark.glyph().chars().count() as f32 * 14. + 6.);
         let label = TechniqueLabel {
             text: words,
             position: Point {

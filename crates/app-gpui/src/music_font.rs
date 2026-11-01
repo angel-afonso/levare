@@ -384,7 +384,9 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 118);
+        assert_eq!(font.outlines.len(), 122);
+        // The letters of sfz, rfz, sfp and niente.
+        assert!(font.covers("\u{e523}\u{e524}\u{e525}\u{e526}"));
         // Staccatissimo, mordents, turn, breath mark and caesura.
         assert!(font.covers("\u{e4a6}\u{e4a7}\u{e56c}\u{e56d}\u{e567}\u{e4ce}\u{e4d1}"));
         assert!(font.covers("\u{e069}\u{e044}\u{e047}\u{e048}"));

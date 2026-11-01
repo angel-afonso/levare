@@ -1135,3 +1135,50 @@ fn ornaments_staccatissimo_breaths_and_caesuras_export_and_import() {
         ]
     );
 }
+
+#[test]
+fn accents_fp_and_niente_export_and_import_as_dynamics() {
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    let marks = [
+        Dynamic::Sfz,
+        Dynamic::Rfz,
+        Dynamic::Fp,
+        Dynamic::Sfp,
+        Dynamic::Niente,
+    ];
+    for (index, mark) in marks.into_iter().enumerate() {
+        let id = score
+            .insert_in(
+                part,
+                index / 4,
+                index % 4,
+                note(Step::C, 4, Duration::Quarter),
+            )
+            .unwrap();
+        score.set_dynamic(id, Some(mark)).unwrap();
+    }
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    let tags: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("dynamics"))
+        .filter_map(|n| n.first_element_child())
+        .map(|n| n.tag_name().name())
+        .collect();
+    assert_eq!(tags, ["sfz", "rfz", "fp", "sfp", "n"]);
+    let opened = import::decode(data.as_bytes()).unwrap();
+    assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
+    let read: Vec<_> = opened.score.parts()[0]
+        .staff(StaffId::Upper)
+        .unwrap()
+        .measures()
+        .iter()
+        .flat_map(|bar| {
+            bar.timed_iter()
+                .map(|(_, _, _, event)| event.notation.dynamic)
+        })
+        .flatten()
+        .collect();
+    assert_eq!(read, marks);
+}

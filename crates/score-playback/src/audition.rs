@@ -157,9 +157,13 @@ impl Audition {
         let tick = score
             .event_tick(id)
             .ok_or(ScoreError("La nota de audición no existe"))?;
-        let level = DynamicEnvelope::new(score, id.part, id.staff)
-            .ok_or(ScoreError("El pentagrama no existe"))?
-            .level_at(tick);
+        let envelope = DynamicEnvelope::new(score, id.part, id.staff)
+            .ok_or(ScoreError("El pentagrama no existe"))?;
+        // The note's own dynamic gives its attack: sfz strikes harder.
+        let level = match event.notation.dynamic {
+            Some(mark) => mark.attack(envelope.level_before(tick)),
+            None => envelope.level_at(tick),
+        };
         let mut keys = [None; MAX_AUDITION_NOTES];
         let mut count = 0;
         for pitch in score.sounding_pitches(id)?.iter() {

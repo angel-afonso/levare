@@ -26,6 +26,8 @@ pub fn glyph_codes() -> impl Iterator<Item = u32> {
             0xe4a0, 0xe4a1, 0xe4a2, 0xe4a3, 0xe4a4, 0xe4a5, 0xe4ac, 0xe4ad, 0xe4c1, 0xe520, 0xe521,
             0xe522,
         ])
+        // The r, s, z and n of sfz, rfz, sfp and niente.
+        .chain(0xe523..=0xe526)
         // Staccatissimo above and below, the mordents, the turn, the breath
         // mark and the caesura.
         .chain([0xe4a6, 0xe4a7, 0xe56c, 0xe56d, 0xe567, 0xe4ce, 0xe4d1])

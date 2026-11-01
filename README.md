@@ -132,8 +132,9 @@ five-instrument ensemble.
   technique, symbols (mordents, turn, breath and caesura), grace notes, arpeggios and
   tremolos. Like Sibelius' galleries, repeats, lines, symbols, grace notes, arpeggios
   and tremolos each open from one dropdown.
-  **Texto**: title and credits, tempo, dynamics from *ppp* to *fff*, staff text, lyrics
-  and chord symbols, rehearsal marks and their style, and the signs and jumps in
+  **Texto**: title and credits, tempo, dynamics from *ppp* to *fff* and, in a dropdown,
+  *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
+  rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
   sounds. **Diseño**: system and page breaks and resetting what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
@@ -562,6 +563,11 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   to the next marking on the same staff. Each piano hand keeps its own dynamic. With no
   marking, mf is used (MIDI velocity 88). A dynamic can be placed on a rest to prepare
   the next entry. Pressing the note's active dynamic again removes it.
+  **Texto › Más dinámicas** adds sfz, rfz, fp, sfp and niente. sfz and rfz strike their
+  note harder (sfz at least forte, +24; rfz +16) and the level goes on as before; fp
+  strikes forte and sfp fortissimo, and both fall to piano at once; niente is silence,
+  for a hairpin that fades to nothing or grows out of it. MusicXML writes niente as
+  `<n/>` and reads sf, sffz and fz as sfz and rf as rfz.
 - **Articulations:** with no marking, each note sounds for 92 % (with a gap of at most
   60 ms) to separate it from the next; staccato shortens the sound to 50 % and
   staccatissimo to 25 %; tenuto keeps the full duration; accent and marcato strengthen

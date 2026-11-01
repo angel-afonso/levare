@@ -318,6 +318,11 @@ pub mod id {
         DYNAMIC_F = "expresion.dinamica.f";
         DYNAMIC_FF = "expresion.dinamica.ff";
         DYNAMIC_FFF = "expresion.dinamica.fff";
+        DYNAMIC_SFZ = "expresion.dinamica.sfz";
+        DYNAMIC_RFZ = "expresion.dinamica.rfz";
+        DYNAMIC_FP = "expresion.dinamica.fp";
+        DYNAMIC_SFP = "expresion.dinamica.sfp";
+        DYNAMIC_NIENTE = "expresion.dinamica.niente";
         CLEAR_DYNAMIC = "expresion.sin-dinamica";
         EXPRESSION_TEXT = "expresion.texto";
         TECHNIQUE_TEXT = "expresion.tecnica";
@@ -605,6 +610,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DYNAMIC_F, C::Expression, "Dinámica f", S, false, R),
     spec(id::DYNAMIC_FF, C::Expression, "Dinámica ff", S, false, R),
     spec(id::DYNAMIC_FFF, C::Expression, "Dinámica fff", S, false, R),
+    spec(id::DYNAMIC_SFZ, C::Expression, "Dinámica sfz", S, false, R),
+    spec(id::DYNAMIC_RFZ, C::Expression, "Dinámica rfz", S, false, R),
+    spec(id::DYNAMIC_FP, C::Expression, "Dinámica fp", S, false, R),
+    spec(id::DYNAMIC_SFP, C::Expression, "Dinámica sfp", S, false, R),
+    spec(id::DYNAMIC_NIENTE, C::Expression, "Dinámica niente", S, false, R),
     spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
     spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión…", S, false, R),
     spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica…", S, false, R),
