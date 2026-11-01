@@ -251,3 +251,30 @@ fn formats_written_pitch_for_transposing_parts() {
     let text = format_voice(editor.score(), part, StaffId::Upper, 0, Voice::One);
     assert_eq!(text, "D5:4 R:4 R:2");
 }
+
+#[test]
+fn doubled_signs_read_and_write_as_double_accidentals() {
+    let events = parse_voice("F##4:4 Bbb3:4 Bb3:4 Cn4:4").unwrap();
+    let accidentals: Vec<_> = events
+        .iter()
+        .map(|e| e.event.pitches.first().unwrap().accidental())
+        .collect();
+    assert_eq!(
+        accidentals,
+        [
+            Some(Accidental::DoubleSharp),
+            Some(Accidental::DoubleFlat),
+            Some(Accidental::Flat),
+            Some(Accidental::Natural),
+        ]
+    );
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    for (beat, written) in events.into_iter().enumerate() {
+        score.insert_in(part, 0, beat, written.event).unwrap();
+    }
+    assert_eq!(
+        format_voice(&score, part, StaffId::Upper, 0, Voice::One),
+        "F##4:4 Bbb3:4 Bb3:4 Cn4:4"
+    );
+}

@@ -878,9 +878,10 @@ mod tests {
     /// The widths are measured on macOS's system font and ⌘-style keys.
     /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there the
     /// tightest tabs drop one more group's names at 1440; their fonts still
-    /// need measuring. Since Más figuras and Silencio, Entrada de notas drops
-    /// the names of Modificar and Ligadura on macOS too: their symbols, the
-    /// dot, the triplet, the rest and the two curves, read without them.
+    /// need measuring. Entrada de notas holds what Sibelius spreads over its
+    /// keypad, so on macOS too Modificar, Alteración and Acorde show only
+    /// their symbols and keys there, over their group's title: the dot, the
+    /// tuplet, the rest, the five signs and the chord read without names.
     #[test]
     fn at_1440_every_tab_shows_names_and_keys() {
         let metrics = Metrics::default();
@@ -893,7 +894,7 @@ mod tests {
                 .filter(|group| !group.dropdown && group.mode != GroupMode::Expanded)
                 .map(|group| group.title)
                 .collect();
-            if spec.id == TabId::NoteInput && titles == ["Modificar", "Ligadura"] {
+            if spec.id == TabId::NoteInput && titles == ["Modificar", "Alteración", "Acorde"] {
                 continue;
             }
             if !titles.is_empty() {

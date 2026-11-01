@@ -268,6 +268,8 @@ pub mod id {
         SHARP = "alteracion.sostenido";
         FLAT = "alteracion.bemol";
         FOLLOW_KEY = "alteracion.armadura";
+        DOUBLE_SHARP = "alteracion.doble-sostenido";
+        DOUBLE_FLAT = "alteracion.doble-bemol";
 
         TIE = "expresion.ligadura-union";
         SLUR = "expresion.ligadura-expresion";
@@ -548,6 +550,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::NATURAL, C::Accidentals, "Becuadro", S, false, R),
     spec(id::SHARP, C::Accidentals, "Sostenido", S, false, R),
     spec(id::FLAT, C::Accidentals, "Bemol", S, false, R),
+    spec(id::DOUBLE_SHARP, C::Accidentals, "Doble sostenido", S, false, R),
+    spec(id::DOUBLE_FLAT, C::Accidentals, "Doble bemol", S, false, R),
     spec(id::FOLLOW_KEY, C::Accidentals, "Seguir la armadura", S, false, R),
 
     spec(id::TIE, C::Expression, "Ligadura de unión con la siguiente", S, false, R),

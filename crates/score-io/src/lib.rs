@@ -540,8 +540,13 @@ mod tests {
         assert_eq!(decode(&bytes).unwrap(), score);
         let mut data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(data["version"], SCHEMA_VERSION);
-        data["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]["pitches"][0]
-            ["accidental"] = "DoubleSharp".into();
+        let sign = &mut data["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]
+            ["pitches"][0]["accidental"];
+        *sign = "DoubleSharp".into();
+        assert!(decode(&serde_json::to_vec(&data).unwrap()).is_ok());
+        let sign = &mut data["score"]["parts"][0]["staves"][0]["measures"][0]["events"][1]["value"]
+            ["pitches"][0]["accidental"];
+        *sign = "TripleSharp".into();
         assert!(decode(&serde_json::to_vec(&data).unwrap()).is_err());
     }
 

@@ -868,12 +868,21 @@ mod tests {
 
     #[test]
     fn altered_pitches_sound_by_semitone_and_enharmonic_chords_share_a_key() {
-        use score_core::Accidental::{Flat, Natural, Sharp};
+        use score_core::Accidental::{DoubleFlat, DoubleSharp, Flat, Natural, Sharp};
         let c = Pitch::new(Step::C, 4).unwrap();
         let sharp = c.with_accidental(Some(Sharp));
         let flat = Pitch::new(Step::D, 4).unwrap().with_accidental(Some(Flat));
         assert_eq!(midi_key(sharp), 61);
         assert_eq!(midi_key(flat), 61);
+        assert_eq!(midi_key(c.with_accidental(Some(DoubleSharp))), 62);
+        assert_eq!(
+            midi_key(
+                Pitch::new(Step::E, 4)
+                    .unwrap()
+                    .with_accidental(Some(DoubleFlat))
+            ),
+            62
+        );
         assert_eq!(midi_key(c.with_accidental(Some(Natural))), 60);
         assert_eq!(
             midi_key(Pitch::new(Step::C, 0).unwrap().with_accidental(Some(Flat))),

@@ -300,7 +300,7 @@ pub(super) fn piano_arpeggios(
                 for glyph in bar.content.glyphs.iter().filter(|g| {
                     g.element == Some(id)
                         && g.text.chars().next().is_some_and(
-                            |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e262}'),
+                            |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e264}'),
                         )
                 }) {
                     left = left.min(

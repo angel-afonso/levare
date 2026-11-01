@@ -127,9 +127,11 @@ pub fn format_voice(
 
 fn pitch_text(pitch: Pitch) -> String {
     let accidental = match pitch.accidental() {
+        Some(Accidental::DoubleSharp) => "##",
         Some(Accidental::Sharp) => "#",
-        Some(Accidental::Flat) => "b",
         Some(Accidental::Natural) => "n",
+        Some(Accidental::Flat) => "b",
+        Some(Accidental::DoubleFlat) => "bb",
         None => "",
     };
     format!("{:?}{accidental}{}", pitch.step, pitch.octave())
@@ -301,14 +303,26 @@ impl Reader<'_> {
             .ok_or_else(|| {
                 format!("«{letter}» no es una altura; usa una letra de A a G o R para un silencio")
             })?;
-        let accidental = match self.peek() {
+        let mut accidental = match self.peek() {
             Some('#') => Some(Accidental::Sharp),
             Some('b') => Some(Accidental::Flat),
             Some('n') => Some(Accidental::Natural),
             _ => None,
         };
-        if accidental.is_some() {
+        if let Some(sign) = accidental {
             self.bump();
+            // A second sign of the same kind doubles it: F##4, Bbb3.
+            let double = match sign {
+                Accidental::Sharp => Some(('#', Accidental::DoubleSharp)),
+                Accidental::Flat => Some(('b', Accidental::DoubleFlat)),
+                _ => None,
+            };
+            if let Some((symbol, double)) = double
+                && self.peek() == Some(symbol)
+            {
+                self.bump();
+                accidental = Some(double);
+            }
         }
         let digits = self.digits();
         if digits.is_empty() {

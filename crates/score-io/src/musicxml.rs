@@ -165,6 +165,16 @@ fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
         p.octave()
     );
 }
+/// MusicXML's name for a written sign.
+fn accidental_name(sign: Accidental) -> &'static str {
+    match sign {
+        Accidental::DoubleFlat => "flat-flat",
+        Accidental::Flat => "flat",
+        Accidental::Natural => "natural",
+        Accidental::Sharp => "sharp",
+        Accidental::DoubleSharp => "double-sharp",
+    }
+}
 fn direction(xml: &mut String, body: &str, tick: u32, voice: u8, staff: u8, sound: &str) {
     let _ = writeln!(
         xml,
@@ -806,11 +816,7 @@ fn graces(xml: &mut String, grace: Grace, key: KeySignature, voice: u8, staff: u
             if count == 1 { "eighth" } else { "16th" }
         );
         if let Some(sign) = p.accidental() {
-            let sign = match sign {
-                Accidental::Flat => "flat",
-                Accidental::Natural => "natural",
-                Accidental::Sharp => "sharp",
-            };
+            let sign = accidental_name(sign);
             let _ = write!(xml, "<accidental>{sign}</accidental>");
         }
         let _ = write!(xml, "<stem>up</stem><staff>{staff}</staff>");
@@ -912,11 +918,7 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
         if let Some(&(p, _, _)) = pitches.get(tone)
             && let Some(sign) = p.accidental()
         {
-            let sign = match sign {
-                Accidental::Flat => "flat",
-                Accidental::Natural => "natural",
-                Accidental::Sharp => "sharp",
-            };
+            let sign = accidental_name(sign);
             let _ = write!(xml, "<accidental>{sign}</accidental>");
         }
         if let Some(tuplet) = f.duration.tuplet() {

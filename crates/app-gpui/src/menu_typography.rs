@@ -296,6 +296,8 @@ mod titles {
             id::NATURAL => "\u{e261}",
             id::SHARP => "\u{e262}",
             id::FLAT => "\u{e260}",
+            id::DOUBLE_SHARP => "\u{e263}",
+            id::DOUBLE_FLAT => "\u{e264}",
             id::DOT => "\u{e1e7}",
             id::DOUBLE_DOT => "\u{e1e7}\u{e1e7}",
             id::SIXTY_FOURTH => "\u{e1dd}",

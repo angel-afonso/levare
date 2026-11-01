@@ -125,8 +125,8 @@ five-instrument ensemble.
   selecting the whole staff or going to a bar.
   **Entrada de notas** gathers what you choose for each note, as MuseScore's note input
   toolbar does: note input and octave, duration, dot, triplet and rest, the rarer values
-  in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental, tie and
-  slur, voice, and chords by interval.
+  in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental (double
+  sharp and double flat too), tie and slur, voice, and chords by interval.
   **Notaciones**: changes of clef, key and time signature, repeats and barlines,
   articulations and fermata, hairpins, lines (8va, pedal, trill, glissando), string
   technique, grace notes, arpeggios and tremolos. Like Sibelius' galleries, repeats,
@@ -976,9 +976,11 @@ instruments, the pages grow to keep it.
 
 ## Sharps, flats and naturals
 
-In **Entrada de notas › Alteración**, choose Armadura, **♯**, **♭** or **♮** before writing. That
-option holds for the next notes and for those you add to the chord with ⇧+letter.
-Armadura uses the chosen key; ♮ forces a natural note with an explicit natural sign.
+In **Entrada de notas › Alteración**, choose Armadura, **♮**, **♯**, **♭**, **𝄪** (double
+sharp) or **𝄫** (double flat) before writing. That option holds for the next notes and
+for those you add to the chord with ⇧+letter. Armadura uses the chosen key; ♮ forces a
+natural note with an explicit natural sign. The double sharp and double flat have no key
+by default, as on Sibelius' second keypad layout; give them one in **Atajos**.
 
 To change an existing note, select it and press **Aplicar ♯**, **Aplicar ♭** or
 **Aplicar ♮**. In a chord, first choose its head with a click or its name in the
@@ -993,8 +995,9 @@ A note that follows the key signature after its own accidental gets a cautionary
 when needed in that bar. Notes in other octaves do not inherit an individual
 accidental. The notation state resets in every bar and is kept separate between hands.
 The signs of chords are spread in columns. Transposing with the arrows keeps the kind
-of the note's own accidental. There are no double accidentals or automatic enharmonic
-changes yet.
+of the note's own accidental. Double sharps and flats are exported to and read from
+MusicXML as written; transposing instruments still respell a note that would need one
+to its enharmonic equivalent. There are no automatic enharmonic changes yet.
 
 You can open [`examples/piano-alteraciones.partitura`](examples/piano-alteraciones.partitura).
 

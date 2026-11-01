@@ -146,30 +146,52 @@ impl Step {
 /// Explicit notation. An absent sign follows the score's key signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Accidental {
+    DoubleFlat,
     Flat,
     Natural,
     Sharp,
+    DoubleSharp,
 }
 impl Accidental {
+    /// Every sign, from the lowest to the highest.
+    pub const ALL: [Self; 5] = [
+        Self::DoubleFlat,
+        Self::Flat,
+        Self::Natural,
+        Self::Sharp,
+        Self::DoubleSharp,
+    ];
     pub fn semitones(self) -> i8 {
         match self {
+            Self::DoubleFlat => -2,
             Self::Flat => -1,
             Self::Natural => 0,
             Self::Sharp => 1,
+            Self::DoubleSharp => 2,
         }
+    }
+    /// The sign that alters a note by `semitones`, from −2 to 2.
+    pub fn from_semitones(semitones: i8) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|sign| sign.semitones() == semitones)
     }
     pub fn symbol(self) -> &'static str {
         match self {
+            Self::DoubleFlat => "𝄫",
             Self::Flat => "♭",
             Self::Natural => "♮",
             Self::Sharp => "♯",
+            Self::DoubleSharp => "𝄪",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
+            Self::DoubleFlat => "Doble bemol",
             Self::Flat => "Bemol",
             Self::Natural => "Becuadro",
             Self::Sharp => "Sostenido",
+            Self::DoubleSharp => "Doble sostenido",
         }
     }
 }
@@ -1043,6 +1065,18 @@ mod tests {
             .with_accidental(Some(Accidental::Flat));
         assert_eq!(sharp.to_string(), "C♯4");
         assert_eq!(flat.alteration(), -1);
+        for sign in Accidental::ALL {
+            assert_eq!(Accidental::from_semitones(sign.semitones()), Some(sign));
+        }
+        assert_eq!(Accidental::from_semitones(3), None);
+        let double = flat.with_accidental(Some(Accidental::DoubleSharp));
+        assert_eq!(double.alteration(), 2);
+        assert_eq!(double.to_string(), "D𝄪4");
+        assert_eq!(
+            flat.with_accidental(Some(Accidental::DoubleFlat))
+                .alteration(),
+            -2
+        );
         assert_eq!(sharp.shift(7).unwrap().to_string(), "C♯5");
         let pitches = Pitches::new(&[sharp, flat]).unwrap();
         assert!(pitches.with(Pitch::new(Step::C, 4).unwrap()).is_err());

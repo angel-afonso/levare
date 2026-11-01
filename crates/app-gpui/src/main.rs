@@ -1772,6 +1772,8 @@ impl AppView {
             id::NATURAL => self.toggle_accidental(Accidental::Natural, cx),
             id::SHARP => self.toggle_accidental(Accidental::Sharp, cx),
             id::FLAT => self.toggle_accidental(Accidental::Flat, cx),
+            id::DOUBLE_SHARP => self.toggle_accidental(Accidental::DoubleSharp, cx),
+            id::DOUBLE_FLAT => self.toggle_accidental(Accidental::DoubleFlat, cx),
             id::FOLLOW_KEY => self.apply_accidental(None, cx),
 
             id::REMOVE_TIE => self.edit(Command::RemoveConnections(ConnectionKind::Tie), cx),

@@ -2197,10 +2197,26 @@ fn measure_accidentals_with_resets(
         })
         .collect()
 }
+/// How far left of the notehead column `column` of signs ends: 14 px per
+/// column, 21 for one holding a double flat, the widest sign.
+fn column_offset(signs: &[PlacedAccidental], column: usize) -> f32 {
+    (0..=column)
+        .map(|column| {
+            if signs
+                .iter()
+                .any(|sign| sign.column == column && sign.sign == -2)
+            {
+                21.
+            } else {
+                14.
+            }
+        })
+        .sum()
+}
 fn accidental_padding(signs: &[PlacedAccidental]) -> f32 {
     signs
         .iter()
-        .map(|sign| (sign.column + 1) as f32 * 14. + 22.)
+        .map(|sign| column_offset(signs, sign.column) + 22.)
         .fold(0., f32::max)
 }
 fn engrave_accidentals(
@@ -2245,7 +2261,7 @@ fn engrave_accidentals(
             rotated: false,
             text: char::from_u32(code).unwrap().to_string(),
             position: Point {
-                x: left - 8. - (sign.column + 1) as f32 * 14.,
+                x: left - 8. - column_offset(signs, sign.column),
                 y,
             },
             element: Some(id),
@@ -3195,6 +3211,56 @@ mod tests {
                 .iter()
                 .any(|g| g.element.is_none() && g.text == "\u{e262}")
         );
+    }
+
+    #[test]
+    fn double_signs_are_drawn_clear_of_the_head_and_cancelled_later() {
+        let c = Pitch::new(Step::C, 4).unwrap();
+        let mut score = Score::default();
+        let signs = [
+            Some(Accidental::DoubleSharp),
+            None,
+            Some(Accidental::DoubleFlat),
+            Some(Accidental::DoubleFlat),
+        ];
+        let mut ids = Vec::new();
+        for (index, sign) in signs.into_iter().enumerate() {
+            ids.push(
+                score
+                    .insert(
+                        0,
+                        index,
+                        Event {
+                            notation: Default::default(),
+                            pitches: score_core::Pitches::single(Some(c.with_accidental(sign))),
+                            duration: Duration::Quarter,
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let bar = layout.measure_on(ids[0].part, ids[0].staff, 0).unwrap();
+        let sign = |id| {
+            bar.content.glyphs.iter().find(|g| {
+                g.element == Some(id)
+                    && ('\u{e260}'..='\u{e264}').contains(&g.text.chars().next().unwrap())
+            })
+        };
+        // An explicit sign is always drawn, even when it repeats.
+        let expected = ["\u{e263}", "\u{e261}", "\u{e264}", "\u{e264}"];
+        for (&id, code) in ids.iter().zip(expected) {
+            let sign = sign(id).unwrap();
+            assert_eq!(sign.text, code);
+            let head = bar
+                .content
+                .events
+                .iter()
+                .find(|head| head.id == id)
+                .unwrap();
+            // Bravura's double flat is 16.4 px wide; it ends clear of the head.
+            assert!(sign.position.x + 17. < head.center.x - 6., "{code}");
+        }
     }
 
     #[test]

@@ -122,6 +122,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `7` | `7` | Becuadro |  |
 | `8` | `8` | Sostenido |  |
 | `9` | `9` | Bemol |  |
+| — | — | Doble sostenido |  |
+| — | — | Doble bemol |  |
 | — | — | Seguir la armadura |  |
 
 ## Expresión

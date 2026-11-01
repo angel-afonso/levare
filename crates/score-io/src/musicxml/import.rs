@@ -1030,29 +1030,17 @@ fn pitch_value(
             "MusicXML: nota transpuesta fuera del registro admitido",
         ));
     }
+    let written = Pitch::new(step, octave as u8)
+        .unwrap()
+        .with_accidental(Accidental::from_semitones(alter as i8));
     if let Some(interval) = interval
-        && (-1..=1).contains(&alter)
+        && let Ok(pitches) =
+            interval.pitches(Pitches::single(Some(written)), KeySignature::default())
     {
-        let pitch = Pitch::new(step, octave as u8)
-            .unwrap()
-            .with_accidental(Some(match alter {
-                -1 => Accidental::Flat,
-                1 => Accidental::Sharp,
-                _ => Accidental::Natural,
-            }));
-        if let Ok(pitches) = interval.pitches(Pitches::single(Some(pitch)), KeySignature::default())
-        {
-            return Ok(pitches.first().unwrap());
-        }
+        return Ok(pitches.first().unwrap());
     }
-    if transpose == 0 && (-1..=1).contains(&alter) {
-        return Ok(Pitch::new(step, octave as u8)
-            .unwrap()
-            .with_accidental(Some(match alter {
-                -1 => Accidental::Flat,
-                1 => Accidental::Sharp,
-                _ => Accidental::Natural,
-            })));
+    if transpose == 0 {
+        return Ok(written);
     }
     if alter.abs() == 2 {
         warnings.add("Las dobles alteraciones se convierten a notas enarmónicas equivalentes");

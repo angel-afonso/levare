@@ -387,6 +387,18 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
             "Baja la nota un semitono. Pulsa otra vez para quitarlo.",
         )),
         choice(tile(
+            id::DOUBLE_SHARP,
+            Music("\u{e263}"),
+            "Doble ♯",
+            "Sube la nota dos semitonos. Pulsa otra vez para quitarlo.",
+        )),
+        choice(tile(
+            id::DOUBLE_FLAT,
+            Music("\u{e264}"),
+            "Doble ♭",
+            "Baja la nota dos semitonos. Pulsa otra vez para quitarlo.",
+        )),
+        choice(tile(
             id::FOLLOW_KEY,
             Label("arm."),
             "Armadura",

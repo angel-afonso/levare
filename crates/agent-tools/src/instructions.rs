@@ -31,7 +31,8 @@ macro_rules! notation {
     () => {
         "\n\nNotación: una voz de un compás, con los eventos separados por espacios.\n\
 - Nota: letra de A a G en mayúscula, alteración opcional (# sostenido, b bemol, n \
-becuadro) y octava de 0 a 8; C4 es el do central: C4, F#5, Bb3, Fn4.\n\
+becuadro, ## doble sostenido, bb doble bemol) y octava de 0 a 8; C4 es el do central: \
+C4, F#5, Bb3, Fn4, F##4, Bbb3.\n\
 - Silencio: R. Acorde: alturas entre corchetes, [C4 E4 G4].\n\
 - Duración tras «:»: 1 redonda, 2 blanca, 4 negra, 8 corchea, 16 semicorchea, 32 fusa, \
 64 semifusa; detrás, «.» para el puntillo («..» doble) y «t» para el tresillo: C4:4., \

@@ -1026,3 +1026,53 @@ fn tuplets_double_dots_and_sixty_fourths_round_trip_with_every_onset() {
         assert_eq!(groups(&imported), groups(&score), "bar {}", bar + 1);
     }
 }
+
+#[test]
+fn double_accidentals_export_and_import_as_written() {
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    for (index, (step, sign)) in [
+        (Step::F, Accidental::DoubleSharp),
+        (Step::B, Accidental::DoubleFlat),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut event = note(step, 4, Duration::Half);
+        event.pitches = event.pitches.with_accidental(0, Some(sign)).unwrap();
+        score.insert_in(part, 0, index, event).unwrap();
+    }
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    let alters: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("pitch"))
+        .map(|n| text(n, "alter"))
+        .collect();
+    assert_eq!(alters, ["2", "-2"]);
+    let signs: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("accidental"))
+        .filter_map(|n| n.text())
+        .collect();
+    assert_eq!(signs, ["double-sharp", "flat-flat"]);
+    let saved = crate::encode(&score).unwrap();
+    assert_eq!(crate::decode(&saved).unwrap(), score);
+    let opened = import::decode(data.as_bytes()).unwrap();
+    assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
+    let written: Vec<_> = opened.score.parts()[0]
+        .staff(StaffId::Upper)
+        .unwrap()
+        .measures()[0]
+        .timed_iter()
+        .filter_map(|(_, _, _, event)| event.pitches.first())
+        .map(|pitch| (pitch.step, pitch.accidental()))
+        .collect();
+    assert_eq!(
+        written,
+        [
+            (Step::F, Some(Accidental::DoubleSharp)),
+            (Step::B, Some(Accidental::DoubleFlat)),
+        ]
+    );
+}

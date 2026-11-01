@@ -249,6 +249,8 @@ impl CommandStates for AppView {
             id::NATURAL => accidental(Some(Accidental::Natural)),
             id::SHARP => accidental(Some(Accidental::Sharp)),
             id::FLAT => accidental(Some(Accidental::Flat)),
+            id::DOUBLE_SHARP => accidental(Some(Accidental::DoubleSharp)),
+            id::DOUBLE_FLAT => accidental(Some(Accidental::DoubleFlat)),
             id::FOLLOW_KEY => accidental(None),
 
             id::TIE => CommandState::checked(selected_connection(self, ConnectionKind::Tie)),

@@ -351,6 +351,8 @@ impl Shortcuts {
                     None,
                     Some(id::SHARP),
                     Some(id::FLAT),
+                    Some(id::DOUBLE_SHARP),
+                    Some(id::DOUBLE_FLAT),
                     Some(id::NATURAL),
                     Some(id::FOLLOW_KEY),
                     Some(id::UPPER_NOTE_OR_STAFF),
