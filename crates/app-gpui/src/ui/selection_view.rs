@@ -289,9 +289,11 @@ fn passage_summary(score: &Score, ids: &[ElementId]) -> PassageSummary {
 /// Point families in the order the rows list them: articulation first, then
 /// dynamics and techniques. Graces, texts, syllables and chord symbols follow
 /// the connections.
-const POINT_FAMILIES: [MarkFamily; 8] = [
+const POINT_FAMILIES: [MarkFamily; 10] = [
     MarkFamily::Articulation,
+    MarkFamily::Ornament,
     MarkFamily::Fermata,
+    MarkFamily::Pause,
     MarkFamily::Tremolo,
     MarkFamily::Arpeggio,
     MarkFamily::Harmonic,

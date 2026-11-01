@@ -124,3 +124,52 @@ fn glissandos_run_chromatically_or_on_white_keys() {
     let keys: Vec<u8> = ons(&plan(&piano)).into_iter().map(|(_, key)| key).collect();
     assert_eq!(keys, [72, 74, 76, 77, 79]);
 }
+
+#[test]
+fn mordents_and_turns_play_their_neighbours_in_the_key_then_the_note() {
+    use score_core::{KeyMode, KeySignature, Ornament};
+    for (ornament, keys) in [
+        (Ornament::Mordent, &[79, 78, 79][..]),
+        (Ornament::InvertedMordent, &[79, 81, 79][..]),
+        (Ornament::Turn, &[81, 79, 78, 79][..]),
+    ] {
+        let mut score = Score::new("".into(), &[Instrument::Flute], 1).unwrap();
+        score.set_key_signature(KeySignature::new(1, KeyMode::Major).unwrap());
+        let a = score
+            .insert(0, 0, note(Step::G, 5, Duration::Half))
+            .unwrap();
+        score.set_ornament(a, Some(ornament)).unwrap();
+        let ons = ons(&plan(&score));
+        assert_eq!(
+            ons.iter().map(|(_, key)| *key).collect::<Vec<_>>(),
+            keys,
+            "{ornament:?}"
+        );
+        // Quick notes of 70 ms; the note takes the rest of its half.
+        let quick = 48_000 * 70 / 1000;
+        for (index, (frame, _)) in ons.iter().enumerate() {
+            assert_eq!(*frame, quick * index as u64, "{ornament:?}");
+        }
+    }
+}
+
+#[test]
+fn a_breath_or_caesura_cuts_the_note_and_its_slur_before_the_next() {
+    use score_core::Pause;
+    let release = |pause: Option<Pause>| {
+        let mut score = Score::new("".into(), &[Instrument::Flute], 1).unwrap();
+        let a = score
+            .insert(0, 0, note(Step::C, 5, Duration::Quarter))
+            .unwrap();
+        let b = score
+            .insert(0, 1, note(Step::D, 5, Duration::Quarter))
+            .unwrap();
+        line(&mut score, a, b, ConnectionKind::Slur);
+        score.set_pause(a, pause).unwrap();
+        offs(&plan(&score), 72)[0]
+    };
+    // Slurred, the note reaches into the next one.
+    assert!(release(None) > 24_000);
+    assert_eq!(release(Some(Pause::Breath)), 18_000);
+    assert_eq!(release(Some(Pause::Caesura)), 12_000);
+}

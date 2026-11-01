@@ -32,7 +32,8 @@ mod harmonics;
 pub use harmonics::Harmonic;
 mod expression;
 pub use expression::{
-    Arpeggio, Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
+    Arpeggio, Articulation, Connection, ConnectionKind, Dynamic, Notation, Ornament, Pause,
+    PlayingTechnique,
 };
 mod piano_arpeggio;
 pub use piano_arpeggio::{ArpeggioMark, PianoArpeggio};

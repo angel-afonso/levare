@@ -128,9 +128,10 @@ five-instrument ensemble.
   in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental (double
   sharp and double flat too), tie and slur, voice, and chords by interval.
   **Notaciones**: changes of clef, key and time signature, repeats and barlines,
-  articulations and fermata, hairpins, lines (8va, pedal, trill, glissando), string
-  technique, grace notes, arpeggios and tremolos. Like Sibelius' galleries, repeats,
-  lines, grace notes, arpeggios and tremolos each open from one dropdown.
+  articulations and fermata, hairpins and lines (8va, pedal, trill, glissando), string
+  technique, symbols (mordents, turn, breath and caesura), grace notes, arpeggios and
+  tremolos. Like Sibelius' galleries, repeats, lines, symbols, grace notes, arpeggios
+  and tremolos each open from one dropdown.
   **Texto**: title and credits, tempo, dynamics from *ppp* to *fff*, staff text, lyrics
   and chord symbols, rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
@@ -562,9 +563,9 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   marking, mf is used (MIDI velocity 88). A dynamic can be placed on a rest to prepare
   the next entry. Pressing the note's active dynamic again removes it.
 - **Articulations:** with no marking, each note sounds for 92 % (with a gap of at most
-  60 ms) to separate it from the next; staccato shortens the sound to 50 %; tenuto
-  keeps the full duration; accent and marcato strengthen the attack (+16/+24 velocity,
-  up to 127).
+  60 ms) to separate it from the next; staccato shortens the sound to 50 % and
+  staccatissimo to 25 %; tenuto keeps the full duration; accent and marcato strengthen
+  the attack (+16/+24 velocity, up to 127).
   They affect every note of the chord, without changing its written duration. In a
   tied chain the initial attack is kept; a final staccato shortens the chain's combined
   sounding duration to 50 %. This keeps the sound when a value is split while pasting.
@@ -589,6 +590,19 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   on notes or rests, alongside any articulation. In playback, that moment lasts twice
   as long in every part and the music continues afterwards; the ruler and the clock
   account for it.
+
+- **Ornaments:** **Mordente**, **Mordente superior** and **Grupeto**, in
+  **Notaciones › Símbolos** or the **Expresión** menu, go over a single note or chord,
+  outside its articulation and inside its fermata. In playback, a single note plays its
+  neighbours in the key, 70 ms each at most: the mordent the note below, the upper
+  mordent the note above, the turn the note above, the note and the note below; then
+  the note sounds for the rest of its value.
+
+- **Breath and caesura:** **Respiración** and **Cesura**, in **Notaciones › Símbolos**
+  or the **Expresión** menu, are written over the staff after a note or rest. They do
+  not change the bar's time: the breath cuts the note's sound by a quarter of its
+  value and the caesura by half, and either one breaks a slur there. When a note is
+  split across bars they stay after its last fragment.
 
 - **Grace notes:** in **Notaciones › Nota de adorno**, select the note and choose
   **Acciaccatura** (small, slashed, almost no time) or **Appoggiatura** (leans on the
@@ -654,7 +668,7 @@ All support Undo/Redo, and Esc cancels a drag in progress.
 Select a passage with **Shift+click** or **Shift+arrows** and press **H** for a
 crescendo (`<`) or **Shift+H** for a diminuendo (`>`). You can also select the first
 note, press the hairpin, select the last one and press the same button or shortcut
-again. **Esc** cancels the pending start. The actions are in **Notaciones › Regulador**
+again. **Esc** cancels the pending start. The actions are in **Notaciones › Líneas**
 and the **Expresión** menu. The shortcuts can be changed in Preferences.
 
 The hairpin goes from the start of the first note to the start of the last one. It can
@@ -1220,7 +1234,7 @@ kept. At least one bar always remains.
 
 ## Repeats, endings and jumps
 
-In **Notaciones › Repeticiones** write the start and end of a repeat, first and second
+In **Notaciones › Repetición** write the start and end of a repeat, first and second
 endings, the double barline and the final barline. In **Texto**, the **D.C. / D.S.**
 dropdown gathers Segno, Coda, Fine, To Coda and the jumps; the
 **Repeticiones** menu also gathers the six D.C./D.S. variants and the options to remove

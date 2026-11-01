@@ -174,7 +174,7 @@ const fn toggle(control: Control) -> Control {
 use Visual::{Icon, Label, Music, Text};
 use score_core::{
     Arpeggio as R, Articulation as A, ConnectionKind as K, Dynamic as D, GraceKind as G,
-    Harmonic as H, MarkKind, PlayingTechnique as T, Tremolo as M,
+    Harmonic as H, MarkKind, Ornament as O, Pause as P, PlayingTechnique as T, Tremolo as M,
 };
 
 /// A catalog mark: its command and symbol come from the catalog.
@@ -529,9 +529,49 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
             "Acento fuerte y marcado.",
         )),
         toggle(mark(
+            MarkKind::Articulation(A::Staccatissimo),
+            "Staccatissimo",
+            "Más corta que el staccato.",
+        )),
+        toggle(mark(
             MarkKind::Fermata,
             "Calderón",
             "Mantiene la nota a criterio del intérprete.",
+        )),
+    ],
+};
+/// Ornaments and pauses, from one dropdown as Sibelius keeps them in its
+/// Symbols gallery.
+const SYMBOLS: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Símbolos",
+    visual: Music("\u{e56c}"),
+    priority: 3,
+    controls: &[
+        toggle(mark(
+            MarkKind::Ornament(O::Mordent),
+            "Mordente",
+            "La nota, la de abajo y otra vez la nota, rápido.",
+        )),
+        toggle(mark(
+            MarkKind::Ornament(O::InvertedMordent),
+            "Mordente superior",
+            "La nota, la de arriba y otra vez la nota, rápido.",
+        )),
+        toggle(mark(
+            MarkKind::Ornament(O::Turn),
+            "Grupeto",
+            "La nota de arriba, la nota, la de abajo y la nota.",
+        )),
+        toggle(mark(
+            MarkKind::Pause(P::Breath),
+            "Respiración",
+            "Corta un poco la nota antes de la siguiente.",
+        )),
+        toggle(mark(
+            MarkKind::Pause(P::Caesura),
+            "Cesura",
+            "Una pausa clara después de la nota.",
         )),
     ],
 };
@@ -692,11 +732,12 @@ const DYNAMICS: GroupSpec = GroupSpec {
         ),
     ],
 };
-const HAIRPINS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Regulador",
+/// Hairpins and lines, from one dropdown as Sibelius' Lines gallery.
+const LINES: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Líneas",
     visual: Music("\u{e53e}"),
-    priority: 5,
+    priority: 4,
     controls: &[
         toggle(mark(
             MarkKind::Connection(K::Crescendo),
@@ -708,14 +749,6 @@ const HAIRPINS: GroupSpec = GroupSpec {
             "Diminuendo",
             HAIRPIN_HINT,
         )),
-    ],
-};
-const LINES: GroupSpec = GroupSpec {
-    dropdown: true,
-    title: "Líneas",
-    visual: Music("\u{e511}"),
-    priority: 4,
-    controls: &[
         toggle(mark(
             MarkKind::Connection(K::OttavaAlta),
             "8va",
@@ -1011,7 +1044,7 @@ const CHANGES: GroupSpec = GroupSpec {
 /// gallery.
 const REPEATS: GroupSpec = GroupSpec {
     dropdown: true,
-    title: "Repeticiones",
+    title: "Repetición",
     visual: Music("\u{e041}"),
     priority: 4,
     controls: &[
@@ -1446,9 +1479,9 @@ pub const TABS: &[TabSpec] = &[
             CHANGES,
             REPEATS,
             ARTICULATIONS,
-            HAIRPINS,
             LINES,
             TECHNIQUE,
+            SYMBOLS,
             GRACES,
             ARPEGGIOS,
             TREMOLOS,
@@ -1567,7 +1600,6 @@ mod tests {
             GRACES,
             ARPEGGIOS,
             DYNAMICS,
-            HAIRPINS,
             LINES,
             TECHNIQUE,
             TREMOLOS,

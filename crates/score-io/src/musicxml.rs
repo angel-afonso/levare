@@ -976,6 +976,7 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                     let _ = write!(xml, "<slur type=\"{kind}\" number=\"{number}\"/>");
                 }
             }
+            let mut articulations = String::new();
             if f.first
                 && let Some(art) = f.event.notation.articulation
             {
@@ -984,8 +985,21 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                     Articulation::Tenuto => "tenuto",
                     Articulation::Accent => "accent",
                     Articulation::Marcato => "strong-accent",
+                    Articulation::Staccatissimo => "staccatissimo",
                 };
-                let _ = write!(xml, "<articulations><{tag}/></articulations>");
+                let _ = write!(articulations, "<{tag}/>");
+            }
+            // A breath or caesura follows the sound, after the last tied note.
+            if f.last
+                && let Some(pause) = f.event.notation.pause
+            {
+                articulations.push_str(match pause {
+                    Pause::Breath => "<breath-mark/>",
+                    Pause::Caesura => "<caesura/>",
+                });
+            }
+            if !articulations.is_empty() {
+                let _ = write!(xml, "<articulations>{articulations}</articulations>");
             }
             let ends = index.endpoints(f.id);
             if f.last && ends.contains(&(ConnectionKind::Glissando, false)) {
@@ -1009,6 +1023,15 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             }
             if f.last && !single && ends.contains(&(ConnectionKind::Trill, true)) {
                 let _ = write!(ornaments, "<wavy-line type=\"stop\" number=\"{number}\"/>");
+            }
+            if f.first
+                && let Some(ornament) = f.event.notation.ornament
+            {
+                ornaments.push_str(match ornament {
+                    Ornament::Mordent => "<mordent/>",
+                    Ornament::InvertedMordent => "<inverted-mordent/>",
+                    Ornament::Turn => "<turn/>",
+                });
             }
             if f.first
                 && let Some(tremolo) = f.event.notation.tremolo

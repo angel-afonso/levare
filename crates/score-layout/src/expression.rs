@@ -420,15 +420,46 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             result.top = result.top.min(y - 16.);
         }
     }
-    // The fermata sits outside the articulation, centered over the note.
-    let fermata_y = if event.notation.articulation.is_some() {
+    // An ornament sits outside the articulation, the fermata outside both,
+    // each centered over the note.
+    let ornament_y = if event.notation.articulation.is_some() {
         articulation_y + if below { 18. } else { -14. }
+    } else if below {
+        (52f32).max(bottom + 12.)
     } else {
+        (-12f32).min(top - 12.)
+    };
+    if let Some(mark) = event.notation.ornament {
+        result.marks.push(MarkBox {
+            mark: MarkRef::Ornament(id),
+            glyph: Some(result.glyphs.len()),
+            // Bravura's mordents are two spaces wide and one high; the turn
+            // is a little narrower.
+            center: Point {
+                x,
+                y: ornament_y + if below { 5. } else { -5. },
+            },
+            half: (11., 8.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: mark.glyph().into(),
+            position: Point {
+                x: x - 10.,
+                y: ornament_y,
+            },
+            element: Some(id),
+        });
         if below {
-            (52f32).max(bottom + 12.)
+            result.bottom = result.bottom.max(ornament_y + 16.);
         } else {
-            (-12f32).min(top - 12.)
+            result.top = result.top.min(ornament_y - 16.);
         }
+    }
+    let fermata_y = if event.notation.ornament.is_some() {
+        ornament_y + if below { 16. } else { -14. }
+    } else {
+        ornament_y
     };
     if event.notation.fermata {
         let kind = score_core::MarkKind::Fermata;
@@ -462,6 +493,47 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             result.top = result.top.min(fermata_y - 18.);
         }
     }
+    // A breath or caesura follows the note over the staff, between it and
+    // the next one.
+    if let Some(mark) = event.notation.pause {
+        // The comma floats just above the top line; the caesura's strokes
+        // cross it.
+        let y = if mark == score_core::Pause::Caesura {
+            8.
+        } else {
+            -4.
+        };
+        let right = x + 16.;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Pause(id),
+            glyph: Some(result.glyphs.len()),
+            center: Point {
+                x: right + 6.,
+                y: y - 8.,
+            },
+            half: (8., 10.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: mark.glyph().into(),
+            position: Point { x: right, y },
+            element: Some(id),
+        });
+        result.top = result.top.min(y - 20.);
+    }
+    // Words above the staff clear the ornament and the fermata.
+    let outer = |y: f32, gap: f32| {
+        let y = if event.notation.ornament.is_some() && !below {
+            y.min(ornament_y - gap)
+        } else {
+            y
+        };
+        if event.notation.fermata && !below {
+            y.min(fermata_y - gap)
+        } else {
+            y
+        }
+    };
     if let Some(mark) = event.notation.division {
         let y = (-24f32).min(if poly { staff_top } else { top } - 24.)
             - if event.notation.technique.is_some() {
@@ -469,11 +541,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             } else {
                 0.
             };
-        let y = if event.notation.fermata && !below {
-            y.min(fermata_y - 24.)
-        } else {
-            y
-        };
+        let y = outer(y, 24.);
         let width = mark.label().chars().count() as f32 * 7.;
         result.marks.push(MarkBox {
             mark: MarkRef::Division(id),
@@ -500,11 +568,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         } else {
             y
         };
-        let y = if event.notation.fermata {
-            y.min(fermata_y - 22.)
-        } else {
-            y
-        };
+        let y = outer(y, 22.);
         let width = mark.label().chars().count() as f32 * 7.;
         result.marks.push(MarkBox {
             mark: MarkRef::Technique(id),
@@ -531,11 +595,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             } else {
                 0.
             };
-        let y = if event.notation.fermata {
-            y.min(fermata_y - 22.)
-        } else {
-            y
-        };
+        let y = outer(y, 22.);
         let label = TechniqueLabel {
             text: words,
             position: Point { x: x - 5., y },

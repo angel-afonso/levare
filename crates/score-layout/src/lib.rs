@@ -3214,6 +3214,61 @@ mod tests {
     }
 
     #[test]
+    fn ornaments_stack_between_articulation_and_fermata_and_pauses_follow_the_note() {
+        let mut score = Score::default();
+        let id = score
+            .insert(
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(Pitch::new(Step::G, 4)),
+                    duration: Duration::Quarter,
+                },
+            )
+            .unwrap();
+        score
+            .set_articulation(id, Some(score_core::Articulation::Staccatissimo))
+            .unwrap();
+        score
+            .set_ornament(id, Some(score_core::Ornament::Turn))
+            .unwrap();
+        score.set_fermata(id, true).unwrap();
+        score
+            .set_pause(id, Some(score_core::Pause::Breath))
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let bar = layout.measure_on(id.part, id.staff, 0).unwrap();
+        let mark = |mark: MarkRef| {
+            bar.content
+                .marks
+                .iter()
+                .find(|placed| placed.mark == mark)
+                .unwrap()
+                .center
+        };
+        let articulation = mark(MarkRef::Articulation(id));
+        let ornament = mark(MarkRef::Ornament(id));
+        let fermata = mark(MarkRef::Fermata(id));
+        assert!(fermata.y < ornament.y && ornament.y < articulation.y);
+        let head = bar
+            .content
+            .events
+            .iter()
+            .find(|head| head.id == id)
+            .unwrap()
+            .center;
+        let breath = mark(MarkRef::Pause(id));
+        assert!(breath.x > head.x + 12. && breath.y < 0.);
+        for glyph in ["\u{e4a6}", "\u{e567}", "\u{e4ce}"] {
+            assert!(
+                bar.content.glyphs.iter().any(|g| g.text == glyph),
+                "{glyph}"
+            );
+        }
+    }
+
+    #[test]
     fn double_signs_are_drawn_clear_of_the_head_and_cancelled_later() {
         let c = Pitch::new(Step::C, 4).unwrap();
         let mut score = Score::default();

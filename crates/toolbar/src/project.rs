@@ -517,7 +517,8 @@ mod tests {
                 "Líneas",
                 "Más figuras",
                 "Nota de adorno",
-                "Repeticiones",
+                "Repetición",
+                "Símbolos",
                 "Trémolo",
             ]
         );

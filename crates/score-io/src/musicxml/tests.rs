@@ -1076,3 +1076,62 @@ fn double_accidentals_export_and_import_as_written() {
         ]
     );
 }
+
+#[test]
+fn ornaments_staccatissimo_breaths_and_caesuras_export_and_import() {
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    let ids: Vec<_> = (0..4)
+        .map(|index| {
+            score
+                .insert_in(part, 0, index, note(Step::G, 4, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    score
+        .set_articulation(ids[0], Some(Articulation::Staccatissimo))
+        .unwrap();
+    score.set_pause(ids[0], Some(Pause::Breath)).unwrap();
+    score.set_ornament(ids[1], Some(Ornament::Mordent)).unwrap();
+    score
+        .set_ornament(ids[2], Some(Ornament::InvertedMordent))
+        .unwrap();
+    score.set_pause(ids[2], Some(Pause::Caesura)).unwrap();
+    score.set_ornament(ids[3], Some(Ornament::Turn)).unwrap();
+    let data = xml(&score);
+    let doc = Document::parse(&data).unwrap();
+    for tag in [
+        "staccatissimo",
+        "breath-mark",
+        "mordent",
+        "inverted-mordent",
+        "caesura",
+        "turn",
+    ] {
+        assert!(doc.descendants().any(|n| n.has_tag_name(tag)), "{tag}");
+    }
+    let opened = import::decode(data.as_bytes()).unwrap();
+    assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
+    let marks: Vec<_> = opened.score.parts()[0]
+        .staff(StaffId::Upper)
+        .unwrap()
+        .measures()[0]
+        .timed_iter()
+        .map(|(_, _, _, event)| {
+            (
+                event.notation.articulation,
+                event.notation.ornament,
+                event.notation.pause,
+            )
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (Some(Articulation::Staccatissimo), None, Some(Pause::Breath)),
+            (None, Some(Ornament::Mordent), None),
+            (None, Some(Ornament::InvertedMordent), Some(Pause::Caesura)),
+            (None, Some(Ornament::Turn), None),
+        ]
+    );
+}

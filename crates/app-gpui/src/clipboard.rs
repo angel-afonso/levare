@@ -156,6 +156,8 @@ mod playback_tests {
             notation: Notation {
                 harmonic: None,
                 tremolo: None,
+                ornament: None,
+                pause: None,
                 division: None,
                 arpeggio: None,
                 technique: None,

@@ -138,6 +138,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Tenuto |  |
 | — | — | Acento |  |
 | — | — | Marcato |  |
+| — | — | Staccatissimo |  |
 | `H` | `H` | Crescendo: inicio o fin |  |
 | `⇧H` | `Mayús+H` | Diminuendo: inicio o fin |  |
 | — | — | Quitar crescendo |  |
@@ -181,6 +182,11 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 |---|---|---|---|
 | — | — | Indicación div. |  |
 | — | — | Indicación unis. |  |
+| — | — | Mordente |  |
+| — | — | Mordente superior |  |
+| — | — | Grupeto |  |
+| — | — | Respiración |  |
+| — | — | Cesura |  |
 | — | — | Octava alta 8va |  |
 | — | — | Octava baja 8vb |  |
 | — | — | Pedal de resonancia |  |

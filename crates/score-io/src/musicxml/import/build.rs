@@ -569,9 +569,11 @@ pub(super) fn score(
                                 n.division = None;
                                 n.grace = None;
                                 n.lyrics = Lyrics::default();
+                                n.ornament = None;
                             }
                             if at + duration.ticks() != end {
                                 n.fermata = false;
+                                n.pause = None;
                             }
                             // Shared rolls are resolved after both hands exist.
                             n.arpeggio = None;

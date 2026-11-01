@@ -279,6 +279,12 @@ pub mod id {
         TENUTO = "expresion.tenuto";
         ACCENT = "expresion.acento";
         MARCATO = "expresion.marcato";
+        STACCATISSIMO = "expresion.staccatissimo";
+        MORDENT = "notacion.mordente";
+        INVERTED_MORDENT = "notacion.mordente-superior";
+        TURN = "notacion.grupeto";
+        BREATH = "notacion.respiracion";
+        CAESURA = "notacion.cesura";
         CRESCENDO = "expresion.crescendo";
         DIMINUENDO = "expresion.diminuendo";
         REMOVE_CRESCENDO = "expresion.quitar-crescendo";
@@ -562,6 +568,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TENUTO, C::Expression, "Tenuto", S, false, R),
     spec(id::ACCENT, C::Expression, "Acento", S, false, R),
     spec(id::MARCATO, C::Expression, "Marcato", S, false, R),
+    spec(id::STACCATISSIMO, C::Expression, "Staccatissimo", S, false, R),
+    spec(id::MORDENT, C::Notation, "Mordente", S, false, R),
+    spec(id::INVERTED_MORDENT, C::Notation, "Mordente superior", S, false, R),
+    spec(id::TURN, C::Notation, "Grupeto", S, false, R),
+    spec(id::BREATH, C::Notation, "Respiración", S, false, R),
+    spec(id::CAESURA, C::Notation, "Cesura", S, false, R),
     spec(id::CRESCENDO, C::Expression, "Crescendo: inicio o fin", S, false, R),
     spec(id::DIMINUENDO, C::Expression, "Diminuendo: inicio o fin", S, false, R),
     spec(id::REMOVE_CRESCENDO, C::Expression, "Quitar crescendo", S, false, R),

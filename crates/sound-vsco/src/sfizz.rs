@@ -581,7 +581,7 @@ impl SoundEngine for NativeBank {
         // portato: the sustained recording with the plan's shorter length.
         let voice = if note.technique == PlayingTechnique::Pizzicato {
             lane.pizz.as_mut()
-        } else if note.articulation == Some(Articulation::Staccato)
+        } else if note.articulation.is_some_and(Articulation::is_short)
             && !note.legato
             && lane.short.as_ref().is_some_and(covers)
         {

@@ -719,6 +719,8 @@ fn read_part(
                             last.arpeggio = event.arpeggio;
                         }
                         last.notation.fermata |= event.notation.fermata;
+                        last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
+                        last.notation.pause = last.notation.pause.or(event.notation.pause);
                         if event.notation.tremolo.is_some() {
                             last.notation.tremolo = event.notation.tremolo;
                         }
@@ -1330,11 +1332,21 @@ fn read_note(
                 "fermata" => notation.fermata = true,
                 "articulations" => {
                     for a in m.children().filter(Node::is_element) {
+                        let pause = match a.tag_name().name() {
+                            "breath-mark" => Some(Pause::Breath),
+                            "caesura" => Some(Pause::Caesura),
+                            _ => None,
+                        };
+                        if pause.is_some() {
+                            notation.pause = pause;
+                            continue;
+                        }
                         let art = match a.tag_name().name() {
                             "staccato" => Some(Articulation::Staccato),
                             "tenuto" => Some(Articulation::Tenuto),
                             "accent" => Some(Articulation::Accent),
                             "strong-accent" => Some(Articulation::Marcato),
+                            "staccatissimo" => Some(Articulation::Staccatissimo),
                             _ => None,
                         };
                         if art.is_none() || notation.articulation.is_some() {
@@ -1383,6 +1395,16 @@ fn read_note(
                     for ornament in m.children().filter(Node::is_element) {
                         if ornament.has_tag_name("trill-mark") || ornament.has_tag_name("wavy-line")
                         {
+                            continue;
+                        }
+                        let short = match ornament.tag_name().name() {
+                            "mordent" => Some(Ornament::Mordent),
+                            "inverted-mordent" => Some(Ornament::InvertedMordent),
+                            "turn" => Some(Ornament::Turn),
+                            _ => None,
+                        };
+                        if short.is_some() {
+                            notation.ornament = short;
                             continue;
                         }
                         if ornament.has_tag_name("tremolo") {

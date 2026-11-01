@@ -128,6 +128,8 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
     event.notation = Notation {
         harmonic: None,
         tremolo: None,
+        ornament: None,
+        pause: None,
         division: None,
         arpeggio: None,
         technique: None,

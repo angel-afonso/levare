@@ -386,14 +386,22 @@ impl Editor {
                     notation.lyrics = Default::default();
                     notation.chord = None;
                     notation.offsets.chord = None;
+                    notation.ornament = None;
+                    notation.offsets.ornament = None;
                 }
-                // A split note keeps one fermata, over its final fragment.
+                // A split note keeps one fermata and one breath, after its final
+                // fragment.
                 if !is_last {
                     notation.fermata = false;
                     notation.offsets.fermata = None;
+                    notation.pause = None;
+                    notation.offsets.pause = None;
                 }
                 if let Some(mark) = notation.articulation {
-                    let belongs = if matches!(mark, Articulation::Staccato | Articulation::Tenuto) {
+                    let belongs = if matches!(
+                        mark,
+                        Articulation::Staccato | Articulation::Staccatissimo | Articulation::Tenuto
+                    ) {
                         is_last
                     } else {
                         is_first

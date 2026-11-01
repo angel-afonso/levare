@@ -139,12 +139,12 @@ impl Score {
                 written.notation.offsets.harmonic = event.notation.offsets.harmonic;
             }
             if pieces.len() > 1 {
-                written.notation.fermata = index == last_index && event.notation.fermata;
-                written.notation.offsets.fermata = if index == last_index {
-                    event.notation.offsets.fermata
-                } else {
-                    None
-                };
+                // The fermata and the breath after the note stay on its end.
+                let last = index == last_index;
+                written.notation.fermata = last && event.notation.fermata;
+                written.notation.pause = event.notation.pause.filter(|_| last);
+                written.notation.offsets.fermata = event.notation.offsets.fermata.filter(|_| last);
+                written.notation.offsets.pause = event.notation.offsets.pause.filter(|_| last);
             }
             by_bar.entry(piece.measure).or_default().push(Item {
                 tick: piece.tick,

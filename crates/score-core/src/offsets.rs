@@ -121,7 +121,9 @@ impl MarkRef {
             self,
             Self::Dynamic(_)
                 | Self::Articulation(_)
+                | Self::Ornament(_)
                 | Self::Fermata(_)
+                | Self::Pause(_)
                 | Self::Technique(_)
                 | Self::Harmonic(_)
                 | Self::Text(..)
@@ -149,6 +151,10 @@ pub struct MarkOffsets {
     pub technique_text: Option<Offset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chord: Option<Offset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<Offset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause: Option<Offset>,
 }
 
 impl MarkOffsets {
@@ -161,6 +167,8 @@ impl MarkOffsets {
             && self.expression_text.is_none()
             && self.technique_text.is_none()
             && self.chord.is_none()
+            && self.ornament.is_none()
+            && self.pause.is_none()
     }
 
     pub fn get(&self, family: MarkFamily) -> Option<Offset> {
@@ -173,6 +181,8 @@ impl MarkOffsets {
             MarkFamily::ExpressionText => self.expression_text,
             MarkFamily::TechniqueText => self.technique_text,
             MarkFamily::Chord => self.chord,
+            MarkFamily::Ornament => self.ornament,
+            MarkFamily::Pause => self.pause,
             _ => None,
         }
     }
@@ -187,6 +197,8 @@ impl MarkOffsets {
             MarkFamily::ExpressionText => Some(&mut self.expression_text),
             MarkFamily::TechniqueText => Some(&mut self.technique_text),
             MarkFamily::Chord => Some(&mut self.chord),
+            MarkFamily::Ornament => Some(&mut self.ornament),
+            MarkFamily::Pause => Some(&mut self.pause),
             _ => None,
         }
     }

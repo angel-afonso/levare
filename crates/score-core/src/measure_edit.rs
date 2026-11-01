@@ -194,7 +194,8 @@ impl Score {
         };
         self.set_pitches(id, pitches)
     }
-    /// Erase sound without removing musical time. Dynamic, technique and fermata survive.
+    /// Erase sound without removing musical time. Dynamic, technique, fermata
+    /// and breath survive.
     pub fn erase(&mut self, id: ElementId) -> Result<(), ScoreError> {
         self.event(id).ok_or(ScoreError("La nota no existe"))?;
         let event = &mut Arc::make_mut(
@@ -209,6 +210,8 @@ impl Score {
         event.notation.offsets.harmonic = None;
         event.notation.offsets.articulation = None;
         event.notation.tremolo = None;
+        event.notation.ornament = None;
+        event.notation.offsets.ornament = None;
         self.prune_connections();
         Ok(())
     }

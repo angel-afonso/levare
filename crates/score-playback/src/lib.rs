@@ -369,9 +369,11 @@ impl PlaybackPlan {
                                 .next_back()
                                 .map_or(score_core::Dynamic::Mf, |(_, mark)| *mark);
                             let articulation = event.notation.articulation;
+                            let pause = event.notation.pause;
                             let (muted, legato) = manner.at(written_tick);
-                            let slurred =
-                                slurs.continues(written_tick) || (legato && manner.at(tick).1);
+                            // A breath or caesura breaks the line.
+                            let slurred = pause.is_none()
+                                && (slurs.continues(written_tick) || (legato && manner.at(tick).1));
                             if !pitches.is_empty() {
                                 if tie_start_of
                                     .get(&element)
@@ -390,19 +392,24 @@ impl PlaybackPlan {
                                     sound.end = if tied_starts.contains(&element) {
                                         end
                                     } else {
-                                        interpretation::sounding_end(
-                                            sound.start,
+                                        interpretation::before_pause(
+                                            start,
                                             end,
-                                            articulation,
-                                            slurred,
-                                            sample_rate,
+                                            interpretation::sounding_end(
+                                                sound.start,
+                                                end,
+                                                articulation,
+                                                slurred,
+                                                sample_rate,
+                                            ),
+                                            pause,
                                         )
                                     };
                                     // Paste may put the release articulation on the
                                     // final tied fragment. Preserve its short sample
                                     // choice as well as the combined duration.
                                     if !tied_starts.contains(&element)
-                                        && articulation == Some(Articulation::Staccato)
+                                        && articulation.is_some_and(Articulation::is_short)
                                     {
                                         sound.articulation = articulation;
                                     }
@@ -419,7 +426,7 @@ impl PlaybackPlan {
                                         written_ticks: u64::from(event.duration.ticks()),
                                         attack_duration: end - start,
                                         articulation: if tied
-                                            && articulation == Some(Articulation::Staccato)
+                                            && articulation.is_some_and(Articulation::is_short)
                                         {
                                             None
                                         } else {
@@ -437,12 +444,17 @@ impl PlaybackPlan {
                                         end: if tied {
                                             end
                                         } else {
-                                            interpretation::sounding_end(
+                                            interpretation::before_pause(
                                                 start,
                                                 end,
-                                                articulation,
-                                                slurred,
-                                                sample_rate,
+                                                interpretation::sounding_end(
+                                                    start,
+                                                    end,
+                                                    articulation,
+                                                    slurred,
+                                                    sample_rate,
+                                                ),
+                                                pause,
                                             )
                                         },
                                         written_end: end,
@@ -467,6 +479,7 @@ impl PlaybackPlan {
                             last_element = Some(element);
                         }
                     }
+                    interpretation::ornaments(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::trills(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::glissandos(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::expand_tremolos(&mut sounds, first_voice_sound, sample_rate);

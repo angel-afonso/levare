@@ -7,15 +7,23 @@ pub enum Articulation {
     Tenuto,
     Accent,
     Marcato,
+    Staccatissimo,
 }
 impl Articulation {
-    pub const ALL: [Self; 4] = [Self::Staccato, Self::Tenuto, Self::Accent, Self::Marcato];
+    pub const ALL: [Self; 5] = [
+        Self::Staccato,
+        Self::Tenuto,
+        Self::Accent,
+        Self::Marcato,
+        Self::Staccatissimo,
+    ];
     pub const fn label(self) -> &'static str {
         match self {
             Self::Staccato => "Staccato",
             Self::Tenuto => "Tenuto",
             Self::Accent => "Acento",
             Self::Marcato => "Marcato",
+            Self::Staccatissimo => "Staccatissimo",
         }
     }
     pub const fn symbol(self) -> &'static str {
@@ -24,6 +32,7 @@ impl Articulation {
             Self::Tenuto => "—",
             Self::Accent => ">",
             Self::Marcato => "∧",
+            Self::Staccatissimo => "▾",
         }
     }
     pub const fn glyph(self) -> &'static str {
@@ -32,7 +41,12 @@ impl Articulation {
             Self::Tenuto => "\u{e4a4}",
             Self::Accent => "\u{e4a0}",
             Self::Marcato => "\u{e4ac}",
+            Self::Staccatissimo => "\u{e4a6}",
         }
+    }
+    /// Played detached and short: the banks' short recordings serve both.
+    pub const fn is_short(self) -> bool {
+        matches!(self, Self::Staccato | Self::Staccatissimo)
     }
     pub const fn glyph_below(self) -> &'static str {
         match self {
@@ -40,6 +54,74 @@ impl Articulation {
             Self::Tenuto => "\u{e4a5}",
             Self::Accent => "\u{e4a1}",
             Self::Marcato => "\u{e4ad}",
+            Self::Staccatissimo => "\u{e4a7}",
+        }
+    }
+}
+/// A short ornament over the note. The trill, which lasts, is a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Ornament {
+    /// The note, the one below and the note again.
+    Mordent,
+    /// The note, the one above and the note again.
+    InvertedMordent,
+    /// The note above, the note, the one below and the note.
+    Turn,
+}
+impl Ornament {
+    pub const ALL: [Self; 3] = [Self::Mordent, Self::InvertedMordent, Self::Turn];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Mordent => "Mordente",
+            Self::InvertedMordent => "Mordente superior",
+            Self::Turn => "Grupeto",
+        }
+    }
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Mordent => "\u{e56d}",
+            Self::InvertedMordent => "\u{e56c}",
+            Self::Turn => "\u{e567}",
+        }
+    }
+    /// The neighbours played before the note settles, in diatonic steps
+    /// from it.
+    pub const fn neighbours(self) -> &'static [i16] {
+        match self {
+            Self::Mordent => &[0, -1],
+            Self::InvertedMordent => &[0, 1],
+            Self::Turn => &[1, 0, -1],
+        }
+    }
+}
+/// A break in the sound after the note, written over the staff to its right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Pause {
+    /// A breath: the note is cut a little short.
+    Breath,
+    /// A caesura: the note is cut short, a clear break.
+    Caesura,
+}
+impl Pause {
+    pub const ALL: [Self; 2] = [Self::Breath, Self::Caesura];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Breath => "Respiración",
+            Self::Caesura => "Cesura",
+        }
+    }
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Breath => "\u{e4ce}",
+            Self::Caesura => "\u{e4d1}",
+        }
+    }
+    /// The share of the note's written length that stays silent before the
+    /// next one.
+    pub const fn silence(self) -> (u32, u32) {
+        match self {
+            Self::Breath => (1, 4),
+            Self::Caesura => (1, 2),
         }
     }
 }
@@ -165,6 +247,11 @@ pub struct Notation {
     pub dynamic: Option<Dynamic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tremolo: Option<Tremolo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<Ornament>,
+    /// A breath or caesura after the note or rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause: Option<Pause>,
     /// Hold the note or rest; written over it, independent of articulation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fermata: bool,
@@ -720,6 +807,40 @@ impl Score {
         notation.dynamic = value;
         if value.is_none() {
             notation.offsets.dynamic = None;
+        }
+        Ok(())
+    }
+    pub fn set_ornament(
+        &mut self,
+        id: ElementId,
+        value: Option<Ornament>,
+    ) -> Result<(), ScoreError> {
+        let event = self
+            .event(id)
+            .ok_or(ScoreError("Selecciona una nota o acorde"))?;
+        if event.pitches.is_empty() {
+            return Err(ScoreError("Un silencio no admite ornamentos"));
+        }
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
+        notation.ornament = value;
+        if value.is_none() {
+            notation.offsets.ornament = None;
+        }
+        Ok(())
+    }
+    pub fn set_pause(&mut self, id: ElementId, value: Option<Pause>) -> Result<(), ScoreError> {
+        self.event(id)
+            .ok_or(ScoreError("Selecciona una nota o silencio"))?;
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
+        notation.pause = value;
+        if value.is_none() {
+            notation.offsets.pause = None;
         }
         Ok(())
     }

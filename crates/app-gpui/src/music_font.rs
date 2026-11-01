@@ -384,7 +384,9 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 111);
+        assert_eq!(font.outlines.len(), 118);
+        // Staccatissimo, mordents, turn, breath mark and caesura.
+        assert!(font.covers("\u{e4a6}\u{e4a7}\u{e56c}\u{e56d}\u{e567}\u{e4ce}\u{e4d1}"));
         assert!(font.covers("\u{e069}\u{e044}\u{e047}\u{e048}"));
         // Thirty-second notes, flags and rests, and the grace note symbols.
         assert!(font.covers("\u{e1db}\u{e1dc}\u{e244}\u{e245}\u{e4e8}\u{e560}\u{e562}"));
