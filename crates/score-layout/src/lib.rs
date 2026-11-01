@@ -22,7 +22,7 @@ pub use beaming::{BeamGroup, BeamSegment, BeamStem};
 mod views;
 pub use views::{Page, System, ViewMode};
 mod rhythm;
-pub use rhythm::TupletGroup;
+pub use rhythm::{DOT_STEP, TupletGroup};
 mod expression;
 pub use expression::{Curve, Hairpin, Hit, MarkBox, PianoArpeggioLayout};
 mod grace;
@@ -615,6 +615,14 @@ impl Rhythm {
                         || event.notation.fermata
                     {
                         wide.insert(tick);
+                    }
+                    if event.duration.dots() > 1 {
+                        // The second dot needs its own room after the note.
+                        let width = 40. + rhythm::DOT_STEP;
+                        right
+                            .entry(tick)
+                            .and_modify(|v| *v = v.max(width))
+                            .or_insert(width);
                     }
                     if let Some(mark) = event.notation.dynamic {
                         let (l, _, r, _) = metrics.bounds(mark.glyph(), false);

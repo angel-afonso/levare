@@ -397,3 +397,20 @@ fn projected_divisi_voice_keeps_its_canonical_staff_and_voice_when_moved() {
     assert_eq!(id.staff, StaffId::Upper);
     assert_eq!(moved.voice_of(id), Some(score_core::Voice::Two));
 }
+
+#[test]
+fn the_drag_grid_follows_short_values_and_tuplets() {
+    use score_core::{Duration, NoteValue, Tuplet};
+    let quintuplet = |value: Duration, unit| value.with_tuplet(Tuplet::usual(5, unit));
+    for (duration, grid) in [
+        (Duration::Quarter, Q / 4),
+        (Duration::ThirtySecond, Q / 8),
+        (Duration::SixtyFourth, Q / 16),
+        (Duration::Eighth.with_triplet(true), Q / 6),
+        (quintuplet(Duration::Sixteenth, NoteValue::Sixteenth), Q / 5),
+        (quintuplet(Duration::Quarter, NoteValue::Quarter), Q / 5),
+        (quintuplet(Duration::Quarter, NoteValue::Eighth), Q / 5),
+    ] {
+        assert_eq!(drag_grid(duration), grid, "{}", duration.label());
+    }
+}

@@ -1,7 +1,7 @@
 //! Automatic, staff-local beaming. Grouping is derived from written rhythm and
 //! meter; it never changes musical events or their playback durations.
 use super::*;
-use score_core::NoteValue;
+use score_core::{Duration, NoteValue};
 
 const THICKNESS: f32 = 5.;
 const SEPARATION: f32 = 8.;
@@ -40,7 +40,8 @@ struct Note {
     high: f32,
     low: f32,
     levels: u8,
-    triplet: bool,
+    /// How long an eighth lasts here, in or out of a tuplet.
+    eighth: u32,
 }
 struct Group {
     notes: Vec<Note>,
@@ -106,7 +107,7 @@ impl Plan {
         let tuplets: HashMap<_, _> = rhythm::groups(measure, part, staff, index)
             .into_iter()
             .enumerate()
-            .flat_map(|(i, group)| group.into_iter().map(move |id| (id, i)))
+            .flat_map(|(i, group)| group.elements.into_iter().map(move |id| (id, i)))
             .collect();
         let boundaries = beats(time);
         let mut groups = Vec::new();
@@ -145,7 +146,7 @@ impl Plan {
                 let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
                 let key = if level == 0 || value.pitches.is_empty() {
                     None
-                } else if value.duration.is_triplet() {
+                } else if value.duration.tuplet().is_some() {
                     Some(Boundary::Tuplet(tuplets[&id]))
                 } else if end <= boundaries[beat + 1] {
                     Some(Boundary::Beat(beat))
@@ -170,7 +171,9 @@ impl Plan {
                             .unwrap()),
                         low: y(value.pitches.first().unwrap()),
                         levels: level,
-                        triplet: value.duration.is_triplet(),
+                        eighth: Duration::Eighth
+                            .with_tuplet(value.duration.tuplet())
+                            .ticks(),
                     });
                 }
                 previous = key;
@@ -253,12 +256,7 @@ impl Plan {
                             level,
                         ));
                     } else {
-                        let unit = if notes[i].triplet {
-                            score_core::TICKS_PER_QUARTER / 3
-                        } else {
-                            score_core::TICKS_PER_QUARTER / 2
-                        };
-                        let pair_ticks = unit >> (level - 2);
+                        let pair_ticks = notes[i].eighth >> (level - 2);
                         let prefer_right = notes[i].tick.is_multiple_of(pair_ticks);
                         let right = (prefer_right && i + 1 < notes.len()) || i == 0;
                         let x = stem_x(&notes[i]);

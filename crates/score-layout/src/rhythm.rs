@@ -1,4 +1,4 @@
-//! Local rhythmic marks. Incomplete triplets remain visible while composing.
+//! Local rhythmic marks. Incomplete tuplets remain visible while composing.
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -9,6 +9,9 @@ pub struct TupletGroup {
     pub right: f32,
     pub bracketed: bool,
 }
+
+/// From one augmentation dot to the next.
+pub const DOT_STEP: f32 = 9.;
 
 pub(super) fn dots(
     result: &mut MeasureLayout,
@@ -65,52 +68,48 @@ pub(super) fn dots(
             slot += 10.;
         }
         occupied.push(slot as i32);
-        result.glyphs.push(Glyph {
-            rotated: false,
-            text: "\u{e1e7}".into(),
-            position: Point { x, y: slot },
-            element: Some(id),
-        });
+        for dot in 0..event.duration.dots() {
+            result.glyphs.push(Glyph {
+                rotated: false,
+                text: "\u{e1e7}".into(),
+                position: Point {
+                    x: x + f32::from(dot) * DOT_STEP,
+                    y: slot,
+                },
+                element: Some(id),
+            });
+        }
         result.top = result.top.min(slot - 6.);
         result.bottom = result.bottom.max(slot + 6.);
     }
 }
 
-pub(super) fn groups(
-    measure: &Measure,
-    part: PartId,
-    staff: StaffId,
-    index: usize,
-) -> Vec<Vec<ElementId>> {
-    let mut groups = Vec::new();
-    for voice in Voice::ALL {
-        let mut group = Vec::new();
-        let mut previous = None;
-        for (event, value) in measure.voice_iter(voice) {
-            if (!value.duration.is_triplet()
-                || previous.is_some_and(|d| d != value.duration)
-                || group.len() == 3)
-                && !group.is_empty()
-            {
-                groups.push(std::mem::take(&mut group));
-            }
-            if value.duration.is_triplet() {
-                group.push(ElementId {
+/// One voice's tuplet groups as `score_core` derives them.
+pub(super) struct Group {
+    pub elements: Vec<ElementId>,
+    pub actual: u8,
+    pub complete: bool,
+}
+
+pub(super) fn groups(measure: &Measure, part: PartId, staff: StaffId, index: usize) -> Vec<Group> {
+    Voice::ALL
+        .into_iter()
+        .flat_map(|voice| measure.tuplet_groups(voice))
+        .map(|group| Group {
+            elements: group
+                .events
+                .iter()
+                .map(|&event| ElementId {
                     part,
                     staff,
                     measure: index,
                     event,
-                });
-                previous = Some(value.duration);
-            } else {
-                previous = None;
-            }
-        }
-        if !group.is_empty() {
-            groups.push(group);
-        }
-    }
-    groups
+                })
+                .collect(),
+            actual: group.tuplet.actual(),
+            complete: group.is_complete(),
+        })
+        .collect()
 }
 pub(super) fn tuplets(
     result: &mut MeasureLayout,
@@ -127,13 +126,19 @@ pub(super) fn tuplets(
     let note_lines = result.lines.clone();
     for group in groups {
         let visible: std::collections::HashSet<_> = result.events.iter().map(|e| e.id).collect();
-        for run in group
+        let runs: Vec<_> = group
+            .elements
             .split(|id| !visible.contains(id))
             .filter(|run| !run.is_empty())
-        {
+            .collect();
+        // A group shown whole may lose its bracket to a beam.
+        let whole = group.complete && runs.len() == 1 && runs[0].len() == group.elements.len();
+        for run in runs {
             bracket(
                 result,
                 run,
+                group.actual,
+                whole,
                 &note_lines,
                 metrics,
                 measure.has_two_voices() && measure.voice_of(run[0].event) == Some(Voice::Two),
@@ -141,9 +146,12 @@ pub(super) fn tuplets(
         }
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn bracket(
     result: &mut MeasureLayout,
     ids: &[ElementId],
+    actual: u8,
+    whole: bool,
     note_lines: &[Line],
     metrics: &Metrics,
     below: bool,
@@ -197,7 +205,8 @@ fn bracket(
         );
     let y = if below { bottom + 20. } else { top - 14. };
     let center = (left + right) / 2.;
-    let bracketed = !(ids.len() == 3 && result.beams.iter().any(|g| g.elements == ids));
+    // A complete group under one beam of its own shows only its number.
+    let bracketed = !(whole && result.beams.iter().any(|g| g.elements == ids));
     if bracketed {
         for (x1, y1, x2, y2) in [
             (left, y + if below { -6. } else { 6. }, left, y),
@@ -215,7 +224,8 @@ fn bracket(
     }
     result.glyphs.push(Glyph {
         rotated: false,
-        text: "\u{e883}".into(),
+        // SMuFL tuplet digits start at U+E880.
+        text: char::from_u32(0xe880 + u32::from(actual)).unwrap().into(),
         position: Point {
             x: center - 4.,
             y: y + 5.,
@@ -324,6 +334,121 @@ mod tests {
         );
         for g in &m.content.tuplets {
             assert!(g.top >= m.content.ink_top - 20.);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tuplet_tests {
+    use super::*;
+    use score_core::{Duration, Event, NoteValue, Pitch, Pitches, Step, Tuplet};
+
+    fn note(duration: Duration) -> Event {
+        Event {
+            pitches: Pitches::single(Pitch::new(Step::B, 4)),
+            duration,
+            notation: Default::default(),
+        }
+    }
+
+    fn bar(durations: &[Duration]) -> (Score, Vec<ElementId>) {
+        let mut score = Score::default();
+        let ids = durations
+            .iter()
+            .enumerate()
+            .map(|(index, &duration)| score.insert(0, index, note(duration)).unwrap())
+            .collect();
+        (score, ids)
+    }
+
+    fn digit(actual: u32) -> String {
+        char::from_u32(0xe880 + actual).unwrap().into()
+    }
+
+    #[test]
+    fn a_beamed_quintuplet_shows_its_5_without_a_bracket() {
+        let sixteenth = Duration::Sixteenth.with_tuplet(Tuplet::usual(5, NoteValue::Sixteenth));
+        let (score, ids) = bar(&[sixteenth; 5]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        assert_eq!(m.tuplets.len(), 1);
+        assert_eq!(m.tuplets[0].elements, ids);
+        assert!(!m.tuplets[0].bracketed);
+        assert!(m.glyphs.iter().any(|g| g.text == digit(5)));
+        assert!(m.beams.iter().any(|b| b.elements == ids));
+    }
+
+    #[test]
+    fn unbeamed_and_incomplete_tuplets_keep_their_bracket() {
+        let quarter = Duration::Quarter.with_tuplet(Tuplet::usual(5, NoteValue::Quarter));
+        let (score, ids) = bar(&[quarter; 5]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        assert_eq!(m.tuplets.len(), 1);
+        assert!(m.tuplets[0].bracketed);
+        let eighth = Duration::Eighth.with_tuplet(Tuplet::usual(6, NoteValue::Eighth));
+        let (score, ids) = bar(&[eighth; 4]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        assert!(m.tuplets[0].bracketed);
+        assert!(m.glyphs.iter().any(|g| g.text == digit(6)));
+    }
+
+    #[test]
+    fn mixed_values_share_one_bracket() {
+        let in_eighths = |d: Duration| d.with_tuplet(Some(Tuplet::triplet(NoteValue::Eighth)));
+        let (score, ids) = bar(&[in_eighths(Duration::Quarter), in_eighths(Duration::Eighth)]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        assert_eq!(m.tuplets.len(), 1);
+        assert_eq!(m.tuplets[0].elements, ids);
+    }
+
+    #[test]
+    fn two_dots_sit_side_by_side_in_one_space() {
+        let (score, ids) = bar(&[Duration::Quarter.with_dots(2), Duration::Sixteenth]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        let mut dots: Vec<_> = m
+            .glyphs
+            .iter()
+            .filter(|g| g.element == Some(ids[0]) && g.text == "\u{e1e7}")
+            .map(|g| g.position)
+            .collect();
+        dots.sort_by(|a, b| a.x.total_cmp(&b.x));
+        assert_eq!(dots.len(), 2);
+        assert_eq!(dots[0].y, dots[1].y);
+        assert_eq!(dots[1].x - dots[0].x, DOT_STEP);
+        // The next note starts clear of the second dot.
+        let next = m.events.iter().find(|e| e.id == ids[1]).unwrap();
+        assert!(next.center.x - metrics_head() / 2. > dots[1].x + 4.);
+    }
+
+    fn metrics_head() -> f32 {
+        Metrics::bravura().head
+    }
+
+    #[test]
+    fn sixty_fourths_get_four_beams_and_a_lone_one_its_flag() {
+        let (score, ids) = bar(&[Duration::SixtyFourth; 4]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        let beam = m.beams.iter().find(|b| b.elements == ids).unwrap();
+        let levels: std::collections::HashSet<_> = beam.segments.iter().map(|s| s.level).collect();
+        assert_eq!(levels.len(), 4);
+        // A lone note is one Bravura glyph with its stem and flags.
+        let (score, ids) = bar(&[Duration::SixtyFourth, Duration::Quarter]);
+        let layout = LayoutEngine::default().layout_compact(&score, 960.);
+        let m = &layout.measure(ids[0].part, 0).unwrap().content;
+        let lone = ["\u{e1dd}", "\u{e1de}"];
+        assert!(
+            m.glyphs
+                .iter()
+                .any(|g| g.element == Some(ids[0]) && lone.contains(&g.text.as_str()))
+        );
+        let metrics = Metrics::bravura();
+        for glyph in ['\u{e1dd}', '\u{e1de}', '\u{e246}', '\u{e247}', '\u{e4e9}'] {
+            assert!(metrics.glyph_bounds.contains_key(&glyph), "{glyph:?}");
         }
     }
 }

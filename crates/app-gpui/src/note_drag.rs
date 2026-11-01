@@ -162,7 +162,8 @@ impl NoteDrag {
     }
 
     /// Keep the grabbed rhythmic offset and pitch row while snapping time to
-    /// sixteenths (triplet sixteenths for tuplets) or an existing voice onset.
+    /// sixteenths (counted from its group's start, in a tuplet) or an existing
+    /// voice onset.
     fn time_at(&self, position: Point<Pixels>, origin: Point<Pixels>) -> Option<(usize, u32)> {
         let voice = self.base.voice_of(self.id)?;
         let source = self.geometry.event_measure(self.id)?;
@@ -195,16 +196,26 @@ impl NoteDrag {
             })?;
         let local_x = x - measure.origin.x - offset;
         let raw = measure.content.tick_at_x(local_x);
-        // The grid is a sixteenth, or a thirty-second for the notes that short.
         let duration = self.base.event(self.id)?.duration;
-        let grid = if duration.value() == score_core::NoteValue::ThirtySecond {
-            score_core::Duration::ThirtySecond
+        let quantum = drag_grid(duration);
+        // A tuplet's grid starts where its group does.
+        let start = if measure.index == self.id.measure && duration.tuplet().is_some() {
+            self.base
+                .part(self.id.part)?
+                .staff(self.id.staff)?
+                .measures()[self.id.measure]
+                .tuplet_groups(voice)
+                .into_iter()
+                .find(|g| g.events.contains(&self.id.event))
+                .map_or(0, |g| g.start)
         } else {
-            score_core::Duration::Sixteenth
+            0
         };
-        let quantum = grid.with_triplet(duration.is_triplet()).ticks();
         let capacity = self.base.time_at(measure.index).capacity();
-        let mut tick = ((raw / f64::from(quantum)).round() as u32 * quantum).min(capacity);
+        let steps = ((raw - f64::from(start)) / f64::from(quantum))
+            .round()
+            .max(0.);
+        let mut tick = (start + steps as u32 * quantum).min(capacity);
         if let Some(event) = measure
             .content
             .events
@@ -225,6 +236,23 @@ impl NoteDrag {
             .any(|r| r.contains(voice, tick))
             .then_some((measure.index, tick))
     }
+}
+
+/// The steps a dragged note snaps to: a sixteenth, or its own value when
+/// shorter; in a tuplet, the shorter of that and the group's unit, in its
+/// ratio.
+pub(crate) fn drag_grid(duration: score_core::Duration) -> u32 {
+    let shorter = |a: score_core::NoteValue, b: score_core::NoteValue| {
+        if a.ticks() < b.ticks() { a } else { b }
+    };
+    let mut grid = shorter(duration.value(), score_core::NoteValue::Sixteenth);
+    if let Some(tuplet) = duration.tuplet() {
+        grid = shorter(grid, tuplet.unit());
+    }
+    score_core::Duration::Quarter
+        .with_value(grid)
+        .with_tuplet(duration.tuplet())
+        .ticks()
 }
 
 #[cfg(test)]

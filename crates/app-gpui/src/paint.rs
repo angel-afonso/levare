@@ -959,15 +959,16 @@ fn paint_ghost(
         paint_ledger(line_y);
         line_y += 10.;
     }
-    if ghost.duration.is_dotted() {
-        let dot_y = if (y_local / 10.).fract().abs() < 0.001 {
-            ghost.y - 5.
-        } else {
-            ghost.y
-        };
+    let dot_y = if (y_local / 10.).fract().abs() < 0.001 {
+        ghost.y - 5.
+    } else {
+        ghost.y
+    };
+    for dot in 0..ghost.duration.dots() {
+        let x = ghost.x + 16. + f32::from(dot) * score_layout::DOT_STEP;
         music_font.paint_oriented(
             "\u{e1e7}",
-            origin + point(px((ghost.x + 16.) * scale), px(dot_y * scale)),
+            origin + point(px(x * scale), px(dot_y * scale)),
             color.into(),
             score_layout::MUSIC_SIZE * scale,
             false,
