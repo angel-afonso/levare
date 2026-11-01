@@ -122,7 +122,9 @@ five-instrument ensemble.
 - **Ribbon:** eight tabs, one per task (`⌥⌘1`–`8`, or `Ctrl+Mayús+1`–`8` on Windows and
   Linux, open them).
   **Escribir** gathers what you choose for each note: note input and octave, duration,
-  dot, triplet and rest, accidental, tie and slur, voice, and chords by interval.
+  dot and triplet, the rarer values in **Más figuras** (sixty-fourth, double dot, the
+  other tuplets), accidental, tie and slur, voice, and chords by interval. The rest is
+  on the `0` key, in **Edición** and in the command search.
   **Articulaciones**: articulations and fermata, grace notes, arpeggios, tremolos and
   string technique. **Dinámicas**: *ppp* to *fff*, hairpins, lines (8va, pedal, trill,
   glissando) and divisi. **Texto**: title and credits, tempo, staff text, lyrics and
@@ -293,8 +295,10 @@ without repeating them permanently next to the buttons.
 | `⇧A`–`⇧G` | `Mayús+A`–`G` | Add that note above the selected chord |
 | `⇧2`–`⇧9` | `Mayús+2`–`9` | Add a second … ninth above (following the key signature) |
 | `1` `2` `3` `4` `5` `6` | the same | Thirty-second, sixteenth, eighth, quarter, half, whole |
+| `.` | `.` | Dot |
+| `⌘2`–`⌘9` | `Ctrl+2`–`Ctrl+9` | Duplet, triplet (`⌘3`), quadruplet … nonuplet |
 | `7` / `8` / `9` | the same | Natural / sharp / flat; repeating it removes it |
-| `0` | `0` | Rest with the current duration |
+| `0` | `0` | Rest with the current duration; outside note input, turn the selection into rests |
 | `↩` | `Intro` | Tie to the next note or chord |
 | `S` | `S` | Start and then end of a slur |
 | `R` | `R` | Repeat the selected note, chord or rest |
@@ -302,7 +306,7 @@ without repeating them permanently next to the buttons.
 | `⌘↑` / `⌘↓` | `Ctrl+↑` / `Ctrl+↓` | Up / down an octave |
 | `⌥↑` / `⌥↓` | `Alt+↑` / `Alt+↓` | Upper / lower note of the chord and, at the end, the neighboring staff |
 | `←` / `→`, `⇥` / `⇧⇥` | `←` / `→`, `Tab` / `Mayús+Tab` | Previous / next element |
-| `⌫` / `⌦` | `Retroceso` / `Supr` | Delete the selected element |
+| `⌫` / `⌦` | `Retroceso` / `Supr` | Turn the selected notes into rests, keeping their time |
 | `Espacio` / `P` | `Espacio` / `P` | Play, pause or resume / play from the selection |
 | `Esc` | `Esc` | Stop; if already stopped, clear the selection |
 | `⌘B` | `Ctrl+B` | Add a bar at the end |
@@ -320,9 +324,24 @@ Sibelius keys with no function yet (`L` lines, `Z` symbols, `⌥3`/`⌥4` extra 
 have no default shortcut, as in Sibelius's laptop profile; assign them in Preferences
 if you use them often.
 
-A full bar moves on to the next one when you enter another note value. If there is no
-next bar, it is created. A value longer than the remaining duration is refused without
-changing the document. Changing the duration affects the next entry. You can open
+Writing follows Sibelius. Each note is written over what follows it, and a written
+bar stays full: the rest of it shows as rests, which the next notes overwrite and which
+you can select and write over. A value longer than what is left in the bar is split and
+tied into the next one; a full bar moves on to the next, which is created if needed.
+Bars that an older score left short are completed with rests when it opens.
+
+The rests Levare writes keep to the beats of the bar: a quarter note at the start of a
+4/4 bar leaves a quarter rest and a half rest, and a dotted quarter an eighth rest and a
+half rest. Only a half rest on either half of 4/4 (a dotted half in 12/8) joins two
+beats; within a beat each rest starts on its own value, and in 6/8 a quarter rest may
+finish a beat after an eighth note. Rests next to each other are not merged.
+
+With nothing selected, a new value or dot applies to the next notes. With one note,
+chord or rest selected, it rewrites it where it is: a longer value writes over what
+follows, tied across the barline if needed, and a shorter one leaves rests; later notes
+never move, and the note keeps its marks and ties. With a passage selected, each of its
+values changes and the music after it moves to make room, or the change is refused if
+the bar would overflow. You can open
 [`examples/primera-melodia.partitura`](examples/primera-melodia.partitura) as an
 example.
 
@@ -347,7 +366,7 @@ from Revisión. The conventions and sources are in
 checks the events of the selected passage and the form marks of its bars. It looks for
 notes out of range, repeat starts without an end and jumps that lack a Segno, Fine or
 To Coda; it also checks that a To Coda has a later target and a jump that triggers it.
-Empty bars and implicit rests are valid.
+Empty bars are valid.
 
 **Revisión › Avisos › Mostrar** opens the Revisión panel. Each row explains the warning
 and its instrument and bar; clicking it selects the exact note of the chord or shows
@@ -417,8 +436,9 @@ a bar.
   heads) to another beat or bar, within its voice and staff. A blue copy shows the
   destination; releasing applies a single edit. **Esc** cancels and **⌘Z** undoes. The
   duration is kept and rests are left at the origin, without shifting the other notes.
-  The destination snaps to sixteenths (thirty-seconds if the value is a thirty-second),
-  their triplets for triplet values, or existing entries. If there is a note/chord of
+  The destination snaps to sixteenths (the value itself if it is shorter), or existing
+  entries; a note of a tuplet snaps to the positions of its group and moves only within
+  it. If there is a note/chord of
   the same duration, the values swap. Incompatible overlaps or a value that does not
   fit are refused with an explanation, without changing the work. When crossing a key
   signature, the accidentals needed to keep the sounding pitches are added. Ties and
@@ -437,64 +457,75 @@ a bar.
   crosses a barline, it is split and tied; aligned bars are created for all
   instruments when needed.
 
-Pasting does not replace existing music: if the passage does not fit in the
-destination bars, the reason is shown and the document stays intact. Choose an empty
-bar or a point with enough room. Each paste or cut is undone in a single step.
+Pasting takes the place of the plain rests that end the destination bars and fills the
+bar again after the passage, but it does not replace notes, or rests with marks, ties
+or comments: if the passage does not fit, the reason is shown and the document stays
+intact. Choose an empty bar or a point with enough room. Each paste or cut is undone in
+a single step.
 
 The musical clipboard is the system's and works between Levare windows. Plain text or
 images from other applications are not read as notes. Passage selection covers one
 staff at a time; you can copy each piano hand separately. Ties and slurs with ends
 outside the passage are not copied.
 
-## Dots and triplets
+## Dots and tuplets
 
 In **Escribir › Duración** choose the value and in **Escribir › Modificar** turn on
-**Puntillo** or **Tresillo**. Default shortcuts: **`.`** and **⌘3**, configurable in
-Preferences. They are also in the **Edición** menu. The modes stay on for the following
-notes and rests until you press them again; changing the base value keeps the modes.
+**Puntillo** or **Tresillo**. The rarer values share the **Más figuras** dropdown next
+to it, as Sibelius keeps them on its second keypad layout: **Semifusa**, **Doble
+puntillo**, the tuplets of 2 and 4 to 9 notes and **Otro grupillo…**. Default shortcuts:
+**`.`** for the dot and **⌘2** to **⌘9** for the tuplets, as in Sibelius (**⌘3** is the
+triplet); the sixty-fourth and the double dot have no default key. All of them are in
+the command search and can be given keys in Preferences; Puntillo, Doble puntillo,
+Tresillo and Otro grupillo are also in the **Edición** menu. The choices stay on for the
+following notes and rests until you press them again; changing the base value keeps
+them.
 
-With a note or chord selected, **Puntillo** changes its duration; with a passage
-selected, both modes apply to all its values in a single operation. With a single note,
-chord or rest selected, **Tresillo** starts a triplet there, as in Sibelius: the note
-keeps its value inside the triplet and the rest of the group becomes rests, over
-whatever followed. Pressing it again on any note of a triplet turns the whole group into
-rests. The dot adds half (for example, dotted quarter = quarter + eighth). The triplet
-uses a **3:2** ratio: three triplet eighths last exactly one quarter. You can combine
-dot and triplet. Playback, ties, hairpins and both piano hands use these exact
-durations.
+The dot adds half the value, the double dot three quarters (a double-dotted quarter is a
+quarter, an eighth and a sixteenth). Each tuplet uses its usual ratio: 2:3, 3:2, 4:3,
+5:4, 6:4, 7:4, 8:6 and 9:8, so five sixteenths in a quintuplet last one quarter.
+**Otro grupillo…** opens in the **Selección** tab: choose one of the usual ratios, or
+how many notes in the time of how many (from 2 to 9 notes, in more than half and less
+than double their time), and press **Aplicar**. Playback, ties, hairpins and both piano
+hands use these exact durations.
 
-Writing a triplet value where no triplet is open fills the rest of its group with
-rests, which the next notes overwrite. Inside a triplet only values of that triplet fit,
-up to the end of the group; another value written on its first note replaces the whole
-group, and written on a later note it is refused. A triplet cannot cross the barline,
-nor can other music cut one in half: write from its first note to replace it. A note of
-a triplet moves only within its group.
+With one note, chord or rest selected, a tuplet starts there, as in Sibelius: the note
+keeps its value inside the tuplet and the rest of the group becomes rests, over whatever
+followed. Pressing the same tuplet again on any note of the group turns the whole group
+into rests. **Puntillo** and **Doble puntillo** rewrite the selected note in place, like
+any change of value (see [Usage](#usage)). With a passage selected, each one applies to
+all its values in a single operation.
 
-The engraving places the dots outside the lines and groups up to three consecutive,
-equal triplet values with a **3**, above the beam when the group is complete or with a
-bracket otherwise. Incomplete groups stay visible while you write; a change of value or
-a new bar starts another group. This covers triplets of equal values, without nested
-groups or other tuplet numbers.
+Writing a tuplet value where no tuplet is open fills the rest of its group with rests,
+which the next notes overwrite. A group may mix values: a quarter and an eighth make one
+triplet of eighths. Inside a group only values of that tuplet fit, up to its end;
+another value written on its first note replaces the whole group, and written on a later
+note it is refused. A tuplet cannot cross the barline, nor can other music cut one in
+half: write from its first note to replace it. A note of a tuplet moves only within its
+group. Tuplets inside other tuplets are not supported.
 
-Changes are saved, support undo/redo and are kept when copying and pasting. If an edit
-makes the duration longer than what fits in the bar, it is refused entirely. Pasting
-keeps the original values that fit; those that cross a barline are split with ties
-when the destination allows writing the split. If it cannot be written with the
-available values, choose an empty bar or a destination aligned with the passage.
-Example: [`examples/ritmos.partitura`](examples/ritmos.partitura).
+The engraving places the dots outside the lines and writes each group's number: above
+its beam alone when the group is complete and has a beam of its own, with a bracket
+otherwise. Incomplete groups stay visible while you write.
+
+Changes are saved, support undo/redo and are kept when copying and pasting; a tuplet
+that would cross the barline at the destination is not pasted. MusicXML keeps every
+ratio both ways, with its unit when it is not the note's own value; it refuses nested
+tuplets and names the bar. Example:
+[`examples/ritmos.partitura`](examples/ritmos.partitura).
 
 ## Automatic beams
 
-Eighths, sixteenths and thirty-seconds are beamed automatically by beat, also in
-chords and in each piano hand separately. Sixteenths use a second beam and
-thirty-seconds a third, with the stem half a space longer; mixed rhythms add partial
-beams. Rests, barlines and the bounds of each triplet separate the groups. An isolated
-note keeps its own flag.
+Eighths, sixteenths, thirty-seconds and sixty-fourths are beamed automatically by beat,
+also in chords and in each piano hand separately. Sixteenths use a second beam,
+thirty-seconds a third and sixty-fourths a fourth; from the third flag on, each one
+lengthens the stem by half a space. Mixed rhythms add partial beams. Rests, barlines and the bounds of each tuplet separate
+the groups. An isolated note keeps its own flag.
 
 In 4/4 they group by quarters; in 2/2, by halves; in 6/8, 9/8 and 12/8, by groups of
-three eighths. The defaults for 5/8 and 7/8 are **3+2** and **2+2+3**. Complete
-triplets of eighths or sixteenths show only the **3** by their beam; incomplete groups
-or groups with rests keep the bracket.
+three eighths. The defaults for 5/8 and 7/8 are **3+2** and **2+2+3**. A complete
+tuplet under a beam of its own shows only its number by the beam; incomplete groups or
+groups with rests keep the bracket.
 
 They are recalculated when writing, editing, pasting or undoing, and when opening older
 scores. They change neither durations nor playback. Example:

@@ -26,3 +26,9 @@ written key signature.
 **Unpitched percussion** (*percusión sin altura*):
 An instrument whose stroke does not stand for a note of the scale, even when it is written
 on a staff.
+
+**Tuplet** (*grupillo*):
+Notes of one value played in the time of a different number of them: three eighths in the
+time of two (a triplet, *tresillo*), five sixteenths in the time of four (a quintuplet,
+*quintillo*).
+_Avoid_: triplet for any tuplet other than 3:2.
