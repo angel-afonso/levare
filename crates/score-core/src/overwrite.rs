@@ -160,7 +160,6 @@ impl Score {
             let mut zone_end =
                 items.last().unwrap().tick + items.last().unwrap().event.duration.ticks();
             let source = &next.part(part).unwrap().staff(staff).unwrap().measures[bar];
-            let old_length = source.voice_ticks(voice);
             let groups = source.tuplet_groups(voice);
             let written_tuplet = items[0].event.duration.tuplet();
             // The group the written value continues, and where the gaps the
@@ -258,7 +257,9 @@ impl Score {
                 &mut filled,
                 time,
                 cursor,
-                old_length.max(zone_end).saturating_sub(cursor),
+                // Written bars stay full, as in Sibelius: the rest of the
+                // bar is rests that the next notes overwrite.
+                time.capacity().saturating_sub(cursor),
                 &spans,
             )?;
             let target = &mut next.part_mut(part)?.staff_mut(staff)?.measures[bar];
@@ -360,6 +361,135 @@ impl Score {
         *self = next;
         debug_assert_eq!(written[0].measure, first.measure);
         Ok(written)
+    }
+}
+
+impl Score {
+    /// Rests after the last event of every voice that has music, up to its
+    /// barline, so no bar ends early. An empty voice stays empty: one bar
+    /// rest. Whether anything was added.
+    pub fn fill_rests(&mut self) -> Result<bool, ScoreError> {
+        self.fill_rests_where(|_, _, _, _| true)
+    }
+
+    /// `fill_rests` for one voice of one staff, in `bars`.
+    pub fn fill_rests_in(
+        &mut self,
+        part: PartId,
+        staff: StaffId,
+        voice: Voice,
+        bars: std::ops::RangeInclusive<usize>,
+    ) -> Result<bool, ScoreError> {
+        self.fill_rests_where(|p, s, bar, v| {
+            p == part && s == staff && v == voice && bars.contains(&bar)
+        })
+    }
+
+    /// Removes the plain rests that end a voice in a bar from `from` on, so
+    /// music can be placed there as in empty space. Rests with marks, links
+    /// or comments, or a note among them, leave the bar as it is.
+    pub fn clear_trailing_rests(
+        &mut self,
+        part: PartId,
+        staff: StaffId,
+        voice: Voice,
+        bar: usize,
+        from: u32,
+    ) -> Result<(), ScoreError> {
+        let measure = &self
+            .part(part)
+            .ok_or(ScoreError("El instrumento no existe"))?
+            .staff(staff)
+            .ok_or(ScoreError("El pentagrama no existe"))?
+            .measures()[bar];
+        let tail: Vec<_> = measure
+            .timed_iter()
+            .filter(|(v, onset, _, _)| *v == voice && *onset >= from)
+            .map(|(_, _, key, event)| (key, *event))
+            .collect();
+        let anchored = |key| {
+            let id = ElementId {
+                part,
+                staff,
+                measure: bar,
+                event: key,
+            };
+            self.connections()
+                .iter()
+                .any(|c| c.start == id || c.end == id)
+                || self.comments().iter().any(|c| c.anchors.contains(&id))
+        };
+        let plain = tail.iter().all(|(key, event)| {
+            event.pitches.is_empty() && event.notation == Notation::default() && !anchored(*key)
+        });
+        if !plain {
+            return Ok(());
+        }
+        for (key, _) in tail.into_iter().rev() {
+            self.remove(ElementId {
+                part,
+                staff,
+                measure: bar,
+                event: key,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn fill_rests_where(
+        &mut self,
+        wanted: impl Fn(PartId, StaffId, usize, Voice) -> bool,
+    ) -> Result<bool, ScoreError> {
+        let mut gaps = Vec::new();
+        for part in self.parts() {
+            for staff in part.staves() {
+                for (bar, measure) in staff.measures().iter().enumerate() {
+                    for voice in Voice::ALL {
+                        if !wanted(part.id(), staff.id(), bar, voice) {
+                            continue;
+                        }
+                        let used = measure.voice_ticks(voice);
+                        let capacity = self.time_at(bar).capacity();
+                        if measure.voice_len(voice) == 0 || used >= capacity {
+                            continue;
+                        }
+                        // An open tuplet group is completed with its rests.
+                        let spans: Vec<_> = measure
+                            .tuplet_groups(voice)
+                            .last()
+                            .filter(|group| !group.is_complete() && group.span_end() <= capacity)
+                            .map(|group| TupletSpan {
+                                start: group.start,
+                                end: group.span_end(),
+                                tuplet: group.tuplet,
+                            })
+                            .into_iter()
+                            .collect();
+                        let rests = rhythm::rests_for_gap(
+                            self.time_at(bar),
+                            used,
+                            capacity - used,
+                            &spans,
+                        )?;
+                        gaps.push((part.id(), staff.id(), bar, voice, rests));
+                    }
+                }
+            }
+        }
+        let filled = !gaps.is_empty();
+        for (part, staff, bar, voice, rests) in gaps {
+            for (_, duration) in rests {
+                let index =
+                    self.part(part).unwrap().staff(staff).unwrap().measures()[bar].voice_len(voice);
+                let rest = Event {
+                    pitches: Pitches::default(),
+                    duration,
+                    notation: Notation::default(),
+                };
+                self.insert_in_voice(part, staff, bar, voice, index, rest)?;
+            }
+        }
+        Ok(filled)
     }
 }
 

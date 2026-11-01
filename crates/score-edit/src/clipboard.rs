@@ -259,6 +259,22 @@ impl Editor {
         if next.score.measure_at_tick(base + span - 1).0 >= score_core::MAX_MEASURES {
             return Err(ScoreError("El pegado supera el límite de compases"));
         }
+        // The rests that keep the destination bars full are empty space for
+        // the passage; they are written again after it.
+        let (first_bar, last_bar) = (
+            next.cursor.measure,
+            next.score.measure_at_tick(base + span - 1).0,
+        );
+        for bar in first_bar..=last_bar.min(next.score.measures().len() - 1) {
+            let from = if bar == first_bar { prefix as u32 } else { 0 };
+            next.score.clear_trailing_rests(
+                next.cursor.part,
+                next.cursor.staff,
+                next.cursor.voice,
+                bar,
+                from,
+            )?;
+        }
         let target_dynamic = dynamic_before(&next.score, next.cursor);
         let part = next.score.part(next.cursor.part).unwrap();
         let mut techniques = std::collections::BTreeMap::new();
@@ -452,6 +468,12 @@ impl Editor {
                 kind: link.kind,
             })?;
         }
+        next.score.fill_rests_in(
+            next.cursor.part,
+            next.cursor.staff,
+            next.cursor.voice,
+            first_bar..=last_bar,
+        )?;
         next.score.validate()?;
         next.range_anchor = all_ids.first().copied();
         next.selection = all_ids.last().copied();

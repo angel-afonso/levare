@@ -205,10 +205,13 @@ fn write_at_tick_uses_the_cursor_part_staff_and_voice() {
         .voice_iter(score_core::Voice::One)
         .map(|(_, e)| *e)
         .collect();
-    assert_eq!(events.len(), 2);
+    // A half rest before it and a quarter rest to end the bar.
+    assert_eq!(events.len(), 3);
     assert!(events[0].pitches.is_empty());
     assert_eq!(events[0].duration, Duration::Half);
     assert_eq!(events[1].pitches, event(Step::C, Duration::Quarter).pitches);
+    assert!(events[2].pitches.is_empty());
+    assert_eq!(events[2].duration, Duration::Quarter);
     assert!(editor.score().event(lower).is_some());
     assert_eq!(editor.selection().unwrap().staff, StaffId::Lower);
 }

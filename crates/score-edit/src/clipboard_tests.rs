@@ -387,7 +387,10 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
             Duration::Quarter.with_dotted(true),
             Duration::Eighth.with_triplet(true),
             Duration::Eighth.with_triplet(true),
-            Duration::Eighth.with_triplet(true)
+            Duration::Eighth.with_triplet(true),
+            // The rest of the bar, by beat.
+            Duration::Eighth,
+            Duration::Quarter
         ]
     );
     // Ordinary old payload offsets use 64 ticks/whole; migration is explicit.
@@ -407,7 +410,19 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     assert_eq!(six.upgraded().unwrap().events[1].offset, u64::from(Q));
     let mut dst = Editor::default();
     dst.paste(&old).unwrap();
-    assert_eq!(dst.score().measures()[0].used_ticks(), 2 * Q);
+    // Both quarters arrive, and rests end the bar.
+    let pasted: Vec<_> = dst.score().measures()[0]
+        .iter()
+        .map(|(_, e)| (e.duration, e.pitches.is_empty()))
+        .collect();
+    assert_eq!(
+        pasted,
+        [
+            (Duration::Quarter, false),
+            (Duration::Quarter, false),
+            (Duration::Half, true)
+        ]
+    );
     // A duration crossing a bar is split with ties without losing dotted length.
     let mut src = Editor::default();
     src.execute(Command::Insert(note(
@@ -617,4 +632,45 @@ fn a_tuplet_that_would_cross_the_barline_is_not_pasted() {
     let error = dst.paste(&clip).unwrap_err();
     assert_eq!(error.0, "Un grupillo no puede cruzar la barra de compás");
     assert_eq!(dst.score(), &before);
+}
+
+#[test]
+fn pasting_after_written_music_takes_the_place_of_the_rests_that_end_the_bar() {
+    let mut src = Editor::default();
+    for step in [Step::D, Step::E] {
+        src.execute(Command::Write(note(step, Duration::Quarter)))
+            .unwrap();
+    }
+    let first = ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 0)
+            .unwrap(),
+        ..src.selection().unwrap()
+    };
+    src.select(first);
+    src.extend_selection(ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 1)
+            .unwrap(),
+        ..first
+    });
+    let clip = src.copy_selection().unwrap();
+    let mut dst = Editor::default();
+    dst.execute(Command::Write(note(Step::C, Duration::Quarter)))
+        .unwrap();
+    // The bar is C and rests; paste right after the C.
+    dst.paste(&clip).unwrap();
+    let bar: Vec<_> = dst.score().measures()[0]
+        .iter()
+        .map(|(_, e)| (e.duration, e.pitches.first().map(|p| p.step)))
+        .collect();
+    assert_eq!(
+        bar,
+        [
+            (Duration::Quarter, Some(Step::C)),
+            (Duration::Quarter, Some(Step::D)),
+            (Duration::Quarter, Some(Step::E)),
+            (Duration::Quarter, None)
+        ]
+    );
 }

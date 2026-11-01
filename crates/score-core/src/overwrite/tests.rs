@@ -29,11 +29,16 @@ fn write(
 }
 
 #[test]
-fn writes_into_an_empty_bar_without_filling_the_remainder() {
+fn writing_into_an_empty_bar_fills_the_rest_of_it_with_rests_by_beat() {
     let mut score = Score::default();
     let ids = write(&mut score, 0, 0, note(Step::C, Duration::Quarter)).unwrap();
     assert_eq!(ids.len(), 1);
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+    let rests: Vec<_> = voice(&score, 0)[1..]
+        .iter()
+        .map(|(_, event)| (event.pitches.is_empty(), event.duration))
+        .collect();
+    assert_eq!(rests, [(true, Duration::Quarter), (true, Duration::Half)]);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 4 * Q);
     score.validate().unwrap();
 }
 
@@ -574,16 +579,19 @@ fn writing_a_tuplet_value_fills_the_rest_of_its_group_with_its_rests() {
     let mut score = Score::default();
     let sixteenth = quintuplet(Duration::Sixteenth);
     write(&mut score, 0, 0, note(Step::C, sixteenth)).unwrap();
-    // The fewest rests, as with other gaps: a quarter in the quintuplet.
+    // The fewest rests, as with other gaps: a quarter in the quintuplet;
+    // then the bar's own rests.
     assert_eq!(
         bar(&score),
         [
             (0, sixteenth, true),
-            (Q / 5, quintuplet(Duration::Quarter), false)
+            (Q / 5, quintuplet(Duration::Quarter), false),
+            (Q, Duration::Quarter, false),
+            (2 * Q, Duration::Half, false)
         ]
     );
     assert_eq!(group_sizes(&score), [2]);
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 4 * Q);
     score.validate().unwrap();
 }
 
@@ -596,8 +604,9 @@ fn writing_inside_a_group_with_the_same_tuplet_overwrites_within_it() {
     let events = bar(&score);
     assert_eq!(events.iter().filter(|e| e.2).count(), 2);
     assert_eq!((events[1].0, events[1].2), (Q / 5, true));
-    assert_eq!(group_sizes(&score), [events.len()]);
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+    let in_group = events.iter().filter(|e| e.1.tuplet().is_some()).count();
+    assert_eq!(group_sizes(&score), [in_group]);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 4 * Q);
 }
 
 #[test]
@@ -621,8 +630,9 @@ fn gaps_inside_a_group_are_filled_with_its_rests() {
     .unwrap();
     let events = bar(&score);
     assert_eq!(events[1], (Q / 5, quintuplet(Duration::Sixteenth), false));
-    assert_eq!(group_sizes(&score).iter().sum::<usize>(), events.len());
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), Q);
+    let in_group = events.iter().filter(|e| e.1.tuplet().is_some()).count();
+    assert_eq!(group_sizes(&score).iter().sum::<usize>(), in_group);
+    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 4 * Q);
 }
 
 #[test]
@@ -662,7 +672,9 @@ fn a_plain_value_on_a_groups_first_event_replaces_the_whole_group() {
         bar(&score),
         [
             (0, Duration::Eighth, true),
-            (Q / 2, Duration::Eighth, false)
+            (Q / 2, Duration::Eighth, false),
+            (Q, Duration::Quarter, false),
+            (2 * Q, Duration::Half, false)
         ]
     );
     assert!(group_sizes(&score).is_empty());
@@ -718,5 +730,58 @@ fn a_value_that_cuts_a_group_is_refused_and_one_that_covers_it_replaces_it() {
     assert_eq!(score, before);
     write(&mut score, 0, 0, note(Step::D, Duration::Half)).unwrap();
     assert!(group_sizes(&score).is_empty());
-    assert_eq!(score.measures()[0].voice_ticks(Voice::One), 2 * Q);
+    assert_eq!(bar(&score)[1..], [(2 * Q, Duration::Half, false)]);
+}
+
+#[test]
+fn filling_rests_completes_written_bars_by_beat_and_leaves_empty_ones() {
+    let mut score = score_with_bars(2);
+    score
+        .insert(0, 0, note(Step::C, Duration::Quarter.with_dotted(true)))
+        .unwrap();
+    // An open triplet in bar 2 is completed with its own rests first.
+    score
+        .insert(1, 0, note(Step::D, Duration::Eighth.with_triplet(true)))
+        .unwrap();
+    assert!(score.fill_rests().unwrap());
+    let rests = |bar| -> Vec<_> {
+        voice(&score, bar)[1..]
+            .iter()
+            .map(|(_, event)| event.duration)
+            .collect()
+    };
+    assert_eq!(rests(0), [Duration::Eighth, Duration::Half]);
+    assert_eq!(
+        rests(1),
+        [
+            // Counted in the group's eighths.
+            Duration::Quarter.with_tuplet(Some(Tuplet::triplet(NoteValue::Eighth))),
+            Duration::Quarter,
+            Duration::Half
+        ]
+    );
+    assert!(score.measures()[0].voice_len(Voice::Two) == 0);
+    // Nothing left to fill.
+    assert!(!score.fill_rests().unwrap());
+    let mut empty = score_with_bars(1);
+    assert!(!empty.fill_rests().unwrap());
+}
+
+#[test]
+fn only_plain_rests_at_the_end_of_a_bar_count_as_free_space() {
+    let mut score = Score::default();
+    write(&mut score, 0, 0, note(Step::C, Duration::Quarter)).unwrap();
+    let mut cleared = score.clone();
+    cleared
+        .clear_trailing_rests(PartId(0), StaffId::Upper, Voice::One, 0, Q)
+        .unwrap();
+    assert_eq!(voice(&cleared, 0).len(), 1);
+    // A rest with a mark keeps the bar as it is.
+    let rest = voice(&score, 0)[2].0;
+    score.set_fermata(rest, true).unwrap();
+    let before = score.clone();
+    score
+        .clear_trailing_rests(PartId(0), StaffId::Upper, Voice::One, 0, Q)
+        .unwrap();
+    assert_eq!(score, before);
 }

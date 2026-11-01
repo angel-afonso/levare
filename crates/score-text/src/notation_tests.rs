@@ -249,5 +249,5 @@ fn formats_written_pitch_for_transposing_parts() {
         }))
         .unwrap();
     let text = format_voice(editor.score(), part, StaffId::Upper, 0, Voice::One);
-    assert_eq!(text, "D5:4");
+    assert_eq!(text, "D5:4 R:4 R:2");
 }

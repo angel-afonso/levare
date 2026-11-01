@@ -33,6 +33,8 @@ impl Document {
     pub fn new(mut score: Score) -> Result<Self, ScoreError> {
         score.validate()?;
         score.arrange_parts();
+        // Bars written before Levare kept them full end in rests, as new ones do.
+        score.fill_rests()?;
         let editor = Editor::new(score)?;
         Ok(Self {
             saved: Some(editor.revision()),

@@ -19,6 +19,8 @@ fn fixture() -> (Score, ElementId, Pitch) {
             },
         )
         .unwrap();
+    // As an opened document has it: the bar ends in rests.
+    score.fill_rests().unwrap();
     (score, id, pitch)
 }
 
