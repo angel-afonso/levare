@@ -66,6 +66,32 @@ impl AppView {
         cx.notify();
     }
 
+    pub(crate) fn toggle_metronome(&mut self, cx: &mut Context<Self>) {
+        let on = !self.playback.metronome;
+        let score = self.document.editor.score();
+        let cursor = self.document.editor.cursor();
+        self.status = match self.playback.set_metronome(on, score, cursor) {
+            Err(error) => error,
+            Ok(()) if on => "Metrónomo: un clic en cada tiempo".into(),
+            Ok(()) => "Metrónomo desactivado".into(),
+        };
+        cx.notify();
+    }
+
+    /// The count-in is heard on the next start, not when it is switched on.
+    pub(crate) fn toggle_count_in(&mut self, cx: &mut Context<Self>) {
+        self.playback.count_in = !self.playback.count_in;
+        self.status = if self.playback.count_in {
+            format!(
+                "Cuenta previa: un compás de clics antes de reproducir{}",
+                self.key(id::PLAY)
+            )
+        } else {
+            "Cuenta previa desactivada".into()
+        };
+        cx.notify();
+    }
+
     /// Half speed starts playing when nothing plays; during playback it
     /// switches speed in place.
     pub(crate) fn toggle_half_speed(&mut self, cx: &mut Context<Self>) {

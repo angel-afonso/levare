@@ -102,6 +102,22 @@ pub enum Message {
     /// Release only the harmonic timbre when it shares a key with normal strings.
     HarmonicOff(u8),
     NoteOn(NoteEvent),
+    /// A metronome click, louder and higher on the first beat of a bar. The
+    /// player sounds it itself, whatever the instruments' sounds.
+    Click {
+        accent: bool,
+    },
+}
+
+/// The ticks of one metronome beat: the denominator's value, or a dotted
+/// quarter in 6/8, 9/8 and 12/8, as Sibelius and MuseScore count them.
+pub fn beat_ticks(time: score_core::TimeSignature) -> u64 {
+    let unit = u64::from(score_core::TICKS_PER_WHOLE) / u64::from(time.denominator);
+    if time.denominator >= 8 && time.numerator > 3 && time.numerator.is_multiple_of(3) {
+        unit * 3
+    } else {
+        unit
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -649,7 +665,7 @@ impl PlaybackPlan {
                 message.frame,
                 match message.message {
                     Message::NoteOff(_) | Message::HarmonicOff(_) => 0,
-                    Message::Expression(_) => 1,
+                    Message::Expression(_) | Message::Click { .. } => 1,
                     Message::NoteOn(_) => 2,
                 },
             )
@@ -659,7 +675,7 @@ impl PlaybackPlan {
         let mut held = [[[0u8; 128]; 2]; PLAYBACK_CHANNELS];
         messages.retain(|scheduled| {
             let (key, harmonic) = match scheduled.message {
-                Message::Expression(_) => return true,
+                Message::Expression(_) | Message::Click { .. } => return true,
                 Message::NoteOn(note) => (note.key, note.harmonic.is_some()),
                 Message::NoteOff(key) => (key, false),
                 Message::HarmonicOff(key) => (key, true),
@@ -667,7 +683,7 @@ impl PlaybackPlan {
             let count =
                 &mut held[usize::from(scheduled.channel)][usize::from(harmonic)][usize::from(key)];
             match scheduled.message {
-                Message::Expression(_) => unreachable!(),
+                Message::Expression(_) | Message::Click { .. } => unreachable!(),
                 Message::NoteOn(_) => {
                     *count += 1;
                     *count == 1
@@ -683,7 +699,7 @@ impl PlaybackPlan {
             std::collections::HashMap::new();
         for message in &messages {
             match message.message {
-                Message::Expression(_) => {}
+                Message::Expression(_) | Message::Click { .. } => {}
                 Message::NoteOn(note) => key_sounds
                     .entry((message.channel, note.key, note.harmonic.is_some()))
                     .or_default()
@@ -786,6 +802,39 @@ impl PlaybackPlan {
             }
         }
         notes
+    }
+
+    /// Click every beat of every performed bar, in time with the music.
+    pub fn add_clicks(&mut self, score: &Score) {
+        let rate = self.sample_rate;
+        for (index, instance) in self.timeline.instances().iter().enumerate() {
+            let beat = beat_ticks(score.time_at(instance.bar)).max(1);
+            for offset in (0..instance.length).step_by(beat as usize) {
+                self.messages.push(ScheduledMessage {
+                    frame: self.timeline.performed_frame(index, offset, rate),
+                    channel: 0,
+                    message: Message::Click {
+                        accent: offset == 0,
+                    },
+                });
+            }
+        }
+        self.messages.sort_by_key(|message| message.frame);
+    }
+
+    /// The beats of a one-bar count-in before `frame` and the frames between
+    /// them, from the bar there and its tempo.
+    pub fn count_in(&self, score: &Score, frame: u64) -> (u8, u64) {
+        let rate = self.sample_rate;
+        let tick = self.timeline.tick_at(frame, rate).floor() as u64;
+        let bar = score.measure_at_tick(tick).0;
+        let time = score.time_at(bar);
+        let beat = beat_ticks(time);
+        let start = score.measure_start_tick(bar);
+        let interval =
+            self.timeline.frame_at(start + beat, rate) - self.timeline.frame_at(start, rate);
+        let beats = (u64::from(time.capacity()) / beat).clamp(1, 16) as u8;
+        (beats, interval.max(1))
     }
 
     pub fn frame_for_element(&self, element: ElementId) -> Option<u64> {

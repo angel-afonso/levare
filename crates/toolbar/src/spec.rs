@@ -1505,6 +1505,18 @@ const PRACTICE: GroupSpec = GroupSpec {
             "Repeticiones",
             "Sigue las barras de repetición al reproducir.",
         )),
+        toggle(tile(
+            id::METRONOME,
+            Icon("metronome"),
+            "Metrónomo",
+            "Un clic en cada tiempo mientras suena, más fuerte en el primero del compás.",
+        )),
+        toggle(tile(
+            id::COUNT_IN,
+            Icon("count-in"),
+            "Cuenta previa",
+            "Un compás de clics antes de empezar a reproducir.",
+        )),
     ],
 };
 const SOUND: GroupSpec = GroupSpec {

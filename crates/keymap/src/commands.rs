@@ -437,6 +437,8 @@ pub mod id {
         LOOP = "reproduccion.bucle";
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
+        METRONOME = "reproduccion.metronomo";
+        COUNT_IN = "reproduccion.cuenta-previa";
         CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
         SOUNDS = "reproduccion.sonidos";
@@ -749,6 +751,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::LOOP, C::Playback, "Reproducción en bucle", S, false, R),
     spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, R),
     spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, R),
+    spec(id::METRONOME, C::Playback, "Metrónomo", G, false, R),
+    spec(id::COUNT_IN, C::Playback, "Cuenta previa de un compás", G, false, R),
     spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
     spec(id::MIXER, C::Playback, "Mezcla de las partes", S, false, R),
     spec(id::SOUNDS, C::Playback, "Mostrar el sonido", S, false, R),

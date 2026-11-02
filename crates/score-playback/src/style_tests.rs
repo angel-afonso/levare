@@ -597,3 +597,43 @@ fn natural_velocity_saturates_at_both_midi_limits() {
     assert!((1..=127).contains(&plan.sounds[0].level));
     assert_eq!(plan.sounds[1].level, 127);
 }
+
+#[test]
+fn the_metronome_clicks_each_beat_and_accents_each_bar() {
+    let clicks = |score: &Score| {
+        let mut plan = PlaybackPlan::with_repeats(score, Tempo::default(), 48_000, true).unwrap();
+        plan.add_clicks(score);
+        plan.messages
+            .iter()
+            .filter_map(|m| match m.message {
+                Message::Click { accent } => Some((m.frame, accent)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut score = Score::default();
+    // Four bars of 4/4 at quarter = 120: a click every half second.
+    let four = clicks(&score);
+    assert_eq!(four.len(), 16);
+    assert!(four.iter().enumerate().all(|(beat, &(frame, accent))| {
+        frame == beat as u64 * 24_000 && accent == (beat % 4 == 0)
+    }));
+    // 6/8 beats in dotted quarters: two clicks a bar.
+    score
+        .set_time_signature_at(
+            0,
+            TimeSignature {
+                numerator: 6,
+                denominator: 8,
+            },
+        )
+        .unwrap();
+    let compound = clicks(&score);
+    assert_eq!(compound.len(), 8);
+    assert_eq!(compound[1].0, 36_000);
+    // Plans keep their notes in order, clicks among them.
+    let mut plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    plan.add_clicks(&score);
+    assert!(plan.messages.windows(2).all(|w| w[0].frame <= w[1].frame));
+    assert_eq!(plan.count_in(&score, 0), (2, 36_000));
+}

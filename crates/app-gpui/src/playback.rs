@@ -36,6 +36,10 @@ pub struct Playback {
     seek_tick: Option<u64>,
     /// Rehearsal at half the written tempo.
     pub half_speed: bool,
+    /// Click every beat while playing.
+    pub metronome: bool,
+    /// One bar of clicks before playback starts.
+    pub count_in: bool,
     /// Play `loop_ticks` again and again, or the whole score without them.
     pub looping: bool,
     loop_ticks: Option<(u64, u64)>,
@@ -81,6 +85,8 @@ impl Playback {
             clock: None,
             seek_tick: None,
             half_speed: false,
+            metronome: false,
+            count_in: false,
             looping: false,
             loop_ticks: None,
             last_start: None,
@@ -377,13 +383,17 @@ impl Playback {
                 "No hay salida de audio. Pulsa Reintentar audio en Sonidos.".into()
             })
         })?;
-        let plan = Arc::new(transport_plan(
+        let mut plan = transport_plan(
             score,
             self.tempo,
             output.sample_rate(),
             self.follow_repeats,
             self.style,
-        )?);
+        )?;
+        if self.metronome {
+            plan.add_clicks(score);
+        }
+        let plan = Arc::new(plan);
         let requested = self
             .seek_tick
             .or_else(|| selection.and_then(|id| score.event_tick(id)));
@@ -396,6 +406,15 @@ impl Playback {
             ),
             _ => self.seek_tick,
         };
+        if self.count_in {
+            let frame = match (start, selection) {
+                (Some(tick), _) => plan.timeline.frame_at(tick, output.sample_rate()),
+                (None, Some(id)) => plan.frame_for_element(id).unwrap_or(0),
+                (None, None) => 0,
+            };
+            let (beats, interval) = plan.count_in(score, frame);
+            output.control.count_in(beats, interval);
+        }
         if let Some(tick) = start {
             let frame = plan.timeline.frame_at(tick, output.sample_rate());
             output.control.play_from_frame(plan, frame)
@@ -432,6 +451,25 @@ impl Playback {
         } else {
             Tempo::default()
         };
+        match place {
+            Some(tick) => self.seek(score, tick),
+            None => Ok(()),
+        }
+    }
+
+    /// Switch the metronome, keeping the place of a playback in progress.
+    pub fn set_metronome(
+        &mut self,
+        on: bool,
+        score: &Score,
+        cursor: score_edit::Cursor,
+    ) -> Result<(), String> {
+        if on == self.metronome {
+            return Ok(());
+        }
+        let place = (self.is_playing() || self.is_paused())
+            .then(|| self.position(score, cursor).tick.floor() as u64);
+        self.metronome = on;
         match place {
             Some(tick) => self.seek(score, tick),
             None => Ok(()),
@@ -492,13 +530,17 @@ impl Playback {
         let was_paused = self.is_paused();
         if was_playing || was_paused {
             let output = self.output.as_mut().expect("active audio output");
-            let plan = Arc::new(transport_plan(
+            let mut plan = transport_plan(
                 score,
                 self.tempo,
                 output.sample_rate(),
                 self.follow_repeats,
                 self.style,
-            )?);
+            )?;
+            if self.metronome {
+                plan.add_clicks(score);
+            }
+            let plan = Arc::new(plan);
             output
                 .control
                 .play_from_frame(
@@ -692,6 +734,8 @@ mod tests {
             clock: None,
             seek_tick: None,
             half_speed: false,
+            metronome: false,
+            count_in: false,
             looping: false,
             loop_ticks: None,
             last_start: None,

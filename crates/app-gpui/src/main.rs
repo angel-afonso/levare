@@ -1916,6 +1916,8 @@ impl AppView {
             id::LOOP => self.toggle_loop(cx),
             id::REPLAY => self.replay(cx),
             id::HALF_SPEED => self.toggle_half_speed(cx),
+            id::METRONOME => self.toggle_metronome(cx),
+            id::COUNT_IN => self.toggle_count_in(cx),
             id::CHORD_PLAYBACK => {
                 let sound = !self.document.editor.score().chords_sound();
                 self.edit(Command::SetChordsSound(sound), cx);

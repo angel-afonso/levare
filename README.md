@@ -136,8 +136,8 @@ five-instrument ensemble.
   **Texto**: title and credits, tempo, dynamics from *ppp* to *fff* and, in a dropdown,
   *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
   rehearsal marks and their style, and the signs and jumps in
-  **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Diseño**: paper and staff size, system and page breaks, hiding empty staves,
+  **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, metronome and
+  count-in, audition, mixer and sounds. **Diseño**: paper and staff size, system and page breaks, hiding empty staves,
   bar and page numbers, noteheads, beam overrides and resetting what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
   zoom and collapsing the ribbon.
@@ -1173,6 +1173,14 @@ are respected.
 - **Media velocidad** (`⇧Espacio`, or **½×**): plays at 50 % of the written tempo,
   without changing the score's markings. When stopped, it starts playing; when playing,
   it changes speed at the same point. It also works with the loop.
+- **Metrónomo** (**Reproducción › Práctica** or the Reproducción menu): a click on every
+  beat while playing, higher and louder on the first beat of each bar. It follows the
+  time signature (two clicks a bar in 6/8, three in 9/8), tempo changes, fermatas,
+  repeats and half speed. Switching it while playing keeps the place. Levare makes the
+  click itself, so it sounds the same with every sound bank.
+- **Cuenta previa**: one bar of clicks, in the time signature and tempo where playback
+  starts, before the music. The playhead waits through it; notes already sounding at
+  the start come in with the music.
 - **Repetir la última reproducción** (`⌥Espacio`; `Alt+Espacio` on Windows,
   `Mayús+Alt+Espacio` on Linux): starts again from where the previous playback started.
 - **Línea de reproducción al inicio** (`⌘↖` or `⌘[`; `Ctrl+Inicio` on Windows and

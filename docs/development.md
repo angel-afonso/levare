@@ -1148,7 +1148,11 @@ to merge more than two voices and to convert a piano. Dynamics, hairpins and tec
 stay shared by the section; the piano's hands keep their independent expression.
 
 The playback plan creates one track per voice with its own intervals, attacks and
-sustains, aligned on the common clock. Preparing the expression considers simultaneous
+sustains, aligned on the common clock. `PlaybackPlan::add_clicks` adds a
+`Message::Click` on every beat of every performed bar; the renderer sounds it with its
+own fading sine burst, mixed after the instruments, so the metronome needs no bank. A
+count-in travels with `Command::Play`: the renderer clicks its beats without moving the
+frame and attacks the held notes when it ends. Preparing the expression considers simultaneous
 sounds and keeps the ranges per track; groups that overlap reserve a common margin. The
 active elements of up to 384 tracks (`MAX_TRACKS`, `MAX_STAVES` × 4 voices) and up to
 3,072 sustained pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test

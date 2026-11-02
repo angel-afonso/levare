@@ -307,6 +307,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `⌥P` | `Alt+P` | Reproducción en bucle |  |
 | `⌥Espacio` | Windows: `Alt+Espacio` · Linux: `Mayús+Alt+Espacio` | Repetir la última reproducción |  |
 | `⇧Espacio` | `Mayús+Espacio` | Reproducir a media velocidad |  |
+| — | — | Metrónomo |  |
+| — | — | Cuenta previa de un compás |  |
 | — | — | Hacer sonar los cifrados |  |
 | `M` | `M` | Mezcla de las partes |  |
 | — | — | Mostrar el sonido |  |

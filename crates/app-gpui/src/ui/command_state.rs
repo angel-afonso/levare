@@ -310,6 +310,8 @@ impl CommandStates for AppView {
             id::REPEATS => CommandState::checked(self.playback.follow_repeats),
             id::LOOP => CommandState::checked(self.playback.looping),
             id::HALF_SPEED => CommandState::checked(self.playback.half_speed),
+            id::METRONOME => CommandState::checked(self.playback.metronome),
+            id::COUNT_IN => CommandState::checked(self.playback.count_in),
             id::CHORD_PLAYBACK => CommandState::checked(editor.score().chords_sound()),
             id::LYRICS => CommandState {
                 checked: self.lyric_editor.is_some()
