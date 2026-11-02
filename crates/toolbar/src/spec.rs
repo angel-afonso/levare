@@ -1074,9 +1074,11 @@ const CHANGES: GroupSpec = GroupSpec {
 };
 /// Repeats, endings and barlines from one dropdown, like Sibelius' barline
 /// gallery.
+/// Sibelius' barline gallery: the repeat barlines, the endings and the line
+/// that closes the selected bar.
 const REPEATS: GroupSpec = GroupSpec {
     dropdown: true,
-    title: "Repetición",
+    title: "Barra",
     visual: Music("\u{e041}"),
     priority: 4,
     controls: &[
@@ -1115,6 +1117,36 @@ const REPEATS: GroupSpec = GroupSpec {
             Music("\u{e032}"),
             "Final",
             "Barra final.",
+        )),
+        toggle(tile(
+            id::DASHED_BARLINE,
+            Music("\u{e036}"),
+            "Discontinua",
+            "Barra discontinua al final del compás: una división secundaria.",
+        )),
+        toggle(tile(
+            id::DOTTED_BARLINE,
+            Music("\u{e037}"),
+            "Punteada",
+            "Barra punteada al final del compás: una división secundaria.",
+        )),
+        toggle(tile(
+            id::TICK_BARLINE,
+            Music("\u{e039}"),
+            "Marca",
+            "Solo un trazo sobre la línea superior, como en la música antigua.",
+        )),
+        toggle(tile(
+            id::SHORT_BARLINE,
+            Music("\u{e038}"),
+            "Corta",
+            "Un trazo en el centro del pentagrama.",
+        )),
+        toggle(tile(
+            id::INVISIBLE_BARLINE,
+            Label("inv."),
+            "Invisible",
+            "Sin barra: el compás sigue dividiendo el tiempo.",
         )),
     ],
 };

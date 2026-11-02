@@ -512,13 +512,13 @@ mod tests {
             vec![
                 "Acorde",
                 "Arpegio",
+                "Barra",
                 "D.C. / D.S.",
                 "Estilo de ensayo",
                 "Líneas",
                 "Más dinámicas",
                 "Más figuras",
                 "Nota de adorno",
-                "Repetición",
                 "Símbolos",
                 "Trémolo",
             ]

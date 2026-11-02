@@ -362,6 +362,11 @@ pub mod id {
         REMOVE_ENDING = "compases.quitar-casilla";
         DOUBLE_BARLINE = "compases.doble-barra";
         FINAL_BARLINE = "compases.barra-final";
+        DASHED_BARLINE = "compases.barra-discontinua";
+        DOTTED_BARLINE = "compases.barra-punteada";
+        TICK_BARLINE = "compases.barra-de-marca";
+        SHORT_BARLINE = "compases.barra-corta";
+        INVISIBLE_BARLINE = "compases.barra-invisible";
         SEGNO = "compases.segno";
         CODA = "compases.coda";
         TO_CODA = "compases.al-coda";
@@ -643,6 +648,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REMOVE_ENDING, C::Bars, "Quitar casilla", G, false, R),
     spec(id::DOUBLE_BARLINE, C::Bars, "Doble barra", G, false, R),
     spec(id::FINAL_BARLINE, C::Bars, "Barra final", G, false, R),
+    spec(id::DASHED_BARLINE, C::Bars, "Barra discontinua", G, false, R),
+    spec(id::DOTTED_BARLINE, C::Bars, "Barra punteada", G, false, R),
+    spec(id::TICK_BARLINE, C::Bars, "Barra de marca", G, false, R),
+    spec(id::SHORT_BARLINE, C::Bars, "Barra corta", G, false, R),
+    spec(id::INVISIBLE_BARLINE, C::Bars, "Barra invisible", G, false, R),
     spec(id::SEGNO, C::Bars, "Segno", G, false, R),
     spec(id::CODA, C::Bars, "Coda", G, false, R),
     spec(id::TO_CODA, C::Bars, "To Coda", G, false, R),

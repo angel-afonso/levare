@@ -218,6 +218,11 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Quitar casilla |  |
 | — | — | Doble barra |  |
 | — | — | Barra final |  |
+| — | — | Barra discontinua |  |
+| — | — | Barra punteada |  |
+| — | — | Barra de marca |  |
+| — | — | Barra corta |  |
+| — | — | Barra invisible |  |
 | — | — | Segno |  |
 | — | — | Coda |  |
 | — | — | To Coda |  |

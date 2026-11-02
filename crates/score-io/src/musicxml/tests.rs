@@ -1182,3 +1182,42 @@ fn accents_fp_and_niente_export_and_import_as_dynamics() {
         .collect();
     assert_eq!(read, marks);
 }
+
+#[test]
+fn barline_styles_round_trip_through_musicxml() {
+    let styles = [
+        Barline::Dashed,
+        Barline::Dotted,
+        Barline::Tick,
+        Barline::Short,
+        Barline::Invisible,
+    ];
+    let mut score = Score::new("Barras".into(), &[Instrument::Violin], 6).unwrap();
+    for (bar, barline) in styles.into_iter().enumerate() {
+        score
+            .set_bar_form(
+                bar,
+                BarForm {
+                    barline,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    let xml = encode(&score).unwrap();
+    let text = std::str::from_utf8(&xml).unwrap();
+    for style in ["dashed", "dotted", "tick", "short", "none"] {
+        assert!(
+            text.contains(&format!("<bar-style>{style}</bar-style>")),
+            "{style}"
+        );
+    }
+    let imported = decode(&xml).unwrap().score;
+    for (bar, barline) in styles.into_iter().enumerate() {
+        assert_eq!(imported.bar_form(bar).barline, barline);
+    }
+    assert_eq!(
+        crate::decode(&crate::encode(&score).unwrap()).unwrap(),
+        score
+    );
+}

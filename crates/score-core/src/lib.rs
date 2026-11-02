@@ -490,11 +490,13 @@ impl Part {
         self.entry_octave_at(staff, 0)
     }
     pub fn entry_octave_at(&self, staff: StaffId, bar: usize) -> u8 {
-        if matches!(self.clef_at(staff, bar), Clef::Bass | Clef::Tenor) {
+        let clef = self.clef_at(staff, bar);
+        let octave = if matches!(clef.base(), Clef::Bass | Clef::Tenor) {
             3
         } else {
             4
-        }
+        };
+        (octave + clef.octave()) as u8
     }
 }
 

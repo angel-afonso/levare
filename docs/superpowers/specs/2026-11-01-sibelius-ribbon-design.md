@@ -27,13 +27,13 @@ name and key, choice tracks, groups without cards) stays.
   moving durations to a Sibelius keypad. Silencio returns beside the dot.
 - Inicio, as in Sibelius: Portapapeles (Pegar, Copiar, Cortar, Repetir), Instrumentos,
   Divisi, Compases and Seleccionar (Todo, Ir al compás…).
-- Notaciones: Cambios (clef, key and time signature), Repeticiones, Articulación,
+- Notaciones: Cambios (clef, key and time signature), Barra, Articulación,
   Regulador, Líneas, Técnica de cuerda, Nota de adorno, Arpegio and Trémolo.
 - Texto takes the dynamics, as Sibelius writes them as Expression text, and the signs and
   jumps in one **D.C. / D.S.** dropdown.
 - Diseño: Sistema y página, and Posición (Restablecer).
 - At 1440 px only dropdowns fold. To fit, the families Sibelius shows as galleries are
-  dropdowns: Repeticiones, Líneas, Nota de adorno, Arpegio, Trémolo, D.C. / D.S. and
+  dropdowns: Barra, Líneas, Nota de adorno, Arpegio, Trémolo, D.C. / D.S. and
   Estilo de ensayo. Entrada de notas drops the names of Modificar, Alteración and
   Ligadura at 1440; their symbols and keys stay.
 - Voz holds the four voices, as Sibelius and MuseScore do. To make room, the chord mode
@@ -41,6 +41,10 @@ name and key, choice tracks, groups without cards) stays.
   mode is on. «Título y créditos» is shortened to «Título…».
 - Published command ids keep their names. `TAB_HOME` opens Inicio, `TAB_LAYOUT` Diseño;
   `TAB_DYNAMICS` stays registered without a default key and opens Texto.
+
+- Barra is Sibelius' barline gallery: the repeat barlines, the endings and every barline
+  style (double, final, dashed, dotted, tick, short and invisible) in one dropdown, which
+  keeps Notaciones within 1440 px.
 
 ## Left out of this phase
 

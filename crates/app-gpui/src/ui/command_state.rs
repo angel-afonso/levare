@@ -363,14 +363,7 @@ fn form_state(editor: &score_edit::Editor, command: CommandId) -> Option<Command
         Command::EditForm(edit) => match edit {
             FormEdit::ToggleRepeatStart => first.repeat_start,
             FormEdit::ToggleRepeatEnd => last.repeat_end.is_some(),
-            FormEdit::Barline(_) => {
-                last.barline
-                    == if command == id::DOUBLE_BARLINE {
-                        Barline::Double
-                    } else {
-                        Barline::Final
-                    }
-            }
+            FormEdit::Barline(_) => Some(last.barline) == crate::barline_of(command),
             FormEdit::ToggleSegno => first.segno,
             FormEdit::ToggleCoda => first.coda,
             FormEdit::ToggleToCoda => last.to_coda,

@@ -150,7 +150,9 @@ pub enum AjustarArgs {
         bpm: u16,
         texto: Option<String>,
     },
-    #[schemars(description = "Cambio de clave: sol, fa, do3 (contralto), do4 (tenor) o percusión.")]
+    #[schemars(
+        description = "Cambio de clave: sol, fa, do3 (contralto), do4 (tenor), sol8vb y sol8va (sol con 8 abajo o arriba), fa8vb, fa8va o percusión."
+    )]
     Clave {
         parte: String,
         pentagrama: Option<u8>,

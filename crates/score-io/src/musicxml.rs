@@ -282,6 +282,11 @@ fn right_barline(xml: &mut String, score: &Score, bar: usize) {
             Barline::Final => Some("light-heavy"),
             Barline::Single if bar + 1 == score.measures().len() => Some("light-heavy"),
             Barline::Single => None,
+            Barline::Dashed => Some("dashed"),
+            Barline::Dotted => Some("dotted"),
+            Barline::Tick => Some("tick"),
+            Barline::Short => Some("short"),
+            Barline::Invisible => Some("none"),
         }
     };
     if style.is_none() && ending.is_none() {
@@ -619,17 +624,26 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
         if bar != 0 && part.clef_change_at(staff_id, bar).is_none() {
             continue;
         }
-        let (sign, line) = match part.clef_at(staff_id, bar) {
+        let clef = part.clef_at(staff_id, bar);
+        let (sign, line) = match clef.base() {
             Clef::Treble => ("G", 2),
             Clef::Alto => ("C", 3),
             Clef::Tenor => ("C", 4),
             Clef::Bass => ("F", 4),
-            Clef::Percussion => ("percussion", 2),
+            _ => ("percussion", 2),
         };
         let _ = write!(
             xml,
-            "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line></clef>"
+            "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line>"
         );
+        if clef.octave() != 0 {
+            let _ = write!(
+                xml,
+                "<clef-octave-change>{}</clef-octave-change>",
+                clef.octave()
+            );
+        }
+        xml.push_str("</clef>");
     }
     if part.has_passage_divisi() {
         let show = if part.bar_has_divisi(bar) {

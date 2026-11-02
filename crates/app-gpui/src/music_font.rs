@@ -384,7 +384,9 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 122);
+        assert_eq!(font.outlines.len(), 130);
+        // Clefs with an 8 and the dashed, dotted, short and tick barlines.
+        assert!(font.covers("\u{e052}\u{e053}\u{e064}\u{e065}\u{e036}\u{e037}\u{e038}\u{e039}"));
         // The letters of sfz, rfz, sfp and niente.
         assert!(font.covers("\u{e523}\u{e524}\u{e525}\u{e526}"));
         // Staccatissimo, mordents, turn, breath mark and caesura.

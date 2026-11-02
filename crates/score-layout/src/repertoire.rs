@@ -31,6 +31,10 @@ pub fn glyph_codes() -> impl Iterator<Item = u32> {
         // Staccatissimo above and below, the mordents, the turn, the breath
         // mark and the caesura.
         .chain([0xe4a6, 0xe4a7, 0xe56c, 0xe56d, 0xe567, 0xe4ce, 0xe4d1])
+        // Treble and bass clefs with an 8 below or above.
+        .chain([0xe052, 0xe053, 0xe064, 0xe065])
+        // Ribbon symbols for the dashed, dotted, short and tick barlines.
+        .chain(0xe036..=0xe039)
 }
 
 /// Convert ordinary Unicode notation to the exact glyphs used in the score.

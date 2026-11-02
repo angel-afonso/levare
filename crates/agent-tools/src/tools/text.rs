@@ -163,6 +163,11 @@ fn form_items(score: &Score, measure: usize) -> Vec<String> {
         Barline::Single => {}
         Barline::Double => items.push("doble barra al final".to_owned()),
         Barline::Final => items.push("barra final".to_owned()),
+        Barline::Dashed => items.push("barra discontinua al final".to_owned()),
+        Barline::Dotted => items.push("barra punteada al final".to_owned()),
+        Barline::Tick => items.push("barra de marca al final".to_owned()),
+        Barline::Short => items.push("barra corta al final".to_owned()),
+        Barline::Invisible => items.push("barra invisible al final".to_owned()),
     }
     items
 }

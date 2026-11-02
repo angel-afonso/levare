@@ -128,7 +128,7 @@ five-instrument ensemble.
   in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental (double
   sharp and double flat too), tie and slur, voices 1 to 4, and **Acorde**, a dropdown
   with the chord mode and the intervals.
-  **Notaciones**: changes of clef, key and time signature, repeats and barlines,
+  **Notaciones**: changes of clef, key and time signature, repeats and barlines in **Barra**,
   articulations and fermata, hairpins and lines (8va, pedal, trill, glissando), string
   technique, symbols (mordents, turn, breath and caesura), grace notes, arpeggios and
   tremolos. Like Sibelius' galleries, repeats, lines, symbols, grace notes, arpeggios
@@ -418,7 +418,9 @@ and does not change playback.
 ## Clef changes
 
 In **Notaciones › Cambios › Clave…** (`Q`) you can choose treble, bass, alto or tenor
-clef for the active instrument. Choose the start of the piece or the current bar: the
+clef for the active instrument, or a treble or bass clef with an 8 below or above (for
+tenor voices, guitar or double bass parts, for example): they draw the notes an octave
+away from where they sound. Choose the start of the piece or the current bar: the
 clef holds until the next change. On piano and other two-staff instruments, each staff
 keeps its own clef; the branches of a divisi section share the instrument's clef. Notes
 keep their pitches and their sound. You can restore the previous clef, undo and redo;
@@ -1244,8 +1246,11 @@ kept. At least one bar always remains.
 
 ## Repeats, endings and jumps
 
-In **Notaciones › Repetición** write the start and end of a repeat, first and second
-endings, the double barline and the final barline. In **Texto**, the **D.C. / D.S.**
+In **Notaciones › Barra**, as in Sibelius' barline gallery, write the start and end of a
+repeat, first and second endings, and the line that closes the bar: double, final,
+dashed, dotted, tick (a short stroke through the top line), short (over the middle of
+the staff) or invisible. Dashed, dotted, tick, short and invisible lines stay on each
+staff and do not join the staves of a piano or a group. In **Texto**, the **D.C. / D.S.**
 dropdown gathers Segno, Coda, Fine, To Coda and the jumps; the
 **Repeticiones** menu also gathers the six D.C./D.S. variants and the options to remove
 the form.
@@ -1453,7 +1458,7 @@ Process and secrets: [`docs/releasing.md`](docs/releasing.md).
 
 Four voices per staff and divisi on one or two staves, chords of up to eight notes with
 sharps, flats and naturals, six durations (from the whole note to the thirty-second)
-with dots and triplets, and treble, C and bass clefs. The engraving includes beaming,
+with dots and triplets, and treble, C and bass clefs, also with an octave 8. The engraving includes beaming,
 ledger lines, articulations, dynamics, ties and slurs, hairpins, grace notes, lines,
 text, lyrics and chord symbols, with a per-bar cache.
 Playback mixes the parts on a common clock, with start from selection, pause and

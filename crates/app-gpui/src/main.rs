@@ -3932,6 +3932,24 @@ fn form_bounds(editor: &score_edit::Editor) -> (usize, usize) {
     (start, end)
 }
 
+/// The barline each barline command writes; choosing it again restores the single line.
+const BARLINES: [(CommandId, Barline); 7] = [
+    (id::DOUBLE_BARLINE, Barline::Double),
+    (id::FINAL_BARLINE, Barline::Final),
+    (id::DASHED_BARLINE, Barline::Dashed),
+    (id::DOTTED_BARLINE, Barline::Dotted),
+    (id::TICK_BARLINE, Barline::Tick),
+    (id::SHORT_BARLINE, Barline::Short),
+    (id::INVISIBLE_BARLINE, Barline::Invisible),
+];
+
+fn barline_of(command: CommandId) -> Option<Barline> {
+    BARLINES
+        .iter()
+        .find(|(id, _)| *id == command)
+        .map(|(_, style)| *style)
+}
+
 /// Resolve ribbon/menu commands before entering the normal editor transaction.
 fn form_command(editor: &score_edit::Editor, command: CommandId) -> Option<Command> {
     let edit = match command {
@@ -3940,12 +3958,8 @@ fn form_command(editor: &score_edit::Editor, command: CommandId) -> Option<Comma
         id::ENDING_1 => return Some(Command::SetEnding(vec![1])),
         id::ENDING_2 => return Some(Command::SetEnding(vec![2])),
         id::REMOVE_ENDING => return Some(Command::RemoveEndings),
-        id::DOUBLE_BARLINE | id::FINAL_BARLINE => {
-            let style = if command == id::DOUBLE_BARLINE {
-                Barline::Double
-            } else {
-                Barline::Final
-            };
+        command if barline_of(command).is_some() => {
+            let style = barline_of(command)?;
             let (_, end) = form_bounds(editor);
             FormEdit::Barline(if editor.score().bar_form(end).barline == style {
                 Barline::Single
@@ -4132,10 +4146,7 @@ mod form_command_tests {
         let last = editor.score().bar_form(3);
         assert!(last.repeat_end == Some(2) && last.to_coda && last.fine);
         assert_eq!(last.jump, Some(Jump::DaCapoAlFine));
-        for (command, style) in [
-            (id::DOUBLE_BARLINE, Barline::Double),
-            (id::FINAL_BARLINE, Barline::Final),
-        ] {
+        for (command, style) in crate::BARLINES {
             run(&mut editor, command);
             assert_eq!(editor.score().bar_form(3).barline, style);
             run(&mut editor, command);

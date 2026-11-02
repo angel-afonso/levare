@@ -955,21 +955,25 @@ fn attributes(
         }
         let staff = (staff_index(c.attribute("number").unwrap_or("1"))? + 1) as u8;
         let line = text(c, "line").unwrap_or("2");
-        let clef = match (text(c, "sign"), line) {
-            (Some("G"), "2") => Some(Clef::Treble),
-            (Some("F"), "4") => Some(Clef::Bass),
-            (Some("C"), "3") => Some(Clef::Alto),
-            (Some("C"), "4") => Some(Clef::Tenor),
-            (Some("percussion"), _) => Some(Clef::Percussion),
+        let octave = text(c, "clef-octave-change").unwrap_or("0");
+        // Pitches are already where the notes sound, so the octave only
+        // changes the clef drawn.
+        let clef = match (text(c, "sign"), line, octave) {
+            (Some("G"), "2", "0") => Some(Clef::Treble),
+            (Some("G"), "2", "-1") => Some(Clef::TrebleOctaveDown),
+            (Some("G"), "2", "1") => Some(Clef::TrebleOctaveUp),
+            (Some("F"), "4", "0") => Some(Clef::Bass),
+            (Some("F"), "4", "-1") => Some(Clef::BassOctaveDown),
+            (Some("F"), "4", "1") => Some(Clef::BassOctaveUp),
+            (Some("C"), "3", "0") => Some(Clef::Alto),
+            (Some("C"), "4", "0") => Some(Clef::Tenor),
+            (Some("percussion"), _, _) => Some(Clef::Percussion),
             _ => None,
         };
         if let Some(clef) = clef {
             bar.clefs.insert(staff, clef);
         } else {
             warnings.add("La clave especial se redibuja con la clave del instrumento");
-        }
-        if text(c, "clef-octave-change").is_some() {
-            warnings.add("La octava de la clave se conserva mediante las alturas; la clave se redibuja sin indicación de octava");
         }
     }
     for d in n.children().filter(|c| c.has_tag_name("staff-details")) {
@@ -1523,6 +1527,11 @@ fn read_barline(n: Node<'_, '_>, bar: &mut Bar, last: bool, warnings: &mut Warni
     if n.attribute("location") != Some("left") {
         match text(n, "bar-style") {
             Some("light-light") => bar.barline = Some(Barline::Double),
+            Some("dashed") => bar.barline = Some(Barline::Dashed),
+            Some("dotted") => bar.barline = Some(Barline::Dotted),
+            Some("tick") => bar.barline = Some(Barline::Tick),
+            Some("short") => bar.barline = Some(Barline::Short),
+            Some("none") => bar.barline = Some(Barline::Invisible),
             // A repeat's heavy stroke is implicit; so is the final score bar.
             Some("light-heavy") if bar.repeat_end.is_none() && !last => {
                 bar.barline = Some(Barline::Final)

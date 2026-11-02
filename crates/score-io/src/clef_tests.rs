@@ -16,6 +16,14 @@ fn score() -> Score {
     score
         .set_clef_at(PartId(1), StaffId::Lower, 3, Clef::Tenor)
         .unwrap();
+    for (part, staff, bar, clef) in [
+        (0, StaffId::Upper, 3, Clef::TrebleOctaveDown),
+        (0, StaffId::Upper, 4, Clef::BassOctaveUp),
+        (1, StaffId::Upper, 2, Clef::TrebleOctaveUp),
+        (1, StaffId::Lower, 5, Clef::BassOctaveDown),
+    ] {
+        score.set_clef_at(PartId(part), staff, bar, clef).unwrap();
+    }
     score
 }
 #[test]
@@ -49,6 +57,12 @@ fn musicxml_preserves_initial_and_later_staff_clefs() {
             }
         }
     }
+    // Writing starts where each clef's middle sits: an 8 below starts an octave lower.
+    let viola = score.part(PartId(0)).unwrap();
+    assert_eq!(
+        [2, 3, 4, 5].map(|bar| viola.entry_octave_at(StaffId::Upper, bar)),
+        [4, 3, 4, 4]
+    );
     let extracted = score.extract_part(PartId(1)).unwrap();
     assert_eq!(extracted.parts()[0].clef_at(StaffId::Lower, 4), Clef::Tenor);
 }

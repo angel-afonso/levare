@@ -41,17 +41,52 @@ pub enum Clef {
     Tenor,
     Bass,
     Percussion,
+    /// Treble clef with an 8 below: sounds an octave lower than written, as
+    /// for tenor voices and the guitar.
+    TrebleOctaveDown,
+    /// Treble clef with an 8 above: sounds an octave higher than written.
+    TrebleOctaveUp,
+    /// Bass clef with an 8 below: sounds an octave lower than written.
+    BassOctaveDown,
+    /// Bass clef with an 8 above: sounds an octave higher than written.
+    BassOctaveUp,
 }
 impl Clef {
     pub fn bottom_diatonic(self) -> i16 {
-        match self {
+        let base = match self.base() {
             Self::Treble | Self::Percussion => 30,
             Self::Alto => 24,
             Self::Tenor => 22,
-            Self::Bass => 18,
+            _ => 18,
+        };
+        base + 7 * self.octave()
+    }
+    pub const PITCHED: [Self; 8] = [
+        Self::Treble,
+        Self::Bass,
+        Self::Alto,
+        Self::Tenor,
+        Self::TrebleOctaveDown,
+        Self::TrebleOctaveUp,
+        Self::BassOctaveDown,
+        Self::BassOctaveUp,
+    ];
+    /// The clef drawn without its octave mark; it places the key signature.
+    pub fn base(self) -> Self {
+        match self {
+            Self::TrebleOctaveDown | Self::TrebleOctaveUp => Self::Treble,
+            Self::BassOctaveDown | Self::BassOctaveUp => Self::Bass,
+            clef => clef,
         }
     }
-    pub const PITCHED: [Self; 4] = [Self::Treble, Self::Bass, Self::Alto, Self::Tenor];
+    /// Octaves between the written note and its sound: −1 for an 8 below.
+    pub fn octave(self) -> i16 {
+        match self {
+            Self::TrebleOctaveDown | Self::BassOctaveDown => -1,
+            Self::TrebleOctaveUp | Self::BassOctaveUp => 1,
+            _ => 0,
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             Self::Treble => "Sol en segunda",
@@ -59,6 +94,10 @@ impl Clef {
             Self::Alto => "Do en tercera",
             Self::Tenor => "Do en cuarta",
             Self::Percussion => "Percusión",
+            Self::TrebleOctaveDown => "Sol octava baja",
+            Self::TrebleOctaveUp => "Sol octava alta",
+            Self::BassOctaveDown => "Fa octava baja",
+            Self::BassOctaveUp => "Fa octava alta",
         }
     }
     pub fn glyph(self) -> &'static str {
@@ -67,6 +106,10 @@ impl Clef {
             Self::Alto | Self::Tenor => "\u{e05c}",
             Self::Bass => "\u{e062}",
             Self::Percussion => "\u{e069}",
+            Self::TrebleOctaveDown => "\u{e052}",
+            Self::TrebleOctaveUp => "\u{e053}",
+            Self::BassOctaveDown => "\u{e064}",
+            Self::BassOctaveUp => "\u{e065}",
         }
     }
 }

@@ -718,6 +718,11 @@ enum BarEnd {
     Double,
     Final,
     RepeatEnd,
+    Dashed,
+    Dotted,
+    Tick,
+    Short,
+    Invisible,
 }
 
 /// Repeats take precedence; the final bar closes automatically.
@@ -731,6 +736,11 @@ fn bar_end(score: &Score, index: usize) -> BarEnd {
             score_core::Barline::Final => BarEnd::Final,
             score_core::Barline::Single if index + 1 == score.measures().len() => BarEnd::Final,
             score_core::Barline::Single => BarEnd::Single,
+            score_core::Barline::Dashed => BarEnd::Dashed,
+            score_core::Barline::Dotted => BarEnd::Dotted,
+            score_core::Barline::Tick => BarEnd::Tick,
+            score_core::Barline::Short => BarEnd::Short,
+            score_core::Barline::Invisible => BarEnd::Invisible,
         }
     }
 }
@@ -745,7 +755,10 @@ fn repeat_trailing(score: &Score, index: usize) -> f32 {
 
 fn barline_strokes(end: BarEnd, x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
     match end {
-        BarEnd::Single => vec![(x, metrics.bar)],
+        BarEnd::Single | BarEnd::Dashed | BarEnd::Tick | BarEnd::Short => vec![(x, metrics.bar)],
+        // Square dots, as wide as a final bar's thin stroke is long.
+        BarEnd::Dotted => vec![(x, metrics.bar * 2.)],
+        BarEnd::Invisible => Vec::new(),
         BarEnd::Double => vec![
             (x, metrics.bar),
             (x - metrics.bar_gap - metrics.bar, metrics.bar),
@@ -758,6 +771,36 @@ fn barline_strokes(end: BarEnd, x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
             ),
         ],
     }
+}
+
+/// The vertical pieces of a barline on one staff: the whole height for solid
+/// styles, dashes, dots in the spaces, or only part of the staff.
+fn barline_segments(end: BarEnd) -> Vec<(f32, f32)> {
+    let height = 4. * STAFF_SPACE;
+    let repeat = |from: f32, length: f32| {
+        (0..4)
+            .map(|space| {
+                let y = from + space as f32 * STAFF_SPACE;
+                (y, y + length)
+            })
+            .collect()
+    };
+    match end {
+        BarEnd::Dashed => repeat(STAFF_SPACE * 0.2, STAFF_SPACE * 0.6),
+        BarEnd::Dotted => repeat(STAFF_SPACE / 2. - 1., 2.),
+        BarEnd::Tick => vec![(-STAFF_SPACE / 2., STAFF_SPACE / 2.)],
+        BarEnd::Short => vec![(STAFF_SPACE, height - STAFF_SPACE)],
+        BarEnd::Invisible => Vec::new(),
+        _ => vec![(0., height)],
+    }
+}
+
+/// Only solid barlines run on between the staves of a piano or a group.
+fn joins_staves(end: BarEnd) -> bool {
+    !matches!(
+        end,
+        BarEnd::Dashed | BarEnd::Dotted | BarEnd::Tick | BarEnd::Short | BarEnd::Invisible
+    )
 }
 
 fn repeat_start_strokes(x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
@@ -1580,7 +1623,14 @@ impl LayoutEngine {
                         }
                         let strokes = measure.map_or_else(
                             || vec![(x, self.metrics.bar)],
-                            |m| barline_strokes(bar_end(score, m.index), x, &self.metrics),
+                            |m| {
+                                let end = bar_end(score, m.index);
+                                if joins_staves(end) {
+                                    barline_strokes(end, x, &self.metrics)
+                                } else {
+                                    Vec::new()
+                                }
+                            },
                         );
                         for (x, thickness) in strokes {
                             connectors.push(Line {
@@ -1625,11 +1675,16 @@ impl LayoutEngine {
                             .iter()
                             .filter(|measure| measure.origin.y == top)
                         {
-                            let mut strokes = barline_strokes(
-                                bar_end(score, measure.index),
-                                measure.origin.x + measure.width,
-                                &self.metrics,
-                            );
+                            let end = bar_end(score, measure.index);
+                            let mut strokes = if joins_staves(end) {
+                                barline_strokes(
+                                    end,
+                                    measure.origin.x + measure.width,
+                                    &self.metrics,
+                                )
+                            } else {
+                                Vec::new()
+                            };
                             if score.bar_form(measure.index).repeat_start {
                                 strokes.extend(connector_repeat_start_strokes(
                                     score,
@@ -2071,7 +2126,7 @@ fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
         }
 }
 fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
-    match (clef, flats) {
+    match (clef.base(), flats) {
         (Clef::Treble, false) => [0., 15., -5., 10., 25., 5., 20.],
         (Clef::Treble, true) => [20., 5., 25., 10., 30., 15., 35.],
         (Clef::Alto, false) => [5., 20., 0., 15., 30., 10., 25.],
@@ -2080,7 +2135,7 @@ fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
         (Clef::Tenor, true) => [15., 0., 20., 5., 25., 10., 30.],
         (Clef::Bass, false) => [10., 25., 5., 20., 35., 15., 30.],
         (Clef::Bass, true) => [30., 15., 35., 20., 40., 25., 10.],
-        (Clef::Percussion, _) => [20.; 7],
+        _ => [20.; 7],
     }
 }
 
@@ -2379,7 +2434,9 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         );
     }
     for (x, thickness) in barline_strokes(end, width, metrics) {
-        line(x, 0., x, 40., thickness);
+        for (top, bottom) in barline_segments(end) {
+            line(x, top, x, bottom, thickness);
+        }
     }
     if first {
         line(0., 0., 0., 40., metrics.bar);
@@ -2416,12 +2473,11 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             text: clef.glyph().into(),
             position: Point {
                 x: 10.,
-                y: match clef {
+                y: match clef.base() {
                     Clef::Treble => 30.,
                     Clef::Alto => 20.,
-                    Clef::Tenor => 10.,
-                    Clef::Bass => 10.,
-                    Clef::Percussion => 20.,
+                    Clef::Tenor | Clef::Bass => 10.,
+                    _ => 20.,
                 },
             },
             element: None,
@@ -3907,6 +3963,82 @@ mod tests {
         );
         assert!(!layout.connectors.is_empty());
     }
+    #[test]
+    fn octave_clefs_draw_their_8_and_move_notes_an_octave() {
+        let mut score = Score::default();
+        let voice = score.add_part(score_core::Instrument::Violin).unwrap();
+        score.append_measure().unwrap();
+        for bar in 0..2 {
+            score
+                .insert_in(
+                    voice,
+                    bar,
+                    0,
+                    Event {
+                        notation: Default::default(),
+                        pitches: score_core::Pitches::single(Pitch::new(Step::C, 4)),
+                        duration: Duration::Whole,
+                    },
+                )
+                .unwrap();
+        }
+        score
+            .set_clef_at(voice, StaffId::Upper, 1, Clef::TrebleOctaveDown)
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let plain = layout.measure(voice, 0).unwrap();
+        let octave = layout.measure(voice, 1).unwrap();
+        // Middle C sounds where a treble clef with an 8 below writes C5.
+        assert_eq!(plain.content.events[0].center.y, 50.);
+        assert_eq!(octave.content.events[0].center.y, 15.);
+        assert!(
+            octave
+                .content
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.text == "\u{e052}")
+        );
+    }
+
+    #[test]
+    fn barline_styles_draw_dashes_dots_or_part_of_the_staff() {
+        let segments = |end| barline_segments(end);
+        assert_eq!(segments(BarEnd::Single), vec![(0., 40.)]);
+        assert_eq!(segments(BarEnd::Dashed).len(), 4);
+        // One dot in the middle of each space.
+        assert_eq!(
+            segments(BarEnd::Dotted)
+                .iter()
+                .map(|(top, bottom)| (top + bottom) / 2.)
+                .collect::<Vec<_>>(),
+            [5., 15., 25., 35.]
+        );
+        assert_eq!(segments(BarEnd::Tick), vec![(-5., 5.)]);
+        assert_eq!(segments(BarEnd::Short), vec![(10., 30.)]);
+        assert!(segments(BarEnd::Invisible).is_empty());
+        assert!(joins_staves(BarEnd::Final) && !joins_staves(BarEnd::Dashed));
+        let mut score = Score::default();
+        score
+            .set_bar_form(
+                0,
+                score_core::BarForm {
+                    barline: score_core::Barline::Invisible,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let piano = score.parts()[0].id();
+        let bar = layout.measure(piano, 0).unwrap();
+        // Only the five staff lines and the opening stroke are left.
+        assert!(
+            bar.content
+                .lines
+                .iter()
+                .all(|line| line.from.y == line.to.y || line.from.x == 0.)
+        );
+    }
+
     #[test]
     fn edits_recompute_only_changed_measure_and_hit_test_tracks_ids() {
         let mut score = Score::default();
