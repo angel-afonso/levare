@@ -126,7 +126,8 @@ five-instrument ensemble.
   **Entrada de notas** gathers what you choose for each note, as MuseScore's note input
   toolbar does: note input and octave, duration, dot, triplet and rest, the rarer values
   in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental (double
-  sharp and double flat too), tie and slur, voice, and chords by interval.
+  sharp and double flat too), tie and slur, voices 1 to 4, and **Acorde**, a dropdown
+  with the chord mode and the intervals.
   **Notaciones**: changes of clef, key and time signature, repeats and barlines,
   articulations and fermata, hairpins and lines (8va, pedal, trill, glissando), string
   technique, symbols (mordents, turn, breath and caesura), grace notes, arpeggios and
@@ -222,8 +223,7 @@ five-instrument ensemble.
   licenses folder that ships with Levare.
 
 Controls marked **Pendiente** (or with a dashed border on the ribbon) do not work yet:
-several document tabs, search, direct printing, MIDI/real-time input, voices 3–4,
-manual stems, per-note velocity/sounding duration, mute/solo and timbre changes.
+several document tabs, search, direct printing, MIDI/real-time input, manual stems, per-note velocity/sounding duration, mute/solo and timbre changes.
 Saving updates the chosen file; automatic recovery also keeps a copy of the session to
 reopen it after an unexpected quit.
 
@@ -807,7 +807,7 @@ keep them.
   from C0 to B6 to keep the sound within the editor's range.
 
 They are marks on each event, compatible with arco, pizzicato, articulations, ties and
-slurs, two voices and divisi. On a passage they apply to all the selected notes in a
+slurs, voices and divisi. On a passage they apply to all the selected notes in a
 single operation; rests do not take harmonics. Playback respects the sounding pitch
 and uses Levare's own synthesized timbre for harmonics: sustained and airy with the
 bow, with a short attack and a decaying resonance in pizzicato. It also works when
@@ -873,7 +873,7 @@ triangle, tambourine and tam-tam have a percussion clef without key signature an
 stroke per voice. Their sounds are approximated with the built-in General MIDI bank;
 profiles with the same program share a timbre.
 
-Each staff takes two voices; single-staff instruments can use divisi. Older documents
+Each staff takes up to four voices; single-staff instruments can use divisi. Older documents
 keep their original pitches and sound, including the double bass previously written in
 sounding pitch. You can open
 [`examples/orquesta-completa.partitura`](examples/orquesta-completa.partitura) to check
@@ -899,22 +899,26 @@ the existing piano notes stay in the right hand and an empty left hand is added.
 can open [`examples/trio.partitura`](examples/trio.partitura) to hear an ensemble of
 piano, flute and cello.
 
-## Two voices and divisi
+## Voices and divisi
 
-Choose **Voz 1** or **Voz 2** in **Entrada de notas › Voz** or with **⌥1 / ⌥2**. Each voice has
-its own notes, rests and durations within the same bar; it does not use up the other's
+Choose **Voz 1** to **Voz 4** in **Entrada de notas › Voz** or with **⌥1–⌥4**. Each voice has
+its own notes, rests and durations within the same bar; it does not use up the others'
 rhythmic space. Choosing an empty voice turns on writing from the start of the bar. If
 it already contains music, its first note is selected: use the arrows to go through it
 and **N** to continue writing after the selection. Use rests to delay an entry.
 
-When both voices are present, voice 1 has stems up and voice 2 stems down. Beams,
-triplets, ties, slurs and articulations belong to their voice. Selecting, copying,
+When several voices are present, voices 1 and 3 have stems up and voices 2 and 4 stems
+down, as in Sibelius and MuseScore. A voice whose stem goes the same way as an earlier
+voice's on the same beat moves beside it, and the rests of voices 3 and 4 sit further out
+than those of 1 and 2. Each voice has its colour in the caret and the note preview: blue,
+green, purple and pink. Beams, triplets, ties, slurs and articulations belong to their voice. Selecting, copying,
 pasting and deleting a passage act on the active voice; clicking a note makes its
 voice active. In a unison with coinciding heads, the active voice is chosen. Each piano
-hand also takes its two voices.
+hand also takes its four voices.
 
 For an instrumental section, **div.** opens two staves from the selected note or rest:
-voice 1 in **Divisi I** and voice 2 in **Divisi II**, keeping the clef. **unis.** marks
+voice 1 in **Divisi I** and voice 2 in **Divisi II**, keeping the clef. Empty voices 3 and
+4 first: Levare explains it and changes nothing. **unis.** marks
 the return to playing together at the chosen position. Notes keep their voice,
 identity, rhythm and connections; changing the layout does not change playback. The
 buttons are in **Inicio › Divisi** (**Dividir** and **Unir**) and the Expresión
@@ -1373,7 +1377,7 @@ Importing creates an editable copy with no native path and marks it as unsaved.
 **Guardar** asks for a **.levare** file; the original MusicXML is not changed. The
 imported copy also takes part in autosave and recovery.
 
-Notes, chords of uniform duration, rests, up to two voices per staff and two staves per
+Notes, chords of uniform duration, rests, up to four voices per staff and two staves per
 instrument are kept; time signature, key signature, tempo, dynamics, basic
 articulations, complete ties and slurs, hairpins, fermatas, arco/pizzicato, harmonics
 and arpeggios. Transposing parts keep their transposition interval and are rebuilt in
@@ -1384,7 +1388,7 @@ recalculated with Levare's engraving.
 If something is left out or adapted, a warning appears on opening: for example, lyrics,
 free text, ornaments, chord symbols, instruments without an equivalent and ties or
 slurs that affect only some notes of a chord. Cases that cannot represent the music
-correctly are refused with an explanation, including more than two voices per staff,
+correctly are refused with an explanation, including more than four voices per staff,
 rhythms beyond the supported resolution, microtones, different simultaneous time
 signatures and touch harmonics with no deducible sounding pitch. Natural harmonics
 without a pitch type are read at the written pitch with a warning. The artificial
@@ -1447,7 +1451,7 @@ Process and secrets: [`docs/releasing.md`](docs/releasing.md).
 
 ## Current scope
 
-Two voices per staff and divisi on one or two staves, chords of up to eight notes with
+Four voices per staff and divisi on one or two staves, chords of up to eight notes with
 sharps, flats and naturals, six durations (from the whole note to the thirty-second)
 with dots and triplets, and treble, C and bass clefs. The engraving includes beaming,
 ledger lines, articulations, dynamics, ties and slurs, hairpins, grace notes, lines,

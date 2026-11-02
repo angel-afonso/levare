@@ -171,12 +171,12 @@ fn maximum_ensemble_tremolos_keep_the_existing_simultaneous_voice_limit() {
     let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
     assert_eq!(
         plan.held_notes_at(1000).into_iter().flatten().count(),
-        MAX_SOUNDING_NOTES
+        score_core::MAX_STAVES * 2 * score_core::MAX_CHORD_NOTES
     );
     assert_eq!(plan.held_notes_at(2900).into_iter().flatten().count(), 0);
     assert_eq!(
         plan.held_notes_at(4000).into_iter().flatten().count(),
-        MAX_SOUNDING_NOTES
+        score_core::MAX_STAVES * 2 * score_core::MAX_CHORD_NOTES
     );
 }
 #[test]

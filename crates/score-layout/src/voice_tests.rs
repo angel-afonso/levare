@@ -65,8 +65,8 @@ fn simultaneous_voices_share_time_opposite_stems_and_clear_seconds() {
             .y
             > 20.
     );
-    assert_eq!(bar.content.cursor_x.len(), 2);
-    assert_eq!(bar.content.second_cursor_x.len(), 3);
+    assert_eq!(bar.content.cursor_x[0].len(), 2);
+    assert_eq!(bar.content.cursor_x[1].len(), 3);
     for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
         let view = LayoutEngine::default().layout_view(&s, 1000., mode);
         assert!(
@@ -92,17 +92,22 @@ fn simultaneous_voices_share_time_opposite_stems_and_clear_seconds() {
 fn beams_never_join_voices_and_a_divided_violin_keeps_two_treble_clefs() {
     let mut s = Score::default();
     let p = s.add_part(Instrument::Violin).unwrap();
+    let mut extra = Vec::new();
     for voice in Voice::ALL {
         for i in 0..4 {
-            s.insert_in_voice(
-                p,
-                StaffId::Upper,
-                0,
-                voice,
-                i,
-                note(Step::E, Duration::Eighth),
-            )
-            .unwrap();
+            let id = s
+                .insert_in_voice(
+                    p,
+                    StaffId::Upper,
+                    0,
+                    voice,
+                    i,
+                    note(Step::E, Duration::Eighth),
+                )
+                .unwrap();
+            if !matches!(voice, Voice::One | Voice::Two) {
+                extra.push(id);
+            }
         }
     }
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
@@ -115,11 +120,12 @@ fn beams_never_join_voices_and_a_divided_violin_keeps_two_treble_clefs() {
                 .iter()
                 .all(|id| s.voice_of(*id) == Some(voice))
         );
-        assert!(
-            beam.stems
-                .iter()
-                .all(|stem| stem.down == (voice == Voice::Two))
-        );
+        assert!(beam.stems.iter().all(|stem| stem.down == voice.is_lower()));
+    }
+    // Divisi has two staves for two voices: 3 and 4 must be emptied first.
+    assert!(s.set_part_divisi(p, true).is_err());
+    for id in extra {
+        s.remove(id).unwrap();
     }
     s.set_part_divisi(p, true).unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
@@ -674,4 +680,56 @@ fn projected_continuations_preserve_canonical_cursor_indices_and_attack_lookup()
     .unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
     assert_eq!(layout.event_measure(a).unwrap().staff, StaffId::Lower);
+}
+#[test]
+fn voices_three_and_four_follow_one_and_two_beside_them() {
+    let mut s = Score::default();
+    let p = s.parts()[0].id();
+    s.append_measure().unwrap();
+    let steps = [Step::G, Step::C, Step::B, Step::E];
+    let mut heads = Vec::new();
+    let mut rests = Vec::new();
+    for (voice, step) in Voice::ALL.into_iter().zip(steps) {
+        heads.push(
+            s.insert_in_voice(p, StaffId::Upper, 0, voice, 0, note(step, Duration::Half))
+                .unwrap(),
+        );
+        let rest = Event {
+            pitches: Pitches::default(),
+            ..note(Step::C, Duration::Quarter)
+        };
+        rests.push(
+            s.insert_in_voice(p, StaffId::Upper, 1, voice, 0, rest)
+                .unwrap(),
+        );
+    }
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let glyph = |bar: usize, id| {
+        layout
+            .measure_on(p, StaffId::Upper, bar)
+            .unwrap()
+            .content
+            .glyphs
+            .iter()
+            .find(|g| g.element == Some(id))
+            .unwrap()
+            .clone()
+    };
+    let [one, two, three, four] = [0, 1, 2, 3].map(|i| glyph(0, heads[i]));
+    // Voices 1 and 3 point up, 2 and 4 down.
+    assert_eq!([&one, &three].map(|g| g.text.as_str()), ["\u{e1d3}"; 2]);
+    assert_eq!([&two, &four].map(|g| g.text.as_str()), ["\u{e1d4}"; 2]);
+    // A stem going the same way as an earlier voice's moves beside it.
+    assert!(three.position.x - one.position.x >= 12.);
+    assert!(four.position.x - two.position.x >= 12.);
+    // Rests stack outward: 3 above 1, 4 below 2.
+    let y = |i: usize| glyph(1, rests[i]).position.y;
+    assert!(y(2) < y(0) && y(0) < y(1) && y(1) < y(3));
+    for voice in [Voice::Three, Voice::Four] {
+        assert!(
+            layout
+                .voice_cursor(p, StaffId::Upper, 0, voice, 1)
+                .is_some()
+        );
+    }
 }

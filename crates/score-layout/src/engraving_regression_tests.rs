@@ -552,7 +552,7 @@ fn original_slur_envelope_excludes_text_and_dynamics_in_both_voices() {
                 .unwrap();
             let bar = layout.event_measure(ids[1]).unwrap();
             let (top, bottom) = expression::notation_bounds(&bar.content, &Metrics::bravura());
-            let expected = if voice == Voice::Two {
+            let expected = if voice.is_lower() {
                 bottom + 8.
             } else {
                 top - 8.

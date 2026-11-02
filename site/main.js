@@ -370,7 +370,7 @@
     const keyDur = { 6: 'w', 5: 'h', 4: 'q', 3: 'e', 2: 's', 1: 't' }[k];
     const keyAcc = { 7: 0, 8: 1, 9: -1 }[k];
     let target = null;
-    if (e.altKey && (e.code === 'Digit1' || e.code === 'Digit2')) { state.voice = Number(e.code.slice(-1)); target = $(`[data-voice="${state.voice}"]`); sync(); }
+    if (e.altKey && /^Digit[1-4]$/.test(e.code)) { state.voice = Number(e.code.slice(-1)); target = $(`[data-voice="${state.voice}"]`); sync(); }
     else if (e.altKey) return;
     else if (/^[a-g]$/i.test(k) && state.entry) { write(k.toUpperCase()); target = $(`[data-note="${k.toUpperCase()}"]`); }
     else if (k === 'n' || k === 'N') { stopDemo(); state.entry = !state.entry; target = $('[data-entry]'); sync(); }

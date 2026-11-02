@@ -1706,6 +1706,8 @@ impl AppView {
 
             id::VOICE_1 => self.choose_voice(score_core::Voice::One, cx),
             id::VOICE_2 => self.choose_voice(score_core::Voice::Two, cx),
+            id::VOICE_3 => self.choose_voice(score_core::Voice::Three, cx),
+            id::VOICE_4 => self.choose_voice(score_core::Voice::Four, cx),
             id::DIVIDE_PART => self.edit(Command::SetPassageDivisi(true), cx),
             id::JOIN_PART => self.edit(Command::SetPassageDivisi(false), cx),
             id::TOGGLE_NOTE_INPUT => self.toggle_note_entry(cx),

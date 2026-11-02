@@ -345,6 +345,8 @@ impl Shortcuts {
                     None,
                     Some(id::VOICE_1),
                     Some(id::VOICE_2),
+                    Some(id::VOICE_3),
+                    Some(id::VOICE_4),
                     Some(id::TOGGLE_NOTE_INPUT),
                     Some(id::CHORD_MODE),
                     None,

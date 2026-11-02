@@ -75,7 +75,9 @@ pub use pitches::{MAX_CHORD_NOTES, Pitches};
 // Bounded ensemble size; playback assigns independent channels for every part.
 pub const MAX_PARTS: usize = 48;
 pub const MAX_STAVES: usize = MAX_PARTS * 2;
-pub const MAX_SOUNDING_NOTES: usize = MAX_STAVES * MAX_CHORD_NOTES * 2;
+/// Playback plays each voice of each staff on its own track.
+pub const MAX_TRACKS: usize = MAX_STAVES * Voice::ALL.len();
+pub const MAX_SOUNDING_NOTES: usize = MAX_TRACKS * MAX_CHORD_NOTES;
 
 /// Identity within a part. Piano hands keep separate event stores and cursors.
 #[derive(
@@ -302,6 +304,10 @@ pub struct Measure {
     order: Vector<EventId>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     second_order: Vector<EventId>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    third_order: Vector<EventId>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    fourth_order: Vector<EventId>,
 }
 
 impl Default for Measure {
@@ -310,6 +316,8 @@ impl Default for Measure {
             events: Arc::new(SlotMap::with_key()),
             order: Vector::new(),
             second_order: Vector::new(),
+            third_order: Vector::new(),
+            fourth_order: Vector::new(),
         }
     }
 }
@@ -321,6 +329,8 @@ impl PartialEq for Measure {
         if Arc::ptr_eq(&self.events, &other.events)
             && self.order == other.order
             && self.second_order == other.second_order
+            && self.third_order == other.third_order
+            && self.fourth_order == other.fourth_order
         {
             return true;
         }
@@ -333,16 +343,21 @@ impl Eq for Measure {}
 
 impl Measure {
     pub fn iter(&self) -> impl Iterator<Item = (EventId, &Event)> {
-        self.order
-            .iter()
-            .chain(self.second_order.iter())
+        Voice::ALL
+            .into_iter()
+            .flat_map(move |voice| self.voice_order(voice).iter())
             .filter_map(|id| self.events.get(*id).map(|event| (*id, event)))
     }
     pub fn len(&self) -> usize {
-        self.order.len() + self.second_order.len()
+        Voice::ALL
+            .into_iter()
+            .map(|voice| self.voice_len(voice))
+            .sum()
     }
     pub fn is_empty(&self) -> bool {
-        self.order.is_empty() && self.second_order.is_empty()
+        Voice::ALL
+            .into_iter()
+            .all(|voice| self.voice_order(voice).is_empty())
     }
     pub fn used_ticks(&self) -> u32 {
         Voice::ALL
@@ -972,12 +987,12 @@ impl Score {
                 }
                 for (index, measure) in staff.measures.iter().enumerate() {
                     if measure.len() != measure.events.len()
-                        || measure.len() > MAX_EVENTS_PER_MEASURE * 2
+                        || measure.len() > MAX_EVENTS_PER_MEASURE * Voice::ALL.len()
                     {
                         return Err(ScoreError("Índice de notas inválido"));
                     }
                     let mut seen = std::collections::HashSet::new();
-                    let mut ticks = [0u32; 2];
+                    let mut ticks = [0u32; Voice::ALL.len()];
                     for (voice, id) in Voice::ALL
                         .into_iter()
                         .flat_map(|v| measure.voice_order(v).iter().map(move |id| (v, id)))

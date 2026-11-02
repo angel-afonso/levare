@@ -294,7 +294,7 @@ fn independent_overlapping_slurs_remain_voice_local_and_divisi_preserves_music()
     let mut e = Editor::new(score).unwrap();
     e.select_part(violin);
     let mut voices = Vec::new();
-    for voice in Voice::ALL {
+    for voice in [Voice::One, Voice::Two] {
         e.select_voice(voice);
         e.execute(Command::Insert(note(C, Duration::Half))).unwrap();
         let a = e.selection().unwrap();
@@ -429,7 +429,7 @@ fn selected_divisi_passage_and_unis_boundaries_keep_both_voices_and_undo() {
     }
     let mut ids = Vec::new();
     for bar in 0..6 {
-        for voice in Voice::ALL {
+        for voice in [Voice::One, Voice::Two] {
             ids.push(
                 s.insert_in_voice(
                     p,

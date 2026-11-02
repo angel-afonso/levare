@@ -1,6 +1,9 @@
 //! Convert positioned MusicXML streams into the native bounded rhythm model.
 use super::*;
 
+/// Native lanes per staff: the upper staff's voices are lanes 0–3, the lower's 4–7.
+const STAFF_LANES: u8 = Voice::ALL.len() as u8;
+
 struct Lanes {
     passage: bool,
     upper: Vec<String>,
@@ -25,10 +28,13 @@ impl Lanes {
                 }
             }
         }
-        if lanes.upper.len() > 2 || lanes.lower.len() > 2 || (part.passage && lanes.lower.len() > 1)
+        let most = usize::from(STAFF_LANES);
+        if lanes.upper.len() > most
+            || lanes.lower.len() > most
+            || (part.passage && (lanes.upper.len() > 2 || lanes.lower.len() > 1))
         {
             return Err(error(
-                "MusicXML: máximo de dos voces por pentagrama y una voz por rama de divisi temporal",
+                "MusicXML: máximo de cuatro voces por pentagrama y una voz por rama de divisi temporal",
             ));
         }
         Ok(lanes)
@@ -49,21 +55,17 @@ impl Lanes {
         } else {
             0
         };
-        Ok((if staff == 2 { 2 } else { 0 }) + index as u8)
+        Ok((if staff == 2 { STAFF_LANES } else { 0 }) + index as u8)
     }
 }
 fn source(lane: u8) -> (StaffId, Voice) {
     (
-        if lane >= 2 {
+        if lane >= STAFF_LANES {
             StaffId::Lower
         } else {
             StaffId::Upper
         },
-        if lane % 2 == 1 {
-            Voice::Two
-        } else {
-            Voice::One
-        },
+        Voice::ALL[usize::from(lane % STAFF_LANES)],
     )
 }
 fn put(
@@ -235,7 +237,13 @@ fn normalize_techniques(
         return Ok(());
     }
     let divided = score.part(part).unwrap().is_divisi();
-    let scope = |lane: u8| if divided || lane < 2 { 0u8 } else { 1 };
+    let scope = |lane: u8| {
+        if divided || lane < STAFF_LANES {
+            0u8
+        } else {
+            1
+        }
+    };
     let mut words: [BTreeMap<(usize, u32), PlayingTechnique>; 2] = Default::default();
     for (bar, b) in data.bars.iter().enumerate() {
         for m in &b.directions {
@@ -282,7 +290,12 @@ fn normalize_techniques(
     for staff in p.staves() {
         for (bar, b) in staff.measures().iter().enumerate() {
             for (voice, tick, event, n) in b.timed_iter() {
-                let lane = if staff.id() == StaffId::Lower { 2 } else { 0 } + voice.number() - 1;
+                let lane = if staff.id() == StaffId::Lower {
+                    STAFF_LANES
+                } else {
+                    0
+                } + voice.number()
+                    - 1;
                 events.push((
                     bar,
                     tick,

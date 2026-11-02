@@ -194,7 +194,7 @@ const fn mark(kind: MarkKind, label: &'static str, hint: &'static str) -> Contro
 /// Same sentence for both hairpins: they are written in two clicks.
 const HAIRPIN_HINT: &str =
     "Selecciona un pasaje, o marca inicio y final con el mismo botón. Esc cancela.";
-const VOICE_HINT: &str = "Dos voces: plicas arriba para la voz 1 y abajo para la voz 2. Cada una conserva su propio ritmo.";
+const VOICE_HINT: &str = "Hasta cuatro voces: plicas arriba para las voces 1 y 3, abajo para la 2 y la 4. Cada una conserva su propio ritmo.";
 const DIVISI_HINT: &str = "div. abre dos pentagramas desde la posición elegida; unis. vuelve a uno. También dentro de un compás.";
 const HARMONIC_HINT: &str = "Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo.";
 
@@ -434,27 +434,25 @@ const VOICES: GroupSpec = GroupSpec {
     controls: &[
         choice(tile(id::VOICE_1, Label("1"), "Voz 1", VOICE_HINT)),
         choice(tile(id::VOICE_2, Label("2"), "Voz 2", VOICE_HINT)),
+        choice(tile(id::VOICE_3, Label("3"), "Voz 3", VOICE_HINT)),
+        choice(tile(id::VOICE_4, Label("4"), "Voz 4", VOICE_HINT)),
     ],
 };
+/// Both ways of building a chord: stacking the notes you write, or adding an
+/// interval above the selected one. The split button lights up while the chord
+/// mode is on.
 const CHORDS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Acorde",
     visual: Visual::Chord,
-    priority: 4,
-    controls: &[toggle(tile(
-        id::CHORD_MODE,
-        Visual::Chord,
-        "Acorde",
-        "Las notas que escribas se apilan en la misma posición.",
-    ))],
-};
-/// The intervals that stack a note above the selected one.
-const INTERVALS: GroupSpec = GroupSpec {
-    dropdown: true,
-    title: "Intervalo",
-    visual: Label("3ª"),
     priority: 3,
     controls: &[
+        toggle(tile(
+            id::CHORD_MODE,
+            Visual::Chord,
+            "Acorde",
+            "Las notas que escribas se apilan en la misma posición.",
+        )),
         tile(
             id::INTERVAL_2,
             Label("2ª"),
@@ -1504,7 +1502,6 @@ pub const TABS: &[TabSpec] = &[
             TIES,
             VOICES,
             CHORDS,
-            INTERVALS,
         ],
     },
     TabSpec {
@@ -1630,7 +1627,6 @@ mod tests {
             TIES,
             VOICES,
             CHORDS,
-            INTERVALS,
             ARTICULATIONS,
             GRACES,
             ARPEGGIOS,

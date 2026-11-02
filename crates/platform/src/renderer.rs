@@ -114,7 +114,7 @@ pub struct Control {
 pub struct PlaybackPosition {
     pub frame: u64,
     pub element: Option<score_core::ElementId>,
-    pub elements: [Option<score_core::ElementId>; score_core::MAX_STAVES * 2],
+    pub elements: [Option<score_core::ElementId>; score_core::MAX_TRACKS],
 }
 
 impl Control {

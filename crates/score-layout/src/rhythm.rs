@@ -141,7 +141,8 @@ pub(super) fn tuplets(
                 whole,
                 &note_lines,
                 metrics,
-                measure.has_two_voices() && measure.voice_of(run[0].event) == Some(Voice::Two),
+                measure.has_several_voices()
+                    && measure.voice_of(run[0].event).is_some_and(Voice::is_lower),
             );
         }
     }

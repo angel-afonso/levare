@@ -43,7 +43,7 @@ pub(super) fn ghost_at(
     let bar = &score_part.staff(placed.source_staff)?.measures()[measure];
     let capacity = score.time_at(measure).capacity();
     let step = duration.ticks() as usize;
-    let tick = placed.source_onsets[usize::from(voice == Voice::Two)]
+    let tick = placed.source_onsets[voice.index()]
         .iter()
         .copied()
         .chain((0..capacity).step_by(step))

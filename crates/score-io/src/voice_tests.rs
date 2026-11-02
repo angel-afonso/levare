@@ -34,6 +34,43 @@ fn both_voices_and_divided_parts_round_trip_and_invalid_voice_indices_are_reject
 }
 
 #[test]
+fn four_voices_round_trip_through_levare_and_musicxml_but_not_into_divisi() {
+    let mut s = Score::default();
+    let p = s.add_part(Instrument::Violin).unwrap();
+    s.remove_part(s.parts()[0].id()).unwrap();
+    for (voice, step) in Voice::ALL
+        .into_iter()
+        .zip([Step::G, Step::C, Step::E, Step::A])
+    {
+        let note = Event {
+            pitches: Pitches::single(Pitch::new(step, 4)),
+            duration: Duration::Whole,
+            notation: Default::default(),
+        };
+        s.insert_in_voice(p, StaffId::Upper, 0, voice, 0, note)
+            .unwrap();
+    }
+    assert_eq!(decode(&encode(&s).unwrap()).unwrap(), s);
+    let xml = String::from_utf8(musicxml::encode(&s).unwrap()).unwrap();
+    for voice in 1..=4 {
+        assert!(xml.contains(&format!("<voice>{voice}</voice>")));
+    }
+    let imported = musicxml::decode(xml.as_bytes()).unwrap().score;
+    let bar = &imported.parts()[0].staves()[0].measures()[0];
+    for (voice, step) in Voice::ALL
+        .into_iter()
+        .zip([Step::G, Step::C, Step::E, Step::A])
+    {
+        let (_, event) = bar.voice_iter(voice).next().unwrap();
+        assert_eq!(event.pitches.first().unwrap().step, step, "{voice:?}");
+    }
+    let mut divided = s.clone();
+    assert!(divided.set_part_divisi(p, true).is_err());
+    assert!(divided.set_passage_divisi(p, 0, None, true).is_err());
+    assert_eq!(divided, s);
+}
+
+#[test]
 fn passage_changes_round_trip_recover_and_follow_bar_edits() {
     let mut s = Score::default();
     let p = s.add_part(Instrument::Violin).unwrap();

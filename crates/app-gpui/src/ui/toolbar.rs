@@ -1141,11 +1141,7 @@ fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
         duration,
         dots: rhythm.dots(),
         tuplet: rhythm.tuplet().map(score_core::Tuplet::name),
-        voice: if view.state(id::VOICE_1).checked {
-            1
-        } else {
-            2
-        },
+        voice: view.document.editor.cursor().voice.number(),
         chord: view.state(id::CHORD_MODE).checked,
         key: key.as_deref(),
     }

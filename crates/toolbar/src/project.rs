@@ -510,10 +510,10 @@ mod tests {
         assert_eq!(
             split,
             vec![
+                "Acorde",
                 "Arpegio",
                 "D.C. / D.S.",
                 "Estilo de ensayo",
-                "Intervalo",
                 "Líneas",
                 "Más dinámicas",
                 "Más figuras",
@@ -631,7 +631,7 @@ mod tests {
         );
         let voices = group("Voz");
         assert!(
-            matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 2)
+            matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 4)
         );
     }
 
@@ -656,8 +656,9 @@ mod tests {
             for (tab_id, title, commands, selected) in [
                 (
                     TabId::NoteInput,
-                    "Intervalo",
+                    "Acorde",
                     &[
+                        id::CHORD_MODE,
                         id::INTERVAL_2,
                         id::INTERVAL_3,
                         id::INTERVAL_4,
@@ -881,9 +882,10 @@ mod tests {
     /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there the
     /// tightest tabs drop one more group's names at 1440; their fonts still
     /// need measuring. Entrada de notas holds what Sibelius spreads over its
-    /// keypad, so on macOS too Modificar, Alteración and Acorde show only
+    /// keypad, so on macOS too Modificar, Alteración and Ligadura show only
     /// their symbols and keys there, over their group's title: the dot, the
-    /// tuplet, the rest, the five signs and the chord read without names.
+    /// tuplet, the rest, the five signs, the tie and the slur read without
+    /// names, so that the four voices keep theirs.
     /// Texto's dynamics are named as they are drawn, so they drop names that
     /// only repeat them.
     #[test]
@@ -898,7 +900,7 @@ mod tests {
                 .filter(|group| !group.dropdown && group.mode != GroupMode::Expanded)
                 .map(|group| group.title)
                 .collect();
-            if spec.id == TabId::NoteInput && titles == ["Modificar", "Alteración", "Acorde"] {
+            if spec.id == TabId::NoteInput && titles == ["Modificar", "Alteración", "Ligadura"] {
                 continue;
             }
             if spec.id == TabId::Text && titles == ["Dinámica"] {
@@ -928,7 +930,7 @@ mod tests {
     fn writing_keeps_durations_entry_and_accidentals_longest() {
         let last = ["Duración", "Entrada", "Alteración"];
         let middle = ["Voz", "Modificar"];
-        let first = ["Ligadura", "Acorde", "Intervalo"];
+        let first = ["Ligadura", "Acorde"];
         let priority = |title: &str| {
             tab(TabId::NoteInput)
                 .groups

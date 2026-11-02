@@ -458,14 +458,14 @@ fn hairpins_schedule_continuous_expression_chase_ties_and_isolate_both_piano_han
         }
     }
     let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
-    assert_eq!(p.tracks.len(), MAX_STAVES);
+    assert_eq!(p.tracks.len(), score_core::MAX_STAVES);
     assert_eq!(
         p.tracks
             .iter()
             .map(|t| t.channel)
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        MAX_STAVES
+        score_core::MAX_STAVES
     );
     assert!(
         p.tracks

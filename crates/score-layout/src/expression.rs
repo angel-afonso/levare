@@ -337,8 +337,8 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         )
         .fold(20f32, f32::min);
     let x = heads.first().map_or(0., |head| head.center.x);
-    let poly = result.events.iter().any(|head| head.voice == Voice::Two);
-    let below = poly && heads.first().is_some_and(|head| head.voice == Voice::Two);
+    let poly = result.events.iter().any(|head| head.voice != Voice::One);
+    let below = poly && heads.first().is_some_and(|head| head.voice.is_lower());
     let down = if poly {
         below
     } else {
@@ -791,9 +791,9 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                 .staff(c.start.staff)
                 .unwrap()
                 .measures()[c.start.measure]
-                .has_two_voices()
+                .has_several_voices()
             {
-                score.voice_of(c.start) == Some(Voice::Two)
+                score.voice_of(c.start).is_some_and(Voice::is_lower)
             } else if count > 1 {
                 a.center.y
                     >= (start_heads
@@ -856,7 +856,7 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                         .fold((f32::INFINITY, f32::NEG_INFINITY), |a, b| {
                             (a.0.min(b.0), a.1.max(b.1))
                         });
-                    if score.voice_of(c.start) == Some(Voice::Two) {
+                    if score.voice_of(c.start).is_some_and(Voice::is_lower) {
                         (bottom + 8., bottom + 8., 14.)
                     } else {
                         (top - 8., top - 8., -14.)
@@ -1058,7 +1058,7 @@ pub(super) fn hairpin_y<'a>(
 pub(super) fn curve_lanes(score: &Score) -> HashMap<(PartId, StaffId, usize), (bool, bool)> {
     let mut lanes = HashMap::<_, (bool, bool)>::new();
     for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
-        let below = score.voice_of(c.start) == Some(Voice::Two);
+        let below = score.voice_of(c.start).is_some_and(Voice::is_lower);
         for index in c.start.measure..=c.end.measure {
             let lanes = lanes
                 .entry((c.start.part, c.start.staff, index))

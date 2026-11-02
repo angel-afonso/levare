@@ -70,13 +70,22 @@ impl Score {
         let current = next.part_mut(part)?;
         current.divisi_changes.clear();
         if divided && !current.divided {
+            if current.staves[0]
+                .measures
+                .iter()
+                .any(Measure::has_extra_voices)
+            {
+                return Err(ScoreError(
+                    "Vacía las voces 3 y 4 antes de dividir el pentagrama",
+                ));
+            }
             let mut lower = Staff::new(StaffId::Lower, 0);
             for (bar, upper) in current.staves[0].measures.iter_mut().enumerate() {
                 let order = std::mem::take(&mut upper.second_order);
                 let mut extracted = Measure {
                     events: upper.events.clone(),
                     order: order.clone(),
-                    second_order: Vector::new(),
+                    ..Measure::default()
                 };
                 Arc::make_mut(&mut extracted.events).retain(|id, _| order.contains(&id));
                 Arc::make_mut(&mut upper.events).retain(|id, _| !order.contains(&id));
@@ -102,7 +111,9 @@ impl Score {
             let lower = current.staves[1].clone();
             for (bar, source) in lower.measures.iter().enumerate() {
                 let target = &mut current.staves[0].measures[bar];
-                if source.has_two_voices() || (!source.is_empty() && target.has_two_voices()) {
+                if source.has_several_voices()
+                    || (!source.is_empty() && target.voice_len(Voice::Two) > 0)
+                {
                     return Err(ScoreError(
                         "No se pueden reunir más de dos voces. Vacía una voz antes de reunir los pentagramas",
                     ));
@@ -300,6 +311,8 @@ impl Part {
         if let Some(voice) = voice {
             measure.order = original.voice_order(voice).clone();
             measure.second_order.clear();
+            measure.third_order.clear();
+            measure.fourth_order.clear();
             let order = measure.order.clone();
             Arc::make_mut(&mut measure.events).retain(|id, _| order.contains(&id));
         }
@@ -463,6 +476,13 @@ impl Part {
     pub(super) fn validate_divisi_cuts(&self) -> Result<(), ScoreError> {
         if self.divided || self.instrument.is_grand_staff() {
             return Ok(());
+        }
+        if (0..self.measures().len())
+            .any(|bar| self.bar_has_divisi(bar) && self.measures()[bar].has_extra_voices())
+        {
+            return Err(ScoreError(
+                "Las voces 3 y 4 no caben en un divisi. Vacíalas antes de dividir",
+            ));
         }
         for (&bar, changes) in &self.divisi_changes {
             for (voice, tick, _, event) in self.measures()[bar].timed_iter() {

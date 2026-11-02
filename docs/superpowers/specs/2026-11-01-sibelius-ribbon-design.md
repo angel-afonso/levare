@@ -34,14 +34,17 @@ name and key, choice tracks, groups without cards) stays.
 - Diseño: Sistema y página, and Posición (Restablecer).
 - At 1440 px only dropdowns fold. To fit, the families Sibelius shows as galleries are
   dropdowns: Repeticiones, Líneas, Nota de adorno, Arpegio, Trémolo, D.C. / D.S. and
-  Estilo de ensayo. Entrada de notas drops the names of Modificar and Ligadura at 1440;
-  their symbols and keys stay. «Título y créditos» is shortened to «Título…».
+  Estilo de ensayo. Entrada de notas drops the names of Modificar, Alteración and
+  Ligadura at 1440; their symbols and keys stay.
+- Voz holds the four voices, as Sibelius and MuseScore do. To make room, the chord mode
+  joins the intervals in one **Acorde** dropdown; its split button lights up while the
+  mode is on. «Título y créditos» is shortened to «Título…».
 - Published command ids keep their names. `TAB_HOME` opens Inicio, `TAB_LAYOUT` Diseño;
   `TAB_DYNAMICS` stays registered without a default key and opens Texto.
 
 ## Left out of this phase
 
-- Pending commands (Voz 3 and 4, Símbolo…, Líneas…, Flexi-time, MIDI input): Entrada de
-  notas has no room for controls that do nothing yet.
+- Pending commands (Símbolo…, Líneas…, Flexi-time, MIDI input): Entrada de notas has no
+  room for controls that do nothing yet.
 - Dividir and Reunir parte: Divisi stays their only home.
 - Quitar instrumento: the ribbon has no remove buttons.

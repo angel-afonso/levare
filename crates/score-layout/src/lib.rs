@@ -129,8 +129,8 @@ pub struct MeasureLayout {
     pub beams: Vec<BeamGroup>,
     pub events: Vec<EventPosition>,
     pub staff_spans: Vec<(f32, f32)>,
-    pub cursor_x: Vec<f32>,
-    pub second_cursor_x: Vec<f32>,
+    /// Caret positions before each event and at the end, one list per voice.
+    pub cursor_x: [Vec<f32>; 4],
     /// Shared rhythmic onsets, including bar end, for a continuous playhead.
     pub time_positions: Vec<(u32, f32)>,
     pub top: f32,
@@ -197,7 +197,7 @@ pub struct PlacedMeasure {
     pub source_staff: StaffId,
     pub source_voice: Option<Voice>,
     pub regions: Vec<VoiceRegion>,
-    pub source_onsets: [Vec<u32>; 2],
+    pub source_onsets: [Vec<u32>; 4],
     pub part: PartId,
     pub index: usize,
     pub origin: Point,
@@ -217,7 +217,7 @@ impl PlacedMeasure {
                 Voice::One
             }
         });
-        let onsets = &self.source_onsets[usize::from(voice == Voice::Two)];
+        let onsets = &self.source_onsets[voice.index()];
         let capacity = self.content.time_positions.last().unwrap().0;
         let index = onsets
             .iter()
@@ -541,7 +541,7 @@ impl Layout {
             .measures
             .iter()
             .find(|m| m.part == part && m.source_staff == staff && m.index == measure)?;
-        let tick = f64::from(*source.source_onsets[usize::from(voice == Voice::Two)].get(index)?);
+        let tick = f64::from(*source.source_onsets[voice.index()].get(index)?);
         let capacity = source.content.time_positions.last()?.0;
         let placed = self.voice_measure_at_tick(
             part,
@@ -552,11 +552,13 @@ impl Layout {
         )?;
         Some(Point {
             x: (placed.origin.x
-                + *if voice == Voice::One || placed.source_voice.is_some() {
-                    placed.content.cursor_x.get(index)?
+                // A divisi staff shows its source voice as the first one.
+                + *placed.content.cursor_x[if placed.source_voice.is_some() {
+                    0
                 } else {
-                    placed.content.second_cursor_x.get(index)?
-                })
+                    voice.index()
+                }]
+                .get(index)?)
                 * self.scale,
             y: placed.origin.y * self.scale,
         })
@@ -607,7 +609,7 @@ impl Rhythm {
                     score.written_key_at(part.id(), index),
                 );
                 for (_, tick, id, event) in staff.measures()[index].timed_iter() {
-                    if staff.measures()[index].has_two_voices()
+                    if staff.measures()[index].has_several_voices()
                         || event.duration.is_dotted()
                         || event.notation.dynamic.is_some()
                         || event.notation.technique.is_some()
@@ -2269,38 +2271,49 @@ fn engrave_accidentals(
     }
 }
 
-fn voice_offset(measure: &Measure, voice: Voice, tick: u32) -> f32 {
-    if voice != Voice::Two {
-        return 0.;
+/// Where a rest sits when voices share the staff: voices 1 and 3 above the
+/// middle, 2 and 4 below, the extra voices one space further out.
+fn rest_y(voice: Voice) -> f32 {
+    match voice {
+        Voice::One => 5.,
+        Voice::Two => 35.,
+        Voice::Three => -5.,
+        Voice::Four => 45.,
     }
-    let one = measure
-        .timed_iter()
-        .find(|(v, t, _, _)| *v == Voice::One && *t == tick);
-    let two = measure
-        .timed_iter()
-        .find(|(v, t, _, _)| *v == Voice::Two && *t == tick);
-    match (one, two) {
-        (Some((_, _, _, a)), Some((_, _, _, b)))
-            if a.pitches == b.pitches
+}
+
+/// A voice moves right of an earlier one starting at the same tick when their
+/// heads would touch (a second apart or closer) or when both stems point the
+/// same way; identical notes share their heads.
+fn voice_offset(measure: &Measure, voice: Voice, tick: u32) -> f32 {
+    let at = |voice: Voice| {
+        measure
+            .timed_iter()
+            .find(|(v, t, _, _)| *v == voice && *t == tick)
+            .map(|(_, _, _, event)| event)
+    };
+    let Some(b) = at(voice) else {
+        return 0.;
+    };
+    let touches = |a: &score_core::Event| {
+        written_pitches(a, KeySignature::default())
+            .iter()
+            .any(|(a, _, _, _)| {
+                written_pitches(b, KeySignature::default())
+                    .iter()
+                    .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
+            })
+    };
+    let shifted = Voice::ALL[..voice.index()].iter().any(|&earlier| {
+        at(earlier).is_some_and(|a| {
+            let shared = a.pitches == b.pitches
                 && a.duration == b.duration
                 && a.notation.harmonic == b.notation.harmonic
-                && a.notation.harmonic != Some(score_core::Harmonic::Artificial) =>
-        {
-            0.
-        }
-        (Some((_, _, _, a)), Some((_, _, _, b)))
-            if written_pitches(a, KeySignature::default())
-                .iter()
-                .any(|(a, _, _, _)| {
-                    written_pitches(b, KeySignature::default())
-                        .iter()
-                        .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
-                }) =>
-        {
-            14.
-        }
-        _ => 0.,
-    }
+                && a.notation.harmonic != Some(score_core::Harmonic::Artificial);
+            !shared && (earlier.is_lower() == voice.is_lower() || touches(a))
+        })
+    });
+    if shifted { 14. } else { 0. }
 }
 
 fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> MeasureLayout {
@@ -2334,8 +2347,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         beams: Vec::new(),
         events: Vec::new(),
         staff_spans: vec![(0., width)],
-        cursor_x: Vec::new(),
-        second_cursor_x: Vec::new(),
+        cursor_x: Default::default(),
         time_positions: rhythm
             .ticks
             .iter()
@@ -2490,12 +2502,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
     for (voice, tick, id, event) in measure.timed_iter() {
         let onset = rhythm.x(tick) + voice_offset(measure, voice, tick);
-        let forced = measure.has_two_voices().then_some(voice == Voice::Two);
-        if voice == Voice::One {
-            result.cursor_x.push(onset - 8.);
-        } else {
-            result.second_cursor_x.push(onset - 8.);
-        }
+        let forced = measure.has_several_voices().then_some(voice.is_lower());
+        result.cursor_x[voice.index()].push(onset - 8.);
         if hidden.contains(&id) {
             continue;
         }
@@ -2553,8 +2561,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                     40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
                 }
             })
-            .unwrap_or(if measure.has_two_voices() {
-                if voice == Voice::One { 5. } else { 35. }
+            .unwrap_or(if measure.has_several_voices() {
+                rest_y(voice)
             } else {
                 20.
             });
@@ -2592,8 +2600,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         let glyph_y = if event.pitches.first().is_none()
             && event.duration.value() == score_core::NoteValue::Whole
         {
-            if measure.has_two_voices() {
-                if voice == Voice::One { 0. } else { 30. }
+            if measure.has_several_voices() {
+                rest_y(voice) - 5.
             } else {
                 10.
             }
@@ -2656,19 +2664,20 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         }
         rhythm::dots(&mut result, *event, element, metrics);
     }
-    result
-        .cursor_x
-        .push(rhythm.x(measure.voice_ticks(Voice::One)) - 8.);
-    result
-        .second_cursor_x
-        .push(rhythm.x(measure.voice_ticks(Voice::Two)) - 8.);
+    for voice in Voice::ALL {
+        result.cursor_x[voice.index()].push(rhythm.x(measure.voice_ticks(voice)) - 8.);
+    }
     if measure.voice_len(Voice::One) == 0 {
         result.glyphs.push(Glyph {
             rotated: false,
             text: "\u{e4e3}".into(),
             position: Point {
                 x: start + (width - start) * 0.4,
-                y: if measure.has_two_voices() { 0. } else { 10. },
+                y: if measure.has_several_voices() {
+                    0.
+                } else {
+                    10.
+                },
             },
             element: None,
         });
@@ -3105,7 +3114,7 @@ mod tests {
                 );
                 if !signs.is_empty() {
                     let last = signs.last().unwrap().position.x + 10.;
-                    assert!(bar.content.cursor_x[0] > last);
+                    assert!(bar.content.cursor_x[0][0] > last);
                     if bar.index == 0 {
                         let time = bar
                             .content
@@ -3507,7 +3516,7 @@ mod tests {
                 .filter(|event| event.id == id)
                 .collect();
             assert_eq!(heads.len(), 3);
-            assert_eq!(measure.content.cursor_x.len(), 2); // One rhythmic event.
+            assert_eq!(measure.content.cursor_x[0].len(), 2); // One rhythmic event.
             assert!(heads.iter().all(|head| head.center.x == heads[0].center.x));
             let stems = measure
                 .content

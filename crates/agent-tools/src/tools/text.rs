@@ -230,9 +230,9 @@ pub(super) fn staff_lines(
             let Some(bar) = source.staff(staff).and_then(|s| s.measures().get(measure)) else {
                 continue;
             };
-            let two_voices = bar.voice_len(Voice::Two) > 0;
+            let two_voices = bar.has_several_voices();
             for voice in Voice::ALL {
-                if voice == Voice::Two && !two_voices {
+                if voice != Voice::One && bar.voice_len(voice) == 0 {
                     continue;
                 }
                 let mut label = format!("c{}", measure + 1);
@@ -318,7 +318,7 @@ pub(super) fn place(score: &Score, id: ElementId) -> String {
             StaffId::Lower => ", pentagrama 2",
         });
     }
-    if let Some(voice) = score.voice_of(id).filter(|voice| *voice == Voice::Two) {
+    if let Some(voice) = score.voice_of(id).filter(|voice| *voice != Voice::One) {
         text.push_str(&format!(", voz {}", voice.number()));
     }
     text

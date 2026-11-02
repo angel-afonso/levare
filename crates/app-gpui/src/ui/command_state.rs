@@ -213,6 +213,8 @@ impl CommandStates for AppView {
 
             id::VOICE_1 => CommandState::checked(editor.cursor().voice == score_core::Voice::One),
             id::VOICE_2 => CommandState::checked(editor.cursor().voice == score_core::Voice::Two),
+            id::VOICE_3 => CommandState::checked(editor.cursor().voice == score_core::Voice::Three),
+            id::VOICE_4 => CommandState::checked(editor.cursor().voice == score_core::Voice::Four),
             id::DIVIDE_PART | id::JOIN_PART => {
                 let part = editor.score().part(editor.cursor().part).unwrap();
                 CommandState {

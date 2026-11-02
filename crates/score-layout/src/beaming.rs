@@ -124,8 +124,8 @@ impl Plan {
                         .fold(f32::NEG_INFINITY, f32::max);
                     groups.push(Group {
                         notes: std::mem::take(notes),
-                        down: if measure.has_two_voices() {
-                            voice == Voice::Two
+                        down: if measure.has_several_voices() {
+                            voice.is_lower()
                         } else {
                             (high + low) / 2. <= 20.
                         },

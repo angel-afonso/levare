@@ -33,7 +33,9 @@ pub struct Position {
         description = "Pentagrama: 1 (superior, por defecto) o 2 (mano izquierda del piano o segundo pentagrama de un divisi)."
     )]
     pub pentagrama: Option<u8>,
-    #[schemars(description = "Voz: 1 (por defecto) o 2.")]
+    #[schemars(
+        description = "Voz: 1 (por defecto), 2, 3 o 4. Las voces 1 y 3 llevan la plica hacia arriba; la 2 y la 4, hacia abajo."
+    )]
     pub voz: Option<u8>,
 }
 
@@ -83,7 +85,9 @@ pub struct EscribirArgs {
     pub parte: String,
     #[schemars(description = "Pentagrama: 1 (por defecto) o 2.")]
     pub pentagrama: Option<u8>,
-    #[schemars(description = "Voz: 1 (por defecto) o 2.")]
+    #[schemars(
+        description = "Voz: 1 (por defecto), 2, 3 o 4. Las voces 1 y 3 llevan la plica hacia arriba; la 2 y la 4, hacia abajo."
+    )]
     pub voz: Option<u8>,
     #[schemars(
         description = "Compás donde empieza la escritura, desde 1. El siguiente al último añade compases al final."
@@ -240,11 +244,11 @@ fn staff_of(number: Option<u8>) -> Result<StaffId, String> {
 }
 
 fn voice_of(number: Option<u8>) -> Result<Voice, String> {
-    match number.unwrap_or(1) {
-        1 => Ok(Voice::One),
-        2 => Ok(Voice::Two),
-        other => Err(format!("La voz {other} no existe: usa 1 o 2.")),
-    }
+    let number = number.unwrap_or(1);
+    Voice::ALL
+        .into_iter()
+        .find(|voice| voice.number() == number)
+        .ok_or_else(|| format!("La voz {number} no existe: usa 1, 2, 3 o 4."))
 }
 
 /// The note or rest at a position, with its part's name in every error.

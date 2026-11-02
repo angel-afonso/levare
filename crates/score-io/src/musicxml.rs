@@ -358,9 +358,10 @@ fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u32
         1
     }
 }
+/// Voices 1–4 on the upper staff and 5–8 on the lower, as MuseScore writes them.
 fn voice_number(staff: StaffId, voice: Voice) -> u8 {
     if staff == StaffId::Lower {
-        voice.number() + 2
+        voice.number() + 4
     } else {
         voice.number()
     }
@@ -454,7 +455,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
             for source in part.staves() {
                 let measure = &source.measures()[bar];
                 for voice in Voice::ALL {
-                    if voice == Voice::Two && measure.voice_len(voice) == 0 {
+                    if voice != Voice::One && measure.voice_len(voice) == 0 {
                         continue;
                     }
                     if !first {
@@ -501,7 +502,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
                                 first: piece == 0,
                                 last: piece + 1 == pieces.len(),
                                 split: pieces.len() > 1,
-                                two_voices: measure.has_two_voices()
+                                two_voices: measure.has_several_voices()
                                     && !(part.has_passage_divisi() && part.bar_fully_divisi(bar)),
                             };
                             notes(&mut xml, score, &index, fragment);
@@ -946,10 +947,10 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             xml.push_str("</time-modification>");
         }
         if f.two_voices && !pitches.is_empty() && f.duration.value() != NoteValue::Whole {
-            xml.push_str(if f.voice == Voice::One {
-                "<stem>up</stem>"
-            } else {
+            xml.push_str(if f.voice.is_lower() {
                 "<stem>down</stem>"
+            } else {
+                "<stem>up</stem>"
             });
         }
         if touch {

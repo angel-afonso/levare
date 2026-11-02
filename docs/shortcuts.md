@@ -83,8 +83,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Bajar la octava de entrada |  |
 | `⌥1` | `Alt+1` | Voz 1 |  |
 | `⌥2` | `Alt+2` | Voz 2 |  |
-| `⌥3` | `Alt+3` | Voz 3 | Pending |
-| `⌥4` | `Alt+4` | Voz 4 | Pending |
+| `⌥3` | `Alt+3` | Voz 3 |  |
+| `⌥4` | `Alt+4` | Voz 4 |  |
 | `;` | `;` | Añadir nota de adorno |  |
 | — | — | Acciaccatura |  |
 | — | — | Appoggiatura |  |

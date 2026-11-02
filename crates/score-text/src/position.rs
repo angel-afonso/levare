@@ -153,14 +153,7 @@ pub fn event_at(
             event,
         });
     }
-    let place = format!(
-        "compás {} de {name} (voz {})",
-        measure + 1,
-        match voice {
-            Voice::One => 1,
-            Voice::Two => 2,
-        }
-    );
+    let place = format!("compás {} de {name} (voz {})", measure + 1, voice.number());
     if onsets.is_empty() {
         return Err(format!("No hay eventos en el {place}."));
     }

@@ -166,6 +166,8 @@ pub fn voice_color(voice: score_core::Voice) -> u32 {
     match voice {
         score_core::Voice::One => 0x2f6fdf,
         score_core::Voice::Two => 0x2f9e57,
+        score_core::Voice::Three => 0x8e44c9,
+        score_core::Voice::Four => 0xc23a7d,
     }
 }
 
@@ -392,9 +394,11 @@ mod tests {
 
     #[test]
     fn each_voice_has_its_own_caret_color() {
-        assert_ne!(voice_color(Voice::One), voice_color(Voice::Two));
-        assert_ne!(voice_color(Voice::One), 0xe89743);
-        assert_ne!(voice_color(Voice::Two), 0xe89743);
+        let colors = Voice::ALL.map(voice_color);
+        for (i, color) in colors.iter().enumerate() {
+            assert!(!colors[i + 1..].contains(color));
+            assert_ne!(*color, 0xe89743);
+        }
     }
 
     #[test]

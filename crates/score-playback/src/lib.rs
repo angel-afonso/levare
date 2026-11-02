@@ -1,6 +1,6 @@
 //! Deterministic musical timing, independent of audio devices and UI clocks.
 use score_core::{
-    Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_STAVES, PartId, Pitch, Pitches,
+    Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_TRACKS, PartId, Pitch, Pitches,
     PlayingTechnique, Score, ScoreError, StaffId, Step, TextKind,
 };
 
@@ -327,7 +327,7 @@ impl PlaybackPlan {
                 let manner = interpretation::Manner::new(&instructions);
                 let mut voice_ranges = Vec::new();
                 for voice in score_core::Voice::ALL {
-                    if voice == score_core::Voice::Two
+                    if voice != score_core::Voice::One
                         && staff.measures().iter().all(|m| m.voice_len(voice) == 0)
                     {
                         continue;
@@ -727,8 +727,8 @@ impl PlaybackPlan {
         }
         values
     }
-    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_STAVES * 2] {
-        let mut elements = [None; MAX_STAVES * 2];
+    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_TRACKS] {
+        let mut elements = [None; MAX_TRACKS];
         for (index, track) in self.tracks.iter().enumerate() {
             let spans = &self.spans[track.spans.clone()];
             if let Some(span) = spans
@@ -1196,16 +1196,16 @@ mod tests {
             }
         }
         let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
-        assert_eq!(plan.tracks.len(), MAX_STAVES);
+        assert_eq!(plan.tracks.len(), score_core::MAX_STAVES);
         assert_eq!(
             plan.elements_at(24_000).into_iter().flatten().count(),
-            MAX_STAVES
+            score_core::MAX_STAVES
         );
         assert_eq!(
             plan.held_notes_at(24_000).into_iter().flatten().count(),
-            MAX_STAVES
+            score_core::MAX_STAVES
         );
-        assert_eq!(plan.messages.len(), MAX_STAVES * 2);
+        assert_eq!(plan.messages.len(), score_core::MAX_STAVES * 2);
     }
 
     #[test]

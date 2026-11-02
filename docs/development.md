@@ -1095,18 +1095,22 @@ child process killed by force before reopening. PDF checks piano, strings and mu
 documents, as well as invalid targets and preserving files. Visual check through
 Poppler: piano with arpeggios across hands and a two-page quartet.
 
-## Two voices and divisi
+## Voices and divisi
 
-`Voice::{One, Two}` identifies two sequences per bar with a common store of `EventId`.
-`order` keeps the original voice and `second_order` adds the second without changing old
-IDs. `timed_iter` computes the start within each voice; the bar's capacity is the maximum
+`Voice::{One, Two, Three, Four}` identifies four sequences per bar with a common store of
+`EventId`. `order` keeps the original voice; `second_order`, `third_order` and
+`fourth_order` add the others without changing old IDs, and are left out of the file when
+empty, so documents with one or two voices are written as before. `timed_iter` computes the start within each voice; the bar's capacity is the maximum
 of its durations, not the sum. Validation refuses duplicate IDs between sequences and
 overflows of each voice. Cursor, range selection, clipboard, input, deletion and
 navigation keep the voice. Rhythmic connections and ties must join events of the same
 voice; phrases of different voices can overlap.
 
-Engraving uses a shared time grid, opposite stems, beams and triplets per voice,
-separate rests and horizontal shifting of coinciding seconds. Accidentals are resolved
+Engraving uses a shared time grid, opposite stems (`Voice::is_lower`: 1 and 3 up, 2 and 4
+down), beams and triplets per voice, separate rests (3 above 1, 4 below 2) and horizontal
+shifting: a voice moves beside an earlier one on the same tick when their heads are a
+second apart or closer, or when both stems go the same way. Divisi shows voices 1 and 2
+on its two staves, so validation refuses voices 3 and 4 in any bar with divisi. Accidentals are resolved
 chronologically for the whole staff. When clicking coinciding unison noteheads the active
 voice is preferred. Lower articulations and fermatas use their original Bravura glyphs.
 Texts and dynamics reserve room in front of the stems of both voices.
@@ -1146,16 +1150,16 @@ stay shared by the section; the piano's hands keep their independent expression.
 The playback plan creates one track per voice with its own intervals, attacks and
 sustains, aligned on the common clock. Preparing the expression considers simultaneous
 sounds and keeps the ranges per track; groups that overlap reserve a common margin. The
-active elements of up to 192 tracks (`MAX_STAVES` × 2 voices) and up to 1,536 sustained
-pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test compares every
-scheduled message before dividing, after dividing and after joining, including
-technique, dynamic and hairpin. Edit/undo, capacity per voice, copying with a
+active elements of up to 384 tracks (`MAX_TRACKS`, `MAX_STAVES` × 4 voices) and up to
+3,072 sustained pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test
+compares every scheduled message before dividing, after dividing and after joining,
+including technique, dynamic and hairpin. Edit/undo, capacity per voice, copying with a
 simultaneous dynamic, coinciding noteheads, chronological accidentals, loading/recovery
 and export of the `voces-y-divisi` and `divisi-dos-pentagramas` examples are tested too.
 
 ## Next deliveries
 
-1. **Musical editing:** enharmonics and double accidentals, voices 3–4 and editing of
+1. **Musical editing:** enharmonics and double accidentals, and editing of
    general irregular groups.
 2. **Safety of the work:** more tests with `proptest`, document fixtures and fuzzed
    importers.

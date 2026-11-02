@@ -270,17 +270,20 @@ fn unsupported_content_warns_and_unrepresentable_music_is_rejected() {
     let invalid = wrap(
         "Piano",
         &format!(
-            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{}<backup><duration>4</duration></backup>{}<backup><duration>4</duration></backup>{}</measure>",
-            n("C", 4, 1, 1),
-            n("E", 4, 2, 1),
-            n("G", 4, 3, 1)
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{}</measure>",
+            ["C", "E", "G", "B", "D"]
+                .iter()
+                .enumerate()
+                .map(|(voice, step)| n(step, 4, voice as u8 + 1, 1))
+                .collect::<Vec<_>>()
+                .join("<backup><duration>4</duration></backup>")
         ),
     );
     assert!(
         decode(invalid.as_bytes())
             .unwrap_err()
             .to_string()
-            .contains("dos voces")
+            .contains("cuatro voces")
     );
     // A 128th is shorter than any value Levare writes.
     assert!(decode(wrap("Violin","<measure><attributes><divisions>32</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>128th</type></note></measure>").as_bytes()).is_err());
