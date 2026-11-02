@@ -67,6 +67,21 @@ pub enum Stem {
 }
 
 impl Score {
+    /// Draw a note or chord of a grand staff on its other staff, or back.
+    pub fn set_cross(&mut self, id: ElementId, cross: bool) -> Result<(), ScoreError> {
+        if cross
+            && !self
+                .part(id.part)
+                .is_some_and(|part| part.instrument().is_grand_staff())
+        {
+            return Err(ScoreError(
+                "Solo las notas del piano y de otros instrumentos de dos pentagramas cruzan",
+            ));
+        }
+        self.appearance(id, "Un silencio no cruza de pentagrama")?
+            .cross = cross;
+        Ok(())
+    }
     pub fn set_stem(&mut self, id: ElementId, value: Option<Stem>) -> Result<(), ScoreError> {
         self.appearance(id, "Un silencio no tiene plica")?.stem = value;
         Ok(())

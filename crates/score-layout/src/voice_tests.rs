@@ -733,3 +733,39 @@ fn voices_three_and_four_follow_one_and_two_beside_them() {
         );
     }
 }
+
+#[test]
+fn a_crossing_note_is_drawn_and_clicked_on_the_other_staff() {
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let high = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 5)),
+        ..note(Step::C, Duration::Quarter)
+    };
+    let id = s.insert_on(piano, StaffId::Lower, 0, 0, high).unwrap();
+    s.set_cross(id, true).unwrap();
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let upper = layout.measure_on(piano, StaffId::Upper, 0).unwrap();
+    let lower = layout.measure_on(piano, StaffId::Lower, 0).unwrap();
+    let head = lower
+        .content
+        .events
+        .iter()
+        .find(|event| event.id == id)
+        .unwrap();
+    // C5 sits in the treble staff's third space, 15 below its top line.
+    assert!((lower.origin.y + head.center.y - (upper.origin.y + 15.)).abs() < 0.01);
+    // Drawn with a stem down towards its own staff, and found by a click.
+    assert_eq!(layout.stem_down(id), Some(true));
+    let point = Point {
+        x: (lower.origin.x + head.center.x) * layout.scale,
+        y: (lower.origin.y + head.center.y) * layout.scale,
+    };
+    assert_eq!(layout.hit_test(point), Some(id));
+    // Rests and single staves do not cross.
+    let violin = s.add_part(score_core::Instrument::Violin).unwrap();
+    let other = s
+        .insert_in(violin, 0, 0, note(Step::C, Duration::Quarter))
+        .unwrap();
+    assert!(s.set_cross(other, true).is_err());
+}

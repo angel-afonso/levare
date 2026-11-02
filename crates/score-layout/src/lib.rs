@@ -29,6 +29,7 @@ mod grace;
 pub use grace::{CUE, CueGlyph};
 mod lines;
 pub use lines::LineMark;
+mod crossing;
 mod lyrics;
 mod offsets;
 
@@ -143,6 +144,8 @@ pub struct MeasureLayout {
     pub music_ink_bottom: f32,
     /// Grace notes and their accidentals, drawn at `CUE` size.
     pub cue: Vec<CueGlyph>,
+    /// Notes drawn on the other staff, waiting for both staves' places.
+    pub(crate) crossing: Vec<crossing::CrossingNote>,
 }
 
 impl MeasureLayout {
@@ -1663,6 +1666,9 @@ impl LayoutEngine {
                     part_bottom = origin_y + 40.;
                     y += bottom - top + if compact { 16. } else { 28. };
                 }
+                if part.instrument().is_grand_staff() {
+                    crossing::draw(score, &mut placed[part_start..], &self.metrics);
+                }
                 let top = part_top.expect("part upper staff");
                 let braced = part.instrument().is_grand_staff();
                 // Braced instruments stand on their own and interrupt family
@@ -2244,7 +2250,7 @@ fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct PlacedAccidental {
     pitch: score_core::Pitch,
     sign: i8,
@@ -2520,6 +2526,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         ink_bottom: 40.,
         music_ink_bottom: 40.,
         cue: Vec::new(),
+        crossing: Vec::new(),
     };
     let mut line = |x1, y1, x2, y2, thickness| {
         result.lines.push(Line {
@@ -2678,6 +2685,17 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             measure: index,
             event: id,
         };
+        // Its place on the other staff is known only once both are placed.
+        if event.notation.cross && !event.pitches.is_empty() {
+            result.crossing.push(crossing::CrossingNote {
+                element,
+                onset,
+                event: *event,
+                voice,
+                signs: signs[&id].clone(),
+            });
+            continue;
+        }
         grace::engrave(
             &mut result,
             event,

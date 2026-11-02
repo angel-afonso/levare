@@ -152,7 +152,12 @@ impl Plan {
                 let level = levels(value.duration.value());
                 let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
                 let beam = value.notation.beam;
-                let natural = if level == 0 || value.pitches.is_empty() || beam == Some(Beam::Off) {
+                // A note drawn on the other staff keeps its own flag for now.
+                let natural = if level == 0
+                    || value.pitches.is_empty()
+                    || beam == Some(Beam::Off)
+                    || value.notation.cross
+                {
                     None
                 } else if value.duration.tuplet().is_some() {
                     Some(Boundary::Tuplet(tuplets[&id]))

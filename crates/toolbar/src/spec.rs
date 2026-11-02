@@ -1005,6 +1005,18 @@ const TRANSFORM: GroupSpec = GroupSpec {
             "Enarmonizar",
             "Otro nombre para el mismo sonido: Do♯ pasa a Re♭ y vuelve. En un acorde, la nota elegida; las notas ligadas cambian juntas.",
         ),
+        tile(
+            id::CROSS_STAFF_UP,
+            Label("↑"),
+            "Arriba",
+            "Dibuja las notas de la mano izquierda en el pentagrama de arriba; siguen siendo de su mano. Desde arriba, las devuelve.",
+        ),
+        tile(
+            id::CROSS_STAFF_DOWN,
+            Label("↓"),
+            "Abajo",
+            "Dibuja las notas de la mano derecha en el pentagrama de abajo; siguen siendo de su mano. Desde abajo, las devuelve.",
+        ),
     ],
 };
 const SELECT: GroupSpec = GroupSpec {

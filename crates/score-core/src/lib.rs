@@ -1057,10 +1057,14 @@ impl Score {
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
                         }
+                        if event.notation.cross && !part.instrument().is_grand_staff() {
+                            return Err(ScoreError("Nota cruzada fuera de un gran pentagrama"));
+                        }
                         if event.pitches.is_empty()
                             && (event.notation.notehead.is_some()
                                 || event.notation.beam.is_some()
-                                || event.notation.stem.is_some())
+                                || event.notation.stem.is_some()
+                                || event.notation.cross)
                         {
                             return Err(ScoreError("Cabeza o barra de corchea en silencio"));
                         }

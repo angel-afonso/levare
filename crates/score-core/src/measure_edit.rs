@@ -217,6 +217,7 @@ impl Score {
         event.notation.notehead = None;
         event.notation.beam = None;
         event.notation.stem = None;
+        event.notation.cross = false;
         self.prune_connections();
         Ok(())
     }

@@ -320,6 +320,10 @@ pub struct Notation {
     /// A breath or caesura after the note or rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause: Option<Pause>,
+    /// Drawn on the other staff of a piano or another grand staff; it keeps
+    /// its own staff for rhythm, voice and sound.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cross: bool,
     /// A stem turned by hand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stem: Option<Stem>,

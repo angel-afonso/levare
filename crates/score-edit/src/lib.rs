@@ -150,6 +150,9 @@ pub enum Command {
     /// Give the selected notes, or the selected chord tone, their other
     /// enharmonic name: C♯ to D♭ and back.
     Respell,
+    /// Draw the selected notes of a piano on the staff above (`true`) or
+    /// below, or back on their own.
+    CrossStaff(bool),
     AddPitch(Pitch),
     RemoveHighestPitch,
     SetAccidental(Option<Accidental>),
@@ -1292,6 +1295,16 @@ impl Editor {
                         .is_some_and(|e| e.pitches.len() > 1);
                 next.score.respell(&ids, chord.then_some(next.tone))?;
             }
+            Command::CrossStaff(up) => {
+                let ids =
+                    self.selected_notes("Selecciona las notas que quieras pasar de pentagrama")?;
+                for id in ids {
+                    // Up from the lower staff crosses; up from the upper one
+                    // is already there, so it comes back.
+                    let cross = up == (id.staff == score_core::StaffId::Lower);
+                    next.score.set_cross(id, cross)?;
+                }
+            }
             Command::FlipCurve(connection) => {
                 next.score.flip_curve(connection)?;
             }
@@ -1492,6 +1505,7 @@ impl Editor {
                 | Command::SetStems(_)
                 | Command::FlipCurve(_)
                 | Command::Respell
+                | Command::CrossStaff(_)
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)

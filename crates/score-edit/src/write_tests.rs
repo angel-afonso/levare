@@ -441,3 +441,33 @@ fn respelling_a_chord_tone_leaves_the_others() {
     editor.undo();
     assert!(editor.execute(Command::Respell).is_ok());
 }
+
+#[test]
+fn piano_notes_cross_to_the_other_staff_and_back() {
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let low = score
+        .insert_on(
+            piano,
+            StaffId::Lower,
+            0,
+            0,
+            event(Step::C, Duration::Quarter),
+        )
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    let before = editor.score().clone();
+    editor.select(low);
+    // Down from the lower staff is where it already is: nothing to cross.
+    editor.execute(Command::CrossStaff(false)).unwrap();
+    assert_eq!(editor.score(), &before);
+    editor.execute(Command::CrossStaff(true)).unwrap();
+    assert!(editor.score().event(low).unwrap().notation.cross);
+    // The note keeps its staff, rhythm and sound.
+    assert_eq!(editor.score().event_tick(low), before.event_tick(low));
+    editor.execute(Command::CrossStaff(false)).unwrap();
+    assert_eq!(editor.score(), &before);
+    editor.undo();
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+}

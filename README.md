@@ -450,6 +450,15 @@ does not change.
 Transposing instruments keep the letter their interval asks for, with a double sharp or
 double flat when the key needs one: a B♭ clarinet's written C♭ sounds B𝄫, not A.
 
+## Notes on the other staff of a piano
+
+**Inicio › Notas › Arriba / Abajo** (`⌘⇧↑` / `⌘⇧↓`; `Ctrl+Mayús+↑/↓` on Windows and
+Linux, as in Sibelius) draws the selected notes of a piano, organ, harp, celesta, marimba
+or vibraphone on the hand's other staff. They stay in their own hand for rhythm, voice,
+playback, selection, copying and ties; only where they are drawn changes. The stem points
+back to their own staff and a click on the drawn note selects it. The other direction
+brings them back. For now a crossing note keeps its own flag instead of joining a beam.
+
 ## Flipping stems, ties and slurs
 
 **Inicio › Notas › Invertir** (`X`, as in Sibelius) turns the stems of the selected notes
