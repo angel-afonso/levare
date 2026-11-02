@@ -320,6 +320,9 @@ pub struct Notation {
     /// A breath or caesura after the note or rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause: Option<Pause>,
+    /// A stem turned by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stem: Option<Stem>,
     /// Drawn with another notehead; sounds the same.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notehead: Option<Notehead>,
@@ -754,9 +757,13 @@ impl Score {
             .collect();
         let mut connections = imbl::Vector::new();
         let mut offsets = imbl::Vector::new();
+        let mut flipped = imbl::Vector::new();
         for &old in &self.connections {
             if let Some(next) = map(old) {
                 connections.push_back(next);
+                if self.flipped_curves.contains(&old) {
+                    flipped.push_back(next);
+                }
                 if let Some(&offset) = old_offsets.get(&old) {
                     offsets.push_back(ConnectionOffset {
                         connection: next,
@@ -767,6 +774,7 @@ impl Score {
         }
         self.connections = connections;
         self.connection_offsets = offsets;
+        self.flipped_curves = flipped;
     }
     pub(super) fn validate_connections(&self) -> Result<(), ScoreError> {
         if self.connections.len() > 4096 {

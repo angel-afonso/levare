@@ -1,5 +1,5 @@
-//! How a note is drawn without changing how it sounds: its notehead and the
-//! way its beam joins its neighbours.
+//! How a note is drawn without changing how it sounds: its notehead, the
+//! way its beam joins its neighbours, its stem and the side of its curves.
 use super::*;
 
 /// A notehead other than the usual oval. The note keeps its pitch and sound.
@@ -59,7 +59,36 @@ impl Beam {
     }
 }
 
+/// A stem turned by hand; without one, the voice and the notes decide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Stem {
+    Up,
+    Down,
+}
+
 impl Score {
+    pub fn set_stem(&mut self, id: ElementId, value: Option<Stem>) -> Result<(), ScoreError> {
+        self.appearance(id, "Un silencio no tiene plica")?.stem = value;
+        Ok(())
+    }
+    /// Whether a tie or slur is drawn on the other side from where Levare
+    /// would put it.
+    pub fn curve_flipped(&self, connection: Connection) -> bool {
+        self.flipped_curves.contains(&connection)
+    }
+    /// Turn a tie or slur to its other side, or back.
+    pub fn flip_curve(&mut self, connection: Connection) -> Result<(), ScoreError> {
+        if !connection.kind.is_curve() || !self.connections.contains(&connection) {
+            return Err(ScoreError("Selecciona una ligadura para darle la vuelta"));
+        }
+        match self.flipped_curves.index_of(&connection) {
+            Some(index) => {
+                self.flipped_curves.remove(index);
+            }
+            None => self.flipped_curves.push_back(connection),
+        }
+        Ok(())
+    }
     pub fn set_notehead(
         &mut self,
         id: ElementId,

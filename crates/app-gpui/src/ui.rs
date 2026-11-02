@@ -1185,6 +1185,144 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
 }
 /// Otro grupillo: how many notes in the time of how many, counted in the
 /// selected value or the next notes'.
+/// Transportar…: the intervals up to an octave, the direction and extra
+/// octaves, as Sibelius' Transpose dialog asks for them.
+fn transpose_picker(view: &AppView, cx: &Context<AppView>) -> Div {
+    let Some(choice) = view.transpose_picker else {
+        return div();
+    };
+    let pick = move |change: fn(&mut crate::TransposeChoice)| {
+        move |v: &mut AppView, _: &mut Window, cx: &mut Context<AppView>| {
+            if let Some(choice) = v.transpose_picker.as_mut() {
+                change(choice);
+            }
+            cx.notify();
+        }
+    };
+    let intervals = score_core::INTERVALS
+        .iter()
+        .enumerate()
+        .map(|(index, (name, _))| (Some(index), *name))
+        .chain([(None, "Octava")]);
+    let name = choice
+        .interval
+        .map_or("Octava", |index| score_core::INTERVALS[index].0);
+    let octaves = match choice.octaves {
+        0 => String::new(),
+        1 => " y una octava".into(),
+        n => format!(" y {n} octavas"),
+    };
+    let direction = if choice.up { "arriba" } else { "abajo" };
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(caption("Intervalo"))
+        .child(
+            // Two columns keep every interval and the button in view.
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(intervals.map(|(index, label)| {
+                    choice_row(view, index, label, choice.interval == index, cx)
+                })),
+        )
+        .child(caption("Dirección").mt_2())
+        .child(
+            div()
+                .flex()
+                .gap_1()
+                .child(choice_button(
+                    view,
+                    "transpose-up",
+                    "Arriba",
+                    choice.up,
+                    cx,
+                    pick(|c| c.up = true),
+                ))
+                .child(choice_button(
+                    view,
+                    "transpose-down",
+                    "Abajo",
+                    !choice.up,
+                    cx,
+                    pick(|c| c.up = false),
+                )),
+        )
+        .child(caption("Octavas más").mt_2())
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(act(
+                    view,
+                    "transpose-octaves-minus",
+                    "−",
+                    false,
+                    cx,
+                    pick(|c| c.octaves = (c.octaves - 1).max(0)),
+                ))
+                .child(
+                    div()
+                        .flex_1()
+                        .text_center()
+                        .text_size(px(12.))
+                        .child(choice.octaves.to_string()),
+                )
+                .child(act(
+                    view,
+                    "transpose-octaves-plus",
+                    "+",
+                    false,
+                    cx,
+                    pick(|c| c.octaves = (c.octaves + 1).min(3)),
+                )),
+        )
+        .child(div().flex().mt_2().child(act(
+            view,
+            "apply-transpose",
+            format!("{name}{octaves} {direction}"),
+            true,
+            cx,
+            move |v, _, cx| v.apply_transpose(choice, cx),
+        )))
+}
+fn choice_row(
+    view: &AppView,
+    index: Option<usize>,
+    label: &'static str,
+    selected: bool,
+    cx: &Context<AppView>,
+) -> Stateful<Div> {
+    choice(
+        view,
+        format!("transpose-{index:?}"),
+        label,
+        selected,
+        cx,
+        move |v, _, cx| {
+            if let Some(choice) = v.transpose_picker.as_mut() {
+                choice.interval = index;
+            }
+            cx.notify();
+        },
+    )
+    .w(relative(0.48))
+    .justify_start()
+}
+fn choice_button(
+    view: &AppView,
+    id: &'static str,
+    label: &'static str,
+    selected: bool,
+    cx: &Context<AppView>,
+    click: impl Fn(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+) -> Stateful<Div> {
+    choice(view, id, label, selected, cx, click).flex_1()
+}
+
 fn tuplet_picker(view: &AppView, cx: &Context<AppView>) -> Div {
     const SCOPE: &str = "Sobre una nota empieza el grupillo y rellena el grupo con silencios; sin selección, se aplica a las próximas notas.";
     let Some((actual, normal)) = view.tuplet_picker else {

@@ -59,14 +59,15 @@ impl Transposition {
             };
             let target = natural(pitch) + i16::from(pitch.alteration()) + i16::from(self.chromatic);
             let alter = target - natural(shifted);
-            let value = if (-1..=1).contains(&alter) {
-                shifted.with_accidental(Some(match alter {
-                    -1 => Accidental::Flat,
-                    1 => Accidental::Sharp,
-                    _ => Accidental::Natural,
-                }))
+            // The interval's own letter, with a double sharp or flat when
+            // the key needs one, as Sibelius writes transposing parts.
+            let value = if let Some(sign) = i8::try_from(alter)
+                .ok()
+                .and_then(Accidental::from_semitones)
+            {
+                shifted.with_accidental(Some(sign))
             } else {
-                // Enharmonic spelling when an extreme key would require double signs.
+                // Enharmonic spelling only when not even a double sign reaches.
                 (0..63)
                     .filter_map(|d| {
                         Pitch::new(
@@ -389,6 +390,36 @@ mod tests {
                 .is_err()
         );
         assert_eq!(score, before);
+    }
+    #[test]
+    fn transposing_parts_keep_the_interval_letter_with_double_signs() {
+        let flat = |step, octave| {
+            Pitch::new(step, octave)
+                .unwrap()
+                .with_accidental(Some(Accidental::Flat))
+        };
+        // A B♭ clarinet's written C♭ sounds a major second lower: B𝄫.
+        let clarinet = Instrument::ClarinetBb.standard_transposition();
+        let sounding = clarinet
+            .pitches(
+                Pitches::single(Some(flat(Step::C, 4))),
+                KeySignature::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            sounding.first(),
+            Some(
+                Pitch::new(Step::B, 3)
+                    .unwrap()
+                    .with_accidental(Some(Accidental::DoubleFlat))
+            )
+        );
+        // And back: the concert B𝄫 is written C♭ again, never A.
+        let written = clarinet
+            .inverse()
+            .pitches(sounding, KeySignature::default())
+            .unwrap();
+        assert_eq!(written.first(), Some(flat(Step::C, 4)));
     }
     #[test]
     fn direct_pitch_and_harmonic_edits_reject_invalid_sounds_without_mutating() {

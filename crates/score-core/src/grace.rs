@@ -29,6 +29,13 @@ pub struct Grace {
 }
 
 impl Grace {
+    /// Every note moved by `f`, or `None` if one cannot move.
+    pub(crate) fn map(mut self, mut f: impl FnMut(Pitch) -> Option<Pitch>) -> Option<Self> {
+        for slot in self.notes.iter_mut().flatten() {
+            *slot = f(*slot)?;
+        }
+        Some(self)
+    }
     pub fn new(kind: GraceKind, first: Pitch) -> Self {
         let mut notes = [None; MAX_GRACE_NOTES];
         notes[0] = Some(first);
@@ -94,7 +101,7 @@ impl Grace {
 }
 
 impl Score {
-    fn grace_slot(&mut self, id: ElementId) -> Result<&mut Notation, ScoreError> {
+    pub(crate) fn grace_slot(&mut self, id: ElementId) -> Result<&mut Notation, ScoreError> {
         let event = self
             .event(id)
             .ok_or(ScoreError("Selecciona una nota o acorde"))?;

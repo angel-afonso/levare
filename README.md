@@ -428,6 +428,36 @@ keep their pitches and their sound. You can restore the previous clef, undo and 
 the changes are saved and kept in PDF and MusicXML. Changes are placed at the start of
 a bar.
 
+## Transposing
+
+Select notes and choose **Inicio › Notas › Transportar…** (`⇧T`, as in Sibelius). Pick
+an interval up to the octave, **Arriba** or **Abajo**, and up to three octaves more, then
+press the button that names it. Letters move by the interval's number and accidentals by
+its quality, so a major third above F♯ is A♯, never B♭, with a double sharp or flat when
+the spelling needs one. Grace notes and chord symbols move with their notes; rests stay.
+If one note would leave the range, nothing moves. Undo takes the whole passage back, and
+the passage stays selected for another step. The up and down arrows still move a
+selected note by a step.
+
+## Enharmonic spelling
+
+**Inicio › Notas › Enarmonizar** (`J`, as in MuseScore; Return already ties notes)
+gives the selected notes the other name of the same sound, with the fewest signs: C♯
+becomes D♭ and D♭ becomes C♯ again, E becomes F♭, B♯ becomes C. In a chord with one note
+chosen, only that note changes; tied notes change together so the tie holds. Playback
+does not change.
+
+Transposing instruments keep the letter their interval asks for, with a double sharp or
+double flat when the key needs one: a B♭ clarinet's written C♭ sounds B𝄫, not A.
+
+## Flipping stems, ties and slurs
+
+**Inicio › Notas › Invertir** (`X`, as in Sibelius) turns the stems of the selected notes
+to the other side; a stem turned in a beam turns the whole beam, and a tie follows the
+stem it is opposite. Press it again to give the stems back to the automatic rule. With a
+tie or slur selected, `X` draws it on its other side instead, and again takes it back.
+Both are saved in the native file; MusicXML keeps the turned stems.
+
 ## Copying, cutting and pasting music
 
 - **Shift + drag over the notes, or drag from the empty staff**, to select a whole

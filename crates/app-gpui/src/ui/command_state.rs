@@ -278,6 +278,7 @@ impl CommandStates for AppView {
             id::SIXTY_FOURTH => value(NoteValue::SixtyFourth),
             id::DOT => CommandState::checked(duration.dots() == 1),
             id::DOUBLE_DOT => CommandState::checked(duration.dots() == 2),
+            id::TRANSPOSE => CommandState::checked(self.transpose_picker.is_some()),
             // Lit for a ratio no other button sets, or while its editor is open.
             id::OTHER_TUPLET => CommandState::checked(
                 self.tuplet_picker.is_some()

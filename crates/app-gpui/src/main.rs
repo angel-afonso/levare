@@ -99,6 +99,8 @@ struct AppView {
     time_picker: bool,
     /// Otro grupillo's ratio while its editor is open.
     tuplet_picker: Option<(u8, u8)>,
+    /// Transportar…: the interval chosen, upwards or not, and extra octaves.
+    transpose_picker: Option<TransposeChoice>,
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
     command_search: Option<ui::CommandSearch>,
@@ -356,6 +358,7 @@ impl AppView {
             key_picker: false,
             time_picker: false,
             tuplet_picker: None,
+            transpose_picker: None,
             clef_picker: false,
             tempo_picker: None,
             command_search: None,
@@ -1771,6 +1774,9 @@ impl AppView {
             id::DOT => self.toggle_dots(1, cx),
             id::DOUBLE_DOT => self.toggle_dots(2, cx),
             id::OTHER_TUPLET => self.toggle_tuplet_picker(cx),
+            id::TRANSPOSE => self.toggle_transpose_picker(cx),
+            id::FLIP => self.flip(cx),
+            id::RESPELL => self.edit(Command::Respell, cx),
             id::DUPLET
             | id::TRIPLET
             | id::QUADRUPLET
@@ -2276,6 +2282,64 @@ impl AppView {
         }
         cx.notify();
     }
+    fn toggle_transpose_picker(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.transpose_picker.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
+            return;
+        }
+        if self.transpose_picker.take().is_none() {
+            self.cancel_editor();
+            self.transpose_picker = Some(TransposeChoice::default());
+            self.show_editor_tab();
+        }
+        cx.notify();
+    }
+    /// X, as in Sibelius: a selected tie or slur goes to its other side;
+    /// selected notes turn their stems, or give them back to the automatic
+    /// rule when they were turned by hand.
+    fn flip(&mut self, cx: &mut Context<Self>) {
+        if let Some(score_core::MarkRef::Connection(connection)) = self.selected_mark()
+            && connection.kind.is_curve()
+        {
+            self.edit(Command::FlipCurve(connection), cx);
+            return;
+        }
+        let editor = &self.document.editor;
+        let stems = editor
+            .selected_ids()
+            .into_iter()
+            .filter_map(|id| {
+                let event = editor.score().event(id)?;
+                if event.pitches.is_empty() {
+                    return None;
+                }
+                if event.notation.stem.is_some() {
+                    return Some((id, None));
+                }
+                let down = self.layout.stem_down(id)?;
+                Some((
+                    id,
+                    Some(if down {
+                        score_core::Stem::Up
+                    } else {
+                        score_core::Stem::Down
+                    }),
+                ))
+            })
+            .collect();
+        self.edit(Command::SetStems(stems), cx);
+    }
+    /// Transportar's button: move the selection, and close when it moved.
+    fn apply_transpose(&mut self, choice: TransposeChoice, cx: &mut Context<Self>) {
+        if self.try_edit(Command::TransposeBy(choice.interval()), cx) {
+            self.transpose_picker = None;
+        }
+        cx.notify();
+    }
     /// Otro grupillo's Aplicar: always sets the ratio, never takes it away.
     fn apply_tuplet(&mut self, ratio: (u8, u8), cx: &mut Context<Self>) {
         let ratio_of = |d: score_core::Duration| d.tuplet().map(|t| (t.actual(), t.normal()));
@@ -2284,6 +2348,8 @@ impl AppView {
         }
         if ratio_of(self.rhythm_target()) == Some(ratio) {
             self.tuplet_picker = None;
+            self.transpose_picker = None;
+            self.transpose_picker = None;
         }
         cx.notify();
     }
@@ -2457,6 +2523,7 @@ impl AppView {
         self.key_picker = false;
         self.time_picker = false;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -2846,6 +2913,7 @@ impl AppView {
         self.key_picker = false;
         self.time_picker = false;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3197,6 +3265,7 @@ impl AppView {
             (self.key_picker, Kind::Key),
             (self.time_picker, Kind::Time),
             (self.tuplet_picker.is_some(), Kind::Tuplet),
+            (self.transpose_picker.is_some(), Kind::Transpose),
             (self.text_editor.is_some(), Kind::Text),
             (self.lyric_editor.is_some(), Kind::Lyric),
             (self.chord_editor.is_some(), Kind::Chord),
@@ -3231,7 +3300,7 @@ impl AppView {
         {
             return true;
         }
-        if self.tuplet_picker.take().is_some() {
+        if self.tuplet_picker.take().is_some() | self.transpose_picker.take().is_some() {
             return true;
         }
         if self.clef_picker || self.key_picker || self.time_picker {
@@ -3239,6 +3308,8 @@ impl AppView {
             self.key_picker = false;
             self.time_picker = false;
             self.tuplet_picker = None;
+            self.transpose_picker = None;
+            self.transpose_picker = None;
             return true;
         }
         if self.tempo_picker.take().is_some() {
@@ -3304,6 +3375,7 @@ impl AppView {
         self.key_picker = false;
         self.time_picker = false;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.clef_picker = false;
         self.instrument_picker = None;
         if self.tempo_picker.is_some() {
@@ -3328,6 +3400,8 @@ impl AppView {
             self.key_picker = false;
             self.time_picker = false;
             self.tuplet_picker = None;
+            self.transpose_picker = None;
+            self.transpose_picker = None;
             self.clef_picker = false;
             self.instrument_picker = None;
             self.show_editor_tab();
@@ -3409,6 +3483,7 @@ impl AppView {
         self.clef_picker = !self.clef_picker;
         self.time_picker = false;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.key_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3453,6 +3528,7 @@ impl AppView {
         self.key_picker = !self.key_picker;
         self.time_picker = false;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3475,6 +3551,7 @@ impl AppView {
         }
         self.time_picker = !self.time_picker;
         self.tuplet_picker = None;
+        self.transpose_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3515,6 +3592,8 @@ impl AppView {
         if self.document.editor.score().time_at(bar) == time {
             self.time_picker = false;
             self.tuplet_picker = None;
+            self.transpose_picker = None;
+            self.transpose_picker = None;
             self.clef_picker = false;
             self.tempo_picker = None;
             self.header_editor = None;
@@ -3952,6 +4031,34 @@ fn form_bounds(editor: &score_edit::Editor) -> (usize, usize) {
         .unwrap_or(editor.cursor().measure);
     let end = ids.iter().map(|id| id.measure).max().unwrap_or(start);
     (start, end)
+}
+
+/// What Transportar… moves by: an interval of the list, its direction and
+/// how many octaves more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TransposeChoice {
+    /// Into `score_core::INTERVALS`; `None` is the octave alone.
+    pub interval: Option<usize>,
+    pub up: bool,
+    pub octaves: i8,
+}
+impl Default for TransposeChoice {
+    fn default() -> Self {
+        Self {
+            interval: Some(2),
+            up: true,
+            octaves: 0,
+        }
+    }
+}
+impl TransposeChoice {
+    pub fn interval(self) -> score_core::Interval {
+        let base = self.interval.map_or(score_core::Interval::OCTAVE, |index| {
+            score_core::INTERVALS[index].1
+        });
+        let interval = base.plus_octaves(self.octaves);
+        if self.up { interval } else { interval.down() }
+    }
 }
 
 /// Noteheads and beam overrides: each command toggles one on the selected notes.

@@ -331,3 +331,113 @@ fn bar_repeats_toggle_on_the_selected_bars_and_writing_replaces_them() {
     editor.set_cursor(Cursor::default());
     assert!(editor.execute(Command::ToggleBarRepeat).is_err());
 }
+
+#[test]
+fn a_passage_transposes_by_an_interval_and_undoes_in_one_step() {
+    let mut score = Score::default();
+    let ids: Vec<_> = [Step::C, Step::E, Step::G]
+        .into_iter()
+        .enumerate()
+        .map(|(index, step)| {
+            score
+                .insert(0, index, event(step, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    let mut editor = Editor::new(score).unwrap();
+    assert!(
+        editor
+            .execute(Command::TransposeBy(score_core::Interval::new(1, 2)))
+            .is_err()
+    );
+    editor.select(ids[0]);
+    editor.extend_selection(ids[2]);
+    let before = editor.score().clone();
+    // A minor third down: C–E–G becomes A–C♯–E.
+    editor
+        .execute(Command::TransposeBy(score_core::Interval::new(2, 3).down()))
+        .unwrap();
+    let steps: Vec<_> = ids
+        .iter()
+        .map(|id| editor.score().event(*id).unwrap().pitches.first().unwrap())
+        .map(|pitch| (pitch.step, pitch.octave(), pitch.alteration()))
+        .collect();
+    assert_eq!(steps, [(Step::A, 3, 0), (Step::C, 4, 1), (Step::E, 4, 0)]);
+    // The passage stays selected for the next step, and one undo restores it.
+    assert_eq!(editor.selected_ids(), ids);
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+}
+
+#[test]
+fn stems_and_curves_flip_by_hand_save_and_undo() {
+    use score_core::{Connection, ConnectionKind, Stem};
+    let mut score = Score::default();
+    let a = score
+        .insert(0, 0, event(Step::C, Duration::Quarter))
+        .unwrap();
+    let b = score
+        .insert(0, 1, event(Step::C, Duration::Quarter))
+        .unwrap();
+    let tie = Connection {
+        start: a,
+        end: b,
+        kind: ConnectionKind::Tie,
+    };
+    score.add_connection(tie).unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    let before = editor.score().clone();
+    editor
+        .execute(Command::SetStems(vec![
+            (a, Some(Stem::Down)),
+            (b, Some(Stem::Down)),
+        ]))
+        .unwrap();
+    editor.execute(Command::FlipCurve(tie)).unwrap();
+    assert_eq!(
+        editor.score().event(a).unwrap().notation.stem,
+        Some(Stem::Down)
+    );
+    assert!(editor.score().curve_flipped(tie));
+    let saved = editor.score().clone();
+    assert_eq!(
+        serde_json::from_value::<Score>(serde_json::to_value(&saved).unwrap()).unwrap(),
+        saved
+    );
+    assert!(editor.execute(Command::SetStems(Vec::new())).is_err());
+    editor.undo();
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+}
+
+#[test]
+fn respelling_a_chord_tone_leaves_the_others() {
+    let mut score = Score::default();
+    let chord = Event {
+        pitches: Pitches::new(&[
+            Pitch::new(Step::C, 4).unwrap(),
+            Pitch::new(Step::E, 4).unwrap(),
+            Pitch::new(Step::G, 4)
+                .unwrap()
+                .with_accidental(Some(score_core::Accidental::Sharp)),
+        ])
+        .unwrap(),
+        ..event(Step::C, Duration::Quarter)
+    };
+    let id = score.insert(0, 0, chord).unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(id);
+    editor.select_tone(2);
+    editor.execute(Command::Respell).unwrap();
+    let names: Vec<_> = editor
+        .score()
+        .event(id)
+        .unwrap()
+        .pitches
+        .iter()
+        .map(|p| (p.step, p.alteration()))
+        .collect();
+    assert_eq!(names, [(Step::C, 0), (Step::E, 0), (Step::A, -1)]);
+    editor.undo();
+    assert!(editor.execute(Command::Respell).is_ok());
+}

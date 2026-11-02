@@ -17,6 +17,8 @@ pub enum EditorKind {
     Time,
     /// Otro grupillo: any ratio for the selection or the next notes.
     Tuplet,
+    /// Transportar…: an interval for the selected notes.
+    Transpose,
     Tempo,
     Text,
     Lyric,

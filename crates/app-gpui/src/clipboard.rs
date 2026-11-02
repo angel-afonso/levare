@@ -160,6 +160,7 @@ mod playback_tests {
                 pause: None,
                 notehead: None,
                 beam: None,
+                stem: None,
                 division: None,
                 arpeggio: None,
                 technique: None,

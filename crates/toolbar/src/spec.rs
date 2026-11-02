@@ -980,6 +980,33 @@ const CLIPBOARD: GroupSpec = GroupSpec {
         ),
     ],
 };
+/// Sibelius' Transpose dialog, for the selected notes.
+const TRANSFORM: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Notas",
+    visual: Label("±"),
+    priority: 3,
+    controls: &[
+        toggle(tile(
+            id::TRANSPOSE,
+            Label("±"),
+            "Transportar…",
+            "Mueve las notas seleccionadas un intervalo, con sus notas de adorno y cifrados, escritos con el nombre que les corresponde.",
+        )),
+        tile(
+            id::FLIP,
+            Label("↑↓"),
+            "Invertir",
+            "Da la vuelta a la plica de las notas seleccionadas, o a la ligadura seleccionada. Otra vez, vuelve a su lado automático.",
+        ),
+        tile(
+            id::RESPELL,
+            Label("♯♭"),
+            "Enarmonizar",
+            "Otro nombre para el mismo sonido: Do♯ pasa a Re♭ y vuelve. En un acorde, la nota elegida; las notas ligadas cambian juntas.",
+        ),
+    ],
+};
 const SELECT: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Seleccionar",
@@ -1753,7 +1780,7 @@ const RIBBON: GroupSpec = GroupSpec {
 pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Home,
-        groups: &[CLIPBOARD, INSTRUMENTS, DIVISI, BARS, SELECT],
+        groups: &[CLIPBOARD, INSTRUMENTS, DIVISI, BARS, SELECT, TRANSFORM],
     },
     TabSpec {
         id: TabId::NoteInput,

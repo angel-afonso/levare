@@ -141,6 +141,15 @@ pub enum Command {
     InsertMeasure,
     DeleteMeasures,
     Transpose(i16),
+    /// Move the selected notes, grace notes and chord symbols by an interval.
+    TransposeBy(score_core::Interval),
+    /// Turn stems by hand, or give them back to the automatic rule (`None`).
+    SetStems(Vec<(ElementId, Option<score_core::Stem>)>),
+    /// Draw a tie or slur on its other side, or back.
+    FlipCurve(score_core::Connection),
+    /// Give the selected notes, or the selected chord tone, their other
+    /// enharmonic name: C♯ to D♭ and back.
+    Respell,
     AddPitch(Pitch),
     RemoveHighestPitch,
     SetAccidental(Option<Accidental>),
@@ -1266,6 +1275,36 @@ impl Editor {
                 };
                 next.selection = None;
             }
+            Command::SetStems(ref stems) => {
+                if stems.is_empty() {
+                    return Err(ScoreError("Selecciona notas con plica o una ligadura"));
+                }
+                for &(id, stem) in stems {
+                    next.score.set_stem(id, stem)?;
+                }
+            }
+            Command::Respell => {
+                let ids = self.selected_notes("Selecciona las notas que quieras enarmonizar")?;
+                let chord = ids.len() == 1
+                    && next
+                        .score
+                        .event(ids[0])
+                        .is_some_and(|e| e.pitches.len() > 1);
+                next.score.respell(&ids, chord.then_some(next.tone))?;
+            }
+            Command::FlipCurve(connection) => {
+                next.score.flip_curve(connection)?;
+            }
+            Command::TransposeBy(interval) => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    return Err(ScoreError("Selecciona las notas que quieras transportar"));
+                }
+                if interval == score_core::Interval::new(0, 0) {
+                    return Ok(false);
+                }
+                next.score.transpose_by(&ids, interval)?;
+            }
             Command::Transpose(steps) => {
                 if steps == 0 {
                     return Ok(false);
@@ -1449,6 +1488,10 @@ impl Editor {
                 )
                 | Command::ToggleNotehead(_)
                 | Command::ToggleBeam(_)
+                | Command::TransposeBy(_)
+                | Command::SetStems(_)
+                | Command::FlipCurve(_)
+                | Command::Respell
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)
