@@ -47,6 +47,7 @@ fn page_setup_round_trips_and_rejects_impossible_staff_sizes() {
             paper: Paper::Tabloid,
             landscape: true,
             staff: Some(45),
+            hide_empty_staves: true,
         })
         .unwrap();
     assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);

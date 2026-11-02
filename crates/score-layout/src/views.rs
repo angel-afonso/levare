@@ -107,6 +107,7 @@ impl LayoutEngine {
                     PAGE_WIDTH
                 }
         };
+        self.hide_empty_staves = mode == ViewMode::Page && setup.hide_empty_staves;
         let mut layout = self.layout_with_spacing(
             score,
             if mode == ViewMode::Page {
@@ -214,6 +215,8 @@ impl LayoutEngine {
         (layout.curves, layout.hairpins) = (curves, hairpins);
         offsets::apply(score, &mut layout);
         offsets::apply_bar_marks(score, &mut layout);
+        // Other views and plain layouts always show every staff.
+        self.hide_empty_staves = false;
         layout
     }
 

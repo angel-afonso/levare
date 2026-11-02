@@ -46,6 +46,9 @@ pub struct PageSetup {
     /// Staff height from top to bottom line in tenths of a millimetre;
     /// `None` lets the number of parts decide.
     pub staff: Option<u8>,
+    /// Leave out, after the first system, the staves of a part that plays
+    /// nothing in that system, as Sibelius' «Hide Empty Staves» does.
+    pub hide_empty_staves: bool,
 }
 impl PageSetup {
     pub(crate) fn is_default(&self) -> bool {

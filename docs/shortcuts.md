@@ -256,6 +256,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Papel A3 |  |
 | — | — | Papel tabloide |  |
 | — | — | Página horizontal |  |
+| — | — | Ocultar pentagramas vacíos |  |
 | — | — | Tamaño de pentagrama automático |  |
 | — | — | Pentagrama de 7 mm |  |
 | — | — | Pentagrama de 6 mm |  |

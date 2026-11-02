@@ -137,8 +137,8 @@ five-instrument ensemble.
   *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
   rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Diseño**: paper and staff size, system and page breaks, bar and page
-  numbers, noteheads, beam overrides and resetting what was moved by hand.
+  sounds. **Diseño**: paper and staff size, system and page breaks, hiding empty staves,
+  bar and page numbers, noteheads, beam overrides and resetting what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
   zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
@@ -1010,6 +1010,14 @@ The ribbon's **Vista** tab switches between **Página**, **Continua** and
 - **Continua:** lines that fit the available width, with vertical scrolling.
 - **Pentagrama:** all bars in one horizontal strip, with the instruments aligned and
   sideways scrolling.
+
+### Hiding empty staves
+
+**Diseño › Sistema y página › Ocultar vacíos** leaves out, after the first system, the
+staves of every part that has no note in a system, as Sibelius' «Hide Empty Staves»
+does; the other staves move up and the pages hold more music. A system where nothing
+plays keeps every part. It applies to the page view, the PDF and the parts; the
+continuous and single-staff views always show every staff, to write in them.
 
 ### Bar and page numbers
 

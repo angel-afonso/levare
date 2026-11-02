@@ -284,12 +284,23 @@ mod portable_tests {
                 paper: score_core::Paper::Letter,
                 landscape: true,
                 staff: Some(60),
+                hide_empty_staves: false,
             })
             .unwrap();
         assert_eq!(painter::paper(&letter, false), (792., 612.));
         check(&letter, false);
         let part = letter.extract_part(letter.parts()[0].id()).unwrap();
         assert_eq!(painter::paper(&part, true), (792., 612.));
+        // Hiding empty staves still prints every page of a large orchestra.
+        let mut hidden = example("menuetto-y-trio-orquesta");
+        hidden
+            .set_page_setup(score_core::PageSetup {
+                hide_empty_staves: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let full = painter::layout(&example("menuetto-y-trio-orquesta"), false);
+        assert!(check(&hidden, false).len() <= full.pages.len());
     }
 
     #[test]

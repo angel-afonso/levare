@@ -3983,6 +3983,10 @@ fn page_setup_command(
             landscape: !setup.landscape,
             ..setup
         },
+        id::HIDE_EMPTY_STAVES => PageSetup {
+            hide_empty_staves: !setup.hide_empty_staves,
+            ..setup
+        },
         id::STAFF_SIZE_AUTOMATIC => staff(None),
         id::STAFF_SIZE_7 => staff(Some(70)),
         id::STAFF_SIZE_6 => staff(Some(60)),

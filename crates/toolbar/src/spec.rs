@@ -1282,7 +1282,7 @@ const STAFF_SIZE: GroupSpec = GroupSpec {
 const BAR_NUMBERS_HINT: &str = "Qué compases llevan su número, sobre el pentagrama superior de cada sistema. El primero nunca.";
 /// Sibelius' bar number frequencies; the first bar is never numbered.
 const BAR_NUMBERS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Números de compás",
     visual: Label("12"),
     priority: 2,
@@ -1429,6 +1429,12 @@ const BREAKS: GroupSpec = GroupSpec {
             Icon("page"),
             "Nueva página",
             "El siguiente compás empieza una página nueva.",
+        )),
+        toggle(tile(
+            id::HIDE_EMPTY_STAVES,
+            Visual::Staff,
+            "Ocultar vacíos",
+            "En la vista de página y el PDF, tras el primer sistema, quita los pentagramas de los instrumentos que no tocan en ese sistema.",
         )),
     ],
 };

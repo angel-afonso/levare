@@ -32,8 +32,8 @@ name and key, choice tracks, groups without cards) stays.
 - Texto takes the dynamics, as Sibelius writes them as Expression text, and the signs and
   jumps in one **D.C. / D.S.** dropdown.
 - Diseño: Papel (paper and orientation) and Pentagrama (staff size) dropdowns, Sistema
-  y página, Números de compás (each system, every bar, every 5 or 10,
-  none), Números de página (footer, outside corner, none), Cabeza (cross, diamond and
+  y página (with Ocultar vacíos), the Números de compás dropdown (each system, every
+  bar, every 5 or 10, none), Números de página (footer, outside corner, none), Cabeza (cross, diamond and
   slash noteheads), Barra de corchea (start, join, none) and Posición (Restablecer).
   Noteheads and beams change only the drawing, and Notaciones has no room left at
   1440 px.

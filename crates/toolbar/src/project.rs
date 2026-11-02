@@ -519,6 +519,7 @@ mod tests {
                 "Más dinámicas",
                 "Más figuras",
                 "Nota de adorno",
+                "Números de compás",
                 "Papel",
                 "Pentagrama",
                 "Símbolos",

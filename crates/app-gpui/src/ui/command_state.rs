@@ -24,6 +24,9 @@ impl CommandStates for AppView {
         if command == id::LANDSCAPE {
             return CommandState::checked(setup.landscape);
         }
+        if command == id::HIDE_EMPTY_STAVES {
+            return CommandState::checked(setup.hide_empty_staves);
+        }
         if let Some(chosen) = crate::page_setup_command(setup, command) {
             return CommandState::checked(chosen == setup);
         }

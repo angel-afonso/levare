@@ -1030,6 +1030,8 @@ pub struct LayoutEngine {
     cache: HashMap<(PartId, StaffId, usize), CacheEntry>,
     metrics: Metrics,
     orchestra_page: Option<views::OrchestraPage>,
+    /// Set for page view when the score hides empty staves.
+    hide_empty_staves: bool,
     pub recomputed_measures: usize,
 }
 impl Default for LayoutEngine {
@@ -1038,6 +1040,7 @@ impl Default for LayoutEngine {
             cache: HashMap::new(),
             metrics: Metrics::bravura(),
             orchestra_page: None,
+            hide_empty_staves: false,
             recomputed_measures: 0,
         }
     }
@@ -1276,7 +1279,32 @@ impl LayoutEngine {
             let row_first = placed.len();
             let mut first_staff_y = None;
             let mut last_staff_y = 0.;
-            for part in score.parts() {
+            let row = row_start..row_start + columns.len();
+            // A preview keeps the staves its base shows; otherwise a part
+            // with no note in this system is left out after the first one.
+            let left_out = |part: &score_core::Part| match pinned {
+                Some(base) => !base
+                    .measures
+                    .iter()
+                    .any(|m| m.part == part.id() && row.contains(&m.index)),
+                None => {
+                    self.hide_empty_staves
+                        && row_start > 0
+                        && part.staves().iter().all(|staff| {
+                            row.clone().all(|bar| {
+                                staff.measures()[bar]
+                                    .iter()
+                                    .all(|(_, event)| event.pitches.is_empty())
+                            })
+                        })
+                }
+            };
+            let mut shown: Vec<_> = score.parts().iter().filter(|p| !left_out(p)).collect();
+            // A system never goes blank: with nothing playing, every part stays.
+            if shown.is_empty() {
+                shown = score.parts().iter().collect();
+            }
+            for part in shown {
                 let family = part.instrument().family();
                 if previous_part.is_some_and(|(previous_family, _)| previous_family != family) {
                     y += 16.;

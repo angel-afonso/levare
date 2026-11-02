@@ -424,6 +424,7 @@ fn paper_and_staff_size_shape_the_page() {
             paper: Paper::Letter,
             landscape: true,
             staff: Some(50),
+            hide_empty_staves: false,
         })
         .unwrap();
     let (wide, tall, _, _) = page(&score);
@@ -447,4 +448,101 @@ fn paper_and_staff_size_shape_the_page() {
             })
             .is_err()
     );
+}
+
+#[test]
+fn empty_staves_leave_later_systems_in_page_view_only() {
+    use score_core::{Instrument, PageSetup};
+    let (mut score, _) = piece(40);
+    let flute = score.add_part(Instrument::Flute).unwrap();
+    let cello = score.add_part(Instrument::Cello).unwrap();
+    // The flute plays only in the first and last bars; the cello never.
+    for bar in [0, 39] {
+        score.insert_in(flute, bar, 0, note()).unwrap();
+    }
+    score
+        .set_page_setup(PageSetup {
+            hide_empty_staves: true,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let mut engine = LayoutEngine::default();
+    let page = engine.layout_view(&score, 1000., ViewMode::Page);
+    let shows = |layout: &Layout, part, system: &System| {
+        layout
+            .measures
+            .iter()
+            .any(|m| m.part == part && m.index == system.first_measure)
+    };
+    let (first, last) = (&page.systems[0], page.systems.last().unwrap());
+    assert!(shows(&page, flute, first) && shows(&page, cello, first));
+    assert!(shows(&page, flute, last) && !shows(&page, cello, last));
+    let middle = &page.systems[page.systems.len() / 2];
+    assert!(!shows(&page, flute, middle) && !shows(&page, cello, middle));
+    // The piano plays everywhere, so its staves stay.
+    let piano = score.parts()[0].id();
+    assert!(
+        page.systems
+            .iter()
+            .all(|system| shows(&page, piano, system))
+    );
+    // A shorter system leaves room for more on each page.
+    let mut all = score.clone();
+    all.set_page_setup(PageSetup::default()).unwrap();
+    let full = LayoutEngine::default().layout_view(&all, 1000., ViewMode::Page);
+    assert!(page.pages.len() < full.pages.len());
+    // The continuous view and plain layouts keep every staff.
+    let continuous = engine.layout_view(&score, 1000., ViewMode::Continuous);
+    let middle = &continuous.systems[continuous.systems.len() / 2];
+    assert!(shows(&continuous, cello, middle));
+    // With nothing playing in a system, every part stays.
+    let (mut silent, _) = piece(40);
+    let viola = silent.add_part(Instrument::Viola).unwrap();
+    for bar in 0..40 {
+        let id = silent.measures()[bar].id_at(0).unwrap();
+        silent
+            .remove(ElementId {
+                part: silent.parts()[0].id(),
+                staff: StaffId::Upper,
+                measure: bar,
+                event: id,
+            })
+            .unwrap();
+    }
+    silent
+        .set_page_setup(PageSetup {
+            hide_empty_staves: true,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let layout = LayoutEngine::default().layout_view(&silent, 1000., ViewMode::Page);
+    assert!(
+        layout
+            .systems
+            .iter()
+            .all(|system| shows(&layout, viola, system))
+    );
+}
+
+#[test]
+fn every_example_lays_out_with_empty_staves_hidden() {
+    use score_core::PageSetup;
+    for bytes in [
+        include_bytes!("../../../examples/orquesta-completa.partitura").as_slice(),
+        include_bytes!("../../../examples/menuetto-y-trio-orquesta.partitura").as_slice(),
+        include_bytes!("../../../examples/tres-luces-orquesta.partitura").as_slice(),
+        include_bytes!("../../../examples/divisi-por-pasaje.partitura").as_slice(),
+        include_bytes!("../../../examples/voces-y-divisi.partitura").as_slice(),
+        include_bytes!("../../../examples/umbral-y-lumbre-concierto-viola.partitura").as_slice(),
+    ] {
+        let mut score = score_io::decode(bytes).unwrap();
+        score
+            .set_page_setup(PageSetup {
+                hide_empty_staves: true,
+                ..PageSetup::default()
+            })
+            .unwrap();
+        let layout = LayoutEngine::default().layout_view(&score, 1000., ViewMode::Page);
+        assert!(!layout.pages.is_empty());
+    }
 }

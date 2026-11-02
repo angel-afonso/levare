@@ -457,6 +457,7 @@ impl Shortcuts {
                     Some(id::PAPER_A3),
                     Some(id::PAPER_TABLOID),
                     Some(id::LANDSCAPE),
+                    Some(id::HIDE_EMPTY_STAVES),
                     Some(id::STAFF_SIZE_AUTOMATIC),
                     Some(id::STAFF_SIZE_7),
                     Some(id::STAFF_SIZE_6),
