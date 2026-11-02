@@ -33,6 +33,8 @@ mod lyrics;
 mod offsets;
 
 pub const STAFF_SPACE: f32 = 10.;
+/// How far above a bar's top line its number sits.
+pub const BAR_NUMBER_RISE: f32 = 18.;
 pub const MUSIC_SIZE: f32 = STAFF_SPACE * 4.;
 pub const STAFF_LABEL_SIZE: f32 = 16.;
 
@@ -318,9 +320,54 @@ pub struct Layout {
     /// Hyphens and extenders between sung syllables.
     pub lyric_lines: Vec<Line>,
     pub piano_arpeggios: Vec<PianoArpeggioLayout>,
+    /// Which bars and pages carry their numbers.
+    pub numbering: score_core::Numbering,
+}
+
+/// Where a page's number is printed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageNumberPlace {
+    Footer,
+    TopLeft,
+    TopRight,
 }
 
 impl Layout {
+    /// The bars that show their number: one per bar, on the top staff of
+    /// its system. The number goes `BAR_NUMBER_RISE` above the bar's origin.
+    pub fn numbered_bars(&self) -> impl Iterator<Item = &PlacedMeasure> {
+        let mut tops = HashMap::<usize, f32>::new();
+        for measure in &self.measures {
+            tops.entry(measure.system_start)
+                .and_modify(|top| *top = top.min(measure.origin.y))
+                .or_insert(measure.origin.y);
+        }
+        let bars = self.numbering.bars;
+        self.measures.iter().filter(move |measure| {
+            measure.origin.y == tops[&measure.system_start]
+                && bars.shows(measure.index, measure.index == measure.system_start)
+        })
+    }
+    /// The text of page `index`'s number and where it goes, if it has one.
+    pub fn page_number(&self, index: usize) -> Option<(String, PageNumberPlace)> {
+        match self.numbering.pages {
+            score_core::PageNumbers::Footer => Some((
+                format!("{} / {}", index + 1, self.pages.len()),
+                PageNumberPlace::Footer,
+            )),
+            score_core::PageNumbers::Corner if index > 0 => Some((
+                (index + 1).to_string(),
+                // The outside corner: page 2 is a left-hand page.
+                if index.is_multiple_of(2) {
+                    PageNumberPlace::TopRight
+                } else {
+                    PageNumberPlace::TopLeft
+                },
+            )),
+            _ => None,
+        }
+    }
+
     pub fn hit_bar_mark(&self, point: Point) -> Option<BarMarkRef> {
         if let Some(measure) = self.hit_tempo(point) {
             return Some(BarMarkRef {
@@ -1792,6 +1839,7 @@ impl LayoutEngine {
         let lyric_lines = lyrics::lines(&placed, self.metrics.staff * 1.2);
         let piano_arpeggios = expression::piano_arpeggios(score, &placed, &self.metrics);
         Layout {
+            numbering: score.numbering(),
             curves,
             hairpins,
             line_marks,

@@ -119,15 +119,26 @@ pub(crate) fn page<C: Canvas>(
             Some(f64::from(page.width - 112.)),
         );
     }
-    painter.text(
-        &format!("{} / {}", index + 1, layout.pages.len()),
-        Serif::Regular,
-        13.,
-        f64::from(page.width / 2.),
-        f64::from(page.top + page.height - 24.),
-        Align::Center,
-        None,
-    );
+    if let Some((number, place)) = layout.page_number(index) {
+        let (x, y, align) = match place {
+            score_layout::PageNumberPlace::Footer => {
+                (page.width / 2., page.top + page.height - 24., Align::Center)
+            }
+            score_layout::PageNumberPlace::TopLeft => (56., page.top + 36., Align::Left),
+            score_layout::PageNumberPlace::TopRight => {
+                (page.width - 56., page.top + 36., Align::Right)
+            }
+        };
+        painter.text(
+            &number,
+            Serif::Regular,
+            13.,
+            f64::from(x),
+            f64::from(y),
+            align,
+            None,
+        );
+    }
     painter.page(
         layout,
         page.first_measure,
@@ -536,12 +547,17 @@ impl<C: Canvas> Painter<'_, C> {
                     false,
                 );
             }
+        }
+        for measure in layout
+            .numbered_bars()
+            .filter(|m| (first..=last).contains(&m.index))
+        {
             self.text(
                 &(measure.index + 1).to_string(),
                 Serif::Regular,
                 11.,
-                offset.x.into(),
-                (offset.y - 18.).into(),
+                measure.origin.x.into(),
+                (measure.origin.y - score_layout::BAR_NUMBER_RISE).into(),
                 Align::Left,
                 None,
             );

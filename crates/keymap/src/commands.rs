@@ -386,6 +386,14 @@ pub mod id {
         CLEAR_FORM = "compases.quitar-forma";
         SYSTEM_BREAK = "compases.salto-de-sistema";
         PAGE_BREAK = "compases.salto-de-pagina";
+        BAR_NUMBERS_SYSTEM = "compases.numeros.sistema";
+        BAR_NUMBERS_EVERY_BAR = "compases.numeros.cada-compas";
+        BAR_NUMBERS_EVERY_5 = "compases.numeros.cada-5";
+        BAR_NUMBERS_EVERY_10 = "compases.numeros.cada-10";
+        BAR_NUMBERS_HIDDEN = "compases.numeros.ninguno";
+        PAGE_NUMBERS_FOOTER = "compases.paginas.pie";
+        PAGE_NUMBERS_CORNER = "compases.paginas.esquina";
+        PAGE_NUMBERS_HIDDEN = "compases.paginas.ninguno";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -678,6 +686,14 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CLEAR_FORM, C::Bars, "Quitar repeticiones y saltos", G, false, R),
     spec(id::SYSTEM_BREAK, C::Bars, "Salto de sistema tras el compás", G, false, R),
     spec(id::PAGE_BREAK, C::Bars, "Salto de página tras el compás", G, false, R),
+    spec(id::BAR_NUMBERS_SYSTEM, C::Bars, "Número de compás en cada sistema", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_BAR, C::Bars, "Número en cada compás", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_5, C::Bars, "Número de compás cada 5 compases", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_10, C::Bars, "Número de compás cada 10 compases", G, false, R),
+    spec(id::BAR_NUMBERS_HIDDEN, C::Bars, "Sin números de compás", G, false, R),
+    spec(id::PAGE_NUMBERS_FOOTER, C::Bars, "Número de página al pie", G, false, R),
+    spec(id::PAGE_NUMBERS_CORNER, C::Bars, "Número de página en la esquina", G, false, R),
+    spec(id::PAGE_NUMBERS_HIDDEN, C::Bars, "Sin números de página", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),

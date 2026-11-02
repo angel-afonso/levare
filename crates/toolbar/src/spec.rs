@@ -1229,6 +1229,72 @@ const SIGNS: GroupSpec = GroupSpec {
 // Diseño
 
 /// The user's own system and page ends, after the selected bar.
+const BAR_NUMBERS_HINT: &str = "Qué compases llevan su número, sobre el pentagrama superior de cada sistema. El primero nunca.";
+/// Sibelius' bar number frequencies; the first bar is never numbered.
+const BAR_NUMBERS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Números de compás",
+    visual: Label("12"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::BAR_NUMBERS_SYSTEM,
+            Label("|12"),
+            "Sistema",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_BAR,
+            Label("123"),
+            "Cada compás",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_5,
+            Label("5"),
+            "Cada 5",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_10,
+            Label("10"),
+            "Cada 10",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_HIDDEN,
+            Label("–"),
+            "Ninguno",
+            BAR_NUMBERS_HINT,
+        )),
+    ],
+};
+const PAGE_NUMBERS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Números de página",
+    visual: Label("1/3"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::PAGE_NUMBERS_FOOTER,
+            Label("1/3"),
+            "Al pie",
+            "«2 / 5» centrado al pie de cada página.",
+        )),
+        choice(tile(
+            id::PAGE_NUMBERS_CORNER,
+            Label("2"),
+            "Esquina",
+            "El número arriba, en la esquina exterior, desde la segunda página, como en Sibelius.",
+        )),
+        choice(tile(
+            id::PAGE_NUMBERS_HIDDEN,
+            Label("no"),
+            "Ninguno",
+            "Páginas sin número.",
+        )),
+    ],
+};
 /// Noteheads change only the drawing: the note keeps its pitch and sound.
 const NOTEHEADS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -1643,7 +1709,14 @@ pub const TABS: &[TabSpec] = &[
     },
     TabSpec {
         id: TabId::Layout,
-        groups: &[BREAKS, NOTEHEADS, BEAMS, POSITION],
+        groups: &[
+            BREAKS,
+            BAR_NUMBERS,
+            PAGE_NUMBERS,
+            NOTEHEADS,
+            BEAMS,
+            POSITION,
+        ],
     },
     TabSpec {
         id: TabId::Review,

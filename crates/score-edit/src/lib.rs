@@ -65,6 +65,7 @@ pub enum Command {
     ToggleRehearsalMark,
     ToggleLayoutBreak(score_core::LayoutBreak),
     SetRehearsalStyle(score_core::RehearsalStyle),
+    SetNumbering(score_core::Numbering),
     RemoveEndings,
     Insert(Event),
     /// Sibelius-style entry: overwrite from the insertion point.
@@ -1120,6 +1121,11 @@ impl Editor {
                     return Ok(false);
                 }
             }
+            Command::SetNumbering(numbering) => {
+                if !next.score.set_numbering(numbering)? {
+                    return Ok(false);
+                }
+            }
             Command::EditForm(_) | Command::SetEnding(_) | Command::RemoveEndings => {
                 let ids = self.selected_ids();
                 let start = ids
@@ -1396,6 +1402,7 @@ impl Editor {
                 | Command::ToggleRehearsalMark
                 | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
+                | Command::SetNumbering(_)
                 | Command::SetEnding(_)
                 | Command::RemoveEndings
                 | Command::SetDotted(_)

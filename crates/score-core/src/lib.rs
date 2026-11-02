@@ -5,6 +5,8 @@ use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
 mod breaks;
+mod numbering;
+pub use numbering::{BarNumbers, Numbering, PageNumbers};
 mod rehearsal;
 pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;
@@ -524,6 +526,8 @@ pub struct Score {
     bar_offsets: std::collections::BTreeMap<usize, BarOffsets>,
     #[serde(default, skip_serializing_if = "rehearsal_style_is_default")]
     rehearsal_style: RehearsalStyle,
+    #[serde(default, skip_serializing_if = "Numbering::is_default")]
+    numbering: Numbering,
     #[serde(default)]
     key_signature: KeySignature,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -561,6 +565,7 @@ impl Default for Score {
             breaks: Default::default(),
             bar_offsets: Default::default(),
             rehearsal_style: Default::default(),
+            numbering: Default::default(),
             key_signature: KeySignature::default(),
             time_changes: Default::default(),
             key_changes: Default::default(),
@@ -962,6 +967,9 @@ impl Score {
                 return Err(ScoreError("Cambio de tempo inválido"));
             }
             mark.validate()?;
+        }
+        if matches!(self.numbering.bars, BarNumbers::Every(step) if step < 2) {
+            return Err(ScoreError("Numeración de compases inválida"));
         }
         self.validate_form()?;
         self.validate_rehearsals()?;

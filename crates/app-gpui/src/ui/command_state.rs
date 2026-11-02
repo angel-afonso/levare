@@ -20,6 +20,10 @@ impl CommandStates for AppView {
                 .unwrap_or(editor.cursor().measure);
             CommandState::checked(editor.score().layout_break(bar) == Some(kind))
         };
+        let numbering = editor.score().numbering();
+        if let Some(chosen) = crate::numbering_command(numbering, command) {
+            return CommandState::checked(chosen == numbering);
+        }
         if let Some(action) = crate::appearance_command(command) {
             // Lit while every selected note has it; rests are left out.
             let notes: Vec<_> = editor

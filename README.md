@@ -137,8 +137,8 @@ five-instrument ensemble.
   *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
   rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Diseño**: system and page breaks, noteheads, beam overrides and resetting
-  what was moved by hand.
+  sounds. **Diseño**: system and page breaks, bar and page numbers, noteheads, beam
+  overrides and resetting what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
   zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
@@ -1009,6 +1009,15 @@ The ribbon's **Vista** tab switches between **Página**, **Continua** and
 - **Continua:** lines that fit the available width, with vertical scrolling.
 - **Pentagrama:** all bars in one horizontal strip, with the instruments aligned and
   sideways scrolling.
+
+### Bar and page numbers
+
+As in Sibelius and MuseScore, bar numbers go above the top staff of each system at its
+first bar. **Diseño › Números de compás** (or the **Vista** menu) numbers instead every
+bar, every 5 or every 10 bars, or none. The first bar is never numbered.
+**Diseño › Números de página** puts «2 / 5» at the foot of every page, the number alone
+at the top outside corner from the second page on, or no number. Both choices are
+saved with the score and apply to the screen, the PDF and the exported parts.
 
 **⌘0** fits a whole page to the window. The **− / +** buttons and the zoom shortcuts
 work in all three views. Changing view keeps the selection, the input point and

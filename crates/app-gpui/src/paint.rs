@@ -217,16 +217,25 @@ pub fn score_canvas(
                     rgb(0xe1ded6),
                     Default::default(),
                 ));
-                if layout.mode == score_layout::ViewMode::Page {
+                if layout.mode == score_layout::ViewMode::Page
+                    && let Some((number, place)) = layout.page_number(index)
+                {
+                    // Text starts at its point: centre the footer roughly, keep
+                    // corners inside the margins.
+                    let (x, y) = match place {
+                        score_layout::PageNumberPlace::Footer => {
+                            (page.width / 2. - 12., page.top + page.height - 24.)
+                        }
+                        score_layout::PageNumberPlace::TopLeft => (56., page.top + 28.),
+                        score_layout::PageNumberPlace::TopRight => {
+                            (page.width - 56. - 8. * number.len() as f32, page.top + 28.)
+                        }
+                    };
                     text_at(
-                        &format!("{} / {}", index + 1, layout.pages.len()),
+                        &number,
                         font(".SystemUIFont"),
                         (12. * scale).max(10.),
-                        origin
-                            + point(
-                                px((page.width / 2. - 12.) * scale),
-                                px((page.top + page.height - 24.) * scale),
-                            ),
+                        origin + point(px(x * scale), px(y * scale)),
                         // 5.7:1 on the paper; with the 10 px floor it stays legible zoomed out.
                         0x67635c,
                         window,
@@ -697,11 +706,15 @@ pub fn score_canvas(
                         window,
                     );
                 }
+            }
+            for measure in layout.numbered_bars() {
+                let offset =
+                    origin + point(px(measure.origin.x * scale), px(measure.origin.y * scale));
                 text_at(
                     &(measure.index + 1).to_string(),
                     font(".SystemUIFont"),
                     11. * scale,
-                    offset + point(px(0.), px(-18. * scale)),
+                    offset + point(px(0.), px(-score_layout::BAR_NUMBER_RISE * scale)),
                     0x89938d,
                     window,
                     cx,

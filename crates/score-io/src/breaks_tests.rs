@@ -18,3 +18,21 @@ fn layout_breaks_round_trip_and_legacy_files_have_none() {
     let old = decode(&serde_json::to_vec(&data).unwrap()).unwrap();
     assert_eq!(old.layout_breaks().count(), 0);
 }
+
+#[test]
+fn numbering_round_trips_and_rejects_numbering_every_bar_by_step() {
+    use score_core::{BarNumbers, Numbering, PageNumbers};
+    let mut score = Score::default();
+    let plain = encode(&score).unwrap();
+    assert!(!String::from_utf8_lossy(&plain).contains("numbering"));
+    score
+        .set_numbering(Numbering {
+            bars: BarNumbers::Every(5),
+            pages: PageNumbers::Corner,
+        })
+        .unwrap();
+    assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);
+    let mut file: serde_json::Value = serde_json::from_slice(&encode(&score).unwrap()).unwrap();
+    file["score"]["numbering"]["bars"] = serde_json::json!({"Every": 1});
+    assert!(decode(&serde_json::to_vec(&file).unwrap()).is_err());
+}

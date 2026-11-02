@@ -1610,6 +1610,14 @@ impl AppView {
                 cx,
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            command
+                if numbering_command(self.document.editor.score().numbering(), command)
+                    .is_some() =>
+            {
+                let numbering =
+                    numbering_command(self.document.editor.score().numbering(), command).unwrap();
+                self.edit(Command::SetNumbering(numbering), cx)
+            }
             command if appearance_command(command).is_some() => {
                 self.edit(appearance_command(command).unwrap(), cx)
             }
@@ -3945,6 +3953,27 @@ fn appearance_command(command: CommandId) -> Option<Command> {
         id::BEAM_START => Command::ToggleBeam(Beam::Start),
         id::BEAM_JOIN => Command::ToggleBeam(Beam::Join),
         id::BEAM_OFF => Command::ToggleBeam(Beam::Off),
+        _ => return None,
+    })
+}
+
+/// The numbering each numbering command chooses, keeping the other half.
+fn numbering_command(
+    numbering: score_core::Numbering,
+    command: CommandId,
+) -> Option<score_core::Numbering> {
+    use score_core::{BarNumbers, PageNumbers};
+    let bars = |bars| score_core::Numbering { bars, ..numbering };
+    let pages = |pages| score_core::Numbering { pages, ..numbering };
+    Some(match command {
+        id::BAR_NUMBERS_SYSTEM => bars(BarNumbers::EverySystem),
+        id::BAR_NUMBERS_EVERY_BAR => bars(BarNumbers::EveryBar),
+        id::BAR_NUMBERS_EVERY_5 => bars(BarNumbers::Every(5)),
+        id::BAR_NUMBERS_EVERY_10 => bars(BarNumbers::Every(10)),
+        id::BAR_NUMBERS_HIDDEN => bars(BarNumbers::Hidden),
+        id::PAGE_NUMBERS_FOOTER => pages(PageNumbers::Footer),
+        id::PAGE_NUMBERS_CORNER => pages(PageNumbers::Corner),
+        id::PAGE_NUMBERS_HIDDEN => pages(PageNumbers::Hidden),
         _ => return None,
     })
 }

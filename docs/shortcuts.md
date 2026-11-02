@@ -242,6 +242,14 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Quitar repeticiones y saltos |  |
 | — | — | Salto de sistema tras el compás |  |
 | — | — | Salto de página tras el compás |  |
+| — | — | Número de compás en cada sistema |  |
+| — | — | Número en cada compás |  |
+| — | — | Número de compás cada 5 compases |  |
+| — | — | Número de compás cada 10 compases |  |
+| — | — | Sin números de compás |  |
+| — | — | Número de página al pie |  |
+| — | — | Número de página en la esquina |  |
+| — | — | Sin números de página |  |
 
 ## Instrumentos
 

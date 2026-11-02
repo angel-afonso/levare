@@ -335,3 +335,58 @@ fn oversized_systems_get_larger_sheets_without_clipping_or_splitting_piano_hands
             .all(|m| m.origin.x + m.width <= layout.pages[0].width)
     );
 }
+
+#[test]
+fn bar_numbers_follow_the_setting_on_the_top_staff_and_pages_number_their_corner() {
+    use score_core::{BarNumbers, Numbering, PageNumbers};
+    let (mut score, _) = piece(80);
+    let numbered = |score: &Score| {
+        let layout = LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+        let bars: Vec<_> = layout.numbered_bars().map(|m| m.index).collect();
+        // Only the piano's upper staff carries numbers.
+        assert!(layout.numbered_bars().all(|m| m.staff == StaffId::Upper));
+        (layout, bars)
+    };
+    let (layout, bars) = numbered(&score);
+    let starts: Vec<_> = layout.systems.iter().map(|s| s.first_measure).collect();
+    assert!(layout.systems.len() > 2 && layout.pages.len() > 1);
+    assert_eq!(bars, starts[1..]);
+    assert_eq!(
+        layout.page_number(1),
+        Some((
+            "2 / ".to_owned() + &layout.pages.len().to_string(),
+            PageNumberPlace::Footer
+        ))
+    );
+    for (setting, expected) in [
+        (BarNumbers::EveryBar, (1..80).collect::<Vec<_>>()),
+        (BarNumbers::Every(10), (1..=8).map(|n| n * 10 - 1).collect()),
+        (BarNumbers::Hidden, Vec::new()),
+    ] {
+        score
+            .set_numbering(Numbering {
+                bars: setting,
+                pages: PageNumbers::Corner,
+            })
+            .unwrap();
+        let (layout, bars) = numbered(&score);
+        assert_eq!(bars, expected, "{setting:?}");
+        assert_eq!(layout.page_number(0), None);
+        assert_eq!(
+            layout.page_number(1),
+            Some(("2".to_owned(), PageNumberPlace::TopLeft))
+        );
+        assert_eq!(
+            layout.page_number(2).map(|(_, place)| place),
+            (layout.pages.len() > 2).then_some(PageNumberPlace::TopRight)
+        );
+    }
+    assert!(
+        score
+            .set_numbering(Numbering {
+                bars: BarNumbers::Every(1),
+                ..Numbering::default()
+            })
+            .is_err()
+    );
+}
