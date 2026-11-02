@@ -475,6 +475,8 @@ fn instrument(part: Node<'_, '_>, bars: &[Node<'_, '_>], warnings: &mut Warnings
 #[derive(Clone, Default)]
 struct Bar {
     clefs: BTreeMap<u8, Clef>,
+    /// Staves this bar repeats the previous bar on, with %.
+    repeats: [bool; 2],
     time: Option<TimeSignature>,
     key: Option<KeySignature>,
     tempo: Option<TempoMark>,
@@ -549,6 +551,8 @@ struct State {
     transpose: [i32; 2],
     intervals: [Option<Transposition>; 2],
     staves: u8,
+    /// Staves inside a `measure-repeat`, until its stop.
+    repeating: [bool; 2],
 }
 
 fn read_part(
@@ -563,6 +567,7 @@ fn read_part(
         transpose: [0; 2],
         intervals: [None; 2],
         staves: 1,
+        repeating: [false; 2],
     };
     let mut bars = Vec::new();
     let mut passage = false;
@@ -803,6 +808,7 @@ fn read_part(
                 MarkType::Division(Division::Divisi) => index > 0 || m.tick > 0,
                 _ => false,
             });
+        bar.repeats = state.repeating;
         bars.push(bar);
     }
     let two = bars
@@ -947,6 +953,19 @@ fn attributes(
             .ok_or_else(|| error("MusicXML: armadura fuera de rango"))?;
         state.key = key;
         bar.key = Some(transpose_key(key, state.transpose[0], state.intervals[0]));
+    }
+    for style in n.children().filter(|c| c.has_tag_name("measure-style")) {
+        let staff = staff_index(style.attribute("number").unwrap_or("1"))?;
+        match child(style, "measure-repeat").and_then(|r| r.attribute("type")) {
+            Some("start") if text(style, "measure-repeat") == Some("1") => {
+                state.repeating[staff] = true
+            }
+            Some("start") => {
+                warnings.add("Las repeticiones de varios compases se importan con su música")
+            }
+            Some("stop") => state.repeating[staff] = false,
+            _ => {}
+        }
     }
     for c in n.children().filter(|c| c.has_tag_name("clef")) {
         if cursor != 0 {

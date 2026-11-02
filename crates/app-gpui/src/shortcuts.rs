@@ -395,6 +395,7 @@ impl Shortcuts {
                     Some(id::TICK_BARLINE),
                     Some(id::SHORT_BARLINE),
                     Some(id::INVISIBLE_BARLINE),
+                    Some(id::BAR_REPEAT),
                     None,
                     Some(id::SEGNO),
                     Some(id::CODA),

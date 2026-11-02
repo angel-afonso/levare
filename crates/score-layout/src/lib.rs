@@ -2800,7 +2800,19 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     for voice in Voice::ALL {
         result.cursor_x[voice.index()].push(rhythm.x(measure.voice_ticks(voice)) - 8.);
     }
-    if measure.voice_len(Voice::One) == 0 {
+    if measure.repeats_previous() {
+        // The % sits on the middle line, centred in the bar.
+        let (left, _, right, _) = metrics.bounds("\u{e500}", false);
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: "\u{e500}".into(),
+            position: Point {
+                x: start + (width - start) / 2. - (left + right) / 2.,
+                y: 20.,
+            },
+            element: None,
+        });
+    } else if measure.voice_len(Voice::One) == 0 {
         result.glyphs.push(Glyph {
             rotated: false,
             text: "\u{e4e3}".into(),

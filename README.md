@@ -1291,7 +1291,14 @@ In **Notaciones › Barra**, as in Sibelius' barline gallery, write the start an
 repeat, first and second endings, and the line that closes the bar: double, final,
 dashed, dotted, tick (a short stroke through the top line), short (over the middle of
 the staff) or invisible. Dashed, dotted, tick, short and invisible lines stay on each
-staff and do not join the staves of a piano or a group. In **Texto**, the **D.C. / D.S.**
+staff and do not join the staves of a piano or a group.
+
+**Compás %** in the same dropdown turns the selected bars of the active staff, or the
+cursor's bar, into bar repeats: they are emptied and show %, and they play the bar
+before them again, or the music several % bars back repeat. Choose it again to remove
+the mark; writing a note in the bar removes it too. The first bar cannot repeat, and a
+% needs the same time signature as the bar before it. MusicXML keeps it as a
+`measure-repeat`. In **Texto**, the **D.C. / D.S.**
 dropdown gathers Segno, Coda, Fine, To Coda and the jumps; the
 **Repeticiones** menu also gathers the six D.C./D.S. variants and the options to remove
 the form.

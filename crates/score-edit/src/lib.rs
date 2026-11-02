@@ -67,6 +67,9 @@ pub enum Command {
     SetRehearsalStyle(score_core::RehearsalStyle),
     SetNumbering(score_core::Numbering),
     SetPageSetup(score_core::PageSetup),
+    /// Mark the selected bars of the active staff with %, emptying them, or
+    /// remove the mark when every one has it.
+    ToggleBarRepeat,
     RemoveEndings,
     Insert(Event),
     /// Sibelius-style entry: overwrite from the insertion point.
@@ -1130,6 +1133,32 @@ impl Editor {
             Command::SetPageSetup(setup) => {
                 if !next.score.set_page_setup(setup)? {
                     return Ok(false);
+                }
+            }
+            Command::ToggleBarRepeat => {
+                let ids = self.selected_ids();
+                let cursor = next.cursor;
+                let bars = ids.iter().map(|id| id.measure);
+                let first = bars.clone().min().unwrap_or(cursor.measure);
+                let last = bars.max().unwrap_or(cursor.measure);
+                let part = next
+                    .score
+                    .part(cursor.part)
+                    .ok_or(ScoreError("El instrumento no existe"))?;
+                // A divisi staff shown from the upper one writes there.
+                let staff = part.input_source(cursor.staff, first).0;
+                let staff_bars = part
+                    .staff(staff)
+                    .ok_or(ScoreError("El pentagrama no existe"))?
+                    .measures();
+                let on = !(first..=last).all(|bar| staff_bars[bar].repeats_previous());
+                for bar in first..=last {
+                    next.score.set_bar_repeat(cursor.part, staff, bar, on)?;
+                }
+                next.selection = None;
+                next.range_anchor = None;
+                if (first..=last).contains(&cursor.measure) {
+                    next.cursor.index = 0;
                 }
             }
             Command::EditForm(_) | Command::SetEnding(_) | Command::RemoveEndings => {

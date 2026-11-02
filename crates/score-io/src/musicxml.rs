@@ -666,6 +666,30 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
             interval.chromatic - octaves * 12
         );
     }
+    // Last, as MusicXML orders it: a run of % bars is one measure-repeat,
+    // stopped by the first bar after it.
+    for (number, staff) in part.staves().iter().enumerate() {
+        let repeat = |bar: usize| {
+            staff
+                .measures()
+                .get(bar)
+                .is_some_and(|m| m.repeats_previous())
+        };
+        let kind = if repeat(bar) && !(bar > 0 && repeat(bar - 1)) {
+            Some("start\" slashes=\"1\">1")
+        } else if !repeat(bar) && bar > 0 && repeat(bar - 1) {
+            Some("stop\">")
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            let _ = write!(
+                xml,
+                "<measure-style number=\"{}\"><measure-repeat type=\"{kind}</measure-repeat></measure-style>",
+                number + 1
+            );
+        }
+    }
     xml.push_str("</attributes>\n");
 }
 

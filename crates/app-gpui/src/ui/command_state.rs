@@ -20,6 +20,15 @@ impl CommandStates for AppView {
                 .unwrap_or(editor.cursor().measure);
             CommandState::checked(editor.score().layout_break(bar) == Some(kind))
         };
+        if command == id::BAR_REPEAT {
+            let cursor = editor.cursor();
+            let part = editor.score().part(cursor.part).unwrap();
+            let staff = part.input_source(cursor.staff, cursor.measure).0;
+            return CommandState::checked(
+                part.staff(staff)
+                    .is_some_and(|s| s.measures()[cursor.measure].repeats_previous()),
+            );
+        }
         let setup = editor.score().page_setup();
         if command == id::LANDSCAPE {
             return CommandState::checked(setup.landscape);

@@ -287,3 +287,47 @@ fn noteheads_and_beams_toggle_on_the_notes_of_a_passage_and_undo() {
             .is_err()
     );
 }
+
+#[test]
+fn bar_repeats_toggle_on_the_selected_bars_and_writing_replaces_them() {
+    let mut score = Score::default();
+    let ids: Vec<_> = (0..3)
+        .map(|bar| {
+            score
+                .insert(bar, 0, event(Step::C, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    let (second, third) = (ids[1], ids[2]);
+    let mut editor = Editor::new(score).unwrap();
+    let before = editor.score().clone();
+    editor.select(second);
+    editor.extend_selection(third);
+    editor.execute(Command::ToggleBarRepeat).unwrap();
+    let bars = |editor: &Editor| {
+        editor
+            .score()
+            .measures()
+            .iter()
+            .map(|m| m.repeats_previous())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(bars(&editor), [false, true, true, false]);
+    assert!(editor.score().measures()[1].is_empty());
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+    editor.redo();
+    // Writing into a % bar puts music back in it.
+    editor.set_cursor(Cursor {
+        measure: 2,
+        index: 0,
+        ..Cursor::default()
+    });
+    editor
+        .execute(Command::Insert(event(Step::D, Duration::Quarter)))
+        .unwrap();
+    assert_eq!(bars(&editor), [false, true, false, false]);
+    // The first bar has nothing to repeat.
+    editor.set_cursor(Cursor::default());
+    assert!(editor.execute(Command::ToggleBarRepeat).is_err());
+}

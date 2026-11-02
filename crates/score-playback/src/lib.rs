@@ -359,7 +359,9 @@ impl PlaybackPlan {
                         {
                             last_element = None;
                         }
-                        let measure = &staff.measures()[index];
+                        // A % bar plays the music of the bar it repeats.
+                        let source = part.bar_repeat_source(staff.id(), index);
+                        let measure = &staff.measures()[source];
                         let mut tick = instance.written;
                         for (id, event) in measure.voice_iter(voice) {
                             let written_tick = tick;
@@ -377,7 +379,7 @@ impl PlaybackPlan {
                             let element = ElementId {
                                 staff: staff.id(),
                                 part: part.id(),
-                                measure: index,
+                                measure: source,
                                 event: id,
                             };
                             let pitches = score.sounding_pitches(element)?;

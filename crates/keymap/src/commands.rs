@@ -373,6 +373,7 @@ pub mod id {
         TICK_BARLINE = "compases.barra-de-marca";
         SHORT_BARLINE = "compases.barra-corta";
         INVISIBLE_BARLINE = "compases.barra-invisible";
+        BAR_REPEAT = "compases.repetir-compas";
         SEGNO = "compases.segno";
         CODA = "compases.coda";
         TO_CODA = "compases.al-coda";
@@ -687,6 +688,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TICK_BARLINE, C::Bars, "Barra de marca", G, false, R),
     spec(id::SHORT_BARLINE, C::Bars, "Barra corta", G, false, R),
     spec(id::INVISIBLE_BARLINE, C::Bars, "Barra invisible", G, false, R),
+    spec(id::BAR_REPEAT, C::Bars, "Compás de repetición (%)", S, false, R),
     spec(id::SEGNO, C::Bars, "Segno", G, false, R),
     spec(id::CODA, C::Bars, "Coda", G, false, R),
     spec(id::TO_CODA, C::Bars, "To Coda", G, false, R),

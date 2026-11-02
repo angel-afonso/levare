@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod bar_repeat;
 mod breaks;
 mod numbering;
 pub use numbering::{BarNumbers, Numbering, PageNumbers};
@@ -314,6 +315,9 @@ pub struct Measure {
     third_order: Vector<EventId>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     fourth_order: Vector<EventId>,
+    /// An empty bar marked with % plays the bar before it again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    repeat: bool,
 }
 
 impl Default for Measure {
@@ -324,6 +328,7 @@ impl Default for Measure {
             second_order: Vector::new(),
             third_order: Vector::new(),
             fourth_order: Vector::new(),
+            repeat: false,
         }
     }
 }
@@ -337,12 +342,14 @@ impl PartialEq for Measure {
             && self.second_order == other.second_order
             && self.third_order == other.third_order
             && self.fourth_order == other.fourth_order
+            && self.repeat == other.repeat
         {
             return true;
         }
-        Voice::ALL
-            .into_iter()
-            .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
+        self.repeat == other.repeat
+            && Voice::ALL
+                .into_iter()
+                .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
     }
 }
 impl Eq for Measure {}
@@ -977,6 +984,7 @@ impl Score {
             return Err(ScoreError("Numeración de compases inválida"));
         }
         self.page_setup.validate()?;
+        self.validate_bar_repeats()?;
         self.validate_form()?;
         self.validate_rehearsals()?;
         self.validate_breaks()?;

@@ -39,6 +39,8 @@ pub fn glyph_codes() -> impl Iterator<Item = u32> {
         .chain([
             0xe0a7, 0xe0a8, 0xe0a9, 0xe0d8, 0xe0d9, 0xe0db, 0xe101, 0xe102, 0xe103,
         ])
+        // The bar repeat.
+        .chain([0xe500])
 }
 
 /// Convert ordinary Unicode notation to the exact glyphs used in the score.

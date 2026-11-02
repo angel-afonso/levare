@@ -229,6 +229,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Barra de marca |  |
 | — | — | Barra corta |  |
 | — | — | Barra invisible |  |
+| — | — | Compás de repetición (%) |  |
 | — | — | Segno |  |
 | — | — | Coda |  |
 | — | — | To Coda |  |

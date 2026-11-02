@@ -47,8 +47,9 @@ name and key, choice tracks, groups without cards) stays.
 - Published command ids keep their names. `TAB_HOME` opens Inicio, `TAB_LAYOUT` Diseño;
   `TAB_DYNAMICS` stays registered without a default key and opens Texto.
 
-- Barra is Sibelius' barline gallery: the repeat barlines, the endings and every barline
-  style (double, final, dashed, dotted, tick, short and invisible) in one dropdown, which
+- Barra is Sibelius' barline gallery: the repeat barlines, the endings, every barline
+  style (double, final, dashed, dotted, tick, short and invisible) and the % bar repeat
+  in one dropdown, which
   keeps Notaciones within 1440 px.
 
 ## Left out of this phase

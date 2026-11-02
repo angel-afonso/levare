@@ -905,6 +905,26 @@ pub(super) fn score(
             }
         }
     }
+    // A bar inside a measure-repeat holds only rests: mark it with % so it
+    // plays the bar before it. One with notes keeps them.
+    for (pi, data) in parts.iter().enumerate() {
+        let part = score.parts()[pi].id();
+        for (bar, b) in data.bars.iter().enumerate() {
+            for (number, staff) in [StaffId::Upper, StaffId::Lower].into_iter().enumerate() {
+                let empty = score
+                    .part(part)
+                    .and_then(|p| p.staff(staff))
+                    .is_some_and(|s| s.measures()[bar].iter().all(|(_, e)| e.pitches.is_empty()));
+                if b.repeats[number]
+                    && empty
+                    && score.set_bar_repeat(part, staff, bar, true).is_err()
+                {
+                    warnings
+                        .add("Un compás de repetición sin compás anterior igual se importa vacío");
+                }
+            }
+        }
+    }
     score.validate().map_err(FileError::from)?;
     Ok(score)
 }

@@ -116,6 +116,8 @@ impl Score {
                 if staff.measures.is_empty() {
                     staff.measures.push_back(Measure::default());
                 }
+                // A % that becomes the first bar has nothing left to repeat.
+                staff.measures[0].repeat = false;
             }
         }
         self.remap_measures(|bar| {

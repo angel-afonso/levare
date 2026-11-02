@@ -1629,6 +1629,7 @@ impl AppView {
             command if appearance_command(command).is_some() => {
                 self.edit(appearance_command(command).unwrap(), cx)
             }
+            id::BAR_REPEAT => self.edit(Command::ToggleBarRepeat, cx),
             id::SYSTEM_BREAK => self.edit(
                 Command::ToggleLayoutBreak(score_core::LayoutBreak::System),
                 cx,

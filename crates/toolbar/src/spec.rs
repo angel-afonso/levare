@@ -1149,6 +1149,12 @@ const REPEATS: GroupSpec = GroupSpec {
             "Un trazo en el centro del pentagrama.",
         )),
         toggle(tile(
+            id::BAR_REPEAT,
+            Music("\u{e500}"),
+            "Compás %",
+            "El compás vacío repite el anterior: se escribe % y suena igual. Escribir en él lo quita.",
+        )),
+        toggle(tile(
             id::INVISIBLE_BARLINE,
             Label("inv."),
             "Invisible",

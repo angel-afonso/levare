@@ -637,3 +637,47 @@ fn the_metronome_clicks_each_beat_and_accents_each_bar() {
     assert!(plan.messages.windows(2).all(|w| w[0].frame <= w[1].frame));
     assert_eq!(plan.count_in(&score, 0), (2, 36_000));
 }
+
+#[test]
+fn a_bar_repeat_plays_the_bar_before_it_again() {
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    for (index, step) in [Step::C, Step::E, Step::G, Step::C].into_iter().enumerate() {
+        score
+            .insert_in(
+                piano,
+                0,
+                index,
+                Event {
+                    pitches: Pitches::single(Pitch::new(step, 4)),
+                    duration: Duration::Quarter,
+                    notation: Notation::default(),
+                },
+            )
+            .unwrap();
+    }
+    let attacks = |score: &Score| {
+        let plan = PlaybackPlan::new(score, Tempo::default(), 48_000).unwrap();
+        plan.messages
+            .iter()
+            .filter_map(|m| match m.message {
+                Message::NoteOn(note) => Some((m.frame, note.key)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let once = attacks(&score);
+    for bar in [1, 2] {
+        score
+            .set_bar_repeat(piano, StaffId::Upper, bar, true)
+            .unwrap();
+    }
+    let thrice = attacks(&score);
+    assert_eq!(thrice.len(), 3 * once.len());
+    // The second and third bars repeat the first, two seconds later each.
+    for (copy, &(frame, key)) in thrice.iter().enumerate() {
+        let (first, first_key) = once[copy % once.len()];
+        assert_eq!(key, first_key);
+        assert_eq!(frame, first + (copy / once.len()) as u64 * 96_000);
+    }
+}

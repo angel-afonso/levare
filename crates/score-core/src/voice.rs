@@ -39,7 +39,9 @@ impl Measure {
             Voice::Four => &self.fourth_order,
         }
     }
+    /// Writing in a bar replaces its %.
     pub(crate) fn voice_order_mut(&mut self, voice: Voice) -> &mut Vector<EventId> {
+        self.repeat = false;
         match voice {
             Voice::One => &mut self.order,
             Voice::Two => &mut self.second_order,

@@ -546,3 +546,25 @@ fn every_example_lays_out_with_empty_staves_hidden() {
         assert!(!layout.pages.is_empty());
     }
 }
+
+#[test]
+fn a_bar_repeat_draws_percent_instead_of_a_rest() {
+    let (mut score, _) = piece(3);
+    let piano = score.parts()[0].id();
+    score
+        .set_bar_repeat(piano, StaffId::Upper, 1, true)
+        .unwrap();
+    let layout = LayoutEngine::default().layout(&score, 1000.);
+    let bar = layout.measure_on(piano, StaffId::Upper, 1).unwrap();
+    let percent = bar
+        .content
+        .glyphs
+        .iter()
+        .find(|g| g.text == "\u{e500}")
+        .unwrap();
+    assert_eq!(percent.position.y, 20.);
+    assert!(!bar.content.glyphs.iter().any(|g| g.text == "\u{e4e3}"));
+    // The lower staff keeps its whole-bar rest.
+    let lower = layout.measure_on(piano, StaffId::Lower, 1).unwrap();
+    assert!(!lower.content.glyphs.iter().any(|g| g.text == "\u{e500}"));
+}

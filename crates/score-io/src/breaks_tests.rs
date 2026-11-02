@@ -55,3 +55,53 @@ fn page_setup_round_trips_and_rejects_impossible_staff_sizes() {
     file["score"]["page_setup"]["staff"] = 250.into();
     assert!(decode(&serde_json::to_vec(&file).unwrap()).is_err());
 }
+
+#[test]
+fn bar_repeats_round_trip_through_levare_and_musicxml() {
+    use score_core::{Duration, Event, Pitch, Pitches, StaffId, Step};
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    for (index, step) in [Step::C, Step::E, Step::G, Step::C].into_iter().enumerate() {
+        score
+            .insert_in(
+                piano,
+                0,
+                index,
+                Event {
+                    pitches: Pitches::single(Pitch::new(step, 4)),
+                    duration: Duration::Quarter,
+                    notation: Default::default(),
+                },
+            )
+            .unwrap();
+    }
+    for bar in [1, 2] {
+        score
+            .set_bar_repeat(piano, StaffId::Upper, bar, true)
+            .unwrap();
+    }
+    assert!(
+        score
+            .set_bar_repeat(piano, StaffId::Upper, 0, true)
+            .is_err()
+    );
+    assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);
+    let xml = musicxml::encode(&score).unwrap();
+    let text = String::from_utf8_lossy(&xml);
+    assert_eq!(text.matches("<measure-repeat type=\"start\"").count(), 1);
+    assert_eq!(text.matches("<measure-repeat type=\"stop\"").count(), 1);
+    let imported = musicxml::decode(&xml).unwrap().score;
+    let upper = imported.parts()[0].staff(StaffId::Upper).unwrap();
+    assert_eq!(
+        upper
+            .measures()
+            .iter()
+            .map(|m| m.repeats_previous())
+            .collect::<Vec<_>>(),
+        [false, true, true, false]
+    );
+    // A % bar must be empty in a saved file.
+    let mut file: serde_json::Value = serde_json::from_slice(&encode(&score).unwrap()).unwrap();
+    file["score"]["parts"][0]["staves"][0]["measures"][0]["repeat"] = true.into();
+    assert!(decode(&serde_json::to_vec(&file).unwrap()).is_err());
+}
