@@ -285,6 +285,7 @@ mod portable_tests {
                 landscape: true,
                 staff: Some(60),
                 hide_empty_staves: false,
+                margins: Default::default(),
             })
             .unwrap();
         assert_eq!(painter::paper(&letter, false), (792., 612.));
@@ -301,6 +302,15 @@ mod portable_tests {
             .unwrap();
         let full = painter::layout(&example("menuetto-y-trio-orquesta"), false);
         assert!(check(&hidden, false).len() <= full.pages.len());
+        // Wide margins print the same paper with the heading inside them.
+        let mut margins = example("trio");
+        margins
+            .set_page_setup(score_core::PageSetup {
+                margins: score_core::Margins::ExtraWide,
+                ..Default::default()
+            })
+            .unwrap();
+        check(&margins, false);
     }
 
     #[test]

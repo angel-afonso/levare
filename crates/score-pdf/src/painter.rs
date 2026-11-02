@@ -95,16 +95,23 @@ pub(crate) fn page<C: Canvas>(
         face,
         engraving,
     };
+    // The heading, the copyright and the page number keep inside the margins.
+    let margin = page.margin;
+    let (width, height) = (page.width - 2. * margin, page.height - 2. * margin);
+    painter.canvas.save();
+    painter
+        .canvas
+        .translate(f64::from(margin), f64::from(margin));
     if index == 0 {
-        painter.header(score, page.width);
+        painter.header(score, width);
         painter.text(
             &score.credits().copyright,
             Serif::Regular,
             10.,
-            f64::from(page.width / 2.),
-            f64::from(page.top + page.height - 42.),
+            f64::from(width / 2.),
+            f64::from(page.top + height - 42.),
             Align::Center,
-            Some(f64::from(page.width - 112.)),
+            Some(f64::from(width - 112.)),
         );
     }
     if part {
@@ -112,21 +119,19 @@ pub(crate) fn page<C: Canvas>(
             &score.part_name(score.parts()[0].id()),
             Serif::Bold,
             22.,
-            f64::from(page.width / 2.),
+            f64::from(width / 2.),
             f64::from(page.top) + if index == 0 { 132. } else { 48. },
             Align::Center,
-            Some(f64::from(page.width - 112.)),
+            Some(f64::from(width - 112.)),
         );
     }
     if let Some((number, place)) = layout.page_number(index) {
         let (x, y, align) = match place {
             score_layout::PageNumberPlace::Footer => {
-                (page.width / 2., page.top + page.height - 24., Align::Center)
+                (width / 2., page.top + height - 24., Align::Center)
             }
             score_layout::PageNumberPlace::TopLeft => (56., page.top + 36., Align::Left),
-            score_layout::PageNumberPlace::TopRight => {
-                (page.width - 56., page.top + 36., Align::Right)
-            }
+            score_layout::PageNumberPlace::TopRight => (width - 56., page.top + 36., Align::Right),
         };
         painter.text(
             &number,
@@ -138,6 +143,7 @@ pub(crate) fn page<C: Canvas>(
             None,
         );
     }
+    painter.canvas.restore();
     painter.page(
         layout,
         page.first_measure,

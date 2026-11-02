@@ -402,6 +402,9 @@ pub mod id {
         PAPER_TABLOID = "pagina.papel.tabloide";
         LANDSCAPE = "pagina.horizontal";
         HIDE_EMPTY_STAVES = "pagina.ocultar-pentagramas-vacios";
+        MARGINS_NORMAL = "pagina.margenes.normales";
+        MARGINS_WIDE = "pagina.margenes.anchos";
+        MARGINS_EXTRA_WIDE = "pagina.margenes.muy-anchos";
         STAFF_SIZE_AUTOMATIC = "pagina.pentagrama.automatico";
         STAFF_SIZE_7 = "pagina.pentagrama.7";
         STAFF_SIZE_6 = "pagina.pentagrama.6";
@@ -717,6 +720,9 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAPER_TABLOID, C::Bars, "Papel tabloide", G, false, R),
     spec(id::LANDSCAPE, C::Bars, "Página horizontal", G, false, R),
     spec(id::HIDE_EMPTY_STAVES, C::Bars, "Ocultar pentagramas vacíos", G, false, R),
+    spec(id::MARGINS_NORMAL, C::Bars, "Márgenes normales", G, false, R),
+    spec(id::MARGINS_WIDE, C::Bars, "Márgenes anchos", G, false, R),
+    spec(id::MARGINS_EXTRA_WIDE, C::Bars, "Márgenes muy anchos", G, false, R),
     spec(id::STAFF_SIZE_AUTOMATIC, C::Bars, "Tamaño de pentagrama automático", G, false, R),
     spec(id::STAFF_SIZE_7, C::Bars, "Pentagrama de 7 mm", G, false, R),
     spec(id::STAFF_SIZE_6, C::Bars, "Pentagrama de 6 mm", G, false, R),

@@ -1414,6 +1414,11 @@ over the automatic paper's, so the printed staff keeps its size. A fixed size tu
 the orchestra's width resolution; `paginate` still enlarges a sheet that cannot hold
 its tallest system, and the PDF then reduces it to the paper.
 
+`Margins` add room on every side. Page view engraves the music in the page width minus
+both margins, moves it right by one (`Layout::move_right`) and paginates with the
+margin above and below; `Page::margin` lets the app and the PDF keep the heading, the
+copyright and the page number inside it.
+
 The selector reserves a flexible width for the name and keeps the segments of musical
 text on a single line, with stable row heights and quantity controls outside the text
 area.

@@ -258,6 +258,9 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Papel tabloide |  |
 | — | — | Página horizontal |  |
 | — | — | Ocultar pentagramas vacíos |  |
+| — | — | Márgenes normales |  |
+| — | — | Márgenes anchos |  |
+| — | — | Márgenes muy anchos |  |
 | — | — | Tamaño de pentagrama automático |  |
 | — | — | Pentagrama de 7 mm |  |
 | — | — | Pentagrama de 6 mm |  |

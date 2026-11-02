@@ -3973,7 +3973,7 @@ fn page_setup_command(
     setup: score_core::PageSetup,
     command: CommandId,
 ) -> Option<score_core::PageSetup> {
-    use score_core::{PageSetup, Paper};
+    use score_core::{Margins, PageSetup, Paper};
     let paper = |paper| PageSetup { paper, ..setup };
     let staff = |staff| PageSetup { staff, ..setup };
     Some(match command {
@@ -3988,6 +3988,18 @@ fn page_setup_command(
         },
         id::HIDE_EMPTY_STAVES => PageSetup {
             hide_empty_staves: !setup.hide_empty_staves,
+            ..setup
+        },
+        id::MARGINS_NORMAL => PageSetup {
+            margins: Margins::Normal,
+            ..setup
+        },
+        id::MARGINS_WIDE => PageSetup {
+            margins: Margins::Wide,
+            ..setup
+        },
+        id::MARGINS_EXTRA_WIDE => PageSetup {
+            margins: Margins::ExtraWide,
             ..setup
         },
         id::STAFF_SIZE_AUTOMATIC => staff(None),

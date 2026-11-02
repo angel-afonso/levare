@@ -31,6 +31,9 @@ pub struct Page {
     pub top: f32,
     pub width: f32,
     pub height: f32,
+    /// Room added on every side by the page setup; the music, the heading
+    /// and the page number keep inside it.
+    pub margin: f32,
     pub first_measure: usize,
     pub last_measure: usize,
 }
@@ -108,10 +111,13 @@ impl LayoutEngine {
                 }
         };
         self.hide_empty_staves = mode == ViewMode::Page && setup.hide_empty_staves;
+        // Wider margins leave a narrower column for the music on the same page.
+        let inset = |page_width: f32| setup.margins.extra_mm() * page_width / paper_width;
+        let column = |page_width: f32| page_width - 2. * inset(page_width);
         let mut layout = self.layout_with_spacing(
             score,
             if mode == ViewMode::Page {
-                page_width
+                column(page_width)
             } else {
                 width
             },
@@ -137,19 +143,22 @@ impl LayoutEngine {
             // would, so the page does not depend on the order of the edits.
             if resolved.is_some_and(|(_, height)| tallest(&layout) != height) {
                 page_width = ENSEMBLE_PAGE_WIDTH;
-                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
+                layout =
+                    self.layout_with_spacing(score, column(page_width), true, false, None, false);
                 layout.mode = mode;
                 spacing::compact(&mut layout, &self.metrics);
             }
             loop {
-                let orchestra_width = (tallest(&layout) + HEADER + MARGIN) / aspect;
-                if orchestra_width <= layout.width + 0.5 {
+                let margins = 2. * inset(page_width);
+                let orchestra_width = (tallest(&layout) + HEADER + MARGIN + margins) / aspect;
+                if orchestra_width <= layout.width + margins + 0.5 {
                     break;
                 }
                 // Merging bars can combine high and low registers into a taller
                 // system. Resolve the final width before retaining its geometry.
                 page_width = orchestra_width;
-                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
+                layout =
+                    self.layout_with_spacing(score, column(page_width), true, false, None, false);
                 layout.mode = mode;
                 spacing::compact(&mut layout, &self.metrics);
             }
@@ -171,8 +180,10 @@ impl LayoutEngine {
                     .map(|(bar, _)| bar)
                     .collect()
             };
+            let margin = inset(page_width);
+            layout.move_right(margin);
             layout.paginate(
-                (page_width, aspect),
+                (page_width, aspect, margin),
                 16.,
                 MARGIN + if part { 16. } else { 0. },
                 &page_after,
@@ -200,6 +211,7 @@ impl LayoutEngine {
                 top: 0.,
                 width: layout.width,
                 height: layout.height,
+                margin: 0.,
                 first_measure: 0,
                 last_measure: score.measures().len() - 1,
             });
@@ -260,10 +272,11 @@ impl Layout {
             .position(|page| (page.first_measure..=page.last_measure).contains(&measure))
     }
 
-    /// `sheet` is the narrowest page width and the paper's height over its width.
+    /// `sheet` is the narrowest page width, the paper's height over its
+    /// width and the margin added on every side.
     fn paginate(
         &mut self,
-        (narrowest, aspect): (f32, f32),
+        (narrowest, aspect, margin): (f32, f32, f32),
         system_gap: f32,
         continuation_top: f32,
         page_after: &std::collections::BTreeSet<usize>,
@@ -277,24 +290,27 @@ impl Layout {
             .iter()
             .map(|s| s.bottom - s.top)
             .fold(0., f32::max);
-        let height = (width * aspect).max(tallest + HEADER + MARGIN);
+        let height = (width * aspect).max(tallest + HEADER + MARGIN + 2. * margin);
         let mut page_top = 0.;
-        let mut next_top = HEADER;
+        let mut next_top = HEADER + margin;
         let mut first_measure = 0;
         let mut shifts = Vec::new();
         for index in 0..self.systems.len() {
             let system_height = self.systems[index].bottom - self.systems[index].top;
             let forced = index > 0 && page_after.contains(&self.systems[index - 1].last_measure);
-            if (forced || next_top + system_height > page_top + height - MARGIN) && index > 0 {
+            if (forced || next_top + system_height > page_top + height - MARGIN - margin)
+                && index > 0
+            {
                 self.pages.push(Page {
                     top: page_top,
                     width,
                     height,
+                    margin,
                     first_measure,
                     last_measure: self.systems[index - 1].last_measure,
                 });
                 page_top += height + PAGE_GAP;
-                next_top = page_top + continuation_top;
+                next_top = page_top + continuation_top + margin;
                 first_measure = self.systems[index].first_measure;
             }
             let delta = next_top - self.systems[index].top;
@@ -305,12 +321,58 @@ impl Layout {
             top: page_top,
             width,
             height,
+            margin,
             first_measure,
             last_measure: self.systems.last().unwrap().last_measure,
         });
         self.move_systems(&shifts);
         self.width = width;
         self.height = page_top + height;
+    }
+
+    /// Move everything placed so far `dx` to the right, widening the layout
+    /// by twice that: the margin on both sides.
+    fn move_right(&mut self, dx: f32) {
+        if dx == 0. {
+            return;
+        }
+        for measure in &mut self.measures {
+            measure.origin.x += dx;
+        }
+        for mark in &mut self.tempos {
+            mark.position.x += dx;
+        }
+        for label in &mut self.rehearsals {
+            label.position.x += dx;
+            for line in &mut label.frame {
+                line.from.x += dx;
+                line.to.x += dx;
+            }
+        }
+        for label in &mut self.navigation {
+            label.position.x += dx;
+        }
+        for ending in &mut self.endings {
+            ending.label_position.x += dx;
+            for line in &mut ending.lines {
+                line.from.x += dx;
+                line.to.x += dx;
+            }
+        }
+        for label in &mut self.labels {
+            label.position.x += dx;
+        }
+        for line in &mut self.connectors {
+            line.from.x += dx;
+            line.to.x += dx;
+        }
+        for brace in &mut self.braces {
+            brace.x += dx;
+        }
+        for bracket in &mut self.brackets {
+            bracket.x += dx;
+        }
+        self.width += 2. * dx;
     }
 
     fn move_systems(&mut self, shifts: &[f32]) {

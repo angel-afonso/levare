@@ -34,6 +34,32 @@ impl Paper {
     }
 }
 
+/// Room around the music, added to Levare's own narrow margins.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Margins {
+    #[default]
+    Normal,
+    Wide,
+    ExtraWide,
+}
+impl Margins {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "Normales",
+            Self::Wide => "Anchos",
+            Self::ExtraWide => "Muy anchos",
+        }
+    }
+    /// Millimetres added on every side of the page.
+    pub const fn extra_mm(self) -> f32 {
+        match self {
+            Self::Normal => 0.,
+            Self::Wide => 6.,
+            Self::ExtraWide => 12.,
+        }
+    }
+}
+
 /// Staff heights Levare offers, in tenths of a millimetre, as Sibelius and
 /// MuseScore offer theirs.
 pub const STAFF_SIZES: [u8; 4] = [70, 60, 50, 40];
@@ -49,6 +75,7 @@ pub struct PageSetup {
     /// Leave out, after the first system, the staves of a part that plays
     /// nothing in that system, as Sibelius' «Hide Empty Staves» does.
     pub hide_empty_staves: bool,
+    pub margins: Margins,
 }
 impl PageSetup {
     pub(crate) fn is_default(&self) -> bool {

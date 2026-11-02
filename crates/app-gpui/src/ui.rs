@@ -1529,10 +1529,11 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
 fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
     let scale = view.layout.scale;
+    let margin = view.layout.pages.first().map_or(0., |page| page.margin);
     let header_width = if view.ui.view_mode == score_layout::ViewMode::SingleSystem {
         view.layout.width.min(1000.)
     } else {
-        view.layout.width
+        view.layout.width - 2. * margin
     };
     div()
         .relative()
@@ -1607,12 +1608,12 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
             cx.weak_entity(),
             view.music_font.clone(),
         ))
-        .child(score_header(view, header_width, cx))
+        .child(score_header(view, header_width, margin, cx))
         .children(copyright(view))
 }
 
 /// Title block of the first page. Clicking it opens the header editor.
-fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<Div> {
+fn score_header(view: &AppView, width: f32, margin: f32, cx: &Context<AppView>) -> Stateful<Div> {
     let score = view.document.editor.score();
     let credits = score.credits();
     let scale = view.layout.scale;
@@ -1629,8 +1630,8 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
     div()
         .id("score-header")
         .absolute()
-        .top(px(35. * scale))
-        .left_0()
+        .top(px((35. + margin) * scale))
+        .left(px(margin * scale))
         .w(px(width * scale))
         .px(px(48. * scale))
         .py(px(4. * scale))
@@ -1709,9 +1710,9 @@ fn copyright(view: &AppView) -> Option<Div> {
     Some(
         div()
             .absolute()
-            .top(px((page.top + page.height - 52.) * scale))
-            .left_0()
-            .w(px(page.width * scale))
+            .top(px((page.top + page.height - 52. - page.margin) * scale))
+            .left(px(page.margin * scale))
+            .w(px((page.width - 2. * page.margin) * scale))
             .px(px(56. * scale))
             .text_center()
             .truncate()

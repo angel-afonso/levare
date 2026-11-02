@@ -1235,6 +1235,7 @@ const SIGNS: GroupSpec = GroupSpec {
 // Diseño
 
 /// The user's own system and page ends, after the selected bar.
+const MARGINS_HINT: &str = "Espacio alrededor de la música en la vista de página y el PDF: anchos añade 6 mm por lado; muy anchos, 12.";
 const PAPER_HINT: &str = "El papel de la vista de página y del PDF. Automático: A3 para doce instrumentos o más, A4 si no.";
 /// Sibelius' Document Setup, reduced to the paper and its orientation.
 const PAPER: GroupSpec = GroupSpec {
@@ -1263,6 +1264,24 @@ const PAPER: GroupSpec = GroupSpec {
             Label("↔"),
             "Horizontal",
             "Gira la página: más compases por sistema.",
+        )),
+        choice(tile(
+            id::MARGINS_NORMAL,
+            Label("="),
+            "Márgenes normales",
+            MARGINS_HINT,
+        )),
+        choice(tile(
+            id::MARGINS_WIDE,
+            Label("+6"),
+            "Márgenes anchos",
+            MARGINS_HINT,
+        )),
+        choice(tile(
+            id::MARGINS_EXTRA_WIDE,
+            Label("+12"),
+            "Márgenes muy anchos",
+            MARGINS_HINT,
         )),
     ],
 };

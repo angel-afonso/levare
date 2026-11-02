@@ -1379,7 +1379,10 @@ for 12 parts or more, unless **Diseño › Papel** chooses A4, Letter, A3 or Tab
 upright or **Horizontal**. **Diseño › Pentagrama** sets the printed staff height to 7,
 6, 5 or 4 mm; **Automático** lets the number of parts decide, about 8.4 mm for one or
 two parts and 5.3 mm for an ensemble on A4, and keeps that size on larger paper, which
-then holds more music. A system too tall for the page is reduced to fit. The PDF uses Bravura's
+then holds more music. A system too tall for the page is reduced to fit. The same
+dropdown sets the margins: **normales**, **anchos** (6 mm more on every side) or **muy
+anchos** (12 mm); the music, the heading, the copyright and the page number move
+inside them on screen and in the PDF. The PDF uses Bravura's
 vector outlines, includes the markings and arpeggios across the hands, and lays out the
 pages independently of the screen's view and zoom. It includes no selections or
 interface controls. Individual parts carry the instrument in the header, without

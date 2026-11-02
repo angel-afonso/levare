@@ -425,6 +425,7 @@ fn paper_and_staff_size_shape_the_page() {
             landscape: true,
             staff: Some(50),
             hide_empty_staves: false,
+            margins: Default::default(),
         })
         .unwrap();
     let (wide, tall, _, _) = page(&score);
@@ -567,4 +568,32 @@ fn a_bar_repeat_draws_percent_instead_of_a_rest() {
     // The lower staff keeps its whole-bar rest.
     let lower = layout.measure_on(piano, StaffId::Lower, 1).unwrap();
     assert!(!lower.content.glyphs.iter().any(|g| g.text == "\u{e500}"));
+}
+
+#[test]
+fn wider_margins_keep_the_music_inside_the_same_page() {
+    use score_core::{Margins, PageSetup};
+    let (mut score, _) = piece(40);
+    let layout = |score: &Score| LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+    let normal = layout(&score);
+    assert_eq!(normal.pages[0].margin, 0.);
+    score
+        .set_page_setup(PageSetup {
+            margins: Margins::ExtraWide,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let wide = layout(&score);
+    let page = &wide.pages[0];
+    // 12 mm of a 210 mm page that is 1000 units wide.
+    let margin = 12. * 1000. / 210.;
+    assert!((page.margin - margin).abs() < 0.01);
+    assert!((page.width - normal.pages[0].width).abs() < 0.01);
+    for measure in &wide.measures {
+        assert!(measure.origin.x >= margin);
+        assert!(measure.origin.x + measure.width <= page.width - margin + 0.5);
+    }
+    assert!(wide.labels.iter().all(|label| label.position.x >= margin));
+    assert!(wide.systems[0].top >= normal.systems[0].top + margin - 0.01);
+    assert!(wide.pages.len() >= normal.pages.len());
 }

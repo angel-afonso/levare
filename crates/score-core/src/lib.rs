@@ -9,7 +9,7 @@ mod breaks;
 mod numbering;
 pub use numbering::{BarNumbers, Numbering, PageNumbers};
 mod page_setup;
-pub use page_setup::{PageSetup, Paper, STAFF_SIZES};
+pub use page_setup::{Margins, PageSetup, Paper, STAFF_SIZES};
 mod rehearsal;
 pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;

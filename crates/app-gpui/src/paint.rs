@@ -222,14 +222,18 @@ pub fn score_canvas(
                 {
                     // Text starts at its point: centre the footer roughly, keep
                     // corners inside the margins.
+                    let margin = page.margin;
                     let (x, y) = match place {
                         score_layout::PageNumberPlace::Footer => {
-                            (page.width / 2. - 12., page.top + page.height - 24.)
+                            (page.width / 2. - 12., page.top + page.height - 24. - margin)
                         }
-                        score_layout::PageNumberPlace::TopLeft => (56., page.top + 28.),
-                        score_layout::PageNumberPlace::TopRight => {
-                            (page.width - 56. - 8. * number.len() as f32, page.top + 28.)
+                        score_layout::PageNumberPlace::TopLeft => {
+                            (56. + margin, page.top + 28. + margin)
                         }
+                        score_layout::PageNumberPlace::TopRight => (
+                            page.width - 56. - margin - 8. * number.len() as f32,
+                            page.top + 28. + margin,
+                        ),
                     };
                     text_at(
                         &number,
