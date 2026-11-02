@@ -47,6 +47,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `⇧⌘P` | `Ctrl+Mayús+P` | Restablecer posición |  |
 | `Esc` | `Esc` | Detener, cancelar o quitar la selección |  |
 | `R` | `R` | Repetir la nota, acorde o silencio |  |
+| `⇧T` | `Mayús+T` | Transportar… |  |
 
 ## Entrada de notas
 

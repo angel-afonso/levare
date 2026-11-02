@@ -202,6 +202,7 @@ pub mod id {
         RESET_POSITION = "edicion.restablecer-posicion";
         ESCAPE = "edicion.escape";
         REPEAT = "edicion.repetir";
+        TRANSPOSE = "edicion.transportar";
 
         TOGGLE_NOTE_INPUT = "entrada.alternar";
         NOTE_C = "entrada.nota.c";
@@ -531,6 +532,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::RESET_POSITION, C::Edit, "Restablecer posición", S, false, R),
     spec(id::ESCAPE, C::Edit, "Detener, cancelar o quitar la selección", S, false, R),
     spec(id::REPEAT, C::Edit, "Repetir la nota, acorde o silencio", S, true, R),
+    spec(id::TRANSPOSE, C::Edit, "Transportar…", S, false, R),
 
     spec(id::TOGGLE_NOTE_INPUT, C::NoteInput, "Activar o desactivar la entrada de notas", S, false, R),
     spec(id::NOTE_C, C::NoteInput, "Escribir Do", S, true, R),

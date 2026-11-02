@@ -141,6 +141,8 @@ pub enum Command {
     InsertMeasure,
     DeleteMeasures,
     Transpose(i16),
+    /// Move the selected notes, grace notes and chord symbols by an interval.
+    TransposeBy(score_core::Interval),
     AddPitch(Pitch),
     RemoveHighestPitch,
     SetAccidental(Option<Accidental>),
@@ -1266,6 +1268,16 @@ impl Editor {
                 };
                 next.selection = None;
             }
+            Command::TransposeBy(interval) => {
+                let ids = self.selected_ids();
+                if ids.is_empty() {
+                    return Err(ScoreError("Selecciona las notas que quieras transportar"));
+                }
+                if interval == score_core::Interval::new(0, 0) {
+                    return Ok(false);
+                }
+                next.score.transpose_by(&ids, interval)?;
+            }
             Command::Transpose(steps) => {
                 if steps == 0 {
                     return Ok(false);
@@ -1449,6 +1461,7 @@ impl Editor {
                 )
                 | Command::ToggleNotehead(_)
                 | Command::ToggleBeam(_)
+                | Command::TransposeBy(_)
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)

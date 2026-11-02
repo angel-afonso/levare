@@ -5,6 +5,8 @@ use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
 mod bar_repeat;
+mod interval;
+pub use interval::{INTERVALS, Interval};
 mod breaks;
 mod numbering;
 pub use numbering::{BarNumbers, Numbering, PageNumbers};

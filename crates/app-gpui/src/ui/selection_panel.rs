@@ -568,6 +568,14 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
             "Métrica".into(),
             format!("{scope} hasta el siguiente cambio."),
         ),
+        EditorKind::Transpose => (
+            "Transportar".into(),
+            match editor.selected_ids().len() {
+                0 => "Selecciona primero las notas.".into(),
+                1 => "La nota seleccionada.".into(),
+                count => format!("Las {count} notas, acordes o silencios seleccionados."),
+            },
+        ),
         EditorKind::Tuplet => (
             "Otro grupillo".into(),
             if editor.selection().is_some() {
@@ -608,6 +616,7 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
         EditorKind::Key => key_picker(view, cx),
         EditorKind::Time => time_picker(view, cx),
         EditorKind::Tuplet => tuplet_picker(view, cx),
+        EditorKind::Transpose => transpose_picker(view, cx),
         EditorKind::Tempo => tempo_editor::panel(view, cx),
         EditorKind::Text => staff_text::panel(view, cx),
         EditorKind::Lyric => staff_text::lyric_panel(view, cx),

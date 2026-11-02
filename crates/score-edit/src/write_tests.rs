@@ -331,3 +331,40 @@ fn bar_repeats_toggle_on_the_selected_bars_and_writing_replaces_them() {
     editor.set_cursor(Cursor::default());
     assert!(editor.execute(Command::ToggleBarRepeat).is_err());
 }
+
+#[test]
+fn a_passage_transposes_by_an_interval_and_undoes_in_one_step() {
+    let mut score = Score::default();
+    let ids: Vec<_> = [Step::C, Step::E, Step::G]
+        .into_iter()
+        .enumerate()
+        .map(|(index, step)| {
+            score
+                .insert(0, index, event(step, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    let mut editor = Editor::new(score).unwrap();
+    assert!(
+        editor
+            .execute(Command::TransposeBy(score_core::Interval::new(1, 2)))
+            .is_err()
+    );
+    editor.select(ids[0]);
+    editor.extend_selection(ids[2]);
+    let before = editor.score().clone();
+    // A minor third down: C–E–G becomes A–C♯–E.
+    editor
+        .execute(Command::TransposeBy(score_core::Interval::new(2, 3).down()))
+        .unwrap();
+    let steps: Vec<_> = ids
+        .iter()
+        .map(|id| editor.score().event(*id).unwrap().pitches.first().unwrap())
+        .map(|pitch| (pitch.step, pitch.octave(), pitch.alteration()))
+        .collect();
+    assert_eq!(steps, [(Step::A, 3, 0), (Step::C, 4, 1), (Step::E, 4, 0)]);
+    // The passage stays selected for the next step, and one undo restores it.
+    assert_eq!(editor.selected_ids(), ids);
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+}
