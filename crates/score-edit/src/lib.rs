@@ -147,6 +147,9 @@ pub enum Command {
     SetStems(Vec<(ElementId, Option<score_core::Stem>)>),
     /// Draw a tie or slur on its other side, or back.
     FlipCurve(score_core::Connection),
+    /// Give the selected notes, or the selected chord tone, their other
+    /// enharmonic name: C♯ to D♭ and back.
+    Respell,
     AddPitch(Pitch),
     RemoveHighestPitch,
     SetAccidental(Option<Accidental>),
@@ -1280,6 +1283,15 @@ impl Editor {
                     next.score.set_stem(id, stem)?;
                 }
             }
+            Command::Respell => {
+                let ids = self.selected_notes("Selecciona las notas que quieras enarmonizar")?;
+                let chord = ids.len() == 1
+                    && next
+                        .score
+                        .event(ids[0])
+                        .is_some_and(|e| e.pitches.len() > 1);
+                next.score.respell(&ids, chord.then_some(next.tone))?;
+            }
             Command::FlipCurve(connection) => {
                 next.score.flip_curve(connection)?;
             }
@@ -1479,6 +1491,7 @@ impl Editor {
                 | Command::TransposeBy(_)
                 | Command::SetStems(_)
                 | Command::FlipCurve(_)
+                | Command::Respell
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)

@@ -439,6 +439,14 @@ If one note would leave the range, nothing moves. Undo takes the whole passage b
 the passage stays selected for another step. The up and down arrows still move a
 selected note by a step.
 
+## Enharmonic spelling
+
+**Inicio › Notas › Enarmonizar** (`J`, as in MuseScore; Return already ties notes)
+gives the selected notes the other name of the same sound, with the fewest signs: C♯
+becomes D♭ and D♭ becomes C♯ again, E becomes F♭, B♯ becomes C. In a chord with one note
+chosen, only that note changes; tied notes change together so the tie holds. Playback
+does not change.
+
 ## Flipping stems, ties and slurs
 
 **Inicio › Notas › Invertir** (`X`, as in Sibelius) turns the stems of the selected notes

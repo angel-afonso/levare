@@ -1776,6 +1776,7 @@ impl AppView {
             id::OTHER_TUPLET => self.toggle_tuplet_picker(cx),
             id::TRANSPOSE => self.toggle_transpose_picker(cx),
             id::FLIP => self.flip(cx),
+            id::RESPELL => self.edit(Command::Respell, cx),
             id::DUPLET
             | id::TRIPLET
             | id::QUADRUPLET

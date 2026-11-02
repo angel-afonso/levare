@@ -49,6 +49,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `R` | `R` | Repetir la nota, acorde o silencio |  |
 | `⇧T` | `Mayús+T` | Transportar… |  |
 | `X` | `X` | Invertir plica o ligadura |  |
+| `J` | `J` | Enarmonizar |  |
 
 ## Entrada de notas
 

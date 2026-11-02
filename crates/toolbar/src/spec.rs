@@ -999,6 +999,12 @@ const TRANSFORM: GroupSpec = GroupSpec {
             "Invertir",
             "Da la vuelta a la plica de las notas seleccionadas, o a la ligadura seleccionada. Otra vez, vuelve a su lado automático.",
         ),
+        tile(
+            id::RESPELL,
+            Label("♯♭"),
+            "Enarmonizar",
+            "Otro nombre para el mismo sonido: Do♯ pasa a Re♭ y vuelve. En un acorde, la nota elegida; las notas ligadas cambian juntas.",
+        ),
     ],
 };
 const SELECT: GroupSpec = GroupSpec {

@@ -173,6 +173,7 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("t", id::TIME_SIGNATURE),
     ("shift-t", id::TRANSPOSE),
     ("x", id::FLIP),
+    ("j", id::RESPELL),
     ("q", id::CLEF),
     ("l", id::LINES),
     ("z", id::SYMBOL),

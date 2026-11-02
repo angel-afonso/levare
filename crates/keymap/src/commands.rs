@@ -204,6 +204,7 @@ pub mod id {
         REPEAT = "edicion.repetir";
         TRANSPOSE = "edicion.transportar";
         FLIP = "edicion.invertir";
+        RESPELL = "edicion.enarmonizar";
 
         TOGGLE_NOTE_INPUT = "entrada.alternar";
         NOTE_C = "entrada.nota.c";
@@ -535,6 +536,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REPEAT, C::Edit, "Repetir la nota, acorde o silencio", S, true, R),
     spec(id::TRANSPOSE, C::Edit, "Transportar…", S, false, R),
     spec(id::FLIP, C::Edit, "Invertir plica o ligadura", S, false, R),
+    spec(id::RESPELL, C::Edit, "Enarmonizar", S, false, R),
 
     spec(id::TOGGLE_NOTE_INPUT, C::NoteInput, "Activar o desactivar la entrada de notas", S, false, R),
     spec(id::NOTE_C, C::NoteInput, "Escribir Do", S, true, R),

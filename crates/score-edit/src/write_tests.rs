@@ -409,3 +409,35 @@ fn stems_and_curves_flip_by_hand_save_and_undo() {
     editor.undo();
     assert_eq!(editor.score(), &before);
 }
+
+#[test]
+fn respelling_a_chord_tone_leaves_the_others() {
+    let mut score = Score::default();
+    let chord = Event {
+        pitches: Pitches::new(&[
+            Pitch::new(Step::C, 4).unwrap(),
+            Pitch::new(Step::E, 4).unwrap(),
+            Pitch::new(Step::G, 4)
+                .unwrap()
+                .with_accidental(Some(score_core::Accidental::Sharp)),
+        ])
+        .unwrap(),
+        ..event(Step::C, Duration::Quarter)
+    };
+    let id = score.insert(0, 0, chord).unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(id);
+    editor.select_tone(2);
+    editor.execute(Command::Respell).unwrap();
+    let names: Vec<_> = editor
+        .score()
+        .event(id)
+        .unwrap()
+        .pitches
+        .iter()
+        .map(|p| (p.step, p.alteration()))
+        .collect();
+    assert_eq!(names, [(Step::C, 0), (Step::E, 0), (Step::A, -1)]);
+    editor.undo();
+    assert!(editor.execute(Command::Respell).is_ok());
+}
