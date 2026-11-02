@@ -447,6 +447,9 @@ becomes D♭ and D♭ becomes C♯ again, E becomes F♭, B♯ becomes C. In a c
 chosen, only that note changes; tied notes change together so the tie holds. Playback
 does not change.
 
+Transposing instruments keep the letter their interval asks for, with a double sharp or
+double flat when the key needs one: a B♭ clarinet's written C♭ sounds B𝄫, not A.
+
 ## Flipping stems, ties and slurs
 
 **Inicio › Notas › Invertir** (`X`, as in Sibelius) turns the stems of the selected notes
