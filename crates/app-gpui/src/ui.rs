@@ -102,7 +102,7 @@ impl Default for UiState {
             compact: false,
             zoom: 0.7,
             view_mode: Default::default(),
-            tab: score_toolbar::TabId::Write,
+            tab: score_toolbar::TabId::NoteInput,
             right: RightTab::default(),
             parts_mode: PartsMode::default(),
             folded_families: Default::default(),
@@ -748,6 +748,77 @@ fn music_connection(view: &AppView, size: f32, color: u32, slur: bool) -> impl I
     .flex_shrink_0()
 }
 
+pub(crate) const BEAM_FLAG: &str = "\u{e240}"; // Bravura flag8thUp.
+
+/// Ribbon icons for beam overrides: `flagged` eighths with their own flags,
+/// then `beamed` eighths sharing one beam, all stems up as in a melody.
+fn music_beam(view: &AppView, size: f32, color: u32, flagged: u8, beamed: u8) -> impl IntoElement {
+    let font = view.music_font.clone();
+    let note_size = size * 0.72;
+    let space = note_size / 4.;
+    let head = f32::from(font.bounds(CONNECTION_HEAD, note_size).size.width);
+    let count = usize::from(flagged + beamed).max(1);
+    let step = head * 1.9;
+    let width = step * (count - 1) as f32 + head + space;
+    let stem = 3.3 * space;
+    let thin = (0.12 * space).max(1.);
+    let height = (size * 0.8).max(stem + 1.5 * space);
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let left = (f32::from(bounds.size.width) - width) / 2.;
+            // Bravura heads sit centred on their baseline.
+            let base = (f32::from(bounds.size.height) + stem) / 2. - 0.5 * space;
+            let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
+            let mut fill = |x0: f32, y0: f32, x1: f32, y1: f32| {
+                let mut path = PathBuilder::fill();
+                path.move_to(at(x0, y0));
+                path.line_to(at(x1, y0));
+                path.line_to(at(x1, y1));
+                path.line_to(at(x0, y1));
+                path.close();
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, rgb(color));
+                }
+            };
+            let stem_x = |index: usize| left + step * index as f32 + head - thin;
+            for index in 0..count {
+                fill(stem_x(index), base - stem, stem_x(index) + thin, base);
+            }
+            if beamed > 0 {
+                let first = usize::from(flagged);
+                fill(
+                    stem_x(first),
+                    base - stem,
+                    stem_x(count - 1) + thin,
+                    base - stem + 0.5 * space,
+                );
+            }
+            for index in 0..count {
+                font.paint_sized(
+                    CONNECTION_HEAD,
+                    at(left + step * index as f32, base),
+                    color,
+                    note_size,
+                    window,
+                );
+                if index < usize::from(flagged) {
+                    font.paint_sized(
+                        BEAM_FLAG,
+                        at(stem_x(index), base - stem),
+                        color,
+                        note_size,
+                        window,
+                    );
+                }
+            }
+        },
+    )
+    .w(px(width))
+    .h(px(height))
+    .flex_shrink_0()
+}
+
 /// Center the combined ink of original Bravura glyphs at their own baselines.
 fn music_glyphs<const N: usize>(
     view: &AppView,
@@ -1112,6 +1183,132 @@ fn time_picker(view: &AppView, cx: &Context<AppView>) -> Div {
             ))
         })
 }
+/// Otro grupillo: how many notes in the time of how many, counted in the
+/// selected value or the next notes'.
+fn tuplet_picker(view: &AppView, cx: &Context<AppView>) -> Div {
+    const SCOPE: &str = "Sobre una nota empieza el grupillo y rellena el grupo con silencios; sin selección, se aplica a las próximas notas.";
+    let Some((actual, normal)) = view.tuplet_picker else {
+        return div();
+    };
+    let valid = score_core::Tuplet::new(actual, normal, score_core::NoteValue::Quarter).is_some();
+    let stepper =
+        |name: &'static str, label: String, minus: fn(&mut (u8, u8)), plus: fn(&mut (u8, u8))| {
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(act(
+                    view,
+                    format!("tuplet-{name}-minus"),
+                    "−",
+                    false,
+                    cx,
+                    move |v, _, cx| {
+                        if let Some(ratio) = v.tuplet_picker.as_mut() {
+                            minus(ratio);
+                        }
+                        cx.notify();
+                    },
+                ))
+                .child(div().flex_1().text_center().text_size(px(12.)).child(label))
+                .child(act(
+                    view,
+                    format!("tuplet-{name}-plus"),
+                    "+",
+                    false,
+                    cx,
+                    move |v, _, cx| {
+                        if let Some(ratio) = v.tuplet_picker.as_mut() {
+                            plus(ratio);
+                        }
+                        cx.notify();
+                    },
+                ))
+        };
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(caption("Habituales"))
+        .child(
+            div().flex().flex_wrap().gap_1().children(
+                [
+                    (2, 3),
+                    (3, 2),
+                    (4, 3),
+                    (5, 4),
+                    (6, 4),
+                    (7, 4),
+                    (7, 8),
+                    (8, 6),
+                    (9, 8),
+                ]
+                .into_iter()
+                .map(|(a, n)| {
+                    choice(
+                        view,
+                        format!("tuplet-{a}-{n}"),
+                        format!("{a}:{n}"),
+                        (actual, normal) == (a, n),
+                        cx,
+                        move |v, _, cx| {
+                            v.tuplet_picker = Some((a, n));
+                            cx.notify();
+                        },
+                    )
+                    .w(px(44.))
+                }),
+            ),
+        )
+        .child(caption("Personalizado").mt_2())
+        .child(stepper(
+            "actual",
+            format!("Notas: {actual}"),
+            |r| r.0 = r.0.saturating_sub(1).max(2),
+            |r| r.0 = (r.0 + 1).min(score_core::Tuplet::MAX_ACTUAL),
+        ))
+        .child(stepper(
+            "normal",
+            format!("En el tiempo de: {normal}"),
+            |r| r.1 = r.1.saturating_sub(1).max(1),
+            |r| r.1 = (r.1 + 1).min(2 * score_core::Tuplet::MAX_ACTUAL),
+        ))
+        .when(!valid, |picker| {
+            picker.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(MUTED))
+                    .child("Elige un número distinto de notas, de la mitad al doble del tiempo."),
+            )
+        })
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .mt_2()
+                .child(
+                    act(
+                        view,
+                        "apply-tuplet",
+                        format!("Aplicar {actual}:{normal}"),
+                        valid,
+                        cx,
+                        move |v, _, cx| {
+                            if valid {
+                                v.apply_tuplet((actual, normal), cx);
+                            }
+                        },
+                    )
+                    .tooltip(described_hint(
+                        format!("Aplicar {actual}:{normal}"),
+                        None,
+                        SCOPE,
+                    )),
+                )
+                .child(close_editor("Cancelar", cx)),
+        )
+}
 /// ‹ «Página X de Y» › in the status bar, in Page view only; the hint
 /// gives the bars on the page.
 fn page_navigation(pages: status_bar::Pages, cx: &Context<AppView>) -> Div {
@@ -1332,10 +1529,11 @@ fn score_area(view: &AppView, cx: &Context<AppView>) -> Div {
 fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
     let editor = &view.document.editor;
     let scale = view.layout.scale;
+    let margin = view.layout.pages.first().map_or(0., |page| page.margin);
     let header_width = if view.ui.view_mode == score_layout::ViewMode::SingleSystem {
         view.layout.width.min(1000.)
     } else {
-        view.layout.width
+        view.layout.width - 2. * margin
     };
     div()
         .relative()
@@ -1410,12 +1608,12 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
             cx.weak_entity(),
             view.music_font.clone(),
         ))
-        .child(score_header(view, header_width, cx))
+        .child(score_header(view, header_width, margin, cx))
         .children(copyright(view))
 }
 
 /// Title block of the first page. Clicking it opens the header editor.
-fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<Div> {
+fn score_header(view: &AppView, width: f32, margin: f32, cx: &Context<AppView>) -> Stateful<Div> {
     let score = view.document.editor.score();
     let credits = score.credits();
     let scale = view.layout.scale;
@@ -1432,8 +1630,8 @@ fn score_header(view: &AppView, width: f32, cx: &Context<AppView>) -> Stateful<D
     div()
         .id("score-header")
         .absolute()
-        .top(px(35. * scale))
-        .left_0()
+        .top(px((35. + margin) * scale))
+        .left(px(margin * scale))
         .w(px(width * scale))
         .px(px(48. * scale))
         .py(px(4. * scale))
@@ -1512,9 +1710,9 @@ fn copyright(view: &AppView) -> Option<Div> {
     Some(
         div()
             .absolute()
-            .top(px((page.top + page.height - 52.) * scale))
-            .left_0()
-            .w(px(page.width * scale))
+            .top(px((page.top + page.height - 52. - page.margin) * scale))
+            .left(px(page.margin * scale))
+            .w(px((page.width - 2. * page.margin) * scale))
             .px(px(56. * scale))
             .text_center()
             .truncate()
@@ -1616,6 +1814,26 @@ fn active_duration(view: &AppView) -> Duration {
         .selection()
         .and_then(|id| editor.score().event(id))
         .map_or(editor.duration, |e| e.duration)
+}
+/// The ribbon's tuplets and how many notes each one writes.
+const TUPLET_COMMANDS: [(CommandId, u8); 8] = [
+    (id::DUPLET, 2),
+    (id::TRIPLET, 3),
+    (id::QUADRUPLET, 4),
+    (id::QUINTUPLET, 5),
+    (id::SEXTUPLET, 6),
+    (id::SEPTUPLET, 7),
+    (id::OCTUPLET, 8),
+    (id::NONUPLET, 9),
+];
+/// The usual ratio a tuplet command sets, such as 5:4 for Quintillo.
+pub(crate) fn tuplet_command_ratio(command: CommandId) -> Option<(u8, u8)> {
+    let (_, actual) = TUPLET_COMMANDS.iter().find(|(id, _)| *id == command)?;
+    let tuplet = score_core::Tuplet::usual(*actual, score_core::NoteValue::Quarter)?;
+    Some((tuplet.actual(), tuplet.normal()))
+}
+fn tuplet_ratio(duration: Duration) -> Option<(u8, u8)> {
+    duration.tuplet().map(|t| (t.actual(), t.normal()))
 }
 fn selected_connection(view: &AppView, kind: ConnectionKind) -> bool {
     view.document.editor.selection().is_some_and(|id| {
@@ -2015,4 +2233,32 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_color(rgb(if bar.unsaved { BLUE } else { MUTED }))
                 .child(bar.document),
         )
+}
+
+#[cfg(test)]
+mod tuplet_command_tests {
+    use super::{TUPLET_COMMANDS, id, tuplet_command_ratio};
+
+    #[test]
+    fn each_tuplet_button_sets_its_usual_ratio() {
+        let ratios: Vec<_> = TUPLET_COMMANDS
+            .iter()
+            .map(|(command, _)| tuplet_command_ratio(*command).unwrap())
+            .collect();
+        assert_eq!(
+            ratios,
+            [
+                (2, 3),
+                (3, 2),
+                (4, 3),
+                (5, 4),
+                (6, 4),
+                (7, 4),
+                (8, 6),
+                (9, 8)
+            ]
+        );
+        assert_eq!(tuplet_command_ratio(id::DOT), None);
+        assert_eq!(tuplet_command_ratio(id::OTHER_TUPLET), None);
+    }
 }

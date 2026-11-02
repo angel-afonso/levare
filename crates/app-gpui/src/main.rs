@@ -97,6 +97,8 @@ struct AppView {
     about: bool,
     key_picker: bool,
     time_picker: bool,
+    /// Otro grupillo's ratio while its editor is open.
+    tuplet_picker: Option<(u8, u8)>,
     clef_picker: bool,
     tempo_picker: Option<ui::TempoEditor>,
     command_search: Option<ui::CommandSearch>,
@@ -353,6 +355,7 @@ impl AppView {
             about: false,
             key_picker: false,
             time_picker: false,
+            tuplet_picker: None,
             clef_picker: false,
             tempo_picker: None,
             command_search: None,
@@ -1607,6 +1610,26 @@ impl AppView {
                 cx,
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            command
+                if page_setup_command(self.document.editor.score().page_setup(), command)
+                    .is_some() =>
+            {
+                let setup =
+                    page_setup_command(self.document.editor.score().page_setup(), command).unwrap();
+                self.edit(Command::SetPageSetup(setup), cx)
+            }
+            command
+                if numbering_command(self.document.editor.score().numbering(), command)
+                    .is_some() =>
+            {
+                let numbering =
+                    numbering_command(self.document.editor.score().numbering(), command).unwrap();
+                self.edit(Command::SetNumbering(numbering), cx)
+            }
+            command if appearance_command(command).is_some() => {
+                self.edit(appearance_command(command).unwrap(), cx)
+            }
+            id::BAR_REPEAT => self.edit(Command::ToggleBarRepeat, cx),
             id::SYSTEM_BREAK => self.edit(
                 Command::ToggleLayoutBreak(score_core::LayoutBreak::System),
                 cx,
@@ -1703,6 +1726,8 @@ impl AppView {
 
             id::VOICE_1 => self.choose_voice(score_core::Voice::One, cx),
             id::VOICE_2 => self.choose_voice(score_core::Voice::Two, cx),
+            id::VOICE_3 => self.choose_voice(score_core::Voice::Three, cx),
+            id::VOICE_4 => self.choose_voice(score_core::Voice::Four, cx),
             id::DIVIDE_PART => self.edit(Command::SetPassageDivisi(true), cx),
             id::JOIN_PART => self.edit(Command::SetPassageDivisi(false), cx),
             id::TOGGLE_NOTE_INPUT => self.toggle_note_entry(cx),
@@ -1743,8 +1768,22 @@ impl AppView {
             id::ENTRY_OCTAVE_UP => self.change_entry_octave(1, cx),
             id::ENTRY_OCTAVE_DOWN => self.change_entry_octave(-1, cx),
 
-            id::DOT => self.toggle_rhythm(false, cx),
-            id::TRIPLET => self.toggle_rhythm(true, cx),
+            id::DOT => self.toggle_dots(1, cx),
+            id::DOUBLE_DOT => self.toggle_dots(2, cx),
+            id::OTHER_TUPLET => self.toggle_tuplet_picker(cx),
+            id::DUPLET
+            | id::TRIPLET
+            | id::QUADRUPLET
+            | id::QUINTUPLET
+            | id::SEXTUPLET
+            | id::SEPTUPLET
+            | id::OCTUPLET
+            | id::NONUPLET => {
+                if let Some(ratio) = ui::tuplet_command_ratio(command) {
+                    self.toggle_tuplet(ratio, cx);
+                }
+            }
+            id::SIXTY_FOURTH => self.choose_duration(score_core::Duration::SixtyFourth, cx),
             id::SIXTEENTH => self.choose_duration(score_core::Duration::Sixteenth, cx),
             id::THIRTY_SECOND => self.choose_duration(score_core::Duration::ThirtySecond, cx),
             id::EIGHTH => self.choose_duration(score_core::Duration::Eighth, cx),
@@ -1755,6 +1794,8 @@ impl AppView {
             id::NATURAL => self.toggle_accidental(Accidental::Natural, cx),
             id::SHARP => self.toggle_accidental(Accidental::Sharp, cx),
             id::FLAT => self.toggle_accidental(Accidental::Flat, cx),
+            id::DOUBLE_SHARP => self.toggle_accidental(Accidental::DoubleSharp, cx),
+            id::DOUBLE_FLAT => self.toggle_accidental(Accidental::DoubleFlat, cx),
             id::FOLLOW_KEY => self.apply_accidental(None, cx),
 
             id::REMOVE_TIE => self.edit(Command::RemoveConnections(ConnectionKind::Tie), cx),
@@ -1876,6 +1917,8 @@ impl AppView {
             id::LOOP => self.toggle_loop(cx),
             id::REPLAY => self.replay(cx),
             id::HALF_SPEED => self.toggle_half_speed(cx),
+            id::METRONOME => self.toggle_metronome(cx),
+            id::COUNT_IN => self.toggle_count_in(cx),
             id::CHORD_PLAYBACK => {
                 let sound = !self.document.editor.score().chords_sound();
                 self.edit(Command::SetChordsSound(sound), cx);
@@ -1942,13 +1985,13 @@ impl AppView {
                 self.reveal_selection = true;
             }
             id::FULL_SCREEN => window.toggle_fullscreen(),
-            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::Write),
-            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Articulations),
-            id::TAB_DYNAMICS => self.show_tab(score_toolbar::TabId::Dynamics),
-            id::TAB_TEXT => self.show_tab(score_toolbar::TabId::Text),
-            // Breaks moved to Partitura; the old Disposición shortcut follows them.
-            id::TAB_HOME | id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Score),
+            id::TAB_HOME => self.show_tab(score_toolbar::TabId::Home),
+            id::TAB_NOTE_INPUT => self.show_tab(score_toolbar::TabId::NoteInput),
+            id::TAB_NOTATION => self.show_tab(score_toolbar::TabId::Notations),
+            // Dynamics moved to Texto; the old Dinámicas shortcut follows them.
+            id::TAB_TEXT | id::TAB_DYNAMICS => self.show_tab(score_toolbar::TabId::Text),
             id::TAB_PLAYBACK => self.show_tab(score_toolbar::TabId::Playback),
+            id::TAB_LAYOUT => self.show_tab(score_toolbar::TabId::Layout),
             id::TAB_REVIEW => self.show_tab(score_toolbar::TabId::Review),
             id::TAB_VIEW => self.show_tab(score_toolbar::TabId::View),
             id::TOGGLE_RIBBON => {
@@ -2148,53 +2191,100 @@ impl AppView {
         }
     }
 
-    fn toggle_rhythm(&mut self, triplet: bool, cx: &mut Context<Self>) {
-        if self.busy || self.confirming || self.agent_locked() {
-            return;
-        }
-        let current = self
-            .document
+    /// The duration Puntillo and the tuplets act on: the selected note's,
+    /// or the next notes'.
+    fn rhythm_target(&self) -> score_core::Duration {
+        self.document
             .editor
             .selection()
             .and_then(|id| self.document.editor.score().event(id))
-            .map_or(self.document.editor.duration, |e| e.duration);
-        let enabled = !(if triplet {
-            current.is_triplet()
+            .map_or(self.document.editor.duration, |e| e.duration)
+    }
+    fn selected_duration(&self) -> Option<score_core::Duration> {
+        self.document
+            .editor
+            .selection()
+            .and_then(|id| self.document.editor.score().event(id))
+            .map(|event| event.duration)
+    }
+
+    /// One dot or two: pressing the active count takes the dots away.
+    fn toggle_dots(&mut self, dots: u8, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        let dots = if self.rhythm_target().dots() == dots {
+            0
         } else {
-            current.is_dotted()
-        });
+            dots
+        };
         if self.document.editor.selection().is_some() {
-            self.edit(
-                if triplet {
-                    Command::SetTriplet(enabled)
-                } else {
-                    Command::SetDotted(enabled)
-                },
-                cx,
-            );
-            let now = self
-                .document
-                .editor
-                .selection()
-                .and_then(|id| self.document.editor.score().event(id))
-                .unwrap()
-                .duration;
-            if (if triplet {
-                now.is_triplet()
-            } else {
-                now.is_dotted()
-            }) != enabled
+            self.edit(Command::SetDots(dots), cx);
+            if self
+                .selected_duration()
+                .is_none_or(|now| now.dots() != dots)
+            {
+                return;
+            }
+        }
+        self.document.editor.duration = self.document.editor.duration.with_dots(dots);
+        self.status = format!("Entrada: {}", self.document.editor.duration.label());
+        cx.notify();
+    }
+
+    /// A tuplet ratio on the selection and the next notes; pressing the
+    /// active one takes it away.
+    fn toggle_tuplet(&mut self, ratio: (u8, u8), cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        let ratio_of = |d: score_core::Duration| d.tuplet().map(|t| (t.actual(), t.normal()));
+        let target = (ratio_of(self.rhythm_target()) != Some(ratio)).then_some(ratio);
+        if self.document.editor.selection().is_some() {
+            self.edit(Command::SetTuplet(target), cx);
+            if self
+                .selected_duration()
+                .is_none_or(|now| ratio_of(now) != target)
             {
                 return;
             }
         }
         let entry = self.document.editor.duration;
-        self.document.editor.duration = if triplet {
-            entry.with_triplet(enabled)
-        } else {
-            entry.with_dotted(enabled)
-        };
+        let tuplet = target
+            .and_then(|(actual, normal)| score_core::Tuplet::new(actual, normal, entry.value()));
+        self.document.editor.duration = entry.with_tuplet(tuplet);
         self.status = format!("Entrada: {}", self.document.editor.duration.label());
+        cx.notify();
+    }
+    fn toggle_tuplet_picker(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.confirming || self.agent_locked() {
+            return;
+        }
+        if self.tuplet_picker.is_some() && self.editor_hidden() {
+            self.reveal_editor_tab();
+            cx.notify();
+            return;
+        }
+        if self.tuplet_picker.take().is_none() {
+            let current = self
+                .rhythm_target()
+                .tuplet()
+                .map_or((5, 4), |t| (t.actual(), t.normal()));
+            self.cancel_editor();
+            self.tuplet_picker = Some(current);
+            self.show_editor_tab();
+        }
+        cx.notify();
+    }
+    /// Otro grupillo's Aplicar: always sets the ratio, never takes it away.
+    fn apply_tuplet(&mut self, ratio: (u8, u8), cx: &mut Context<Self>) {
+        let ratio_of = |d: score_core::Duration| d.tuplet().map(|t| (t.actual(), t.normal()));
+        if ratio_of(self.rhythm_target()) != Some(ratio) {
+            self.toggle_tuplet(ratio, cx);
+        }
+        if ratio_of(self.rhythm_target()) == Some(ratio) {
+            self.tuplet_picker = None;
+        }
         cx.notify();
     }
     fn choose_duration(&mut self, duration: score_core::Duration, cx: &mut Context<Self>) {
@@ -2366,6 +2456,7 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -2754,6 +2845,7 @@ impl AppView {
         self.selection_drag = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3104,6 +3196,7 @@ impl AppView {
             (self.clef_picker, Kind::Clef),
             (self.key_picker, Kind::Key),
             (self.time_picker, Kind::Time),
+            (self.tuplet_picker.is_some(), Kind::Tuplet),
             (self.text_editor.is_some(), Kind::Text),
             (self.lyric_editor.is_some(), Kind::Lyric),
             (self.chord_editor.is_some(), Kind::Chord),
@@ -3138,10 +3231,14 @@ impl AppView {
         {
             return true;
         }
+        if self.tuplet_picker.take().is_some() {
+            return true;
+        }
         if self.clef_picker || self.key_picker || self.time_picker {
             self.clef_picker = false;
             self.key_picker = false;
             self.time_picker = false;
+            self.tuplet_picker = None;
             return true;
         }
         if self.tempo_picker.take().is_some() {
@@ -3206,6 +3303,7 @@ impl AppView {
         self.header_editor = None;
         self.key_picker = false;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.instrument_picker = None;
         if self.tempo_picker.is_some() {
@@ -3229,6 +3327,7 @@ impl AppView {
             self.tempo_picker = None;
             self.key_picker = false;
             self.time_picker = false;
+            self.tuplet_picker = None;
             self.clef_picker = false;
             self.instrument_picker = None;
             self.show_editor_tab();
@@ -3309,6 +3408,7 @@ impl AppView {
         }
         self.clef_picker = !self.clef_picker;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.key_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3352,6 +3452,7 @@ impl AppView {
         }
         self.key_picker = !self.key_picker;
         self.time_picker = false;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3373,6 +3474,7 @@ impl AppView {
             return;
         }
         self.time_picker = !self.time_picker;
+        self.tuplet_picker = None;
         self.clef_picker = false;
         self.tempo_picker = None;
         self.header_editor = None;
@@ -3412,6 +3514,7 @@ impl AppView {
         self.edit(Command::SetTimeSignatureAt(bar, time), cx);
         if self.document.editor.score().time_at(bar) == time {
             self.time_picker = false;
+            self.tuplet_picker = None;
             self.clef_picker = false;
             self.tempo_picker = None;
             self.header_editor = None;
@@ -3851,6 +3954,102 @@ fn form_bounds(editor: &score_edit::Editor) -> (usize, usize) {
     (start, end)
 }
 
+/// Noteheads and beam overrides: each command toggles one on the selected notes.
+fn appearance_command(command: CommandId) -> Option<Command> {
+    use score_core::{Beam, Notehead};
+    Some(match command {
+        id::NOTEHEAD_CROSS => Command::ToggleNotehead(Notehead::Cross),
+        id::NOTEHEAD_DIAMOND => Command::ToggleNotehead(Notehead::Diamond),
+        id::NOTEHEAD_SLASH => Command::ToggleNotehead(Notehead::Slash),
+        id::BEAM_START => Command::ToggleBeam(Beam::Start),
+        id::BEAM_JOIN => Command::ToggleBeam(Beam::Join),
+        id::BEAM_OFF => Command::ToggleBeam(Beam::Off),
+        _ => return None,
+    })
+}
+
+/// The page setup each paper or staff size command chooses; Horizontal turns the page.
+fn page_setup_command(
+    setup: score_core::PageSetup,
+    command: CommandId,
+) -> Option<score_core::PageSetup> {
+    use score_core::{Margins, PageSetup, Paper};
+    let paper = |paper| PageSetup { paper, ..setup };
+    let staff = |staff| PageSetup { staff, ..setup };
+    Some(match command {
+        id::PAPER_AUTOMATIC => paper(Paper::Automatic),
+        id::PAPER_A4 => paper(Paper::A4),
+        id::PAPER_LETTER => paper(Paper::Letter),
+        id::PAPER_A3 => paper(Paper::A3),
+        id::PAPER_TABLOID => paper(Paper::Tabloid),
+        id::LANDSCAPE => PageSetup {
+            landscape: !setup.landscape,
+            ..setup
+        },
+        id::HIDE_EMPTY_STAVES => PageSetup {
+            hide_empty_staves: !setup.hide_empty_staves,
+            ..setup
+        },
+        id::MARGINS_NORMAL => PageSetup {
+            margins: Margins::Normal,
+            ..setup
+        },
+        id::MARGINS_WIDE => PageSetup {
+            margins: Margins::Wide,
+            ..setup
+        },
+        id::MARGINS_EXTRA_WIDE => PageSetup {
+            margins: Margins::ExtraWide,
+            ..setup
+        },
+        id::STAFF_SIZE_AUTOMATIC => staff(None),
+        id::STAFF_SIZE_7 => staff(Some(70)),
+        id::STAFF_SIZE_6 => staff(Some(60)),
+        id::STAFF_SIZE_5 => staff(Some(50)),
+        id::STAFF_SIZE_4 => staff(Some(40)),
+        _ => return None,
+    })
+}
+
+/// The numbering each numbering command chooses, keeping the other half.
+fn numbering_command(
+    numbering: score_core::Numbering,
+    command: CommandId,
+) -> Option<score_core::Numbering> {
+    use score_core::{BarNumbers, PageNumbers};
+    let bars = |bars| score_core::Numbering { bars, ..numbering };
+    let pages = |pages| score_core::Numbering { pages, ..numbering };
+    Some(match command {
+        id::BAR_NUMBERS_SYSTEM => bars(BarNumbers::EverySystem),
+        id::BAR_NUMBERS_EVERY_BAR => bars(BarNumbers::EveryBar),
+        id::BAR_NUMBERS_EVERY_5 => bars(BarNumbers::Every(5)),
+        id::BAR_NUMBERS_EVERY_10 => bars(BarNumbers::Every(10)),
+        id::BAR_NUMBERS_HIDDEN => bars(BarNumbers::Hidden),
+        id::PAGE_NUMBERS_FOOTER => pages(PageNumbers::Footer),
+        id::PAGE_NUMBERS_CORNER => pages(PageNumbers::Corner),
+        id::PAGE_NUMBERS_HIDDEN => pages(PageNumbers::Hidden),
+        _ => return None,
+    })
+}
+
+/// The barline each barline command writes; choosing it again restores the single line.
+const BARLINES: [(CommandId, Barline); 7] = [
+    (id::DOUBLE_BARLINE, Barline::Double),
+    (id::FINAL_BARLINE, Barline::Final),
+    (id::DASHED_BARLINE, Barline::Dashed),
+    (id::DOTTED_BARLINE, Barline::Dotted),
+    (id::TICK_BARLINE, Barline::Tick),
+    (id::SHORT_BARLINE, Barline::Short),
+    (id::INVISIBLE_BARLINE, Barline::Invisible),
+];
+
+fn barline_of(command: CommandId) -> Option<Barline> {
+    BARLINES
+        .iter()
+        .find(|(id, _)| *id == command)
+        .map(|(_, style)| *style)
+}
+
 /// Resolve ribbon/menu commands before entering the normal editor transaction.
 fn form_command(editor: &score_edit::Editor, command: CommandId) -> Option<Command> {
     let edit = match command {
@@ -3859,12 +4058,8 @@ fn form_command(editor: &score_edit::Editor, command: CommandId) -> Option<Comma
         id::ENDING_1 => return Some(Command::SetEnding(vec![1])),
         id::ENDING_2 => return Some(Command::SetEnding(vec![2])),
         id::REMOVE_ENDING => return Some(Command::RemoveEndings),
-        id::DOUBLE_BARLINE | id::FINAL_BARLINE => {
-            let style = if command == id::DOUBLE_BARLINE {
-                Barline::Double
-            } else {
-                Barline::Final
-            };
+        command if barline_of(command).is_some() => {
+            let style = barline_of(command)?;
             let (_, end) = form_bounds(editor);
             FormEdit::Barline(if editor.score().bar_form(end).barline == style {
                 Barline::Single
@@ -4051,10 +4246,7 @@ mod form_command_tests {
         let last = editor.score().bar_form(3);
         assert!(last.repeat_end == Some(2) && last.to_coda && last.fine);
         assert_eq!(last.jump, Some(Jump::DaCapoAlFine));
-        for (command, style) in [
-            (id::DOUBLE_BARLINE, Barline::Double),
-            (id::FINAL_BARLINE, Barline::Final),
-        ] {
+        for (command, style) in crate::BARLINES {
             run(&mut editor, command);
             assert_eq!(editor.score().bar_form(3).barline, style);
             run(&mut editor, command);

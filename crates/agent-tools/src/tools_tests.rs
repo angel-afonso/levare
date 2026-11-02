@@ -6,6 +6,9 @@ use score_core::{
 use score_edit::{Command, Editor, FormEdit};
 use score_keymap::{CommandId, Registry, id};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 /// The app's dispatcher reduced to the ribbon's marks, enough to exercise
 /// `ejecutar` on a real editor.
 struct FakeHost {
@@ -52,7 +55,7 @@ fn violin(measures: usize) -> FakeHost {
             editor
                 .execute(Command::WriteAt {
                     measure,
-                    tick: beat as u16 * 48,
+                    tick: beat as u32 * Q,
                     event: note(step),
                 })
                 .unwrap();
@@ -292,7 +295,7 @@ fn adjust_connection_slur_beats_1_to_3() {
         connections(&host, ConnectionKind::Slur),
         [Connection {
             start: event(0).unwrap(),
-            end: event(96).unwrap(),
+            end: event(2 * Q).unwrap(),
             kind: ConnectionKind::Slur,
         }]
     );

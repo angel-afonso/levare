@@ -18,6 +18,8 @@ pub enum Icon {
     TempoDown,
     Repeats,
     HalfSpeed,
+    Metronome,
+    CountIn,
     LeftPanel,
     RightPanel,
     Agent,
@@ -73,6 +75,8 @@ impl Icon {
             "tempo-down" => Self::TempoDown,
             "repeats" => Self::Repeats,
             "half-speed" => Self::HalfSpeed,
+            "metronome" => Self::Metronome,
+            "count-in" => Self::CountIn,
             "left-panel" => Self::LeftPanel,
             "right-panel" => Self::RightPanel,
             "export" => Self::Export,
@@ -231,6 +235,20 @@ pub fn icon_sized(kind: Icon, color: u32, size: f32) -> impl IntoElement {
                     path.move_to(p(2., 13.));
                     path.cubic_bezier_to(p(9., 3.), p(0., 8.), p(4., 3.));
                     path.cubic_bezier_to(p(16., 13.), p(14., 3.), p(18., 8.));
+                }
+                Icon::Metronome => {
+                    // A pyramid body with its pendulum swung to the right.
+                    line(&[(4., 16.), (7., 2.), (11., 2.), (14., 16.), (4., 16.)]);
+                    line(&[(5., 12.), (13., 12.)]);
+                    line(&[(9., 12.), (14., 4.)]);
+                }
+                Icon::CountIn => {
+                    // Beats of rising height leading into the music.
+                    line(&[(2., 15.), (2., 11.)]);
+                    line(&[(5.5, 15.), (5.5, 9.)]);
+                    line(&[(9., 15.), (9., 7.)]);
+                    line(&[(11., 11.), (16., 11.)]);
+                    line(&[(13.5, 8.5), (16., 11.), (13.5, 13.5)]);
                 }
                 Icon::LeftPanel | Icon::RightPanel => {
                     line(&[(2., 3.), (16., 3.), (16., 15.), (2., 15.), (2., 3.)]);

@@ -18,6 +18,25 @@ impl Editor {
         }
         true
     }
+    /// The selected notes and chords, leaving out rests.
+    pub(crate) fn selected_notes(
+        &self,
+        empty: &'static str,
+    ) -> Result<Vec<ElementId>, score_core::ScoreError> {
+        let ids: Vec<_> = self
+            .selected_ids()
+            .into_iter()
+            .filter(|id| {
+                self.score()
+                    .event(*id)
+                    .is_some_and(|e| !e.pitches.is_empty())
+            })
+            .collect();
+        if ids.is_empty() {
+            return Err(score_core::ScoreError(empty));
+        }
+        Ok(ids)
+    }
     pub fn selected_ids(&self) -> Vec<ElementId> {
         let Some(focus) = self.selection() else {
             return Vec::new();

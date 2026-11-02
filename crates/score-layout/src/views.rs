@@ -31,6 +31,9 @@ pub struct Page {
     pub top: f32,
     pub width: f32,
     pub height: f32,
+    /// Room added on every side by the page setup; the music, the heading
+    /// and the page number keep inside it.
+    pub margin: f32,
     pub first_measure: usize,
     pub last_measure: usize,
 }
@@ -69,7 +72,14 @@ impl LayoutEngine {
         mode: ViewMode,
         part: bool,
     ) -> Layout {
-        let orchestra_page = !part && score.parts().len() >= 12;
+        let setup = score.page_setup();
+        let (paper_width, paper_height) = setup.paper_mm(score, part);
+        let aspect = paper_height / paper_width;
+        // A chosen staff size fixes the page width in staff spaces; otherwise
+        // the number of parts decides, as on Levare's own paper, and a larger
+        // paper holds more music at the same size.
+        let reference = score_core::PageSetup::default().paper_mm(score, part).0;
+        let orchestra_page = !part && score.parts().len() >= 12 && setup.staff.is_none();
         let staves = if orchestra_page && mode == ViewMode::Page {
             score
                 .parts()
@@ -86,19 +96,28 @@ impl LayoutEngine {
             .as_ref()
             .filter(|resolved| orchestra_page && resolved.staves == staves)
             .map(|resolved| (resolved.width, resolved.tallest));
-        let mut page_width = if orchestra_page {
+        let mut page_width = if let Some(tenths) = setup.staff {
+            paper_width * 4. * STAFF_SPACE / (f32::from(tenths) / 10.)
+        } else if orchestra_page {
             resolved.map_or(ENSEMBLE_PAGE_WIDTH, |(width, _)| width)
-        } else if part {
-            PART_PAGE_WIDTH
-        } else if score.parts().len() >= 3 {
-            ENSEMBLE_PAGE_WIDTH
         } else {
-            PAGE_WIDTH
+            paper_width / reference
+                * if part {
+                    PART_PAGE_WIDTH
+                } else if score.parts().len() >= 3 {
+                    ENSEMBLE_PAGE_WIDTH
+                } else {
+                    PAGE_WIDTH
+                }
         };
+        self.hide_empty_staves = mode == ViewMode::Page && setup.hide_empty_staves;
+        // Wider margins leave a narrower column for the music on the same page.
+        let inset = |page_width: f32| setup.margins.extra_mm() * page_width / paper_width;
+        let column = |page_width: f32| page_width - 2. * inset(page_width);
         let mut layout = self.layout_with_spacing(
             score,
             if mode == ViewMode::Page {
-                page_width
+                column(page_width)
             } else {
                 width
             },
@@ -124,20 +143,22 @@ impl LayoutEngine {
             // would, so the page does not depend on the order of the edits.
             if resolved.is_some_and(|(_, height)| tallest(&layout) != height) {
                 page_width = ENSEMBLE_PAGE_WIDTH;
-                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
+                layout =
+                    self.layout_with_spacing(score, column(page_width), true, false, None, false);
                 layout.mode = mode;
                 spacing::compact(&mut layout, &self.metrics);
             }
             loop {
-                let orchestra_width =
-                    (tallest(&layout) + HEADER + MARGIN) / std::f32::consts::SQRT_2;
-                if orchestra_width <= layout.width + 0.5 {
+                let margins = 2. * inset(page_width);
+                let orchestra_width = (tallest(&layout) + HEADER + MARGIN + margins) / aspect;
+                if orchestra_width <= layout.width + margins + 0.5 {
                     break;
                 }
                 // Merging bars can combine high and low registers into a taller
                 // system. Resolve the final width before retaining its geometry.
                 page_width = orchestra_width;
-                layout = self.layout_with_spacing(score, page_width, true, false, None, false);
+                layout =
+                    self.layout_with_spacing(score, column(page_width), true, false, None, false);
                 layout.mode = mode;
                 spacing::compact(&mut layout, &self.metrics);
             }
@@ -159,7 +180,14 @@ impl LayoutEngine {
                     .map(|(bar, _)| bar)
                     .collect()
             };
-            layout.paginate(16., MARGIN + if part { 16. } else { 0. }, &page_after);
+            let margin = inset(page_width);
+            layout.move_right(margin);
+            layout.paginate(
+                (page_width, aspect, margin),
+                16.,
+                MARGIN + if part { 16. } else { 0. },
+                &page_after,
+            );
         } else {
             let mut next_top = HEADER;
             let shifts: Vec<_> = layout
@@ -183,6 +211,7 @@ impl LayoutEngine {
                 top: 0.,
                 width: layout.width,
                 height: layout.height,
+                margin: 0.,
                 first_measure: 0,
                 last_measure: score.measures().len() - 1,
             });
@@ -198,6 +227,8 @@ impl LayoutEngine {
         (layout.curves, layout.hairpins) = (curves, hairpins);
         offsets::apply(score, &mut layout);
         offsets::apply_bar_marks(score, &mut layout);
+        // Other views and plain layouts always show every staff.
+        self.hide_empty_staves = false;
         layout
     }
 
@@ -241,8 +272,11 @@ impl Layout {
             .position(|page| (page.first_measure..=page.last_measure).contains(&measure))
     }
 
+    /// `sheet` is the narrowest page width, the paper's height over its
+    /// width and the margin added on every side.
     fn paginate(
         &mut self,
+        (narrowest, aspect, margin): (f32, f32, f32),
         system_gap: f32,
         continuation_top: f32,
         page_after: &std::collections::BTreeSet<usize>,
@@ -250,30 +284,33 @@ impl Layout {
         // An indivisible system may be wider/taller than a normal sheet (dense
         // bar or large orchestra). Enlarge every sheet consistently; never crop
         // ink, split piano hands or stretch the musical glyphs.
-        let width = self.width.max(PAGE_WIDTH);
+        let width = self.width.max(narrowest);
         let tallest = self
             .systems
             .iter()
             .map(|s| s.bottom - s.top)
             .fold(0., f32::max);
-        let height = (width * std::f32::consts::SQRT_2).max(tallest + HEADER + MARGIN);
+        let height = (width * aspect).max(tallest + HEADER + MARGIN + 2. * margin);
         let mut page_top = 0.;
-        let mut next_top = HEADER;
+        let mut next_top = HEADER + margin;
         let mut first_measure = 0;
         let mut shifts = Vec::new();
         for index in 0..self.systems.len() {
             let system_height = self.systems[index].bottom - self.systems[index].top;
             let forced = index > 0 && page_after.contains(&self.systems[index - 1].last_measure);
-            if (forced || next_top + system_height > page_top + height - MARGIN) && index > 0 {
+            if (forced || next_top + system_height > page_top + height - MARGIN - margin)
+                && index > 0
+            {
                 self.pages.push(Page {
                     top: page_top,
                     width,
                     height,
+                    margin,
                     first_measure,
                     last_measure: self.systems[index - 1].last_measure,
                 });
                 page_top += height + PAGE_GAP;
-                next_top = page_top + continuation_top;
+                next_top = page_top + continuation_top + margin;
                 first_measure = self.systems[index].first_measure;
             }
             let delta = next_top - self.systems[index].top;
@@ -284,12 +321,58 @@ impl Layout {
             top: page_top,
             width,
             height,
+            margin,
             first_measure,
             last_measure: self.systems.last().unwrap().last_measure,
         });
         self.move_systems(&shifts);
         self.width = width;
         self.height = page_top + height;
+    }
+
+    /// Move everything placed so far `dx` to the right, widening the layout
+    /// by twice that: the margin on both sides.
+    fn move_right(&mut self, dx: f32) {
+        if dx == 0. {
+            return;
+        }
+        for measure in &mut self.measures {
+            measure.origin.x += dx;
+        }
+        for mark in &mut self.tempos {
+            mark.position.x += dx;
+        }
+        for label in &mut self.rehearsals {
+            label.position.x += dx;
+            for line in &mut label.frame {
+                line.from.x += dx;
+                line.to.x += dx;
+            }
+        }
+        for label in &mut self.navigation {
+            label.position.x += dx;
+        }
+        for ending in &mut self.endings {
+            ending.label_position.x += dx;
+            for line in &mut ending.lines {
+                line.from.x += dx;
+                line.to.x += dx;
+            }
+        }
+        for label in &mut self.labels {
+            label.position.x += dx;
+        }
+        for line in &mut self.connectors {
+            line.from.x += dx;
+            line.to.x += dx;
+        }
+        for brace in &mut self.braces {
+            brace.x += dx;
+        }
+        for bracket in &mut self.brackets {
+            bracket.x += dx;
+        }
+        self.width += 2. * dx;
     }
 
     fn move_systems(&mut self, shifts: &[f32]) {

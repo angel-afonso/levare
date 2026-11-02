@@ -1,5 +1,8 @@
 use super::*;
 
+/// A quarter note.
+const Q: u64 = crate::TICKS_PER_QUARTER;
+
 #[test]
 fn tempo_changes_keep_a_tied_crescendos_level_on_its_musical_slope() {
     use score_core::{Connection, ConnectionKind, Dynamic, TempoMark};
@@ -61,7 +64,7 @@ fn tempo_changes_keep_a_tied_crescendos_level_on_its_musical_slope() {
         .unwrap();
     let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
     let reference = f64::from(plan.sounds[0].reference_level);
-    for tick in [96, 192, 240, 384, 480, 575] {
+    for tick in [2 * Q, 4 * Q, 5 * Q, 8 * Q, 10 * Q, 12 * Q - 1] {
         let frame = plan.timeline.frame_at(tick, 48_000);
         let cc = plan
             .messages
@@ -78,7 +81,7 @@ fn tempo_changes_keep_a_tied_crescendos_level_on_its_musical_slope() {
             .unwrap();
         let level = f64::from(Dynamic::Pp.velocity())
             + (f64::from(Dynamic::Ff.velocity()) - f64::from(Dynamic::Pp.velocity())) * tick as f64
-                / 576.;
+                / (12 * Q) as f64;
         assert!(
             (f64::from(cc) - (level * 127. / reference).round()).abs() <= 1.,
             "tick {tick}: {cc}"
@@ -455,14 +458,14 @@ fn hairpins_schedule_continuous_expression_chase_ties_and_isolate_both_piano_han
         }
     }
     let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
-    assert_eq!(p.tracks.len(), MAX_STAVES);
+    assert_eq!(p.tracks.len(), score_core::MAX_STAVES);
     assert_eq!(
         p.tracks
             .iter()
             .map(|t| t.channel)
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        MAX_STAVES
+        score_core::MAX_STAVES
     );
     assert!(
         p.tracks
@@ -494,9 +497,10 @@ fn controller_timing_follows_the_original_slope_through_rests_and_staccato_gaps(
         })
         .unwrap();
         let p = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
-        // Last tick before the release: staccato halves, detached keeps 92 %.
+        // Last sixty-fourth before the release: staccato halves, detached
+        // keeps 92 %.
         let last_tick = if staccato { 7 } else { 14 };
-        let frame = Tempo::default().frame_at(last_tick * 3, 48_000);
+        let frame = Tempo::default().frame_at(last_tick * Q / 16, 48_000);
         let held = p.held_notes_at(frame).into_iter().flatten().next().unwrap();
         let actual = f64::from(held.note.level) * f64::from(p.expressions_at(frame)[0]) / 127.;
         let expected = 56. + 44. * last_tick as f64 / 32.;
@@ -506,7 +510,7 @@ fn controller_timing_follows_the_original_slope_through_rests_and_staccato_gaps(
         );
         assert_eq!(
             p.expressions_at(
-                Tempo::default().frame_at((if staccato { 8 } else { 16 }) * 3, 48_000)
+                Tempo::default().frame_at((if staccato { 8 } else { 16 }) * Q / 16, 48_000)
             )[0],
             127
         );

@@ -1,6 +1,6 @@
 //! Deterministic musical timing, independent of audio devices and UI clocks.
 use score_core::{
-    Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_STAVES, PartId, Pitch, Pitches,
+    Articulation, ElementId, Instrument, MAX_SOUNDING_NOTES, MAX_TRACKS, PartId, Pitch, Pitches,
     PlayingTechnique, Score, ScoreError, StaffId, Step, TextKind,
 };
 
@@ -102,6 +102,22 @@ pub enum Message {
     /// Release only the harmonic timbre when it shares a key with normal strings.
     HarmonicOff(u8),
     NoteOn(NoteEvent),
+    /// A metronome click, louder and higher on the first beat of a bar. The
+    /// player sounds it itself, whatever the instruments' sounds.
+    Click {
+        accent: bool,
+    },
+}
+
+/// The ticks of one metronome beat: the denominator's value, or a dotted
+/// quarter in 6/8, 9/8 and 12/8, as Sibelius and MuseScore count them.
+pub fn beat_ticks(time: score_core::TimeSignature) -> u64 {
+    let unit = u64::from(score_core::TICKS_PER_WHOLE) / u64::from(time.denominator);
+    if time.denominator >= 8 && time.numerator > 3 && time.numerator.is_multiple_of(3) {
+        unit * 3
+    } else {
+        unit
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -312,10 +328,22 @@ impl PlaybackPlan {
                         }
                     }
                 }
+                // The level each dynamic leaves, and its own note's attack:
+                // sfz keeps the level and strikes harder, fp falls to piano.
+                let mf = score_core::Dynamic::Mf.velocity();
+                let mut running = mf;
+                let levels: std::collections::BTreeMap<u64, (u8, u8)> = dynamics
+                    .iter()
+                    .map(|(&tick, mark): (&u64, &score_core::Dynamic)| {
+                        let attack = mark.attack(running);
+                        running = mark.after(running);
+                        (tick, (attack, running))
+                    })
+                    .collect();
                 let manner = interpretation::Manner::new(&instructions);
                 let mut voice_ranges = Vec::new();
                 for voice in score_core::Voice::ALL {
-                    if voice == score_core::Voice::Two
+                    if voice != score_core::Voice::One
                         && staff.measures().iter().all(|m| m.voice_len(voice) == 0)
                     {
                         continue;
@@ -331,7 +359,9 @@ impl PlaybackPlan {
                         {
                             last_element = None;
                         }
-                        let measure = &staff.measures()[index];
+                        // A % bar plays the music of the bar it repeats.
+                        let source = part.bar_repeat_source(staff.id(), index);
+                        let measure = &staff.measures()[source];
                         let mut tick = instance.written;
                         for (id, event) in measure.voice_iter(voice) {
                             let written_tick = tick;
@@ -349,7 +379,7 @@ impl PlaybackPlan {
                             let element = ElementId {
                                 staff: staff.id(),
                                 part: part.id(),
-                                measure: index,
+                                measure: source,
                                 event: id,
                             };
                             let pitches = score.sounding_pitches(element)?;
@@ -364,14 +394,19 @@ impl PlaybackPlan {
                                 .range(..=written_tick)
                                 .next_back()
                                 .map_or(PlayingTechnique::Arco, |(_, mark)| *mark);
-                            let dynamic = dynamics
+                            let (attack, dynamic) = levels
                                 .range(..=written_tick)
                                 .next_back()
-                                .map_or(score_core::Dynamic::Mf, |(_, mark)| *mark);
+                                .map_or((mf, mf), |(&at, &(attack, after))| {
+                                    (if at == written_tick { attack } else { after }, after)
+                                });
+                            let strike = attack.saturating_sub(dynamic);
                             let articulation = event.notation.articulation;
+                            let pause = event.notation.pause;
                             let (muted, legato) = manner.at(written_tick);
-                            let slurred =
-                                slurs.continues(written_tick) || (legato && manner.at(tick).1);
+                            // A breath or caesura breaks the line.
+                            let slurred = pause.is_none()
+                                && (slurs.continues(written_tick) || (legato && manner.at(tick).1));
                             if !pitches.is_empty() {
                                 if tie_start_of
                                     .get(&element)
@@ -390,19 +425,24 @@ impl PlaybackPlan {
                                     sound.end = if tied_starts.contains(&element) {
                                         end
                                     } else {
-                                        interpretation::sounding_end(
-                                            sound.start,
+                                        interpretation::before_pause(
+                                            start,
                                             end,
-                                            articulation,
-                                            slurred,
-                                            sample_rate,
+                                            interpretation::sounding_end(
+                                                sound.start,
+                                                end,
+                                                articulation,
+                                                slurred,
+                                                sample_rate,
+                                            ),
+                                            pause,
                                         )
                                     };
                                     // Paste may put the release articulation on the
                                     // final tied fragment. Preserve its short sample
                                     // choice as well as the combined duration.
                                     if !tied_starts.contains(&element)
-                                        && articulation == Some(Articulation::Staccato)
+                                        && articulation.is_some_and(Articulation::is_short)
                                     {
                                         sound.articulation = articulation;
                                     }
@@ -419,14 +459,15 @@ impl PlaybackPlan {
                                         written_ticks: u64::from(event.duration.ticks()),
                                         attack_duration: end - start,
                                         articulation: if tied
-                                            && articulation == Some(Articulation::Staccato)
+                                            && articulation.is_some_and(Articulation::is_short)
                                         {
                                             None
                                         } else {
                                             articulation
                                         },
-                                        boost: interpretation::accent_boost(articulation),
-                                        reference_level: dynamic.velocity(),
+                                        boost: interpretation::accent_boost(articulation)
+                                            .saturating_add(strike),
+                                        reference_level: dynamic,
                                         technique,
                                         harmonic: event.notation.harmonic,
                                         instrument: part.instrument(),
@@ -437,22 +478,26 @@ impl PlaybackPlan {
                                         end: if tied {
                                             end
                                         } else {
-                                            interpretation::sounding_end(
+                                            interpretation::before_pause(
                                                 start,
                                                 end,
-                                                articulation,
-                                                slurred,
-                                                sample_rate,
+                                                interpretation::sounding_end(
+                                                    start,
+                                                    end,
+                                                    articulation,
+                                                    slurred,
+                                                    sample_rate,
+                                                ),
+                                                pause,
                                             )
                                         },
                                         written_end: end,
                                         written_range: (written_tick, tick),
                                         channel,
                                         pitches,
-                                        level: interpretation::level(
-                                            dynamic.velocity(),
-                                            articulation,
-                                        ),
+                                        level: interpretation::level(dynamic, articulation)
+                                            .saturating_add(strike)
+                                            .min(127),
                                     });
                                     if let Some(grace) = event.notation.grace {
                                         interpretation::graces(
@@ -467,6 +512,7 @@ impl PlaybackPlan {
                             last_element = Some(element);
                         }
                     }
+                    interpretation::ornaments(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::trills(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::glissandos(score, &mut sounds, first_voice_sound, sample_rate);
                     interpretation::expand_tremolos(&mut sounds, first_voice_sound, sample_rate);
@@ -621,7 +667,7 @@ impl PlaybackPlan {
                 message.frame,
                 match message.message {
                     Message::NoteOff(_) | Message::HarmonicOff(_) => 0,
-                    Message::Expression(_) => 1,
+                    Message::Expression(_) | Message::Click { .. } => 1,
                     Message::NoteOn(_) => 2,
                 },
             )
@@ -631,7 +677,7 @@ impl PlaybackPlan {
         let mut held = [[[0u8; 128]; 2]; PLAYBACK_CHANNELS];
         messages.retain(|scheduled| {
             let (key, harmonic) = match scheduled.message {
-                Message::Expression(_) => return true,
+                Message::Expression(_) | Message::Click { .. } => return true,
                 Message::NoteOn(note) => (note.key, note.harmonic.is_some()),
                 Message::NoteOff(key) => (key, false),
                 Message::HarmonicOff(key) => (key, true),
@@ -639,7 +685,7 @@ impl PlaybackPlan {
             let count =
                 &mut held[usize::from(scheduled.channel)][usize::from(harmonic)][usize::from(key)];
             match scheduled.message {
-                Message::Expression(_) => unreachable!(),
+                Message::Expression(_) | Message::Click { .. } => unreachable!(),
                 Message::NoteOn(_) => {
                     *count += 1;
                     *count == 1
@@ -655,7 +701,7 @@ impl PlaybackPlan {
             std::collections::HashMap::new();
         for message in &messages {
             match message.message {
-                Message::Expression(_) => {}
+                Message::Expression(_) | Message::Click { .. } => {}
                 Message::NoteOn(note) => key_sounds
                     .entry((message.channel, note.key, note.harmonic.is_some()))
                     .or_default()
@@ -699,8 +745,8 @@ impl PlaybackPlan {
         }
         values
     }
-    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_STAVES * 2] {
-        let mut elements = [None; MAX_STAVES * 2];
+    pub fn elements_at(&self, frame: u64) -> [Option<ElementId>; MAX_TRACKS] {
+        let mut elements = [None; MAX_TRACKS];
         for (index, track) in self.tracks.iter().enumerate() {
             let spans = &self.spans[track.spans.clone()];
             if let Some(span) = spans
@@ -758,6 +804,39 @@ impl PlaybackPlan {
             }
         }
         notes
+    }
+
+    /// Click every beat of every performed bar, in time with the music.
+    pub fn add_clicks(&mut self, score: &Score) {
+        let rate = self.sample_rate;
+        for (index, instance) in self.timeline.instances().iter().enumerate() {
+            let beat = beat_ticks(score.time_at(instance.bar)).max(1);
+            for offset in (0..instance.length).step_by(beat as usize) {
+                self.messages.push(ScheduledMessage {
+                    frame: self.timeline.performed_frame(index, offset, rate),
+                    channel: 0,
+                    message: Message::Click {
+                        accent: offset == 0,
+                    },
+                });
+            }
+        }
+        self.messages.sort_by_key(|message| message.frame);
+    }
+
+    /// The beats of a one-bar count-in before `frame` and the frames between
+    /// them, from the bar there and its tempo.
+    pub fn count_in(&self, score: &Score, frame: u64) -> (u8, u64) {
+        let rate = self.sample_rate;
+        let tick = self.timeline.tick_at(frame, rate).floor() as u64;
+        let bar = score.measure_at_tick(tick).0;
+        let time = score.time_at(bar);
+        let beat = beat_ticks(time);
+        let start = score.measure_start_tick(bar);
+        let interval =
+            self.timeline.frame_at(start + beat, rate) - self.timeline.frame_at(start, rate);
+        let beats = (u64::from(time.capacity()) / beat).clamp(1, 16) as u8;
+        (beats, interval.max(1))
     }
 
     pub fn frame_for_element(&self, element: ElementId) -> Option<u64> {
@@ -868,12 +947,21 @@ mod tests {
 
     #[test]
     fn altered_pitches_sound_by_semitone_and_enharmonic_chords_share_a_key() {
-        use score_core::Accidental::{Flat, Natural, Sharp};
+        use score_core::Accidental::{DoubleFlat, DoubleSharp, Flat, Natural, Sharp};
         let c = Pitch::new(Step::C, 4).unwrap();
         let sharp = c.with_accidental(Some(Sharp));
         let flat = Pitch::new(Step::D, 4).unwrap().with_accidental(Some(Flat));
         assert_eq!(midi_key(sharp), 61);
         assert_eq!(midi_key(flat), 61);
+        assert_eq!(midi_key(c.with_accidental(Some(DoubleSharp))), 62);
+        assert_eq!(
+            midi_key(
+                Pitch::new(Step::E, 4)
+                    .unwrap()
+                    .with_accidental(Some(DoubleFlat))
+            ),
+            62
+        );
         assert_eq!(midi_key(c.with_accidental(Some(Natural))), 60);
         assert_eq!(
             midi_key(Pitch::new(Step::C, 0).unwrap().with_accidental(Some(Flat))),
@@ -1159,16 +1247,16 @@ mod tests {
             }
         }
         let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
-        assert_eq!(plan.tracks.len(), MAX_STAVES);
+        assert_eq!(plan.tracks.len(), score_core::MAX_STAVES);
         assert_eq!(
             plan.elements_at(24_000).into_iter().flatten().count(),
-            MAX_STAVES
+            score_core::MAX_STAVES
         );
         assert_eq!(
             plan.held_notes_at(24_000).into_iter().flatten().count(),
-            MAX_STAVES
+            score_core::MAX_STAVES
         );
-        assert_eq!(plan.messages.len(), MAX_STAVES * 2);
+        assert_eq!(plan.messages.len(), score_core::MAX_STAVES * 2);
     }
 
     #[test]
@@ -1262,8 +1350,11 @@ mod tests {
         assert_eq!(midi_key(Pitch::new(Step::C, 4).unwrap()), 60);
         assert_eq!(midi_key(Pitch::new(Step::A, 4).unwrap()), 69);
         assert_eq!(midi_key(Pitch::new(Step::B, 8).unwrap()), 119);
-        assert_eq!(Tempo::default().frame_at(48, 48_000), 24_000);
-        assert_eq!(Tempo::new(60).unwrap().frame_at(48, 44_100), 44_100);
+        assert_eq!(Tempo::default().frame_at(TICKS_PER_QUARTER, 48_000), 24_000);
+        assert_eq!(
+            Tempo::new(60).unwrap().frame_at(TICKS_PER_QUARTER, 44_100),
+            44_100
+        );
         assert!(Tempo::new(0).is_none());
     }
 
@@ -1358,6 +1449,8 @@ mod line_tests;
 mod text_tests;
 #[cfg(test)]
 mod tremolo_tests;
+#[cfg(test)]
+mod tuplet_tests;
 
 #[cfg(test)]
 mod style_tests;

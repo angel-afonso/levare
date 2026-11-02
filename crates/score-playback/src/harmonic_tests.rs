@@ -2,6 +2,9 @@ use super::*;
 use score_core::{
     Connection, ConnectionKind, Duration, Event, Harmonic, KeyMode, KeySignature, Notation,
 };
+
+/// A quarter note.
+const Q: u64 = crate::TICKS_PER_QUARTER;
 #[test]
 fn artificial_harmonic_has_one_sounding_attack_and_matching_audition_and_chase() {
     for technique in [PlayingTechnique::Arco, PlayingTechnique::Pizzicato] {
@@ -65,7 +68,7 @@ fn artificial_harmonic_has_one_sounding_attack_and_matching_audition_and_chase()
         assert_eq!(plan.sounds.len(), 2);
         assert_eq!(
             plan.sounds[0].written_end,
-            plan.timeline.frame_at(96, 48_000)
+            plan.timeline.frame_at(2 * Q, 48_000)
         );
         let audition = Audition::for_element(&score, ids[0], Tempo::default(), 48_000).unwrap();
         assert_eq!(
@@ -76,7 +79,7 @@ fn artificial_harmonic_has_one_sounding_attack_and_matching_audition_and_chase()
         assert_eq!(audition.note_at(0).harmonic, Some(Harmonic::Artificial));
         let natural = Audition::for_element(&score, ids[2], Tempo::default(), 48_000).unwrap();
         assert_eq!(natural.keys[0], Some(66));
-        let chase = plan.held_notes_at(plan.timeline.frame_at(48, 48_000));
+        let chase = plan.held_notes_at(plan.timeline.frame_at(Q, 48_000));
         assert!(
             chase
                 .iter()
@@ -125,11 +128,11 @@ fn normal_and_harmonic_unisons_keep_both_attacks_and_independent_releases_and_ch
             .count(),
         2
     );
-    let early = plan.held_notes_at(plan.timeline.frame_at(24, 48_000));
+    let early = plan.held_notes_at(plan.timeline.frame_at(Q / 2, 48_000));
     assert_eq!(early.iter().flatten().count(), 2);
     assert!(early.iter().flatten().any(|n| n.note.harmonic.is_none()));
     assert!(early.iter().flatten().any(|n| n.note.harmonic.is_some()));
-    let late = plan.held_notes_at(plan.timeline.frame_at(96, 48_000));
+    let late = plan.held_notes_at(plan.timeline.frame_at(2 * Q, 48_000));
     assert_eq!(late.iter().flatten().count(), 1);
     assert!(late.iter().flatten().all(|n| n.note.harmonic.is_some()));
 }

@@ -335,3 +335,265 @@ fn oversized_systems_get_larger_sheets_without_clipping_or_splitting_piano_hands
             .all(|m| m.origin.x + m.width <= layout.pages[0].width)
     );
 }
+
+#[test]
+fn bar_numbers_follow_the_setting_on_the_top_staff_and_pages_number_their_corner() {
+    use score_core::{BarNumbers, Numbering, PageNumbers};
+    let (mut score, _) = piece(80);
+    let numbered = |score: &Score| {
+        let layout = LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+        let bars: Vec<_> = layout.numbered_bars().map(|m| m.index).collect();
+        // Only the piano's upper staff carries numbers.
+        assert!(layout.numbered_bars().all(|m| m.staff == StaffId::Upper));
+        (layout, bars)
+    };
+    let (layout, bars) = numbered(&score);
+    let starts: Vec<_> = layout.systems.iter().map(|s| s.first_measure).collect();
+    assert!(layout.systems.len() > 2 && layout.pages.len() > 1);
+    assert_eq!(bars, starts[1..]);
+    assert_eq!(
+        layout.page_number(1),
+        Some((
+            "2 / ".to_owned() + &layout.pages.len().to_string(),
+            PageNumberPlace::Footer
+        ))
+    );
+    for (setting, expected) in [
+        (BarNumbers::EveryBar, (1..80).collect::<Vec<_>>()),
+        (BarNumbers::Every(10), (1..=8).map(|n| n * 10 - 1).collect()),
+        (BarNumbers::Hidden, Vec::new()),
+    ] {
+        score
+            .set_numbering(Numbering {
+                bars: setting,
+                pages: PageNumbers::Corner,
+            })
+            .unwrap();
+        let (layout, bars) = numbered(&score);
+        assert_eq!(bars, expected, "{setting:?}");
+        assert_eq!(layout.page_number(0), None);
+        assert_eq!(
+            layout.page_number(1),
+            Some(("2".to_owned(), PageNumberPlace::TopLeft))
+        );
+        assert_eq!(
+            layout.page_number(2).map(|(_, place)| place),
+            (layout.pages.len() > 2).then_some(PageNumberPlace::TopRight)
+        );
+    }
+    assert!(
+        score
+            .set_numbering(Numbering {
+                bars: BarNumbers::Every(1),
+                ..Numbering::default()
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn paper_and_staff_size_shape_the_page() {
+    use score_core::{PageSetup, Paper};
+    let (mut score, _) = piece(40);
+    let page = |score: &Score| {
+        let layout = LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+        let page = layout.pages[0].clone();
+        (
+            page.width,
+            page.height,
+            layout.systems.len(),
+            layout.pages.len(),
+        )
+    };
+    let (width, height, _, pages) = page(&score);
+    assert_eq!(width, 1000.);
+    assert!((height / width - std::f32::consts::SQRT_2).abs() < 0.001);
+    // A 5 mm staff on A4: 210 mm hold 42 staff heights, so pages hold more.
+    score
+        .set_page_setup(PageSetup {
+            staff: Some(50),
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let (small, _, _, fewer) = page(&score);
+    assert!((small - 210. * 40. / 5.).abs() < 0.01);
+    assert!(fewer < pages);
+    // Landscape Letter: the page turns and keeps the staff size.
+    score
+        .set_page_setup(PageSetup {
+            paper: Paper::Letter,
+            landscape: true,
+            staff: Some(50),
+            hide_empty_staves: false,
+            margins: Default::default(),
+        })
+        .unwrap();
+    let (wide, tall, _, _) = page(&score);
+    assert!((wide - 279.4 * 40. / 5.).abs() < 0.01);
+    assert!((tall / wide - 215.9 / 279.4).abs() < 0.001);
+    // Automatic size on A3 keeps the A4 staff and fits more music.
+    score
+        .set_page_setup(PageSetup {
+            paper: Paper::A3,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let (a3, _, _, wider) = page(&score);
+    assert!((a3 - 1000. * 297. / 210.).abs() < 0.01);
+    assert!(wider < pages);
+    assert!(
+        score
+            .set_page_setup(PageSetup {
+                staff: Some(5),
+                ..PageSetup::default()
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn empty_staves_leave_later_systems_in_page_view_only() {
+    use score_core::{Instrument, PageSetup};
+    let (mut score, _) = piece(40);
+    let flute = score.add_part(Instrument::Flute).unwrap();
+    let cello = score.add_part(Instrument::Cello).unwrap();
+    // The flute plays only in the first and last bars; the cello never.
+    for bar in [0, 39] {
+        score.insert_in(flute, bar, 0, note()).unwrap();
+    }
+    score
+        .set_page_setup(PageSetup {
+            hide_empty_staves: true,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let mut engine = LayoutEngine::default();
+    let page = engine.layout_view(&score, 1000., ViewMode::Page);
+    let shows = |layout: &Layout, part, system: &System| {
+        layout
+            .measures
+            .iter()
+            .any(|m| m.part == part && m.index == system.first_measure)
+    };
+    let (first, last) = (&page.systems[0], page.systems.last().unwrap());
+    assert!(shows(&page, flute, first) && shows(&page, cello, first));
+    assert!(shows(&page, flute, last) && !shows(&page, cello, last));
+    let middle = &page.systems[page.systems.len() / 2];
+    assert!(!shows(&page, flute, middle) && !shows(&page, cello, middle));
+    // The piano plays everywhere, so its staves stay.
+    let piano = score.parts()[0].id();
+    assert!(
+        page.systems
+            .iter()
+            .all(|system| shows(&page, piano, system))
+    );
+    // A shorter system leaves room for more on each page.
+    let mut all = score.clone();
+    all.set_page_setup(PageSetup::default()).unwrap();
+    let full = LayoutEngine::default().layout_view(&all, 1000., ViewMode::Page);
+    assert!(page.pages.len() < full.pages.len());
+    // The continuous view and plain layouts keep every staff.
+    let continuous = engine.layout_view(&score, 1000., ViewMode::Continuous);
+    let middle = &continuous.systems[continuous.systems.len() / 2];
+    assert!(shows(&continuous, cello, middle));
+    // With nothing playing in a system, every part stays.
+    let (mut silent, _) = piece(40);
+    let viola = silent.add_part(Instrument::Viola).unwrap();
+    for bar in 0..40 {
+        let id = silent.measures()[bar].id_at(0).unwrap();
+        silent
+            .remove(ElementId {
+                part: silent.parts()[0].id(),
+                staff: StaffId::Upper,
+                measure: bar,
+                event: id,
+            })
+            .unwrap();
+    }
+    silent
+        .set_page_setup(PageSetup {
+            hide_empty_staves: true,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let layout = LayoutEngine::default().layout_view(&silent, 1000., ViewMode::Page);
+    assert!(
+        layout
+            .systems
+            .iter()
+            .all(|system| shows(&layout, viola, system))
+    );
+}
+
+#[test]
+fn every_example_lays_out_with_empty_staves_hidden() {
+    use score_core::PageSetup;
+    for bytes in [
+        include_bytes!("../../../examples/orquesta-completa.partitura").as_slice(),
+        include_bytes!("../../../examples/menuetto-y-trio-orquesta.partitura").as_slice(),
+        include_bytes!("../../../examples/tres-luces-orquesta.partitura").as_slice(),
+        include_bytes!("../../../examples/divisi-por-pasaje.partitura").as_slice(),
+        include_bytes!("../../../examples/voces-y-divisi.partitura").as_slice(),
+        include_bytes!("../../../examples/umbral-y-lumbre-concierto-viola.partitura").as_slice(),
+    ] {
+        let mut score = score_io::decode(bytes).unwrap();
+        score
+            .set_page_setup(PageSetup {
+                hide_empty_staves: true,
+                ..PageSetup::default()
+            })
+            .unwrap();
+        let layout = LayoutEngine::default().layout_view(&score, 1000., ViewMode::Page);
+        assert!(!layout.pages.is_empty());
+    }
+}
+
+#[test]
+fn a_bar_repeat_draws_percent_instead_of_a_rest() {
+    let (mut score, _) = piece(3);
+    let piano = score.parts()[0].id();
+    score
+        .set_bar_repeat(piano, StaffId::Upper, 1, true)
+        .unwrap();
+    let layout = LayoutEngine::default().layout(&score, 1000.);
+    let bar = layout.measure_on(piano, StaffId::Upper, 1).unwrap();
+    let percent = bar
+        .content
+        .glyphs
+        .iter()
+        .find(|g| g.text == "\u{e500}")
+        .unwrap();
+    assert_eq!(percent.position.y, 20.);
+    assert!(!bar.content.glyphs.iter().any(|g| g.text == "\u{e4e3}"));
+    // The lower staff keeps its whole-bar rest.
+    let lower = layout.measure_on(piano, StaffId::Lower, 1).unwrap();
+    assert!(!lower.content.glyphs.iter().any(|g| g.text == "\u{e500}"));
+}
+
+#[test]
+fn wider_margins_keep_the_music_inside_the_same_page() {
+    use score_core::{Margins, PageSetup};
+    let (mut score, _) = piece(40);
+    let layout = |score: &Score| LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+    let normal = layout(&score);
+    assert_eq!(normal.pages[0].margin, 0.);
+    score
+        .set_page_setup(PageSetup {
+            margins: Margins::ExtraWide,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let wide = layout(&score);
+    let page = &wide.pages[0];
+    // 12 mm of a 210 mm page that is 1000 units wide.
+    let margin = 12. * 1000. / 210.;
+    assert!((page.margin - margin).abs() < 0.01);
+    assert!((page.width - normal.pages[0].width).abs() < 0.01);
+    for measure in &wide.measures {
+        assert!(measure.origin.x >= margin);
+        assert!(measure.origin.x + measure.width <= page.width - margin + 0.5);
+    }
+    assert!(wide.labels.iter().all(|label| label.position.x >= margin));
+    assert!(wide.systems[0].top >= normal.systems[0].top + margin - 0.01);
+    assert!(wide.pages.len() >= normal.pages.len());
+}

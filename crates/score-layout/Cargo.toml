@@ -8,3 +8,6 @@ license.workspace = true
 score-core.workspace = true
 serde_json.workspace = true
 ttf-parser.workspace = true
+
+[dev-dependencies]
+score-io.workspace = true

@@ -28,7 +28,7 @@ pub fn position(
     let tick = if let Some((frame, rate)) = clock.filter(|(_, rate)| *rate > 0) {
         timeline.tick_at(frame, rate)
     } else {
-        let local: u16 = score
+        let local: u32 = score
             .part(cursor.part)
             .and_then(|p| p.staff(cursor.staff))
             .and_then(|s| s.measures().get(cursor.measure))
@@ -77,12 +77,12 @@ pub fn ruler_tick(score: &Score, x: f32, width: f32) -> u64 {
     let measure = score.measure_at_tick(raw).0.min(score.measures().len() - 1);
     let begin = score.measure_start_tick(measure);
     let time = score.time_at(measure);
-    let beat = u64::from(score_core::TICKS_PER_WHOLE / u16::from(time.denominator));
+    let beat = u64::from(score_core::TICKS_PER_WHOLE / u32::from(time.denominator));
     let local = (((raw - begin) as f64 / beat as f64).round() as u64 * beat)
         .min(u64::from(time.capacity()));
     if begin + local >= total {
         let last = score.time_at(score.measures().len() - 1);
-        total - u64::from(score_core::TICKS_PER_WHOLE / u16::from(last.denominator))
+        total - u64::from(score_core::TICKS_PER_WHOLE / u32::from(last.denominator))
     } else {
         begin + local
     }
@@ -105,8 +105,8 @@ pub fn score_tick(
         .content
         .tick_at_x(point.x / layout.scale - measure.origin.x);
     let time = score.time_at(bar);
-    let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
-    let mut local = ((raw / f64::from(beat)).round() as u16 * beat).min(time.capacity());
+    let beat = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
+    let mut local = ((raw / f64::from(beat)).round() as u32 * beat).min(time.capacity());
     if bar + 1 == score.measures().len() {
         local = local.min(time.capacity() - beat);
     }
@@ -166,6 +166,8 @@ pub fn voice_color(voice: score_core::Voice) -> u32 {
     match voice {
         score_core::Voice::One => 0x2f6fdf,
         score_core::Voice::Two => 0x2f9e57,
+        score_core::Voice::Three => 0x8e44c9,
+        score_core::Voice::Four => 0xc23a7d,
     }
 }
 
@@ -241,6 +243,8 @@ pub fn note_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A quarter note.
+    const Q: u64 = score_core::TICKS_PER_QUARTER as u64;
     use score_core::{Duration, Event, Notation, Pitch, Pitches, StaffId, Step, Voice};
 
     fn note(step: Step, duration: Duration) -> Event {
@@ -390,9 +394,11 @@ mod tests {
 
     #[test]
     fn each_voice_has_its_own_caret_color() {
-        assert_ne!(voice_color(Voice::One), voice_color(Voice::Two));
-        assert_ne!(voice_color(Voice::One), 0xe89743);
-        assert_ne!(voice_color(Voice::Two), 0xe89743);
+        let colors = Voice::ALL.map(voice_color);
+        for (i, color) in colors.iter().enumerate() {
+            assert!(!colors[i + 1..].contains(color));
+            assert_ne!(*color, 0xe89743);
+        }
     }
 
     #[test]
@@ -458,9 +464,9 @@ mod tests {
             layout.scale = scale;
             for m in &layout.measures {
                 let time = score.time_at(m.index);
-                let beat = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+                let beat = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
                 for b in 0..time.numerator {
-                    let tick = u16::from(b) * beat;
+                    let tick = u32::from(b) * beat;
                     let point = score_layout::Point {
                         x: (m.origin.x + m.content.x_at_tick(f64::from(tick))) * scale,
                         y: (m.origin.y + 40.) * scale,
@@ -490,13 +496,13 @@ mod tests {
             let usable = width - 16.;
             for beat in 0..16 {
                 let x = 8. + usable * beat as f32 / 16.;
-                assert_eq!(ruler_tick(&score, x, width), beat * 48);
+                assert_eq!(ruler_tick(&score, x, width), beat * Q);
             }
             assert_eq!(ruler_tick(&score, -20., width), 0);
-            assert_eq!(ruler_tick(&score, width + 20., width), 15 * 48);
+            assert_eq!(ruler_tick(&score, width + 20., width), 15 * Q);
             // The last endpoint selects the final playable beat, not FIN.
-            assert_eq!(ruler_tick(&score, width - 8., width), 15 * 48);
-            assert_eq!(ruler_tick(&score, 8. + usable * 1.6 / 16., width), 96);
+            assert_eq!(ruler_tick(&score, width - 8., width), 15 * Q);
+            assert_eq!(ruler_tick(&score, 8. + usable * 1.6 / 16., width), 2 * Q);
         }
     }
 
@@ -505,9 +511,9 @@ mod tests {
         let mut value = serde_json::to_value(Score::default()).unwrap();
         value["time"] = serde_json::json!({"numerator":6,"denominator":8});
         let score: Score = serde_json::from_value(value).unwrap();
-        assert_eq!(ruler_tick(&score, 8. + 384. / 24., 400.), 24);
-        assert_eq!(ruler_tick(&score, 8. + 384. / 4., 400.), 144);
-        assert_eq!(ruler_tick(&score, 400., 400.), 552);
+        assert_eq!(ruler_tick(&score, 8. + 384. / 24., 400.), Q / 2);
+        assert_eq!(ruler_tick(&score, 8. + 384. / 4., 400.), 3 * Q);
+        assert_eq!(ruler_tick(&score, 400., 400.), 23 * Q / 2);
     }
 
     #[test]
@@ -523,12 +529,12 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(score.total_ticks(), 588);
+        assert_eq!(score.total_ticks(), 49 * Q / 4);
         // A click near the end of bar 3 rounds forward to bar 4, not backward
         // by a quarter-note beat inherited from the clicked bar.
         let x = 8. + 384. * 560. / 588.;
-        assert_eq!(ruler_tick(&score, x, 400.), 576);
-        assert_eq!(ruler_tick(&score, 400., 400.), 576);
+        assert_eq!(ruler_tick(&score, x, 400.), 12 * Q);
+        assert_eq!(ruler_tick(&score, 400., 400.), 12 * Q);
 
         score
             .set_time_signature_at(
@@ -540,12 +546,12 @@ mod tests {
             )
             .unwrap();
         let timeline = Timeline::new(&score, score_playback::Tempo::default());
-        let position = position_at_tick(&score, 360., &timeline);
+        let position = position_at_tick(&score, (15 * Q / 2) as f64, &timeline);
         assert_eq!((position.measure, position.beat), (2, 2.));
         assert_eq!(position.seconds, 3.75);
-        assert_eq!(score.total_ticks(), 492);
+        assert_eq!(score.total_ticks(), 41 * Q / 4);
         let x = 8. + 384. * 360. / 492.;
-        assert_eq!(ruler_tick(&score, x, 400.), 360);
+        assert_eq!(ruler_tick(&score, x, 400.), 15 * Q / 2);
     }
 
     #[test]
@@ -565,7 +571,7 @@ mod tests {
         let tempo = &timeline;
         let clock = Some((120_000, 48_000)); // 2.5 seconds = bar 2, beat 2.
         let p = position(&score, cursor, clock, tempo);
-        assert_eq!(p.tick, 240.);
+        assert_eq!(p.tick, (5 * Q) as f64);
         assert_eq!((p.measure, p.beat), (1, 2.));
         assert_eq!(p.seconds, 2.5);
         let paused = position(
@@ -580,7 +586,10 @@ mod tests {
         );
         assert_eq!(paused.tick, p.tick);
         let idle = position(&score, cursor, None, tempo);
-        assert_eq!((idle.tick, idle.measure, idle.beat), (432., 2, 2.));
+        assert_eq!(
+            (idle.tick, idle.measure, idle.beat),
+            ((9 * Q) as f64, 2, 2.)
+        );
         // A fermata on the first beat holds the clock: 2.5 s is now one beat earlier.
         let first = score
             .insert(0, 0, note(Step::C, Duration::Quarter))
@@ -588,7 +597,7 @@ mod tests {
         score.set_fermata(first, true).unwrap();
         let held = Timeline::new(&score, score_playback::Tempo::default());
         let p = position(&score, cursor, clock, &held);
-        assert_eq!(p.tick, 192.);
+        assert_eq!(p.tick, (4 * Q) as f64);
         assert_eq!(p.seconds, 2.5);
     }
 
@@ -637,7 +646,10 @@ mod tests {
                 );
                 assert!(marker.size.height > px(40. * scale));
             }
-            assert!(upper.content.x_at_tick(180.) > upper.content.x_at_tick(120.));
+            assert!(
+                upper.content.x_at_tick((15 * Q / 4) as f64)
+                    > upper.content.x_at_tick((5 * Q / 2) as f64)
+            );
         }
     }
 
@@ -656,7 +668,7 @@ mod tests {
         let layout = score_layout::LayoutEngine::default().layout_compact(&score, 500.);
         for measure in 0..4 {
             let p = Position {
-                tick: measure as f64 * 192.,
+                tick: (measure as u64 * 4 * Q) as f64,
                 measure,
                 beat: 1.,
                 seconds: 0.,
@@ -674,7 +686,7 @@ mod tests {
             assert!(tracking.top() < px(bar.origin.y));
         }
         let end = Position {
-            tick: 768.,
+            tick: (16 * Q) as f64,
             measure: 4,
             beat: 1.,
             seconds: 8.,
@@ -684,7 +696,9 @@ mod tests {
         let last = layout.measure_on(cursor.part, cursor.staff, 3).unwrap();
         let marker = score_bounds(&layout, cursor, end).unwrap();
         assert!(
-            (f32::from(marker.left()) - last.origin.x - last.content.x_at_tick(192.)).abs() < 0.01
+            (f32::from(marker.left()) - last.origin.x - last.content.x_at_tick((4 * Q) as f64))
+                .abs()
+                < 0.01
         );
     }
 
@@ -702,7 +716,7 @@ mod tests {
         );
         assert_eq!(
             (p.measure, p.tick, p.progress, p.at_end),
-            (3, 768., 1., true)
+            (3, (16 * Q) as f64, 1., true)
         );
         assert_eq!(p.beat, 5.);
     }

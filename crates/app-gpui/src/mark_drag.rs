@@ -363,7 +363,7 @@ pub(super) fn place_label(score: &Score, id: ElementId) -> String {
     let bar = id.measure + 1;
     let tick = score.event_tick(id).unwrap_or_default() - score.measure_start_tick(id.measure);
     let beat =
-        u64::from(score_core::TICKS_PER_WHOLE / u16::from(score.time_at(id.measure).denominator));
+        u64::from(score_core::TICKS_PER_WHOLE / u32::from(score.time_at(id.measure).denominator));
     if tick.is_multiple_of(beat) {
         format!("compás {bar}, tiempo {}", tick / beat + 1)
     } else {

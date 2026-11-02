@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Duration, Event, Pitch, Pitches, Step, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -62,8 +65,8 @@ fn simultaneous_voices_share_time_opposite_stems_and_clear_seconds() {
             .y
             > 20.
     );
-    assert_eq!(bar.content.cursor_x.len(), 2);
-    assert_eq!(bar.content.second_cursor_x.len(), 3);
+    assert_eq!(bar.content.cursor_x[0].len(), 2);
+    assert_eq!(bar.content.cursor_x[1].len(), 3);
     for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
         let view = LayoutEngine::default().layout_view(&s, 1000., mode);
         assert!(
@@ -89,17 +92,22 @@ fn simultaneous_voices_share_time_opposite_stems_and_clear_seconds() {
 fn beams_never_join_voices_and_a_divided_violin_keeps_two_treble_clefs() {
     let mut s = Score::default();
     let p = s.add_part(Instrument::Violin).unwrap();
+    let mut extra = Vec::new();
     for voice in Voice::ALL {
         for i in 0..4 {
-            s.insert_in_voice(
-                p,
-                StaffId::Upper,
-                0,
-                voice,
-                i,
-                note(Step::E, Duration::Eighth),
-            )
-            .unwrap();
+            let id = s
+                .insert_in_voice(
+                    p,
+                    StaffId::Upper,
+                    0,
+                    voice,
+                    i,
+                    note(Step::E, Duration::Eighth),
+                )
+                .unwrap();
+            if !matches!(voice, Voice::One | Voice::Two) {
+                extra.push(id);
+            }
         }
     }
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
@@ -112,11 +120,12 @@ fn beams_never_join_voices_and_a_divided_violin_keeps_two_treble_clefs() {
                 .iter()
                 .all(|id| s.voice_of(*id) == Some(voice))
         );
-        assert!(
-            beam.stems
-                .iter()
-                .all(|stem| stem.down == (voice == Voice::Two))
-        );
+        assert!(beam.stems.iter().all(|stem| stem.down == voice.is_lower()));
+    }
+    // Divisi has two staves for two voices: 3 and 4 must be emptied first.
+    assert!(s.set_part_divisi(p, true).is_err());
+    for id in extra {
+        s.remove(id).unwrap();
     }
     s.set_part_divisi(p, true).unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
@@ -427,8 +436,8 @@ fn midbar_projection_routes_each_attack_cursor_and_staff_span_in_every_view() {
     }
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -447,7 +456,7 @@ fn midbar_projection_routes_each_attack_cursor_and_staff_span_in_every_view() {
                 m.origin.y
             );
             let event = m.content.events.iter().find(|e| e.id == id).unwrap();
-            assert_eq!(event.tick, i as u16 * 48);
+            assert_eq!(event.tick, i as u32 * Q);
             assert_eq!(
                 layout
                     .hit_pitch_in_voice(
@@ -507,8 +516,8 @@ fn sustained_notes_keep_their_duration_and_staff_through_midbar_division_labels(
         .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -527,7 +536,7 @@ fn sustained_notes_keep_their_duration_and_staff_through_midbar_division_labels(
             })
             .collect();
         fragments.sort_by_key(|f| f.0);
-        assert_eq!(fragments, [(0, 192, StaffId::Lower, Voice::Two)]);
+        assert_eq!(fragments, [(0, 4 * Q, StaffId::Lower, Voice::Two)]);
         assert!(
             !layout
                 .curves
@@ -600,15 +609,15 @@ fn redundant_boundary_labels_invalidate_cached_ink_and_reopening_resets_lower_ac
     );
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 24),
-        Some(DivisiPoint::new(0, 72)),
+        DivisiPoint::new(0, Q / 2),
+        Some(DivisiPoint::new(0, 3 * Q / 2)),
         true,
     )
     .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 120),
-        Some(DivisiPoint::new(0, 168)),
+        DivisiPoint::new(0, 5 * Q / 2),
+        Some(DivisiPoint::new(0, 7 * Q / 2)),
         true,
     )
     .unwrap();
@@ -649,10 +658,10 @@ fn projected_continuations_preserve_canonical_cursor_indices_and_attack_lookup()
         note(Step::D, Duration::Half),
     )
     .unwrap();
-    s.set_divisi_span(p, DivisiPoint::new(0, 48), None, true)
+    s.set_divisi_span(p, DivisiPoint::new(0, Q), None, true)
         .unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
-    for (index, tick) in [(1, 96), (2, 192)] {
+    for (index, tick) in [(1, 2 * Q), (2, 4 * Q)] {
         let m = layout.measure_on(p, StaffId::Lower, 0).unwrap();
         assert_eq!(
             layout
@@ -665,10 +674,62 @@ fn projected_continuations_preserve_canonical_cursor_indices_and_attack_lookup()
     s.set_divisi_span(
         p,
         DivisiPoint::new(0, 0),
-        Some(DivisiPoint::new(0, 48)),
+        Some(DivisiPoint::new(0, Q)),
         true,
     )
     .unwrap();
     let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
     assert_eq!(layout.event_measure(a).unwrap().staff, StaffId::Lower);
+}
+#[test]
+fn voices_three_and_four_follow_one_and_two_beside_them() {
+    let mut s = Score::default();
+    let p = s.parts()[0].id();
+    s.append_measure().unwrap();
+    let steps = [Step::G, Step::C, Step::B, Step::E];
+    let mut heads = Vec::new();
+    let mut rests = Vec::new();
+    for (voice, step) in Voice::ALL.into_iter().zip(steps) {
+        heads.push(
+            s.insert_in_voice(p, StaffId::Upper, 0, voice, 0, note(step, Duration::Half))
+                .unwrap(),
+        );
+        let rest = Event {
+            pitches: Pitches::default(),
+            ..note(Step::C, Duration::Quarter)
+        };
+        rests.push(
+            s.insert_in_voice(p, StaffId::Upper, 1, voice, 0, rest)
+                .unwrap(),
+        );
+    }
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let glyph = |bar: usize, id| {
+        layout
+            .measure_on(p, StaffId::Upper, bar)
+            .unwrap()
+            .content
+            .glyphs
+            .iter()
+            .find(|g| g.element == Some(id))
+            .unwrap()
+            .clone()
+    };
+    let [one, two, three, four] = [0, 1, 2, 3].map(|i| glyph(0, heads[i]));
+    // Voices 1 and 3 point up, 2 and 4 down.
+    assert_eq!([&one, &three].map(|g| g.text.as_str()), ["\u{e1d3}"; 2]);
+    assert_eq!([&two, &four].map(|g| g.text.as_str()), ["\u{e1d4}"; 2]);
+    // A stem going the same way as an earlier voice's moves beside it.
+    assert!(three.position.x - one.position.x >= 12.);
+    assert!(four.position.x - two.position.x >= 12.);
+    // Rests stack outward: 3 above 1, 4 below 2.
+    let y = |i: usize| glyph(1, rests[i]).position.y;
+    assert!(y(2) < y(0) && y(0) < y(1) && y(1) < y(3));
+    for voice in [Voice::Three, Voice::Four] {
+        assert!(
+            layout
+                .voice_cursor(p, StaffId::Upper, 0, voice, 1)
+                .is_some()
+        );
+    }
 }

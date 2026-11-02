@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{KeyMode, KeySignature, Notation, Pitches, Step, TimeSignature};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 #[test]
 fn clef_edits_are_undoable_and_preserve_selection_cursor_and_pitches() {
     use score_core::Clef;
@@ -168,7 +171,7 @@ fn copy_and_paste_across_meter_and_key_changes_preserves_time_and_sound() {
     editor.select(a);
     editor.extend_selection(b);
     let clip = editor.copy_selection().unwrap();
-    assert_eq!(clip.events[1].offset, 192);
+    assert_eq!(clip.events[1].offset, u64::from(4 * Q));
     assert_eq!(
         clip.events[1].event.pitches.first().unwrap().accidental(),
         Some(score_core::Accidental::Sharp)
@@ -190,7 +193,7 @@ fn copy_and_paste_across_meter_and_key_changes_preserves_time_and_sound() {
     let mut editor = Editor::new(destination).unwrap();
     editor.paste(&clip).unwrap();
     let bar = &editor.score().measures()[1];
-    assert_eq!(bar.used_ticks(), 144);
+    assert_eq!(bar.used_ticks(), 3 * Q);
     let pitches: Vec<_> = bar
         .iter()
         .map(|(_, e)| {

@@ -2,6 +2,9 @@ use super::*;
 use score_core::{
     Articulation, Connection, ConnectionKind, Dynamic, MarkRef, Notation, Pitches, Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 #[test]
 fn expression_edits_undo_and_invalid_edits_never_enter_history() {
     let mut editor = Editor::default();
@@ -225,7 +228,7 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     e.select(ids[0]);
     e.extend_selection(ids[2]);
     let original = e.score().clone();
-    e.execute(Command::SetTriplet(true)).unwrap();
+    e.execute(Command::SetTuplet(Some((3, 2)))).unwrap();
     assert!(
         ids.iter()
             .all(|id| e.score().event(*id).unwrap().duration.is_triplet())
@@ -242,12 +245,12 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     e.redo();
     assert_eq!(e.score(), &triplets);
     e.execute(Command::SetDotted(true)).unwrap();
-    assert_eq!(e.score().measures()[0].used_ticks(), 144);
+    assert_eq!(e.score().measures()[0].used_ticks(), 3 * Q);
     assert!(e.score().connections().contains(&c));
     e.undo();
     assert_eq!(e.score(), &triplets);
     // On a full bar, a failed range edit cannot leave the first notes modified.
-    e.execute(Command::SetTriplet(false)).unwrap();
+    e.execute(Command::SetTuplet(None)).unwrap();
     e.navigate(true);
     e.execute(Command::Insert(e.note(Step::D))).unwrap();
     e.select_all();
@@ -264,7 +267,7 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
     s.set_duration(id, Duration::Quarter.with_dotted(true))
         .unwrap();
     assert_eq!(s.event(id).unwrap().pitches.len(), 2);
-    assert_eq!(s.measures()[0].used_ticks(), 72);
+    assert_eq!(s.measures()[0].used_ticks(), 3 * Q / 2);
     let rest = s
         .insert(
             0,
@@ -278,7 +281,7 @@ fn rhythmic_edits_preserve_chords_ids_links_and_atomic_history_and_capacity() {
         .unwrap();
     s.set_duration(rest, Duration::Quarter.with_triplet(true))
         .unwrap();
-    assert_eq!(s.event_tick(rest), Some(72));
+    assert_eq!(s.event_tick(rest), Some(u64::from(3 * Q / 2)));
     s.validate().unwrap();
 }
 

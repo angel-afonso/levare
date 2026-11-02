@@ -2,6 +2,9 @@ use super::*;
 use gpui::point;
 use score_core::{Duration, Event, Pitches, StaffId, Step};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn fixture() -> (Score, ElementId, Pitch) {
     let mut score = Score::default();
     let pitch = Pitch::new(Step::C, 4).unwrap();
@@ -16,6 +19,8 @@ fn fixture() -> (Score, ElementId, Pitch) {
             },
         )
         .unwrap();
+    // As an opened document has it: the bar ends in rests.
+    score.fill_rests().unwrap();
     (score, id, pitch)
 }
 
@@ -224,7 +229,7 @@ fn head_position(layout: &score_layout::Layout, id: ElementId) -> Point<Pixels> 
     )
 }
 
-fn time_pointer(drag: &NoteDrag, bar: usize, tick: u16, origin: Point<Pixels>) -> Point<Pixels> {
+fn time_pointer(drag: &NoteDrag, bar: usize, tick: u32, origin: Point<Pixels>) -> Point<Pixels> {
     let source = drag.geometry.event_measure(drag.id).unwrap();
     let head = source
         .content
@@ -262,7 +267,7 @@ fn time_drag_snaps_across_bars_views_zoom_and_scroll_without_changing_the_source
             let origin = point(px(-120.), px(230.));
             let start = head_position(&layout, id) + origin;
             let mut drag = NoteDrag::new(&score, id, pitch, start, origin, &layout).unwrap();
-            for (bar, tick) in [(1, 0), (2, 24), (3, 72)] {
+            for (bar, tick) in [(1, 0), (2, Q / 2), (3, 3 * Q / 2)] {
                 let point = time_pointer(&drag, bar, tick, origin);
                 drag.update_time(point, origin);
                 let target = drag.time_target.expect("valid time destination");
@@ -273,13 +278,13 @@ fn time_drag_snaps_across_bars_views_zoom_and_scroll_without_changing_the_source
                 assert_eq!(drag.base, score);
             }
             let moved_origin = origin + point(px(40.), px(-100.));
-            drag.update_time(time_pointer(&drag, 2, 24, moved_origin), moved_origin);
+            drag.update_time(time_pointer(&drag, 2, Q / 2, moved_origin), moved_origin);
             assert_eq!(
                 (
                     drag.time_target.unwrap().measure,
                     drag.time_target.unwrap().tick
                 ),
-                (2, 24)
+                (2, Q / 2)
             );
             drag.update_time(start, origin);
             assert!(drag.time_target.is_none());
@@ -393,4 +398,21 @@ fn projected_divisi_voice_keeps_its_canonical_staff_and_voice_when_moved() {
     let id = moved.move_event(id, bar, target).unwrap();
     assert_eq!(id.staff, StaffId::Upper);
     assert_eq!(moved.voice_of(id), Some(score_core::Voice::Two));
+}
+
+#[test]
+fn the_drag_grid_follows_short_values_and_tuplets() {
+    use score_core::{Duration, NoteValue, Tuplet};
+    let quintuplet = |value: Duration, unit| value.with_tuplet(Tuplet::usual(5, unit));
+    for (duration, grid) in [
+        (Duration::Quarter, Q / 4),
+        (Duration::ThirtySecond, Q / 8),
+        (Duration::SixtyFourth, Q / 16),
+        (Duration::Eighth.with_triplet(true), Q / 6),
+        (quintuplet(Duration::Sixteenth, NoteValue::Sixteenth), Q / 5),
+        (quintuplet(Duration::Quarter, NoteValue::Quarter), Q / 5),
+        (quintuplet(Duration::Quarter, NoteValue::Eighth), Q / 5),
+    ] {
+        assert_eq!(drag_grid(duration), grid, "{}", duration.label());
+    }
 }

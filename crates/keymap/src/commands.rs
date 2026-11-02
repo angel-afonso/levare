@@ -245,6 +245,7 @@ pub mod id {
         STEP_TIME = "entrada.paso-a-paso";
         MIDI_INPUT = "entrada.teclado-midi";
 
+        SIXTY_FOURTH = "duracion.semifusa";
         THIRTY_SECOND = "duracion.fusa";
         SIXTEENTH = "duracion.semicorchea";
         EIGHTH = "duracion.corchea";
@@ -252,12 +253,23 @@ pub mod id {
         HALF = "duracion.blanca";
         WHOLE = "duracion.redonda";
         DOT = "duracion.puntillo";
+        DOUBLE_DOT = "duracion.doble-puntillo";
+        DUPLET = "duracion.dosillo";
         TRIPLET = "duracion.tresillo";
+        QUADRUPLET = "duracion.cuatrillo";
+        QUINTUPLET = "duracion.quintillo";
+        SEXTUPLET = "duracion.seisillo";
+        SEPTUPLET = "duracion.septillo";
+        OCTUPLET = "duracion.octillo";
+        NONUPLET = "duracion.nonillo";
+        OTHER_TUPLET = "duracion.grupillo";
 
         NATURAL = "alteracion.becuadro";
         SHARP = "alteracion.sostenido";
         FLAT = "alteracion.bemol";
         FOLLOW_KEY = "alteracion.armadura";
+        DOUBLE_SHARP = "alteracion.doble-sostenido";
+        DOUBLE_FLAT = "alteracion.doble-bemol";
 
         TIE = "expresion.ligadura-union";
         SLUR = "expresion.ligadura-expresion";
@@ -267,6 +279,12 @@ pub mod id {
         TENUTO = "expresion.tenuto";
         ACCENT = "expresion.acento";
         MARCATO = "expresion.marcato";
+        STACCATISSIMO = "expresion.staccatissimo";
+        MORDENT = "notacion.mordente";
+        INVERTED_MORDENT = "notacion.mordente-superior";
+        TURN = "notacion.grupeto";
+        BREATH = "notacion.respiracion";
+        CAESURA = "notacion.cesura";
         CRESCENDO = "expresion.crescendo";
         DIMINUENDO = "expresion.diminuendo";
         REMOVE_CRESCENDO = "expresion.quitar-crescendo";
@@ -292,6 +310,12 @@ pub mod id {
         TREMOLO_1 = "expresion.tremolo-1";
         TREMOLO_2 = "expresion.tremolo-2";
         TREMOLO_3 = "expresion.tremolo-3";
+        NOTEHEAD_CROSS = "notacion.cabeza-x";
+        NOTEHEAD_DIAMOND = "notacion.cabeza-rombo";
+        NOTEHEAD_SLASH = "notacion.cabeza-diagonal";
+        BEAM_START = "notacion.barra-corchea.iniciar";
+        BEAM_JOIN = "notacion.barra-corchea.unir";
+        BEAM_OFF = "notacion.barra-corchea.sin";
         DYNAMIC_PPP = "expresion.dinamica.ppp";
         DYNAMIC_PP = "expresion.dinamica.pp";
         DYNAMIC_P = "expresion.dinamica.p";
@@ -300,6 +324,11 @@ pub mod id {
         DYNAMIC_F = "expresion.dinamica.f";
         DYNAMIC_FF = "expresion.dinamica.ff";
         DYNAMIC_FFF = "expresion.dinamica.fff";
+        DYNAMIC_SFZ = "expresion.dinamica.sfz";
+        DYNAMIC_RFZ = "expresion.dinamica.rfz";
+        DYNAMIC_FP = "expresion.dinamica.fp";
+        DYNAMIC_SFP = "expresion.dinamica.sfp";
+        DYNAMIC_NIENTE = "expresion.dinamica.niente";
         CLEAR_DYNAMIC = "expresion.sin-dinamica";
         EXPRESSION_TEXT = "expresion.texto";
         TECHNIQUE_TEXT = "expresion.tecnica";
@@ -339,6 +368,12 @@ pub mod id {
         REMOVE_ENDING = "compases.quitar-casilla";
         DOUBLE_BARLINE = "compases.doble-barra";
         FINAL_BARLINE = "compases.barra-final";
+        DASHED_BARLINE = "compases.barra-discontinua";
+        DOTTED_BARLINE = "compases.barra-punteada";
+        TICK_BARLINE = "compases.barra-de-marca";
+        SHORT_BARLINE = "compases.barra-corta";
+        INVISIBLE_BARLINE = "compases.barra-invisible";
+        BAR_REPEAT = "compases.repetir-compas";
         SEGNO = "compases.segno";
         CODA = "compases.coda";
         TO_CODA = "compases.al-coda";
@@ -352,6 +387,29 @@ pub mod id {
         CLEAR_FORM = "compases.quitar-forma";
         SYSTEM_BREAK = "compases.salto-de-sistema";
         PAGE_BREAK = "compases.salto-de-pagina";
+        BAR_NUMBERS_SYSTEM = "compases.numeros.sistema";
+        BAR_NUMBERS_EVERY_BAR = "compases.numeros.cada-compas";
+        BAR_NUMBERS_EVERY_5 = "compases.numeros.cada-5";
+        BAR_NUMBERS_EVERY_10 = "compases.numeros.cada-10";
+        BAR_NUMBERS_HIDDEN = "compases.numeros.ninguno";
+        PAGE_NUMBERS_FOOTER = "compases.paginas.pie";
+        PAGE_NUMBERS_CORNER = "compases.paginas.esquina";
+        PAGE_NUMBERS_HIDDEN = "compases.paginas.ninguno";
+        PAPER_AUTOMATIC = "pagina.papel.automatico";
+        PAPER_A4 = "pagina.papel.a4";
+        PAPER_LETTER = "pagina.papel.carta";
+        PAPER_A3 = "pagina.papel.a3";
+        PAPER_TABLOID = "pagina.papel.tabloide";
+        LANDSCAPE = "pagina.horizontal";
+        HIDE_EMPTY_STAVES = "pagina.ocultar-pentagramas-vacios";
+        MARGINS_NORMAL = "pagina.margenes.normales";
+        MARGINS_WIDE = "pagina.margenes.anchos";
+        MARGINS_EXTRA_WIDE = "pagina.margenes.muy-anchos";
+        STAFF_SIZE_AUTOMATIC = "pagina.pentagrama.automatico";
+        STAFF_SIZE_7 = "pagina.pentagrama.7";
+        STAFF_SIZE_6 = "pagina.pentagrama.6";
+        STAFF_SIZE_5 = "pagina.pentagrama.5";
+        STAFF_SIZE_4 = "pagina.pentagrama.4";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -383,6 +441,8 @@ pub mod id {
         LOOP = "reproduccion.bucle";
         REPLAY = "reproduccion.repetir";
         HALF_SPEED = "reproduccion.mitad-velocidad";
+        METRONOME = "reproduccion.metronomo";
+        COUNT_IN = "reproduccion.cuenta-previa";
         CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
         SOUNDS = "reproduccion.sonidos";
@@ -507,8 +567,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::JOIN_PART, C::Instruments, "Volver a un pentagrama desde esta posición", S, false, R),
     spec(id::VOICE_1, C::NoteInput, "Voz 1", S, false, R),
     spec(id::VOICE_2, C::NoteInput, "Voz 2", S, false, R),
-    spec(id::VOICE_3, C::NoteInput, "Voz 3", S, false, P),
-    spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, P),
+    spec(id::VOICE_3, C::NoteInput, "Voz 3", S, false, R),
+    spec(id::VOICE_4, C::NoteInput, "Voz 4", S, false, R),
     spec(id::GRACE_NOTE, C::NoteInput, "Añadir nota de adorno", S, false, R),
     spec(id::ACCIACCATURA, C::NoteInput, "Acciaccatura", S, false, R),
     spec(id::APPOGGIATURA, C::NoteInput, "Appoggiatura", S, false, R),
@@ -516,18 +576,30 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::STEP_TIME, C::NoteInput, "Entrada paso a paso", S, false, R),
     spec(id::MIDI_INPUT, C::NoteInput, "Entrada con teclado MIDI", G, false, P),
 
+    spec(id::SIXTY_FOURTH, C::Duration, "Semifusa", S, false, R),
     spec(id::THIRTY_SECOND, C::Duration, "Fusa", S, false, R),
     spec(id::SIXTEENTH, C::Duration, "Semicorchea", S, false, R),
     spec(id::EIGHTH, C::Duration, "Corchea", S, false, R),
     spec(id::QUARTER, C::Duration, "Negra", S, false, R),
     spec(id::HALF, C::Duration, "Blanca", S, false, R),
     spec(id::WHOLE, C::Duration, "Redonda", S, false, R),
+    spec(id::DUPLET, C::Duration, "Dosillo (2:3)", S, false, R),
     spec(id::TRIPLET, C::Duration, "Tresillo (3:2)", S, false, R),
+    spec(id::QUADRUPLET, C::Duration, "Cuatrillo (4:3)", S, false, R),
+    spec(id::QUINTUPLET, C::Duration, "Quintillo (5:4)", S, false, R),
+    spec(id::SEXTUPLET, C::Duration, "Seisillo (6:4)", S, false, R),
+    spec(id::SEPTUPLET, C::Duration, "Septillo (7:4)", S, false, R),
+    spec(id::OCTUPLET, C::Duration, "Octillo (8:6)", S, false, R),
+    spec(id::NONUPLET, C::Duration, "Nonillo (9:8)", S, false, R),
+    spec(id::OTHER_TUPLET, C::Duration, "Otro grupillo…", S, false, R),
     spec(id::DOT, C::Duration, "Puntillo", S, false, R),
+    spec(id::DOUBLE_DOT, C::Duration, "Doble puntillo", S, false, R),
 
     spec(id::NATURAL, C::Accidentals, "Becuadro", S, false, R),
     spec(id::SHARP, C::Accidentals, "Sostenido", S, false, R),
     spec(id::FLAT, C::Accidentals, "Bemol", S, false, R),
+    spec(id::DOUBLE_SHARP, C::Accidentals, "Doble sostenido", S, false, R),
+    spec(id::DOUBLE_FLAT, C::Accidentals, "Doble bemol", S, false, R),
     spec(id::FOLLOW_KEY, C::Accidentals, "Seguir la armadura", S, false, R),
 
     spec(id::TIE, C::Expression, "Ligadura de unión con la siguiente", S, false, R),
@@ -538,6 +610,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TENUTO, C::Expression, "Tenuto", S, false, R),
     spec(id::ACCENT, C::Expression, "Acento", S, false, R),
     spec(id::MARCATO, C::Expression, "Marcato", S, false, R),
+    spec(id::STACCATISSIMO, C::Expression, "Staccatissimo", S, false, R),
+    spec(id::MORDENT, C::Notation, "Mordente", S, false, R),
+    spec(id::INVERTED_MORDENT, C::Notation, "Mordente superior", S, false, R),
+    spec(id::TURN, C::Notation, "Grupeto", S, false, R),
+    spec(id::BREATH, C::Notation, "Respiración", S, false, R),
+    spec(id::CAESURA, C::Notation, "Cesura", S, false, R),
     spec(id::CRESCENDO, C::Expression, "Crescendo: inicio o fin", S, false, R),
     spec(id::DIMINUENDO, C::Expression, "Diminuendo: inicio o fin", S, false, R),
     spec(id::REMOVE_CRESCENDO, C::Expression, "Quitar crescendo", S, false, R),
@@ -561,6 +639,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TREMOLO_1, C::Expression, "Trémolo de una barra", S, false, R),
     spec(id::TREMOLO_2, C::Expression, "Trémolo de dos barras", S, false, R),
     spec(id::TREMOLO_3, C::Expression, "Trémolo de tres barras", S, false, R),
+    spec(id::NOTEHEAD_CROSS, C::Notation, "Cabeza en x", S, false, R),
+    spec(id::NOTEHEAD_DIAMOND, C::Notation, "Cabeza de rombo", S, false, R),
+    spec(id::NOTEHEAD_SLASH, C::Notation, "Cabeza diagonal", S, false, R),
+    spec(id::BEAM_START, C::Notation, "Iniciar barra de corchea", S, false, R),
+    spec(id::BEAM_JOIN, C::Notation, "Unir a la barra anterior", S, false, R),
+    spec(id::BEAM_OFF, C::Notation, "Sin barra de corchea", S, false, R),
     spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
     spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
     spec(id::DYNAMIC_P, C::Expression, "Dinámica p", S, false, R),
@@ -569,6 +653,11 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::DYNAMIC_F, C::Expression, "Dinámica f", S, false, R),
     spec(id::DYNAMIC_FF, C::Expression, "Dinámica ff", S, false, R),
     spec(id::DYNAMIC_FFF, C::Expression, "Dinámica fff", S, false, R),
+    spec(id::DYNAMIC_SFZ, C::Expression, "Dinámica sfz", S, false, R),
+    spec(id::DYNAMIC_RFZ, C::Expression, "Dinámica rfz", S, false, R),
+    spec(id::DYNAMIC_FP, C::Expression, "Dinámica fp", S, false, R),
+    spec(id::DYNAMIC_SFP, C::Expression, "Dinámica sfp", S, false, R),
+    spec(id::DYNAMIC_NIENTE, C::Expression, "Dinámica niente", S, false, R),
     spec(id::CLEAR_DYNAMIC, C::Expression, "Quitar dinámica", S, false, R),
     spec(id::EXPRESSION_TEXT, C::Expression, "Texto de expresión…", S, false, R),
     spec(id::TECHNIQUE_TEXT, C::Expression, "Texto de técnica…", S, false, R),
@@ -597,6 +686,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::REMOVE_ENDING, C::Bars, "Quitar casilla", G, false, R),
     spec(id::DOUBLE_BARLINE, C::Bars, "Doble barra", G, false, R),
     spec(id::FINAL_BARLINE, C::Bars, "Barra final", G, false, R),
+    spec(id::DASHED_BARLINE, C::Bars, "Barra discontinua", G, false, R),
+    spec(id::DOTTED_BARLINE, C::Bars, "Barra punteada", G, false, R),
+    spec(id::TICK_BARLINE, C::Bars, "Barra de marca", G, false, R),
+    spec(id::SHORT_BARLINE, C::Bars, "Barra corta", G, false, R),
+    spec(id::INVISIBLE_BARLINE, C::Bars, "Barra invisible", G, false, R),
+    spec(id::BAR_REPEAT, C::Bars, "Compás de repetición (%)", S, false, R),
     spec(id::SEGNO, C::Bars, "Segno", G, false, R),
     spec(id::CODA, C::Bars, "Coda", G, false, R),
     spec(id::TO_CODA, C::Bars, "To Coda", G, false, R),
@@ -610,6 +705,29 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CLEAR_FORM, C::Bars, "Quitar repeticiones y saltos", G, false, R),
     spec(id::SYSTEM_BREAK, C::Bars, "Salto de sistema tras el compás", G, false, R),
     spec(id::PAGE_BREAK, C::Bars, "Salto de página tras el compás", G, false, R),
+    spec(id::BAR_NUMBERS_SYSTEM, C::Bars, "Número de compás en cada sistema", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_BAR, C::Bars, "Número en cada compás", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_5, C::Bars, "Número de compás cada 5 compases", G, false, R),
+    spec(id::BAR_NUMBERS_EVERY_10, C::Bars, "Número de compás cada 10 compases", G, false, R),
+    spec(id::BAR_NUMBERS_HIDDEN, C::Bars, "Sin números de compás", G, false, R),
+    spec(id::PAGE_NUMBERS_FOOTER, C::Bars, "Número de página al pie", G, false, R),
+    spec(id::PAGE_NUMBERS_CORNER, C::Bars, "Número de página en la esquina", G, false, R),
+    spec(id::PAGE_NUMBERS_HIDDEN, C::Bars, "Sin números de página", G, false, R),
+    spec(id::PAPER_AUTOMATIC, C::Bars, "Papel automático", G, false, R),
+    spec(id::PAPER_A4, C::Bars, "Papel A4", G, false, R),
+    spec(id::PAPER_LETTER, C::Bars, "Papel carta", G, false, R),
+    spec(id::PAPER_A3, C::Bars, "Papel A3", G, false, R),
+    spec(id::PAPER_TABLOID, C::Bars, "Papel tabloide", G, false, R),
+    spec(id::LANDSCAPE, C::Bars, "Página horizontal", G, false, R),
+    spec(id::HIDE_EMPTY_STAVES, C::Bars, "Ocultar pentagramas vacíos", G, false, R),
+    spec(id::MARGINS_NORMAL, C::Bars, "Márgenes normales", G, false, R),
+    spec(id::MARGINS_WIDE, C::Bars, "Márgenes anchos", G, false, R),
+    spec(id::MARGINS_EXTRA_WIDE, C::Bars, "Márgenes muy anchos", G, false, R),
+    spec(id::STAFF_SIZE_AUTOMATIC, C::Bars, "Tamaño de pentagrama automático", G, false, R),
+    spec(id::STAFF_SIZE_7, C::Bars, "Pentagrama de 7 mm", G, false, R),
+    spec(id::STAFF_SIZE_6, C::Bars, "Pentagrama de 6 mm", G, false, R),
+    spec(id::STAFF_SIZE_5, C::Bars, "Pentagrama de 5 mm", G, false, R),
+    spec(id::STAFF_SIZE_4, C::Bars, "Pentagrama de 4 mm", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),
@@ -641,6 +759,8 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::LOOP, C::Playback, "Reproducción en bucle", S, false, R),
     spec(id::REPLAY, C::Playback, "Repetir la última reproducción", S, false, R),
     spec(id::HALF_SPEED, C::Playback, "Reproducir a media velocidad", S, false, R),
+    spec(id::METRONOME, C::Playback, "Metrónomo", G, false, R),
+    spec(id::COUNT_IN, C::Playback, "Cuenta previa de un compás", G, false, R),
     spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
     spec(id::MIXER, C::Playback, "Mezcla de las partes", S, false, R),
     spec(id::SOUNDS, C::Playback, "Mostrar el sonido", S, false, R),
@@ -672,13 +792,13 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
     spec(id::COMMAND_SEARCH, C::View, "Buscar comandos…", G, false, R),
-    spec(id::TAB_NOTE_INPUT, C::View, "Pestaña Escribir", G, false, R),
-    spec(id::TAB_NOTATION, C::View, "Pestaña Articulaciones", G, false, R),
-    spec(id::TAB_DYNAMICS, C::View, "Pestaña Dinámicas", G, false, R),
+    spec(id::TAB_HOME, C::View, "Pestaña Inicio", G, false, R),
+    spec(id::TAB_NOTE_INPUT, C::View, "Pestaña Entrada de notas", G, false, R),
+    spec(id::TAB_NOTATION, C::View, "Pestaña Notaciones", G, false, R),
     spec(id::TAB_TEXT, C::View, "Pestaña Texto", G, false, R),
-    spec(id::TAB_HOME, C::View, "Pestaña Partitura", G, false, R),
-    spec(id::TAB_LAYOUT, C::View, "Pestaña Partitura (saltos de página)", G, false, R),
+    spec(id::TAB_DYNAMICS, C::View, "Pestaña Texto (dinámicas)", G, false, R),
     spec(id::TAB_PLAYBACK, C::View, "Pestaña Reproducción", G, false, R),
+    spec(id::TAB_LAYOUT, C::View, "Pestaña Diseño", G, false, R),
     spec(id::TAB_REVIEW, C::View, "Pestaña Revisión", G, false, R),
     spec(id::TAB_VIEW, C::View, "Pestaña Vista", G, false, R),
     spec(id::TOGGLE_RIBBON, C::View, "Plegar o desplegar la cinta", G, false, R),

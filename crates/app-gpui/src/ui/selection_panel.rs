@@ -412,37 +412,34 @@ fn passage(body: Div, view: &AppView, summary: &PassageSummary, cx: &Context<App
 /// accidentals act on the note just written instead.
 fn entry_accidental(view: &AppView, cx: &Context<AppView>) -> Div {
     toolbar::track(
-        [
-            None,
-            Some(Accidental::Flat),
-            Some(Accidental::Natural),
-            Some(Accidental::Sharp),
-        ]
-        .map(|sign| {
-            control(
-                format!("entry-sign-{}", sign.map_or("key", Accidental::symbol)),
-                inline_text(
-                    view.music_font.clone(),
-                    sign.map_or("Armadura", Accidental::symbol),
-                ),
-                view.entry_accidental == sign,
-                cx,
-                move |v, _, cx| {
-                    if !v.busy && !v.confirming && !v.agent_locked() {
-                        v.entry_accidental = sign;
-                        cx.notify();
-                    }
-                },
-            )
-            .h(px(26.))
-            .tooltip(hover_hint(
-                format!(
-                    "Próximas notas: {}",
-                    sign.map_or("según la armadura", Accidental::label)
-                ),
-                None,
-            ))
-        }),
+        [None]
+            .into_iter()
+            .chain(Accidental::ALL.map(Some))
+            .map(|sign| {
+                control(
+                    format!("entry-sign-{}", sign.map_or("key", Accidental::symbol)),
+                    inline_text(
+                        view.music_font.clone(),
+                        sign.map_or("Armadura", Accidental::symbol),
+                    ),
+                    view.entry_accidental == sign,
+                    cx,
+                    move |v, _, cx| {
+                        if !v.busy && !v.confirming && !v.agent_locked() {
+                            v.entry_accidental = sign;
+                            cx.notify();
+                        }
+                    },
+                )
+                .h(px(26.))
+                .tooltip(hover_hint(
+                    format!(
+                        "Próximas notas: {}",
+                        sign.map_or("según la armadura", Accidental::label)
+                    ),
+                    None,
+                ))
+            }),
     )
 }
 
@@ -571,6 +568,14 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
             "Métrica".into(),
             format!("{scope} hasta el siguiente cambio."),
         ),
+        EditorKind::Tuplet => (
+            "Otro grupillo".into(),
+            if editor.selection().is_some() {
+                "Empieza en la nota seleccionada.".into()
+            } else {
+                "Para las próximas notas.".into()
+            },
+        ),
         EditorKind::Tempo => (
             "Tempo".into(),
             format!("{scope} hasta el siguiente cambio."),
@@ -602,6 +607,7 @@ fn open_editor(body: Div, view: &AppView, kind: EditorKind, cx: &Context<AppView
         EditorKind::Clef => clef_picker::panel(view, cx),
         EditorKind::Key => key_picker(view, cx),
         EditorKind::Time => time_picker(view, cx),
+        EditorKind::Tuplet => tuplet_picker(view, cx),
         EditorKind::Tempo => tempo_editor::panel(view, cx),
         EditorKind::Text => staff_text::panel(view, cx),
         EditorKind::Lyric => staff_text::lyric_panel(view, cx),

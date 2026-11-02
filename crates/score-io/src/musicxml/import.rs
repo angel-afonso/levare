@@ -64,7 +64,7 @@ fn integer(n: Node<'_, '_>, name: &str) -> Result<i32, FileError> {
     }
     Ok(x as i32)
 }
-fn ticks(value: f64, divisions: f64) -> Result<u16, FileError> {
+fn ticks(value: f64, divisions: f64) -> Result<u32, FileError> {
     let exact = value * f64::from(TICKS_PER_QUARTER) / divisions;
     if !exact.is_finite()
         || exact < 0.0
@@ -75,7 +75,7 @@ fn ticks(value: f64, divisions: f64) -> Result<u16, FileError> {
             "MusicXML: una duración no cabe en la resolución rítmica admitida",
         ));
     }
-    Ok(exact.round() as u16)
+    Ok(exact.round() as u32)
 }
 fn parse_xml(data: &str) -> Result<Document<'_>, FileError> {
     if declares_entities(data) {
@@ -475,6 +475,8 @@ fn instrument(part: Node<'_, '_>, bars: &[Node<'_, '_>], warnings: &mut Warnings
 #[derive(Clone, Default)]
 struct Bar {
     clefs: BTreeMap<u8, Clef>,
+    /// Staves this bar repeats the previous bar on, with %.
+    repeats: [bool; 2],
     time: Option<TimeSignature>,
     key: Option<KeySignature>,
     tempo: Option<TempoMark>,
@@ -505,8 +507,8 @@ struct PartData {
 }
 #[derive(Clone)]
 struct RawEvent {
-    onset: u16,
-    length: u16,
+    onset: u32,
+    length: u32,
     written: Option<Duration>,
     staff: u8,
     voice: String,
@@ -524,7 +526,7 @@ struct Tone {
 }
 #[derive(Clone)]
 struct Mark {
-    tick: u16,
+    tick: u32,
     staff: u8,
     voice: Option<String>,
     kind: MarkType,
@@ -549,6 +551,8 @@ struct State {
     transpose: [i32; 2],
     intervals: [Option<Transposition>; 2],
     staves: u8,
+    /// Staves inside a `measure-repeat`, until its stop.
+    repeating: [bool; 2],
 }
 
 fn read_part(
@@ -563,6 +567,7 @@ fn read_part(
         transpose: [0; 2],
         intervals: [None; 2],
         staves: 1,
+        repeating: [false; 2],
     };
     let mut bars = Vec::new();
     let mut passage = false;
@@ -576,7 +581,7 @@ fn read_part(
             implicit: parent.attribute("implicit") == Some("yes"),
             ..Bar::default()
         };
-        let mut cursor = 0u16;
+        let mut cursor = 0u32;
         let mut last_note = None;
         // Grace notes wait for the next note of their voice and staff.
         let mut graces: Vec<(String, usize, Pitch, bool)> = Vec::new();
@@ -653,6 +658,12 @@ fn read_part(
                     } else {
                         None
                     };
+                    if let Some(what) = unsupported_tuplet(n) {
+                        return Err(error(format!(
+                            "MusicXML: {what} en el compás {}",
+                            index + 1
+                        )));
+                    }
                     let mut event = read_note(n, cursor, &state, warnings, chord_parent)?;
                     if child(n, "chord").is_none() {
                         let staff = usize::from(event.staff - 1);
@@ -713,6 +724,9 @@ fn read_part(
                             last.arpeggio = event.arpeggio;
                         }
                         last.notation.fermata |= event.notation.fermata;
+                        last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
+                        last.notation.notehead = last.notation.notehead.or(event.notation.notehead);
+                        last.notation.pause = last.notation.pause.or(event.notation.pause);
                         if event.notation.tremolo.is_some() {
                             last.notation.tremolo = event.notation.tremolo;
                         }
@@ -794,6 +808,7 @@ fn read_part(
                 MarkType::Division(Division::Divisi) => index > 0 || m.tick > 0,
                 _ => false,
             });
+        bar.repeats = state.repeating;
         bars.push(bar);
     }
     let two = bars
@@ -858,7 +873,7 @@ fn attributes(
     n: Node<'_, '_>,
     state: &mut State,
     bar: &mut Bar,
-    cursor: u16,
+    cursor: u32,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
     if let Some(d) = child(n, "divisions") {
@@ -939,6 +954,19 @@ fn attributes(
         state.key = key;
         bar.key = Some(transpose_key(key, state.transpose[0], state.intervals[0]));
     }
+    for style in n.children().filter(|c| c.has_tag_name("measure-style")) {
+        let staff = staff_index(style.attribute("number").unwrap_or("1"))?;
+        match child(style, "measure-repeat").and_then(|r| r.attribute("type")) {
+            Some("start") if text(style, "measure-repeat") == Some("1") => {
+                state.repeating[staff] = true
+            }
+            Some("start") => {
+                warnings.add("Las repeticiones de varios compases se importan con su música")
+            }
+            Some("stop") => state.repeating[staff] = false,
+            _ => {}
+        }
+    }
     for c in n.children().filter(|c| c.has_tag_name("clef")) {
         if cursor != 0 {
             return Err(error(
@@ -947,21 +975,25 @@ fn attributes(
         }
         let staff = (staff_index(c.attribute("number").unwrap_or("1"))? + 1) as u8;
         let line = text(c, "line").unwrap_or("2");
-        let clef = match (text(c, "sign"), line) {
-            (Some("G"), "2") => Some(Clef::Treble),
-            (Some("F"), "4") => Some(Clef::Bass),
-            (Some("C"), "3") => Some(Clef::Alto),
-            (Some("C"), "4") => Some(Clef::Tenor),
-            (Some("percussion"), _) => Some(Clef::Percussion),
+        let octave = text(c, "clef-octave-change").unwrap_or("0");
+        // Pitches are already where the notes sound, so the octave only
+        // changes the clef drawn.
+        let clef = match (text(c, "sign"), line, octave) {
+            (Some("G"), "2", "0") => Some(Clef::Treble),
+            (Some("G"), "2", "-1") => Some(Clef::TrebleOctaveDown),
+            (Some("G"), "2", "1") => Some(Clef::TrebleOctaveUp),
+            (Some("F"), "4", "0") => Some(Clef::Bass),
+            (Some("F"), "4", "-1") => Some(Clef::BassOctaveDown),
+            (Some("F"), "4", "1") => Some(Clef::BassOctaveUp),
+            (Some("C"), "3", "0") => Some(Clef::Alto),
+            (Some("C"), "4", "0") => Some(Clef::Tenor),
+            (Some("percussion"), _, _) => Some(Clef::Percussion),
             _ => None,
         };
         if let Some(clef) = clef {
             bar.clefs.insert(staff, clef);
         } else {
             warnings.add("La clave especial se redibuja con la clave del instrumento");
-        }
-        if text(c, "clef-octave-change").is_some() {
-            warnings.add("La octava de la clave se conserva mediante las alturas; la clave se redibuja sin indicación de octava");
         }
     }
     for d in n.children().filter(|c| c.has_tag_name("staff-details")) {
@@ -1024,29 +1056,17 @@ fn pitch_value(
             "MusicXML: nota transpuesta fuera del registro admitido",
         ));
     }
+    let written = Pitch::new(step, octave as u8)
+        .unwrap()
+        .with_accidental(Accidental::from_semitones(alter as i8));
     if let Some(interval) = interval
-        && (-1..=1).contains(&alter)
+        && let Ok(pitches) =
+            interval.pitches(Pitches::single(Some(written)), KeySignature::default())
     {
-        let pitch = Pitch::new(step, octave as u8)
-            .unwrap()
-            .with_accidental(Some(match alter {
-                -1 => Accidental::Flat,
-                1 => Accidental::Sharp,
-                _ => Accidental::Natural,
-            }));
-        if let Ok(pitches) = interval.pitches(Pitches::single(Some(pitch)), KeySignature::default())
-        {
-            return Ok(pitches.first().unwrap());
-        }
+        return Ok(pitches.first().unwrap());
     }
-    if transpose == 0 && (-1..=1).contains(&alter) {
-        return Ok(Pitch::new(step, octave as u8)
-            .unwrap()
-            .with_accidental(Some(match alter {
-                -1 => Accidental::Flat,
-                1 => Accidental::Sharp,
-                _ => Accidental::Natural,
-            })));
+    if transpose == 0 {
+        return Ok(written);
     }
     if alter.abs() == 2 {
         warnings.add("Las dobles alteraciones se convierten a notas enarmónicas equivalentes");
@@ -1135,7 +1155,7 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
 /// A chord symbol over the staff at its offset from the cursor.
 fn read_harmony(
     n: Node<'_, '_>,
-    cursor: u16,
+    cursor: u32,
     state: &State,
     bar: &mut Bar,
     warnings: &mut Warnings,
@@ -1199,7 +1219,7 @@ fn read_harmony(
         None => None,
     };
     bar.directions.push(Mark {
-        tick: tickf.round() as u16,
+        tick: tickf.round() as u32,
         staff,
         voice: None,
         kind: MarkType::Chord(ChordSymbol {
@@ -1213,7 +1233,7 @@ fn read_harmony(
 
 fn read_note(
     n: Node<'_, '_>,
-    onset: u16,
+    onset: u32,
     state: &State,
     warnings: &mut Warnings,
     chord_parent: Option<&RawEvent>,
@@ -1255,6 +1275,13 @@ fn read_note(
             };
             (kind, role.to_owned())
         });
+    notation.notehead = match text(n, "notehead") {
+        Some("x" | "cross") => Some(Notehead::Cross),
+        // A diamond with a harmonic is its touched note, not a notehead.
+        Some("diamond") if harmonic.is_none() => Some(Notehead::Diamond),
+        Some("slash") => Some(Notehead::Slash),
+        _ => None,
+    };
     let mut pitches = if let Some(p) = child(n, "pitch") {
         vec![Tone {
             pitch: pitch_value(p, state.transpose[staff], state.intervals[staff], warnings)?,
@@ -1336,11 +1363,21 @@ fn read_note(
                 "fermata" => notation.fermata = true,
                 "articulations" => {
                     for a in m.children().filter(Node::is_element) {
+                        let pause = match a.tag_name().name() {
+                            "breath-mark" => Some(Pause::Breath),
+                            "caesura" => Some(Pause::Caesura),
+                            _ => None,
+                        };
+                        if pause.is_some() {
+                            notation.pause = pause;
+                            continue;
+                        }
                         let art = match a.tag_name().name() {
                             "staccato" => Some(Articulation::Staccato),
                             "tenuto" => Some(Articulation::Tenuto),
                             "accent" => Some(Articulation::Accent),
                             "strong-accent" => Some(Articulation::Marcato),
+                            "staccatissimo" => Some(Articulation::Staccatissimo),
                             _ => None,
                         };
                         if art.is_none() || notation.articulation.is_some() {
@@ -1389,6 +1426,16 @@ fn read_note(
                     for ornament in m.children().filter(Node::is_element) {
                         if ornament.has_tag_name("trill-mark") || ornament.has_tag_name("wavy-line")
                         {
+                            continue;
+                        }
+                        let short = match ornament.tag_name().name() {
+                            "mordent" => Some(Ornament::Mordent),
+                            "inverted-mordent" => Some(Ornament::InvertedMordent),
+                            "turn" => Some(Ornament::Turn),
+                            _ => None,
+                        };
+                        if short.is_some() {
+                            notation.ornament = short;
                             continue;
                         }
                         if ornament.has_tag_name("tremolo") {
@@ -1507,6 +1554,11 @@ fn read_barline(n: Node<'_, '_>, bar: &mut Bar, last: bool, warnings: &mut Warni
     if n.attribute("location") != Some("left") {
         match text(n, "bar-style") {
             Some("light-light") => bar.barline = Some(Barline::Double),
+            Some("dashed") => bar.barline = Some(Barline::Dashed),
+            Some("dotted") => bar.barline = Some(Barline::Dotted),
+            Some("tick") => bar.barline = Some(Barline::Tick),
+            Some("short") => bar.barline = Some(Barline::Short),
+            Some("none") => bar.barline = Some(Barline::Invisible),
             // A repeat's heavy stroke is implicit; so is the final score bar.
             Some("light-heavy") if bar.repeat_end.is_none() && !last => {
                 bar.barline = Some(Barline::Final)
@@ -1590,7 +1642,7 @@ fn navigation_sound(sound: Node<'_, '_>, bar: &mut Bar) {
 
 fn read_direction(
     n: Node<'_, '_>,
-    cursor: u16,
+    cursor: u32,
     state: &State,
     bar: &mut Bar,
     warnings: &mut Warnings,
@@ -1604,7 +1656,7 @@ fn read_direction(
     {
         return Err(error("MusicXML: posición de indicación fuera de rango"));
     }
-    let tick = tickf.round() as u16;
+    let tick = tickf.round() as u32;
     let staff = (staff_index(text(n, "staff").unwrap_or("1"))? + 1) as u8;
     let voice = text(n, "voice").map(str::to_owned);
     let has_metronome = n
@@ -1644,9 +1696,13 @@ fn read_direction(
                 }
                 "dynamics" => {
                     let dynamic = d.children().filter(Node::is_element).find_map(|n| {
-                        Dynamic::ALL
-                            .into_iter()
-                            .find(|a| a.label() == n.tag_name().name())
+                        // Accents Levare writes one way, and niente's «n».
+                        match n.tag_name().name() {
+                            "sf" | "sffz" | "fz" => Some(Dynamic::Sfz),
+                            "rf" => Some(Dynamic::Rfz),
+                            "n" => Some(Dynamic::Niente),
+                            name => Dynamic::ALL.into_iter().find(|a| a.label() == name),
+                        }
                     });
                     if dynamic.is_none() {
                         warnings.add("Algunas dinámicas no admitidas no se importan");
@@ -1821,29 +1877,70 @@ fn text_kind(direction: Node<'_, '_>, words: Node<'_, '_>, text: &str) -> TextKi
     }
 }
 
-fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
-    let base = match text(n, "type")? {
-        "whole" => Duration::Whole,
-        "half" => Duration::Half,
-        "quarter" => Duration::Quarter,
-        "eighth" => Duration::Eighth,
-        "16th" => Duration::Sixteenth,
-        "32nd" => Duration::ThirtySecond,
+fn note_value(name: &str) -> Option<NoteValue> {
+    Some(match name {
+        "whole" => NoteValue::Whole,
+        "half" => NoteValue::Half,
+        "quarter" => NoteValue::Quarter,
+        "eighth" => NoteValue::Eighth,
+        "16th" => NoteValue::Sixteenth,
+        "32nd" => NoteValue::ThirtySecond,
+        "64th" => NoteValue::SixtyFourth,
         _ => return None,
+    })
+}
+
+/// The ratio of a note's `<time-modification>`, counted in its
+/// `<normal-type>` or else in the note's own value; `Err` when Levare
+/// cannot write it.
+fn tuplet_from_xml(n: Node<'_, '_>, value: NoteValue) -> Result<Option<Tuplet>, ()> {
+    let Some(m) = child(n, "time-modification") else {
+        return Ok(None);
     };
+    let count = |tag| text(m, tag).and_then(|t| t.trim().parse::<u8>().ok());
+    if child(m, "normal-dot").is_some() {
+        return Err(());
+    }
+    let unit = match text(m, "normal-type") {
+        Some(name) => note_value(name).ok_or(())?,
+        None => value,
+    };
+    let (actual, normal) = (
+        count("actual-notes").ok_or(())?,
+        count("normal-notes").ok_or(())?,
+    );
+    Tuplet::new(actual, normal, unit).map(Some).ok_or(())
+}
+
+/// Whether a note opens two tuplets at once, or one whose ratio Levare
+/// cannot write, as nested tuplets do.
+fn unsupported_tuplet(n: Node<'_, '_>) -> Option<&'static str> {
+    let starts = n
+        .descendants()
+        .filter(|t| t.has_tag_name("tuplet") && t.attribute("type") == Some("start"))
+        .count();
+    if starts > 1 {
+        return Some("grupillos anidados");
+    }
+    let value = text(n, "type").and_then(note_value)?;
+    tuplet_from_xml(n, value)
+        .is_err()
+        .then_some("un grupillo que Levare no admite")
+}
+
+fn value_from_xml(n: Node<'_, '_>) -> Option<Duration> {
+    let value = note_value(text(n, "type")?)?;
     let dots = n.children().filter(|c| c.has_tag_name("dot")).count();
-    if dots > 1 {
+    if dots > usize::from(Duration::MAX_DOTS) {
         return None;
     }
-    let triplet = if let Some(m) = child(n, "time-modification") {
-        if text(m, "actual-notes") != Some("3") || text(m, "normal-notes") != Some("2") {
-            return None;
-        }
-        true
-    } else {
-        false
-    };
-    Some(base.with_dotted(dots == 1).with_triplet(triplet))
+    let tuplet = tuplet_from_xml(n, value).ok()?;
+    Some(
+        Duration::Quarter
+            .with_value(value)
+            .with_dots(dots as u8)
+            .with_tuplet(tuplet),
+    )
 }
 
 #[cfg(test)]

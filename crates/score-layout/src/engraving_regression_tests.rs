@@ -1,11 +1,14 @@
 use super::*;
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn orchestra() -> Score {
-    let native: serde_json::Value = serde_json::from_slice(include_bytes!(
+    // Through the file format, so older documents are migrated.
+    score_io::decode(include_bytes!(
         "../../../examples/tres-luces-orquesta.partitura"
     ))
-    .unwrap();
-    serde_json::from_value(native["score"].clone()).unwrap()
+    .unwrap()
 }
 
 #[test]
@@ -76,8 +79,8 @@ fn midbar_divisi_keeps_a_held_voice_on_one_continuous_staff() {
     score
         .set_divisi_span(
             part,
-            DivisiPoint::new(0, 48),
-            Some(DivisiPoint::new(0, 144)),
+            DivisiPoint::new(0, Q),
+            Some(DivisiPoint::new(0, 3 * Q)),
             true,
         )
         .unwrap();
@@ -115,10 +118,10 @@ fn midbar_divisi_keeps_a_held_voice_on_one_continuous_staff() {
         assert_eq!(lower.staff, StaffId::Lower);
         assert_eq!(lower.content.staff_spans, vec![(0., lower.width)]);
         assert!(!score.part(part).unwrap().divisi_at_tick(0, 0));
-        assert!(score.part(part).unwrap().divisi_at_tick(0, 48));
-        assert!(!score.part(part).unwrap().divisi_at_tick(0, 144));
+        assert!(score.part(part).unwrap().divisi_at_tick(0, Q));
+        assert!(!score.part(part).unwrap().divisi_at_tick(0, 3 * Q));
         let upper = layout.measure_on(part, StaffId::Upper, 0).unwrap();
-        for (tick, text) in [(48, "div."), (144, "unis.")] {
+        for (tick, text) in [(Q, "div."), (3 * Q, "unis.")] {
             assert!(layout.labels.iter().any(|label| label.part == part
                 && label.text == text
                 && (label.position.x - upper.origin.x - upper.content.x_at_tick(tick as f64)).abs()
@@ -394,11 +397,10 @@ fn original_slurs_and_hairpins_reach_upper_voice_after_divisi_within_one_system(
 
 #[test]
 fn menuetto_bar_fifteen_slur_stays_below_unison_text() {
-    let native: serde_json::Value = serde_json::from_slice(include_bytes!(
+    let score = score_io::decode(include_bytes!(
         "../../../examples/menuetto-y-trio-cuerdas.partitura"
     ))
     .unwrap();
-    let score: Score = serde_json::from_value(native["score"].clone()).unwrap();
     for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
         let layout = LayoutEngine::default().layout_view(&score, 1400., mode);
         let curve = layout
@@ -475,7 +477,7 @@ fn midbar_unison_keeps_text_outside_the_original_slur_lane() {
     s.set_divisi_span(
         part,
         DivisiPoint::new(0, 0),
-        Some(DivisiPoint::new(0, 96)),
+        Some(DivisiPoint::new(0, 2 * Q)),
         true,
     )
     .unwrap();
@@ -550,7 +552,7 @@ fn original_slur_envelope_excludes_text_and_dynamics_in_both_voices() {
                 .unwrap();
             let bar = layout.event_measure(ids[1]).unwrap();
             let (top, bottom) = expression::notation_bounds(&bar.content, &Metrics::bravura());
-            let expected = if voice == Voice::Two {
+            let expected = if voice.is_lower() {
                 bottom + 8.
             } else {
                 top - 8.
@@ -564,11 +566,10 @@ fn original_slur_envelope_excludes_text_and_dynamics_in_both_voices() {
 
 #[test]
 fn menuetto_slurs_keep_the_original_even_shallow_arches() {
-    let native: serde_json::Value = serde_json::from_slice(include_bytes!(
+    let score = score_io::decode(include_bytes!(
         "../../../examples/menuetto-y-trio-cuerdas.partitura"
     ))
     .unwrap();
-    let score: Score = serde_json::from_value(native["score"].clone()).unwrap();
     for mode in [ViewMode::Page, ViewMode::Continuous, ViewMode::SingleSystem] {
         let layout = LayoutEngine::default().layout_view(&score, 1400., mode);
         for curve in layout

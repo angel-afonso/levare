@@ -194,10 +194,14 @@ fn clef(name: &str) -> Result<Clef, String> {
         "fa" | "fa en cuarta" => Clef::Bass,
         "do3" | "do en tercera" | "contralto" => Clef::Alto,
         "do4" | "do en cuarta" | "tenor" => Clef::Tenor,
+        "sol8vb" | "sol octava baja" => Clef::TrebleOctaveDown,
+        "sol8va" | "sol octava alta" => Clef::TrebleOctaveUp,
+        "fa8vb" | "fa octava baja" => Clef::BassOctaveDown,
+        "fa8va" | "fa octava alta" => Clef::BassOctaveUp,
         "percusion" => Clef::Percussion,
         _ => {
             return Err(format!(
-                "No conozco la clave «{name}». Usa sol, fa, do3 (contralto), do4 (tenor) o percusión."
+                "No conozco la clave «{name}». Usa sol, fa, do3 (contralto), do4 (tenor), sol8vb, sol8va, fa8vb, fa8va o percusión."
             ));
         }
     })

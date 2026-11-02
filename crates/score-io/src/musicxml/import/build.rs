@@ -1,6 +1,9 @@
 //! Convert positioned MusicXML streams into the native bounded rhythm model.
 use super::*;
 
+/// Native lanes per staff: the upper staff's voices are lanes 0–3, the lower's 4–7.
+const STAFF_LANES: u8 = Voice::ALL.len() as u8;
+
 struct Lanes {
     passage: bool,
     upper: Vec<String>,
@@ -25,10 +28,13 @@ impl Lanes {
                 }
             }
         }
-        if lanes.upper.len() > 2 || lanes.lower.len() > 2 || (part.passage && lanes.lower.len() > 1)
+        let most = usize::from(STAFF_LANES);
+        if lanes.upper.len() > most
+            || lanes.lower.len() > most
+            || (part.passage && (lanes.upper.len() > 2 || lanes.lower.len() > 1))
         {
             return Err(error(
-                "MusicXML: máximo de dos voces por pentagrama y una voz por rama de divisi temporal",
+                "MusicXML: máximo de cuatro voces por pentagrama y una voz por rama de divisi temporal",
             ));
         }
         Ok(lanes)
@@ -49,21 +55,17 @@ impl Lanes {
         } else {
             0
         };
-        Ok((if staff == 2 { 2 } else { 0 }) + index as u8)
+        Ok((if staff == 2 { STAFF_LANES } else { 0 }) + index as u8)
     }
 }
 fn source(lane: u8) -> (StaffId, Voice) {
     (
-        if lane >= 2 {
+        if lane >= STAFF_LANES {
             StaffId::Lower
         } else {
             StaffId::Upper
         },
-        if lane % 2 == 1 {
-            Voice::Two
-        } else {
-            Voice::One
-        },
+        Voice::ALL[usize::from(lane % STAFF_LANES)],
     )
 }
 fn put(
@@ -97,9 +99,9 @@ fn append_rest(
     part: PartId,
     bar: usize,
     lane: u8,
-    tick: u16,
-    length: u16,
-    anchors: &mut BTreeMap<(usize, u8, u16), ElementId>,
+    tick: u32,
+    length: u32,
+    anchors: &mut BTreeMap<(usize, u8, u32), ElementId>,
 ) -> Result<(), FileError> {
     let mut at = tick;
     for duration in super::super::durations(length)? {
@@ -166,6 +168,8 @@ fn music(
             .is_some_and(|(h, _)| *h == Harmonic::Artificial)
     });
     if artificial || (tones.len() == 2 && tones.iter().any(|t| t.diamond)) {
+        // The diamond belongs to the harmonic, which draws its own.
+        notation.notehead = None;
         if tones.len() == 1
             && tones[0]
                 .harmonic
@@ -235,8 +239,14 @@ fn normalize_techniques(
         return Ok(());
     }
     let divided = score.part(part).unwrap().is_divisi();
-    let scope = |lane: u8| if divided || lane < 2 { 0u8 } else { 1 };
-    let mut words: [BTreeMap<(usize, u16), PlayingTechnique>; 2] = Default::default();
+    let scope = |lane: u8| {
+        if divided || lane < STAFF_LANES {
+            0u8
+        } else {
+            1
+        }
+    };
+    let mut words: [BTreeMap<(usize, u32), PlayingTechnique>; 2] = Default::default();
     for (bar, b) in data.bars.iter().enumerate() {
         for m in &b.directions {
             if let MarkType::Technique(t) = m.kind {
@@ -282,7 +292,12 @@ fn normalize_techniques(
     for staff in p.staves() {
         for (bar, b) in staff.measures().iter().enumerate() {
             for (voice, tick, event, n) in b.timed_iter() {
-                let lane = if staff.id() == StaffId::Lower { 2 } else { 0 } + voice.number() - 1;
+                let lane = if staff.id() == StaffId::Lower {
+                    STAFF_LANES
+                } else {
+                    0
+                } + voice.number()
+                    - 1;
                 events.push((
                     bar,
                     tick,
@@ -374,7 +389,7 @@ pub(super) fn score(
             time = [1, 2, 4, 8, 16]
                 .into_iter()
                 .find_map(|denominator| {
-                    let unit = TICKS_PER_WHOLE / u16::from(denominator);
+                    let unit = TICKS_PER_WHOLE / u32::from(denominator);
                     if used % unit != 0 {
                         return None;
                     }
@@ -408,8 +423,7 @@ pub(super) fn score(
             .collect();
         if let Some(tempo) = marks.first() {
             if marks.iter().any(|m| {
-                u32::from(m.bpm) * u32::from(m.beat.ticks())
-                    != u32::from(tempo.bpm) * u32::from(tempo.beat.ticks())
+                u32::from(m.bpm) * m.beat.ticks() != u32::from(tempo.bpm) * tempo.beat.ticks()
             }) {
                 warnings
                     .add("Los tempos simultáneos distintos se unifican con el primero indicado");
@@ -490,7 +504,7 @@ pub(super) fn score(
                     .or_default()
                     .push((index, e));
             }
-            let mut cuts: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
+            let mut cuts: BTreeMap<u8, BTreeSet<u32>> = BTreeMap::new();
             for m in &b.directions {
                 if m.tick >= score.time_at(bar).capacity() {
                     continue;
@@ -511,7 +525,7 @@ pub(super) fn score(
             }
             for (lane, mut events) in streams {
                 events.sort_by_key(|(_, e)| e.onset);
-                let mut cursor = 0u16;
+                let mut cursor = 0u32;
                 let lane_cuts = cuts.get(&lane).cloned().unwrap_or_default();
                 for (raw_index, raw) in events {
                     if raw.onset < cursor {
@@ -570,9 +584,11 @@ pub(super) fn score(
                                 n.division = None;
                                 n.grace = None;
                                 n.lyrics = Lyrics::default();
+                                n.ornament = None;
                             }
                             if at + duration.ticks() != end {
                                 n.fermata = false;
+                                n.pause = None;
                             }
                             // Shared rolls are resolved after both hands exist.
                             n.arpeggio = None;
@@ -642,7 +658,7 @@ pub(super) fn score(
         }
         // Explicit per-event ties and slurs are paired in their independent native lanes.
         let mut starts: HashMap<(u8, ConnectionKind, String), ElementId> = HashMap::new();
-        let mut rolls: BTreeMap<(usize, u16, String), Vec<(ElementId, Arpeggio)>> = BTreeMap::new();
+        let mut rolls: BTreeMap<(usize, u32, String), Vec<(ElementId, Arpeggio)>> = BTreeMap::new();
         for (bar, b) in data.bars.iter().enumerate() {
             for (raw_index, raw) in b.events.iter().enumerate() {
                 let &(first, last, lane) = placed.get(&(bar, raw_index)).unwrap();
@@ -886,6 +902,26 @@ pub(super) fn score(
         for link in links {
             if score.add_connection(link).is_err() {
                 warnings.add("Algunas ligaduras o reguladores incompatibles con el modelo no pudieron importarse");
+            }
+        }
+    }
+    // A bar inside a measure-repeat holds only rests: mark it with % so it
+    // plays the bar before it. One with notes keeps them.
+    for (pi, data) in parts.iter().enumerate() {
+        let part = score.parts()[pi].id();
+        for (bar, b) in data.bars.iter().enumerate() {
+            for (number, staff) in [StaffId::Upper, StaffId::Lower].into_iter().enumerate() {
+                let empty = score
+                    .part(part)
+                    .and_then(|p| p.staff(staff))
+                    .is_some_and(|s| s.measures()[bar].iter().all(|(_, e)| e.pitches.is_empty()));
+                if b.repeats[number]
+                    && empty
+                    && score.set_bar_repeat(part, staff, bar, true).is_err()
+                {
+                    warnings
+                        .add("Un compás de repetición sin compás anterior igual se importa vacío");
+                }
             }
         }
     }

@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Connection, ConnectionKind, Duration, Dynamic, Event, Notation, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -92,7 +95,7 @@ fn dividing_and_reuniting_preserve_shared_dynamics_techniques_hairpins_and_timin
     let before = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
     let level = score_core::DynamicEnvelope::new(&s, p, StaffId::Upper)
         .unwrap()
-        .level_at(48);
+        .level_at(u64::from(Q));
     s.set_part_divisi(p, true).unwrap();
     let moved = ElementId {
         staff: StaffId::Lower,
@@ -102,7 +105,7 @@ fn dividing_and_reuniting_preserve_shared_dynamics_techniques_hairpins_and_timin
     assert_eq!(
         score_core::DynamicEnvelope::new(&s, p, StaffId::Lower)
             .unwrap()
-            .level_at(48),
+            .level_at(u64::from(Q)),
         level
     );
     let after = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
@@ -168,7 +171,48 @@ fn maximum_two_voice_ensemble_tracks_and_chases_all_448_tones_without_truncation
     );
     assert_eq!(
         plan.held_notes_at(12_000).into_iter().flatten().count(),
-        score_core::MAX_SOUNDING_NOTES
+        score_core::MAX_STAVES * 2 * score_core::MAX_CHORD_NOTES
+    );
+}
+
+#[test]
+fn maximum_four_voice_ensemble_tracks_every_voice() {
+    let mut s = Score::default();
+    for _ in 1..score_core::MAX_PARTS {
+        s.add_part(Instrument::Piano).unwrap();
+    }
+    let parts: Vec<_> = s.parts().iter().map(|p| p.id()).collect();
+    for part in parts {
+        for (lane, (staff, voice)) in [StaffId::Upper, StaffId::Lower]
+            .into_iter()
+            .flat_map(|staff| Voice::ALL.map(|voice| (staff, voice)))
+            .enumerate()
+        {
+            let pitch = Pitch::new(Step::C, 1 + lane as u8);
+            s.insert_in_voice(
+                part,
+                staff,
+                0,
+                voice,
+                0,
+                Event {
+                    pitches: Pitches::single(pitch),
+                    duration: Duration::Whole,
+                    notation: Default::default(),
+                },
+            )
+            .unwrap();
+        }
+    }
+    let plan = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
+    assert_eq!(plan.tracks.len(), score_core::MAX_TRACKS);
+    assert_eq!(
+        plan.elements_at(12_000).into_iter().flatten().count(),
+        score_core::MAX_TRACKS
+    );
+    assert_eq!(
+        plan.held_notes_at(12_000).into_iter().flatten().count(),
+        score_core::MAX_TRACKS
     );
 }
 
@@ -244,8 +288,8 @@ fn sustained_midbar_divisi_and_unis_keep_exact_audio_including_expression() {
     let before = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -253,4 +297,25 @@ fn sustained_midbar_divisi_and_unis_keep_exact_audio_including_expression() {
     assert_eq!(before.messages, after.messages);
     assert_eq!(before.duration_frames, after.duration_frames);
     assert_eq!(s.event(held).unwrap().duration, Duration::Whole);
+}
+#[test]
+fn all_four_voices_sound_together() {
+    let mut s = Score::default();
+    let p = s.parts()[0].id();
+    for (voice, step) in Voice::ALL
+        .into_iter()
+        .zip([Step::G, Step::C, Step::B, Step::E])
+    {
+        s.insert_in_voice(p, StaffId::Upper, 0, voice, 0, note(step, Duration::Whole))
+            .unwrap();
+    }
+    let plan = PlaybackPlan::new(&s, Tempo::default(), 48_000).unwrap();
+    let mut held = plan
+        .held_notes_at(12_000)
+        .into_iter()
+        .flatten()
+        .map(|n| n.note.key)
+        .collect::<Vec<_>>();
+    held.sort_unstable();
+    assert_eq!(held, [60, 64, 67, 71]);
 }

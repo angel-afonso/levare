@@ -60,6 +60,8 @@ enum Command {
         start_frame: u64,
         held_notes: [Option<score_playback::HeldNote>; score_core::MAX_SOUNDING_NOTES],
         expressions: [u8; score_playback::PLAYBACK_CHANNELS],
+        /// Clicks before the music starts, and the frames between them.
+        count_in: Option<(u8, u64)>,
     },
     Preview {
         epoch: u64,
@@ -94,6 +96,53 @@ impl Loop {
     }
 }
 
+/// A metronome click: a short sine burst that fades out, mixed after the
+/// instruments so every sound bank clicks alike.
+#[derive(Clone, Copy, Default)]
+struct Click {
+    left: u32,
+    length: u32,
+    step: f32,
+    phase: f32,
+    gain: f32,
+}
+impl Click {
+    fn new(accent: bool, sample_rate: u32) -> Self {
+        let length = sample_rate / 25;
+        let pitch = if accent { 1760. } else { 1320. };
+        Self {
+            left: length,
+            length,
+            step: std::f32::consts::TAU * pitch / sample_rate as f32,
+            phase: 0.,
+            gain: if accent { 0.45 } else { 0.3 },
+        }
+    }
+    fn mix(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+            if self.left == 0 {
+                return;
+            }
+            let fade = self.left as f32 / self.length as f32;
+            let sample = self.phase.sin() * self.gain * fade * fade;
+            *l += sample;
+            *r += sample;
+            self.phase += self.step;
+            self.left -= 1;
+        }
+    }
+}
+
+/// The count-in before the music: clicks left, frames between them and
+/// until the next one.
+#[derive(Clone, Copy)]
+struct CountIn {
+    clicks: u8,
+    interval: u64,
+    until: u64,
+    first: bool,
+}
+
 struct Active {
     epoch: u64,
     plan: Arc<PlaybackPlan>,
@@ -108,16 +157,23 @@ pub struct Control {
     retained: Vec<Arc<PlaybackPlan>>,
     active: Option<Active>,
     sample_rate: u32,
+    /// Clicks before the next start, then forgotten: seeks never count in.
+    count_in: Option<(u8, u64)>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct PlaybackPosition {
     pub frame: u64,
     pub element: Option<score_core::ElementId>,
-    pub elements: [Option<score_core::ElementId>; score_core::MAX_STAVES * 2],
+    pub elements: [Option<score_core::ElementId>; score_core::MAX_TRACKS],
 }
 
 impl Control {
+    /// Count `beats` clicks, `interval` frames apart, before the next start.
+    pub fn count_in(&mut self, beats: u8, interval: u64) {
+        self.count_in = (beats > 0 && interval > 0).then_some((beats, interval));
+    }
+
     pub fn play(&mut self, plan: Arc<PlaybackPlan>) -> Result<(), AudioError> {
         self.start(plan, 0, false)
     }
@@ -184,6 +240,7 @@ impl Control {
                 expressions: plan.expressions_at(start_frame),
                 plan: plan.clone(),
                 start_frame,
+                count_in: self.count_in.take(),
             })
             .map_err(|_| error("La cola de audio está ocupada; inténtalo de nuevo"))?;
         self.active = Some(Active {
@@ -384,6 +441,10 @@ pub struct Renderer {
     preview: Option<(score_playback::Audition, u64)>,
     preview_attacked: [bool; score_playback::MAX_AUDITION_NOTES],
     looping: Option<Loop>,
+    click: Click,
+    count_in: Option<CountIn>,
+    /// Notes sounding at the start, attacked when the count-in ends.
+    count_in_held: [Option<score_playback::HeldNote>; score_core::MAX_SOUNDING_NOTES],
     left: [f32; BLOCK],
     right: [f32; BLOCK],
     mix: [u32; score_playback::PLAYBACK_CHANNELS],
@@ -415,6 +476,7 @@ impl Renderer {
             retained: Vec::new(),
             active: None,
             sample_rate,
+            count_in: None,
         };
         let renderer = Self {
             commands: consumer,
@@ -439,6 +501,9 @@ impl Renderer {
             preview: None,
             preview_attacked: [false; score_playback::MAX_AUDITION_NOTES],
             looping: None,
+            click: Click::default(),
+            count_in: None,
+            count_in_held: [None; score_core::MAX_SOUNDING_NOTES],
             left: [0.; BLOCK],
             right: [0.; BLOCK],
             mix: [u32::MAX; score_playback::PLAYBACK_CHANNELS],
@@ -503,7 +568,33 @@ impl Renderer {
             self.epoch = epoch;
             self.history_len = 0;
             self.ending = None;
+            self.count_in = None;
+            self.click = Click::default();
         }
+    }
+
+    /// Sound the next count-in click when it is due; once the bar has passed,
+    /// attack what sounds at the start and let the music go on.
+    fn advance_count_in(&mut self) {
+        let Some(mut count_in) = self.count_in else {
+            return;
+        };
+        if count_in.until > 0 {
+            return;
+        }
+        if count_in.clicks == 0 {
+            self.count_in = None;
+            for held in self.count_in_held.into_iter().flatten() {
+                self.note_on(held.channel, held.note);
+            }
+            self.due_messages();
+            return;
+        }
+        self.click = Click::new(count_in.first, self.sample_rate);
+        count_in.first = false;
+        count_in.clicks -= 1;
+        count_in.until = count_in.interval;
+        self.count_in = Some(count_in);
     }
 
     /// Remember the pace from the current clock on, when it changed.
@@ -576,14 +667,26 @@ impl Renderer {
                     start_frame,
                     held_notes,
                     expressions,
+                    count_in,
                 } if epoch == self.epoch => {
                     self.engines.silence(None, true);
                     for (channel, value) in expressions.into_iter().enumerate() {
                         self.midi(channel as u8, 0xb0, 11, value);
                     }
-                    // Chase both the original attack and current expression level.
-                    for held in held_notes.into_iter().flatten() {
-                        self.note_on(held.channel, held.note);
+                    // Chase both the original attack and current expression
+                    // level, after the count-in when there is one.
+                    self.count_in = count_in.map(|(clicks, interval)| CountIn {
+                        clicks,
+                        interval,
+                        until: 0,
+                        first: true,
+                    });
+                    if self.count_in.is_some() {
+                        self.count_in_held = held_notes;
+                    } else {
+                        for held in held_notes.into_iter().flatten() {
+                            self.note_on(held.channel, held.note);
+                        }
                     }
                     self.next_message = plan
                         .messages
@@ -661,6 +764,7 @@ impl Renderer {
                 Message::NoteOn(note) => self.note_on(message.channel, note),
                 Message::NoteOff(key) => self.note_off(message.channel, key),
                 Message::HarmonicOff(key) => self.engines.harmonic_off(message.channel, key),
+                Message::Click { accent } => self.click = Click::new(accent, self.sample_rate),
             }
             self.next_message += 1;
         }
@@ -730,10 +834,17 @@ impl Renderer {
                 written += count;
                 continue;
             }
-            self.due_messages();
-            self.pace(self.active.is_some());
+            if self.count_in.is_some() {
+                self.advance_count_in();
+            } else {
+                self.due_messages();
+            }
+            let counting = self.count_in.is_some();
+            self.pace(self.active.is_some() && !counting);
             let mut count = (total_frames - written).min(BLOCK);
-            if let Some(active) = &self.active {
+            if let Some(count_in) = &self.count_in {
+                count = count.min(count_in.until as usize);
+            } else if let Some(active) = &self.active {
                 let next = active
                     .plan
                     .messages
@@ -766,6 +877,8 @@ impl Renderer {
             self.right[..count].fill(0.);
             self.engines
                 .render(&mut self.left[..count], &mut self.right[..count]);
+            self.click
+                .mix(&mut self.left[..count], &mut self.right[..count]);
             self.reverb.process(
                 &mut self.left[..count],
                 &mut self.right[..count],
@@ -789,15 +902,17 @@ impl Renderer {
             }
             written += count;
             self.clock += count as u64;
-            if self.active.is_some() {
+            if let Some(count_in) = &mut self.count_in {
+                count_in.until -= count as u64;
+            } else if self.active.is_some() {
                 self.frame += count as u64;
             }
         }
         let paused = self.shared.paused.load(Ordering::Acquire);
-        if !paused {
+        if !paused && self.count_in.is_none() {
             self.due_messages();
         }
-        self.pace(self.active.is_some() && !paused);
+        self.pace(self.active.is_some() && !paused && self.count_in.is_none());
         // Heard by the end of this buffer's period: what was rendered
         // `latency` frames of clock ago.
         let heard = self.clock.saturating_sub(self.latency);
@@ -1506,6 +1621,49 @@ mod tests {
             }
         });
         assert!(!control.is_playing());
+    }
+
+    #[test]
+    fn a_count_in_clicks_while_the_position_waits_and_clicks_follow_the_beat() {
+        let (mut control, mut renderer) = Renderer::new(48_000).unwrap();
+        let mut score = Score::default();
+        score
+            .insert(
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::default(),
+                    duration: Duration::Whole,
+                },
+            )
+            .unwrap();
+        // A silent bar with clicks: only the metronome can sound.
+        let mut silent = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+        silent.duration_frames = silent.timeline.total_frames(48_000);
+        silent.add_clicks(&score);
+        let (beats, interval) = silent.count_in(&score, 0);
+        assert_eq!((beats, interval), (4, 24_000));
+        control.count_in(2, 4_800);
+        control.play(Arc::new(silent)).unwrap();
+        let mut output = [0f32; 2048];
+        assert_no_alloc(|| renderer.render(&mut output, 2));
+        // The first click sounds and the music has not moved.
+        assert!(output.iter().any(|sample| sample.abs() > 0.05));
+        assert_eq!(control.position().unwrap().frame, 0);
+        let mut loudest = [0f32; 12];
+        assert_no_alloc(|| {
+            for block in &mut loudest {
+                renderer.render(&mut output, 2);
+                *block = output.iter().fold(0., |max, sample| max.max(sample.abs()));
+            }
+        });
+        // 13 blocks of 1024 frames, the first 9 600 of them counting in.
+        assert_eq!(control.position().unwrap().frame, 13 * 1024 - 9_600);
+        // The second count-in click falls in the fifth block; the plan's own
+        // click on the first beat, in the tenth, as the music starts.
+        assert!(loudest[3] > 0.05 && loudest[8] > 0.05);
+        assert!(loudest[6] < loudest[8] / 4.);
     }
 
     #[test]

@@ -83,8 +83,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Bajar la octava de entrada |  |
 | `⌥1` | `Alt+1` | Voz 1 |  |
 | `⌥2` | `Alt+2` | Voz 2 |  |
-| `⌥3` | `Alt+3` | Voz 3 | Pending |
-| `⌥4` | `Alt+4` | Voz 4 | Pending |
+| `⌥3` | `Alt+3` | Voz 3 |  |
+| `⌥4` | `Alt+4` | Voz 4 |  |
 | `;` | `;` | Añadir nota de adorno |  |
 | — | — | Acciaccatura |  |
 | — | — | Appoggiatura |  |
@@ -96,14 +96,24 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 
 | macOS | Windows and Linux | Command | Status |
 |---|---|---|---|
+| — | — | Semifusa |  |
 | `1` | `1` | Fusa |  |
 | `2` | `2` | Semicorchea |  |
 | `3` | `3` | Corchea |  |
 | `4` | `4` | Negra |  |
 | `5` | `5` | Blanca |  |
 | `6` | `6` | Redonda |  |
+| `⌘2` | `Ctrl+2` | Dosillo (2:3) |  |
 | `⌘3` | `Ctrl+3` | Tresillo (3:2) |  |
+| `⌘4` | `Ctrl+4` | Cuatrillo (4:3) |  |
+| `⌘5` | `Ctrl+5` | Quintillo (5:4) |  |
+| `⌘6` | `Ctrl+6` | Seisillo (6:4) |  |
+| `⌘7` | `Ctrl+7` | Septillo (7:4) |  |
+| `⌘8` | `Ctrl+8` | Octillo (8:6) |  |
+| `⌘9` | `Ctrl+9` | Nonillo (9:8) |  |
+| — | — | Otro grupillo… |  |
 | `.` | `.` | Puntillo |  |
+| — | — | Doble puntillo |  |
 
 ## Alteraciones
 
@@ -112,6 +122,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `7` | `7` | Becuadro |  |
 | `8` | `8` | Sostenido |  |
 | `9` | `9` | Bemol |  |
+| — | — | Doble sostenido |  |
+| — | — | Doble bemol |  |
 | — | — | Seguir la armadura |  |
 
 ## Expresión
@@ -126,6 +138,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Tenuto |  |
 | — | — | Acento |  |
 | — | — | Marcato |  |
+| — | — | Staccatissimo |  |
 | `H` | `H` | Crescendo: inicio o fin |  |
 | `⇧H` | `Mayús+H` | Diminuendo: inicio o fin |  |
 | — | — | Quitar crescendo |  |
@@ -152,6 +165,11 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Dinámica f |  |
 | — | — | Dinámica ff |  |
 | — | — | Dinámica fff |  |
+| — | — | Dinámica sfz |  |
+| — | — | Dinámica rfz |  |
+| — | — | Dinámica fp |  |
+| — | — | Dinámica sfp |  |
+| — | — | Dinámica niente |  |
 | — | — | Quitar dinámica |  |
 | `⌘E` | `Ctrl+E` | Texto de expresión… |  |
 | `⌘T` | `Ctrl+T` | Texto de técnica… |  |
@@ -169,11 +187,22 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 |---|---|---|---|
 | — | — | Indicación div. |  |
 | — | — | Indicación unis. |  |
+| — | — | Mordente |  |
+| — | — | Mordente superior |  |
+| — | — | Grupeto |  |
+| — | — | Respiración |  |
+| — | — | Cesura |  |
 | — | — | Octava alta 8va |  |
 | — | — | Octava baja 8vb |  |
 | — | — | Pedal de resonancia |  |
 | — | — | Trino |  |
 | — | — | Glissando hasta la nota siguiente |  |
+| — | — | Cabeza en x |  |
+| — | — | Cabeza de rombo |  |
+| — | — | Cabeza diagonal |  |
+| — | — | Iniciar barra de corchea |  |
+| — | — | Unir a la barra anterior |  |
+| — | — | Sin barra de corchea |  |
 | `K` | `K` | Tonalidad… |  |
 | `T` | `T` | Compás de tiempo… |  |
 | `Q` | `Q` | Clave… |  |
@@ -195,6 +224,12 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Quitar casilla |  |
 | — | — | Doble barra |  |
 | — | — | Barra final |  |
+| — | — | Barra discontinua |  |
+| — | — | Barra punteada |  |
+| — | — | Barra de marca |  |
+| — | — | Barra corta |  |
+| — | — | Barra invisible |  |
+| — | — | Compás de repetición (%) |  |
 | — | — | Segno |  |
 | — | — | Coda |  |
 | — | — | To Coda |  |
@@ -208,6 +243,29 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Quitar repeticiones y saltos |  |
 | — | — | Salto de sistema tras el compás |  |
 | — | — | Salto de página tras el compás |  |
+| — | — | Número de compás en cada sistema |  |
+| — | — | Número en cada compás |  |
+| — | — | Número de compás cada 5 compases |  |
+| — | — | Número de compás cada 10 compases |  |
+| — | — | Sin números de compás |  |
+| — | — | Número de página al pie |  |
+| — | — | Número de página en la esquina |  |
+| — | — | Sin números de página |  |
+| — | — | Papel automático |  |
+| — | — | Papel A4 |  |
+| — | — | Papel carta |  |
+| — | — | Papel A3 |  |
+| — | — | Papel tabloide |  |
+| — | — | Página horizontal |  |
+| — | — | Ocultar pentagramas vacíos |  |
+| — | — | Márgenes normales |  |
+| — | — | Márgenes anchos |  |
+| — | — | Márgenes muy anchos |  |
+| — | — | Tamaño de pentagrama automático |  |
+| — | — | Pentagrama de 7 mm |  |
+| — | — | Pentagrama de 6 mm |  |
+| — | — | Pentagrama de 5 mm |  |
+| — | — | Pentagrama de 4 mm |  |
 
 ## Instrumentos
 
@@ -253,6 +311,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `⌥P` | `Alt+P` | Reproducción en bucle |  |
 | `⌥Espacio` | Windows: `Alt+Espacio` · Linux: `Mayús+Alt+Espacio` | Repetir la última reproducción |  |
 | `⇧Espacio` | `Mayús+Espacio` | Reproducir a media velocidad |  |
+| — | — | Metrónomo |  |
+| — | — | Cuenta previa de un compás |  |
 | — | — | Hacer sonar los cifrados |  |
 | `M` | `M` | Mezcla de las partes |  |
 | — | — | Mostrar el sonido |  |
@@ -293,13 +353,13 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Vista continua |  |
 | — | — | Vista de pentagrama |  |
 | `⌘F` | `Ctrl+F` | Buscar comandos… |  |
-| `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Escribir |  |
-| `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Articulaciones |  |
-| `⌥⌘3` | `Ctrl+Mayús+3` | Pestaña Dinámicas |  |
+| `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Inicio |  |
+| `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Entrada de notas |  |
+| `⌥⌘3` | `Ctrl+Mayús+3` | Pestaña Notaciones |  |
 | `⌥⌘4` | `Ctrl+Mayús+4` | Pestaña Texto |  |
-| `⌥⌘5` | `Ctrl+Mayús+5` | Pestaña Partitura |  |
-| — | — | Pestaña Partitura (saltos de página) |  |
-| `⌥⌘6` | `Ctrl+Mayús+6` | Pestaña Reproducción |  |
+| — | — | Pestaña Texto (dinámicas) |  |
+| `⌥⌘5` | `Ctrl+Mayús+5` | Pestaña Reproducción |  |
+| `⌥⌘6` | `Ctrl+Mayús+6` | Pestaña Diseño |  |
 | `⌥⌘7` | `Ctrl+Mayús+7` | Pestaña Revisión |  |
 | `⌥⌘8` | `Ctrl+Mayús+8` | Pestaña Vista |  |
 | — | — | Plegar o desplegar la cinta |  |

@@ -148,7 +148,7 @@ mod tests {
     fn a_prefix_finds_the_command_and_says_where_it_lives() {
         let results = run("stacc");
         assert_eq!(results[0].item.command, id::STACCATO);
-        assert_eq!(results[0].place, "Articulaciones › Articulación");
+        assert_eq!(results[0].place, "Notaciones › Articulación");
     }
 
     #[test]
@@ -169,11 +169,11 @@ mod tests {
 
     #[test]
     fn ready_commands_come_before_pending_ones() {
-        let results = run("voz");
-        assert!(results.iter().any(|r| r.item.command == id::VOICE_1));
+        let results = run("lineas");
+        assert!(results.iter().any(|r| r.item.command == id::GLISSANDO));
         let first_pending = results.iter().position(|r| r.item.pending).unwrap();
         assert!(results[first_pending..].iter().all(|r| r.item.pending));
-        assert!(first_pending > 0, "ready results exist for voz");
+        assert!(first_pending > 0, "ready results exist for lineas");
     }
 
     #[test]
@@ -188,12 +188,12 @@ mod tests {
 
     #[test]
     fn commands_outside_the_ribbon_show_their_category() {
-        assert_eq!(ribbon_place(id::GO_TO_BAR), None);
-        let results = run("ir al compas");
-        let go = results
+        assert_eq!(ribbon_place(id::REMOVE_TIME), None);
+        let results = run("eliminar notas y su tiempo");
+        let remove = results
             .iter()
-            .find(|r| r.item.command == id::GO_TO_BAR)
-            .expect("go to bar is found");
-        assert_eq!(go.place, "Compases");
+            .find(|r| r.item.command == id::REMOVE_TIME)
+            .expect("remove time is found");
+        assert_eq!(remove.place, "Edición");
     }
 }

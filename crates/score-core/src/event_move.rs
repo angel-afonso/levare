@@ -1,10 +1,11 @@
 //! Move one rhythmic event without shifting or overwriting neighboring music.
 use super::*;
+use crate::rhythm::TupletSpan;
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy)]
 struct Item {
-    tick: u16,
+    tick: u32,
     id: Option<ElementId>,
     event: Event,
 }
@@ -17,7 +18,7 @@ impl Score {
         &mut self,
         id: ElementId,
         measure: usize,
-        tick: u16,
+        tick: u32,
     ) -> Result<ElementId, ScoreError> {
         let event = *self.event(id).ok_or(ScoreError("La nota no existe"))?;
         if event.pitches.is_empty() {
@@ -25,7 +26,7 @@ impl Score {
         }
         let voice = self.voice_of(id).ok_or(ScoreError("La voz no existe"))?;
         let source_tick =
-            (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u16;
+            (self.event_tick(id).unwrap() - self.measure_start_tick(id.measure)) as u32;
         if measure >= self.measures().len()
             || tick
                 .checked_add(event.duration.ticks())
@@ -38,6 +39,30 @@ impl Score {
         }
         let end = tick + event.duration.ticks();
         let staff = self.part(id.part).unwrap().staff(id.staff).unwrap();
+        // An event of a tuplet moves within its group; one that is its whole
+        // group moves like plain music, which stays out of other groups.
+        let mut spans = Vec::new();
+        let own = staff.measures()[id.measure]
+            .tuplet_groups(voice)
+            .into_iter()
+            .find(|g| g.events.contains(&id.event));
+        if let Some(group) = own.filter(|g| g.events.len() > 1) {
+            if measure != id.measure || tick < group.start || end > group.end {
+                return Err(ScoreError(
+                    "Una figura de grupillo solo se mueve dentro de su grupo",
+                ));
+            }
+            spans.push(TupletSpan::from(&group));
+        } else if staff.measures()[measure]
+            .tuplet_groups(voice)
+            .iter()
+            .filter(|g| !g.events.contains(&id.event))
+            .any(|g| g.start < end && tick < g.end)
+        {
+            return Err(ScoreError(
+                "Esa posición está dentro de un grupillo; mueve allí solo figuras del grupillo",
+            ));
+        }
         let overlaps: Vec<_> = staff.measures()[measure]
             .timed_iter()
             .filter(|(v, at, key, e)| {
@@ -102,10 +127,10 @@ impl Score {
                         ));
                     }
                     if at < tick {
-                        push_rests(&mut items, at, tick - at)?;
+                        push_rests(&mut items, self.time_at(bar), at, tick - at, &spans)?;
                     }
                     if right > end {
-                        push_rests(&mut items, end, right - end)?;
+                        push_rests(&mut items, self.time_at(bar), end, right - end, &spans)?;
                     }
                 } else {
                     items.push(Item {
@@ -150,11 +175,17 @@ impl Score {
                 if item.tick < at {
                     return Err(ScoreError("La figura se solapa con otra nota"));
                 }
-                push_rests(&mut filled, at, item.tick - at)?;
+                push_rests(&mut filled, self.time_at(bar), at, item.tick - at, &spans)?;
                 at = item.tick + item.event.duration.ticks();
                 filled.push(item);
             }
-            push_rests(&mut filled, at, lengths[&bar].saturating_sub(at))?;
+            push_rests(
+                &mut filled,
+                self.time_at(bar),
+                at,
+                lengths[&bar].saturating_sub(at),
+                &spans,
+            )?;
             let target = &mut next.part_mut(id.part)?.staff_mut(id.staff)?.measures[bar];
             let old: Vec<_> = target.voice_order(voice).iter().copied().collect();
             let mut order = Vector::new();
@@ -259,11 +290,16 @@ pub(crate) fn moved_pitches(
     )
 }
 
-fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), ScoreError> {
-    let mut at = start;
-    for duration in notatable(ticks)? {
+fn push_rests(
+    items: &mut Vec<Item>,
+    time: TimeSignature,
+    start: u32,
+    ticks: u32,
+    spans: &[TupletSpan],
+) -> Result<(), ScoreError> {
+    for (tick, duration) in crate::rhythm::rests_for_gap(time, start, ticks, spans)? {
         items.push(Item {
-            tick: at,
+            tick,
             id: None,
             event: Event {
                 pitches: Pitches::default(),
@@ -271,46 +307,15 @@ fn push_rests(items: &mut Vec<Item>, start: u16, ticks: u16) -> Result<(), Score
                 notation: Notation::default(),
             },
         });
-        at += duration.ticks();
     }
     Ok(())
 }
 
 /// Minimal rhythmic spelling in the same order used for generated rests.
-pub(crate) fn notatable(ticks: u16) -> Result<Vec<Duration>, ScoreError> {
-    if ticks == 0 {
-        return Ok(Vec::new());
-    }
-    let mut values: Vec<_> = Duration::ALL
-        .into_iter()
-        .flat_map(|d| [d, d.with_dotted(true), d.with_triplet(true)])
-        .collect();
-    values.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-    values.dedup_by_key(|d| d.ticks());
-    let mut best = vec![None; usize::from(ticks) + 1];
-    best[0] = Some((0usize, Duration::Quarter));
-    for n in 1..=ticks {
-        for &duration in &values {
-            if duration.ticks() <= n
-                && let Some((count, _)) = best[usize::from(n - duration.ticks())]
-            {
-                let at = &mut best[usize::from(n)];
-                if at.is_none_or(|(old, _)| count + 1 < old) {
-                    *at = Some((count + 1, duration));
-                }
-            }
-        }
-    }
-    let mut remaining = ticks;
-    let mut durations = Vec::new();
-    while remaining > 0 {
-        let (_, duration) = best[usize::from(remaining)].ok_or(ScoreError(
-            "Ese desplazamiento crea un silencio que todavía no se puede representar",
-        ))?;
-        durations.push(duration);
-        remaining -= duration.ticks();
-    }
-    Ok(durations)
+pub(crate) fn notatable(ticks: u32) -> Result<Vec<Duration>, ScoreError> {
+    crate::Palette::modified().fewest(ticks).ok_or(ScoreError(
+        "Ese desplazamiento crea un silencio que todavía no se puede representar",
+    ))
 }
 
 #[cfg(test)]

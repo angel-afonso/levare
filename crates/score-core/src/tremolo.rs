@@ -38,11 +38,12 @@ impl Tremolo {
             Self::Three => "\u{e222}",
         }
     }
-    pub const fn repetition_ticks(self) -> u16 {
+    /// An eighth, sixteenth or thirty-second for one, two or three strokes.
+    pub const fn repetition_ticks(self) -> u32 {
         match self {
-            Self::One => 24,
-            Self::Two => 12,
-            Self::Three => 6,
+            Self::One => crate::TICKS_PER_WHOLE / 8,
+            Self::Two => crate::TICKS_PER_WHOLE / 16,
+            Self::Three => crate::TICKS_PER_WHOLE / 32,
         }
     }
 }

@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 use std::{fmt, sync::Arc};
 
+mod bar_repeat;
 mod breaks;
+mod numbering;
+pub use numbering::{BarNumbers, Numbering, PageNumbers};
+mod page_setup;
+pub use page_setup::{Margins, PageSetup, Paper, STAFF_SIZES};
 mod rehearsal;
 pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;
@@ -20,6 +25,8 @@ mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
 mod tremolo;
 pub use tremolo::Tremolo;
+mod appearance;
+pub use appearance::{Beam, Notehead};
 mod grace;
 pub use grace::{Grace, GraceKind, MAX_GRACE_NOTES};
 mod text;
@@ -32,7 +39,8 @@ mod harmonics;
 pub use harmonics::Harmonic;
 mod expression;
 pub use expression::{
-    Arpeggio, Articulation, Connection, ConnectionKind, Dynamic, Notation, PlayingTechnique,
+    Arpeggio, Articulation, Connection, ConnectionKind, Dynamic, Notation, Ornament, Pause,
+    PlayingTechnique,
 };
 mod piano_arpeggio;
 pub use piano_arpeggio::{ArpeggioMark, PianoArpeggio};
@@ -64,13 +72,19 @@ pub use voice::Voice;
 mod divisi;
 pub use divisi::{DivisiPoint, Division};
 mod pitches;
+mod rhythm;
+pub use rhythm::{Palette, rests_by_beat};
+mod tuplet;
+pub use tuplet::TupletGroup;
 mod signatures;
 pub use pitches::{MAX_CHORD_NOTES, Pitches};
 
 // Bounded ensemble size; playback assigns independent channels for every part.
 pub const MAX_PARTS: usize = 48;
 pub const MAX_STAVES: usize = MAX_PARTS * 2;
-pub const MAX_SOUNDING_NOTES: usize = MAX_STAVES * MAX_CHORD_NOTES * 2;
+/// Playback plays each voice of each staff on its own track.
+pub const MAX_TRACKS: usize = MAX_STAVES * Voice::ALL.len();
+pub const MAX_SOUNDING_NOTES: usize = MAX_TRACKS * MAX_CHORD_NOTES;
 
 /// Identity within a part. Piano hands keep separate event stores and cursors.
 #[derive(
@@ -142,30 +156,52 @@ impl Step {
 /// Explicit notation. An absent sign follows the score's key signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Accidental {
+    DoubleFlat,
     Flat,
     Natural,
     Sharp,
+    DoubleSharp,
 }
 impl Accidental {
+    /// Every sign, from the lowest to the highest.
+    pub const ALL: [Self; 5] = [
+        Self::DoubleFlat,
+        Self::Flat,
+        Self::Natural,
+        Self::Sharp,
+        Self::DoubleSharp,
+    ];
     pub fn semitones(self) -> i8 {
         match self {
+            Self::DoubleFlat => -2,
             Self::Flat => -1,
             Self::Natural => 0,
             Self::Sharp => 1,
+            Self::DoubleSharp => 2,
         }
+    }
+    /// The sign that alters a note by `semitones`, from −2 to 2.
+    pub fn from_semitones(semitones: i8) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|sign| sign.semitones() == semitones)
     }
     pub fn symbol(self) -> &'static str {
         match self {
+            Self::DoubleFlat => "𝄫",
             Self::Flat => "♭",
             Self::Natural => "♮",
             Self::Sharp => "♯",
+            Self::DoubleSharp => "𝄪",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
+            Self::DoubleFlat => "Doble bemol",
             Self::Flat => "Bemol",
             Self::Natural => "Becuadro",
             Self::Sharp => "Sostenido",
+            Self::DoubleSharp => "Doble sostenido",
         }
     }
 }
@@ -236,7 +272,7 @@ impl fmt::Display for Pitch {
 }
 
 mod duration;
-pub use duration::{Duration, NoteValue, TICKS_PER_QUARTER, TICKS_PER_WHOLE};
+pub use duration::{Duration, NoteValue, TICKS_PER_QUARTER, TICKS_PER_WHOLE, Tuplet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeSignature {
@@ -253,8 +289,8 @@ impl Default for TimeSignature {
     }
 }
 impl TimeSignature {
-    pub fn capacity(self) -> u16 {
-        u16::from(self.numerator) * TICKS_PER_WHOLE / u16::from(self.denominator.max(1))
+    pub fn capacity(self) -> u32 {
+        u32::from(self.numerator) * TICKS_PER_WHOLE / u32::from(self.denominator.max(1))
     }
     pub fn is_valid(self) -> bool {
         (1..=16).contains(&self.numerator) && [1, 2, 4, 8, 16].contains(&self.denominator)
@@ -275,6 +311,13 @@ pub struct Measure {
     order: Vector<EventId>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     second_order: Vector<EventId>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    third_order: Vector<EventId>,
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    fourth_order: Vector<EventId>,
+    /// An empty bar marked with % plays the bar before it again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    repeat: bool,
 }
 
 impl Default for Measure {
@@ -283,6 +326,9 @@ impl Default for Measure {
             events: Arc::new(SlotMap::with_key()),
             order: Vector::new(),
             second_order: Vector::new(),
+            third_order: Vector::new(),
+            fourth_order: Vector::new(),
+            repeat: false,
         }
     }
 }
@@ -294,30 +340,39 @@ impl PartialEq for Measure {
         if Arc::ptr_eq(&self.events, &other.events)
             && self.order == other.order
             && self.second_order == other.second_order
+            && self.third_order == other.third_order
+            && self.fourth_order == other.fourth_order
+            && self.repeat == other.repeat
         {
             return true;
         }
-        Voice::ALL
-            .into_iter()
-            .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
+        self.repeat == other.repeat
+            && Voice::ALL
+                .into_iter()
+                .all(|voice| self.voice_iter(voice).eq(other.voice_iter(voice)))
     }
 }
 impl Eq for Measure {}
 
 impl Measure {
     pub fn iter(&self) -> impl Iterator<Item = (EventId, &Event)> {
-        self.order
-            .iter()
-            .chain(self.second_order.iter())
+        Voice::ALL
+            .into_iter()
+            .flat_map(move |voice| self.voice_order(voice).iter())
             .filter_map(|id| self.events.get(*id).map(|event| (*id, event)))
     }
     pub fn len(&self) -> usize {
-        self.order.len() + self.second_order.len()
+        Voice::ALL
+            .into_iter()
+            .map(|voice| self.voice_len(voice))
+            .sum()
     }
     pub fn is_empty(&self) -> bool {
-        self.order.is_empty() && self.second_order.is_empty()
+        Voice::ALL
+            .into_iter()
+            .all(|voice| self.voice_order(voice).is_empty())
     }
-    pub fn used_ticks(&self) -> u16 {
+    pub fn used_ticks(&self) -> u32 {
         Voice::ALL
             .into_iter()
             .map(|v| self.voice_ticks(v))
@@ -373,7 +428,7 @@ pub struct Part {
     #[serde(default, skip_serializing_if = "is_false")]
     divided: bool,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    divisi_changes: std::collections::BTreeMap<usize, std::collections::BTreeMap<u16, bool>>,
+    divisi_changes: std::collections::BTreeMap<usize, std::collections::BTreeMap<u32, bool>>,
     staves: Vector<Staff>,
 }
 fn is_false(value: &bool) -> bool {
@@ -448,11 +503,13 @@ impl Part {
         self.entry_octave_at(staff, 0)
     }
     pub fn entry_octave_at(&self, staff: StaffId, bar: usize) -> u8 {
-        if matches!(self.clef_at(staff, bar), Clef::Bass | Clef::Tenor) {
+        let clef = self.clef_at(staff, bar);
+        let octave = if matches!(clef.base(), Clef::Bass | Clef::Tenor) {
             3
         } else {
             4
-        }
+        };
+        (octave + clef.octave()) as u8
     }
 }
 
@@ -478,6 +535,10 @@ pub struct Score {
     bar_offsets: std::collections::BTreeMap<usize, BarOffsets>,
     #[serde(default, skip_serializing_if = "rehearsal_style_is_default")]
     rehearsal_style: RehearsalStyle,
+    #[serde(default, skip_serializing_if = "Numbering::is_default")]
+    numbering: Numbering,
+    #[serde(default, skip_serializing_if = "PageSetup::is_default")]
+    page_setup: PageSetup,
     #[serde(default)]
     key_signature: KeySignature,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -515,6 +576,8 @@ impl Default for Score {
             breaks: Default::default(),
             bar_offsets: Default::default(),
             rehearsal_style: Default::default(),
+            numbering: Default::default(),
+            page_setup: Default::default(),
             key_signature: KeySignature::default(),
             time_changes: Default::default(),
             key_changes: Default::default(),
@@ -917,6 +980,11 @@ impl Score {
             }
             mark.validate()?;
         }
+        if matches!(self.numbering.bars, BarNumbers::Every(step) if step < 2) {
+            return Err(ScoreError("Numeración de compases inválida"));
+        }
+        self.page_setup.validate()?;
+        self.validate_bar_repeats()?;
         self.validate_form()?;
         self.validate_rehearsals()?;
         self.validate_breaks()?;
@@ -945,12 +1013,12 @@ impl Score {
                 }
                 for (index, measure) in staff.measures.iter().enumerate() {
                     if measure.len() != measure.events.len()
-                        || measure.len() > MAX_EVENTS_PER_MEASURE * 2
+                        || measure.len() > MAX_EVENTS_PER_MEASURE * Voice::ALL.len()
                     {
                         return Err(ScoreError("Índice de notas inválido"));
                     }
                     let mut seen = std::collections::HashSet::new();
-                    let mut ticks = [0u32; 2];
+                    let mut ticks = [0u32; Voice::ALL.len()];
                     for (voice, id) in Voice::ALL
                         .into_iter()
                         .flat_map(|v| measure.voice_order(v).iter().map(move |id| (v, id)))
@@ -976,13 +1044,18 @@ impl Score {
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
                         }
+                        if event.pitches.is_empty()
+                            && (event.notation.notehead.is_some() || event.notation.beam.is_some())
+                        {
+                            return Err(ScoreError("Cabeza o barra de corchea en silencio"));
+                        }
                         Self::validate_grace(event)?;
                         Self::validate_lyrics(event)?;
-                        ticks[usize::from(voice.number() - 1)] += u32::from(event.duration.ticks());
+                        ticks[usize::from(voice.number() - 1)] += event.duration.ticks();
                     }
                     if ticks
                         .into_iter()
-                        .any(|ticks| ticks > u32::from(self.time_at(index).capacity()))
+                        .any(|ticks| ticks > self.time_at(index).capacity())
                     {
                         return Err(ScoreError("Compás excedido"));
                     }
@@ -1039,6 +1112,18 @@ mod tests {
             .with_accidental(Some(Accidental::Flat));
         assert_eq!(sharp.to_string(), "C♯4");
         assert_eq!(flat.alteration(), -1);
+        for sign in Accidental::ALL {
+            assert_eq!(Accidental::from_semitones(sign.semitones()), Some(sign));
+        }
+        assert_eq!(Accidental::from_semitones(3), None);
+        let double = flat.with_accidental(Some(Accidental::DoubleSharp));
+        assert_eq!(double.alteration(), 2);
+        assert_eq!(double.to_string(), "D𝄪4");
+        assert_eq!(
+            flat.with_accidental(Some(Accidental::DoubleFlat))
+                .alteration(),
+            -2
+        );
         assert_eq!(sharp.shift(7).unwrap().to_string(), "C♯5");
         let pitches = Pitches::new(&[sharp, flat]).unwrap();
         assert!(pitches.with(Pitch::new(Step::C, 4).unwrap()).is_err());

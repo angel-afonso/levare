@@ -143,7 +143,16 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("5", id::HALF),
     ("6", id::WHOLE),
     (".", id::DOT),
+    // Sibelius' tuplets; the sixty-fourth and the double dot are on its
+    // second keypad layout, which Levare does not have.
+    ("secondary-2", id::DUPLET),
     ("secondary-3", id::TRIPLET),
+    ("secondary-4", id::QUADRUPLET),
+    ("secondary-5", id::QUINTUPLET),
+    ("secondary-6", id::SEXTUPLET),
+    ("secondary-7", id::SEPTUPLET),
+    ("secondary-8", id::OCTUPLET),
+    ("secondary-9", id::NONUPLET),
 
     ("7", id::NATURAL),
     ("8", id::SHARP),
@@ -208,12 +217,12 @@ const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
 /// macOS keeps Sibelius' ⌥⌘ combinations.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_MACOS: &[(&str, CommandId)] = &[
-    ("alt-secondary-1", id::TAB_NOTE_INPUT),
-    ("alt-secondary-2", id::TAB_NOTATION),
-    ("alt-secondary-3", id::TAB_DYNAMICS),
+    ("alt-secondary-1", id::TAB_HOME),
+    ("alt-secondary-2", id::TAB_NOTE_INPUT),
+    ("alt-secondary-3", id::TAB_NOTATION),
     ("alt-secondary-4", id::TAB_TEXT),
-    ("alt-secondary-5", id::TAB_HOME),
-    ("alt-secondary-6", id::TAB_PLAYBACK),
+    ("alt-secondary-5", id::TAB_PLAYBACK),
+    ("alt-secondary-6", id::TAB_LAYOUT),
     ("alt-secondary-7", id::TAB_REVIEW),
     ("alt-secondary-8", id::TAB_VIEW),
     ("alt-secondary-t", id::TEMPO_TEXT),
@@ -227,12 +236,12 @@ const SIBELIUS_LAPTOP_MACOS: &[(&str, CommandId)] = &[
 /// switches workspaces. Ctrl+Mayús takes its place; full screen is F11.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_WINDOWS: &[(&str, CommandId)] = &[
-    ("shift-secondary-1", id::TAB_NOTE_INPUT),
-    ("shift-secondary-2", id::TAB_NOTATION),
-    ("shift-secondary-3", id::TAB_DYNAMICS),
+    ("shift-secondary-1", id::TAB_HOME),
+    ("shift-secondary-2", id::TAB_NOTE_INPUT),
+    ("shift-secondary-3", id::TAB_NOTATION),
     ("shift-secondary-4", id::TAB_TEXT),
-    ("shift-secondary-5", id::TAB_HOME),
-    ("shift-secondary-6", id::TAB_PLAYBACK),
+    ("shift-secondary-5", id::TAB_PLAYBACK),
+    ("shift-secondary-6", id::TAB_LAYOUT),
     ("shift-secondary-7", id::TAB_REVIEW),
     ("shift-secondary-8", id::TAB_VIEW),
     ("shift-secondary-t", id::TEMPO_TEXT),
@@ -245,12 +254,12 @@ const SIBELIUS_LAPTOP_WINDOWS: &[(&str, CommandId)] = &[
 /// window menu or the launcher, so it never reaches the app.
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP_LINUX: &[(&str, CommandId)] = &[
-    ("shift-secondary-1", id::TAB_NOTE_INPUT),
-    ("shift-secondary-2", id::TAB_NOTATION),
-    ("shift-secondary-3", id::TAB_DYNAMICS),
+    ("shift-secondary-1", id::TAB_HOME),
+    ("shift-secondary-2", id::TAB_NOTE_INPUT),
+    ("shift-secondary-3", id::TAB_NOTATION),
     ("shift-secondary-4", id::TAB_TEXT),
-    ("shift-secondary-5", id::TAB_HOME),
-    ("shift-secondary-6", id::TAB_PLAYBACK),
+    ("shift-secondary-5", id::TAB_PLAYBACK),
+    ("shift-secondary-6", id::TAB_LAYOUT),
     ("shift-secondary-7", id::TAB_REVIEW),
     ("shift-secondary-8", id::TAB_VIEW),
     ("shift-secondary-t", id::TEMPO_TEXT),
@@ -258,3 +267,46 @@ const SIBELIUS_LAPTOP_LINUX: &[(&str, CommandId)] = &[
     ("alt-shift-space", id::REPLAY),
     ("f11", id::FULL_SCREEN),
 ];
+
+#[cfg(test)]
+mod tuplet_tests {
+    use super::*;
+    use crate::Registry;
+
+    #[test]
+    fn tuplets_follow_sibelius_on_every_platform() {
+        let registry = Registry::builtin();
+        let tuplets = [
+            (id::DUPLET, 2),
+            (id::TRIPLET, 3),
+            (id::QUADRUPLET, 4),
+            (id::QUINTUPLET, 5),
+            (id::SEXTUPLET, 6),
+            (id::SEPTUPLET, 7),
+            (id::OCTUPLET, 8),
+            (id::NONUPLET, 9),
+        ];
+        for platform in [Platform::MacOs, Platform::Windows, Platform::Linux] {
+            let profile = Profile::sibelius_laptop_for(platform);
+            for (command, actual) in tuplets {
+                let key = KeySequence::parse(&format!("secondary-{actual}")).unwrap();
+                assert_eq!(
+                    profile.keys_for(command),
+                    [key],
+                    "{command} on {platform:?}"
+                );
+            }
+            // Sibelius keeps these on its second keypad layout.
+            for command in [id::SIXTY_FOURTH, id::DOUBLE_DOT, id::OTHER_TUPLET] {
+                assert!(profile.keys_for(command).is_empty(), "{command}");
+            }
+        }
+        for command in tuplets.map(|(command, _)| command).into_iter().chain([
+            id::SIXTY_FOURTH,
+            id::DOUBLE_DOT,
+            id::OTHER_TUPLET,
+        ]) {
+            assert!(registry.get(command.as_str()).is_some(), "{command}");
+        }
+    }
+}

@@ -15,6 +15,8 @@ pub enum EditorKind {
     Clef,
     Key,
     Time,
+    /// Otro grupillo: any ratio for the selection or the next notes.
+    Tuplet,
     Tempo,
     Text,
     Lyric,
@@ -236,7 +238,7 @@ fn note_summary(score: &Score, editor: &Editor, id: ElementId) -> Option<NoteSum
     let onset = score
         .event_tick(id)
         .map_or(0, |tick| tick - score.measure_start_tick(id.measure));
-    let beat_ticks = f32::from(TICKS_PER_WHOLE) / f32::from(score.time_at(id.measure).denominator);
+    let beat_ticks = TICKS_PER_WHOLE as f32 / f32::from(score.time_at(id.measure).denominator);
     Some(NoteSummary {
         part: score.part_name(id.part),
         bar: id.measure + 1,
@@ -287,9 +289,11 @@ fn passage_summary(score: &Score, ids: &[ElementId]) -> PassageSummary {
 /// Point families in the order the rows list them: articulation first, then
 /// dynamics and techniques. Graces, texts, syllables and chord symbols follow
 /// the connections.
-const POINT_FAMILIES: [MarkFamily; 8] = [
+const POINT_FAMILIES: [MarkFamily; 10] = [
     MarkFamily::Articulation,
+    MarkFamily::Ornament,
     MarkFamily::Fermata,
+    MarkFamily::Pause,
     MarkFamily::Tremolo,
     MarkFamily::Arpeggio,
     MarkFamily::Harmonic,

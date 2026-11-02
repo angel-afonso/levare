@@ -300,7 +300,7 @@ pub(super) fn piano_arpeggios(
                 for glyph in bar.content.glyphs.iter().filter(|g| {
                     g.element == Some(id)
                         && g.text.chars().next().is_some_and(
-                            |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e262}'),
+                            |c| matches!(c,'\u{e0a2}'..='\u{e0a4}'|'\u{e1d2}'..='\u{e1db}'|'\u{e260}'..='\u{e264}'),
                         )
                 }) {
                     left = left.min(
@@ -337,8 +337,8 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         )
         .fold(20f32, f32::min);
     let x = heads.first().map_or(0., |head| head.center.x);
-    let poly = result.events.iter().any(|head| head.voice == Voice::Two);
-    let below = poly && heads.first().is_some_and(|head| head.voice == Voice::Two);
+    let poly = result.events.iter().any(|head| head.voice != Voice::One);
+    let below = poly && heads.first().is_some_and(|head| head.voice.is_lower());
     let down = if poly {
         below
     } else {
@@ -420,15 +420,46 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             result.top = result.top.min(y - 16.);
         }
     }
-    // The fermata sits outside the articulation, centered over the note.
-    let fermata_y = if event.notation.articulation.is_some() {
+    // An ornament sits outside the articulation, the fermata outside both,
+    // each centered over the note.
+    let ornament_y = if event.notation.articulation.is_some() {
         articulation_y + if below { 18. } else { -14. }
+    } else if below {
+        (52f32).max(bottom + 12.)
     } else {
+        (-12f32).min(top - 12.)
+    };
+    if let Some(mark) = event.notation.ornament {
+        result.marks.push(MarkBox {
+            mark: MarkRef::Ornament(id),
+            glyph: Some(result.glyphs.len()),
+            // Bravura's mordents are two spaces wide and one high; the turn
+            // is a little narrower.
+            center: Point {
+                x,
+                y: ornament_y + if below { 5. } else { -5. },
+            },
+            half: (11., 8.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: mark.glyph().into(),
+            position: Point {
+                x: x - 10.,
+                y: ornament_y,
+            },
+            element: Some(id),
+        });
         if below {
-            (52f32).max(bottom + 12.)
+            result.bottom = result.bottom.max(ornament_y + 16.);
         } else {
-            (-12f32).min(top - 12.)
+            result.top = result.top.min(ornament_y - 16.);
         }
+    }
+    let fermata_y = if event.notation.ornament.is_some() {
+        ornament_y + if below { 16. } else { -14. }
+    } else {
+        ornament_y
     };
     if event.notation.fermata {
         let kind = score_core::MarkKind::Fermata;
@@ -462,6 +493,47 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             result.top = result.top.min(fermata_y - 18.);
         }
     }
+    // A breath or caesura follows the note over the staff, between it and
+    // the next one.
+    if let Some(mark) = event.notation.pause {
+        // The comma floats just above the top line; the caesura's strokes
+        // cross it.
+        let y = if mark == score_core::Pause::Caesura {
+            8.
+        } else {
+            -4.
+        };
+        let right = x + 16.;
+        result.marks.push(MarkBox {
+            mark: MarkRef::Pause(id),
+            glyph: Some(result.glyphs.len()),
+            center: Point {
+                x: right + 6.,
+                y: y - 8.,
+            },
+            half: (8., 10.),
+        });
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: mark.glyph().into(),
+            position: Point { x: right, y },
+            element: Some(id),
+        });
+        result.top = result.top.min(y - 20.);
+    }
+    // Words above the staff clear the ornament and the fermata.
+    let outer = |y: f32, gap: f32| {
+        let y = if event.notation.ornament.is_some() && !below {
+            y.min(ornament_y - gap)
+        } else {
+            y
+        };
+        if event.notation.fermata && !below {
+            y.min(fermata_y - gap)
+        } else {
+            y
+        }
+    };
     if let Some(mark) = event.notation.division {
         let y = (-24f32).min(if poly { staff_top } else { top } - 24.)
             - if event.notation.technique.is_some() {
@@ -469,11 +541,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             } else {
                 0.
             };
-        let y = if event.notation.fermata && !below {
-            y.min(fermata_y - 24.)
-        } else {
-            y
-        };
+        let y = outer(y, 24.);
         let width = mark.label().chars().count() as f32 * 7.;
         result.marks.push(MarkBox {
             mark: MarkRef::Division(id),
@@ -500,11 +568,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         } else {
             y
         };
-        let y = if event.notation.fermata {
-            y.min(fermata_y - 22.)
-        } else {
-            y
-        };
+        let y = outer(y, 22.);
         let width = mark.label().chars().count() as f32 * 7.;
         result.marks.push(MarkBox {
             mark: MarkRef::Technique(id),
@@ -531,11 +595,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
             } else {
                 0.
             };
-        let y = if event.notation.fermata {
-            y.min(fermata_y - 22.)
-        } else {
-            y
-        };
+        let y = outer(y, 22.);
         let label = TechniqueLabel {
             text: words,
             position: Point { x: x - 5., y },
@@ -584,7 +644,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         let y = dynamic_lane;
         // Bravura's dynamic letters are up to 1.8 spaces wide; f rises 1.8
         // spaces and p descends 0.6 below the baseline.
-        let width = mark.label().chars().count() as f32 * 14.;
+        let width = mark.glyph().chars().count() as f32 * 14.;
         result.marks.push(MarkBox {
             mark: MarkRef::Dynamic(id),
             glyph: Some(result.glyphs.len()),
@@ -607,7 +667,7 @@ pub(super) fn marks(result: &mut MeasureLayout, event: score_core::Event, id: El
         let after = event
             .notation
             .dynamic
-            .map_or(0., |mark| mark.label().chars().count() as f32 * 14. + 6.);
+            .map_or(0., |mark| mark.glyph().chars().count() as f32 * 14. + 6.);
         let label = TechniqueLabel {
             text: words,
             position: Point {
@@ -731,9 +791,9 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                 .staff(c.start.staff)
                 .unwrap()
                 .measures()[c.start.measure]
-                .has_two_voices()
+                .has_several_voices()
             {
-                score.voice_of(c.start) == Some(Voice::Two)
+                score.voice_of(c.start).is_some_and(Voice::is_lower)
             } else if count > 1 {
                 a.center.y
                     >= (start_heads
@@ -796,7 +856,7 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                         .fold((f32::INFINITY, f32::NEG_INFINITY), |a, b| {
                             (a.0.min(b.0), a.1.max(b.1))
                         });
-                    if score.voice_of(c.start) == Some(Voice::Two) {
+                    if score.voice_of(c.start).is_some_and(Voice::is_lower) {
                         (bottom + 8., bottom + 8., 14.)
                     } else {
                         (top - 8., top - 8., -14.)
@@ -998,7 +1058,7 @@ pub(super) fn hairpin_y<'a>(
 pub(super) fn curve_lanes(score: &Score) -> HashMap<(PartId, StaffId, usize), (bool, bool)> {
     let mut lanes = HashMap::<_, (bool, bool)>::new();
     for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
-        let below = score.voice_of(c.start) == Some(Voice::Two);
+        let below = score.voice_of(c.start).is_some_and(Voice::is_lower);
         for index in c.start.measure..=c.end.measure {
             let lanes = lanes
                 .entry((c.start.part, c.start.staff, index))

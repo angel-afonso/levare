@@ -31,10 +31,16 @@ macro_rules! notation {
     () => {
         "\n\nNotación: una voz de un compás, con los eventos separados por espacios.\n\
 - Nota: letra de A a G en mayúscula, alteración opcional (# sostenido, b bemol, n \
-becuadro) y octava de 0 a 8; C4 es el do central: C4, F#5, Bb3, Fn4.\n\
+becuadro, ## doble sostenido, bb doble bemol) y octava de 0 a 8; C4 es el do central: \
+C4, F#5, Bb3, Fn4, F##4, Bbb3.\n\
 - Silencio: R. Acorde: alturas entre corchetes, [C4 E4 G4].\n\
-- Duración tras «:»: 1 redonda, 2 blanca, 4 negra, 8 corchea, 16 semicorchea, 32 fusa; \
-detrás, «.» para el puntillo y «t» para el tresillo: C4:4., D4:8t, E4:8.t.\n\
+- Duración tras «:»: 1 redonda, 2 blanca, 4 negra, 8 corchea, 16 semicorchea, 32 fusa, \
+64 semifusa; detrás, «.» para el puntillo («..» doble) y «t» para el tresillo: C4:4., \
+D4:8t, E4:8.t.\n\
+- Otros grupillos tras la duración: (5) cinco en el tiempo habitual (2:3, 4:3, 5:4, 6:4, \
+7:4, 8:6, 9:8), (7:8) siete en el tiempo de ocho, y (3:2/8) si cuenta en otra figura \
+que la nota: C4:16(5), D4:16(7:8), E4:4(3:2/8). Escribir la primera nota de un grupillo \
+rellena su grupo con silencios que las siguientes sustituyen.\n\
 - «~» tras la duración liga con la nota siguiente, también si está en el compás siguiente: \
 G4:2~.\n\
 - {…} tras un evento enumera sus marcas (dinámica, articulación, ligaduras); es \
@@ -68,8 +74,8 @@ de ensayo con su estilo (letras, números…) y selección actual. Úsalo primer
 partes o de las indicadas; lee solo las partes y compases que necesites. Primero da el \
 compás de tiempo, la tonalidad y el tempo en vigor y sus cambios, marcas de ensayo, \
 repeticiones, casillas y saltos; luego, bajo cada parte, una línea por compás, pentagrama y \
-voz: «c3: …», con «p2» para el segundo pentagrama y «v2» para la segunda voz cuando la \
-hay. «(vacío)» es un compás sin notas escritas. Una parte transpositora indica su armadura \
+voz: «c3: …», con «p2» para el segundo pentagrama y «v1» a «v4» para cada voz cuando \
+hay más de una. «(vacío)» es un compás sin notas escritas. Una parte transpositora indica su armadura \
 escrita.",
                 notation!()
             ),

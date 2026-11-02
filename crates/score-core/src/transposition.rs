@@ -249,12 +249,21 @@ impl Score {
 
     /// The note above for a trill on the single note at `id`, as it sounds.
     pub fn trill_upper(&self, id: ElementId) -> Option<Pitch> {
+        self.neighbour(id, 1)
+    }
+    /// The sounding note `steps` degrees of the key away from a single
+    /// note: a trill's upper note, an ornament's neighbours. Zero is the note.
+    pub fn neighbour(&self, id: ElementId, steps: i16) -> Option<Pitch> {
         let event = self.event(id)?;
         let [pitch] = event.pitches.iter().collect::<Vec<_>>()[..] else {
             return None;
         };
-        let upper = pitch.with_accidental(None).shift(1)?;
-        self.sounding_at(id, Pitches::single(Some(upper)))
+        let written = if steps == 0 {
+            pitch
+        } else {
+            pitch.with_accidental(None).shift(steps)?
+        };
+        self.sounding_at(id, Pitches::single(Some(written)))
             .ok()?
             .first()
     }

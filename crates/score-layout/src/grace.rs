@@ -7,6 +7,8 @@ use score_core::Event;
 pub const CUE: f32 = 0.66;
 const STEP: f32 = 13.;
 const ACCIDENTAL: f32 = 9.;
+/// The double flat is wider than the other signs.
+const DOUBLE_FLAT: f32 = 13.;
 const STEM: f32 = 25.;
 
 /// A glyph drawn at cue size, with the grace note it belongs to.
@@ -21,16 +23,19 @@ pub(super) fn width(event: &Event) -> f32 {
     event.notation.grace.map_or(0., |grace| {
         grace
             .notes()
-            .map(|pitch| {
-                STEP + if pitch.accidental().is_some() {
-                    ACCIDENTAL
-                } else {
-                    0.
-                }
-            })
+            .map(|pitch| STEP + sign_width(pitch))
             .sum::<f32>()
             + 4.
     })
+}
+
+/// Room a grace note's sign takes before its head.
+fn sign_width(pitch: score_core::Pitch) -> f32 {
+    match pitch.accidental() {
+        Some(score_core::Accidental::DoubleFlat) => DOUBLE_FLAT,
+        Some(_) => ACCIDENTAL,
+        None => 0.,
+    }
 }
 
 /// Engrave the grace notes of `event`, ending at `right`.
@@ -74,7 +79,7 @@ pub(super) fn engrave(
                 _ => 0xe261,
             };
             cue(result, code, x, y, index);
-            x += ACCIDENTAL;
+            x += sign_width(pitch);
         }
         cue(result, 0xe0a4, x, y, index);
         let mut ledger = |y: f32| {

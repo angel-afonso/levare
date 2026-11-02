@@ -7,15 +7,23 @@ pub enum Articulation {
     Tenuto,
     Accent,
     Marcato,
+    Staccatissimo,
 }
 impl Articulation {
-    pub const ALL: [Self; 4] = [Self::Staccato, Self::Tenuto, Self::Accent, Self::Marcato];
+    pub const ALL: [Self; 5] = [
+        Self::Staccato,
+        Self::Tenuto,
+        Self::Accent,
+        Self::Marcato,
+        Self::Staccatissimo,
+    ];
     pub const fn label(self) -> &'static str {
         match self {
             Self::Staccato => "Staccato",
             Self::Tenuto => "Tenuto",
             Self::Accent => "Acento",
             Self::Marcato => "Marcato",
+            Self::Staccatissimo => "Staccatissimo",
         }
     }
     pub const fn symbol(self) -> &'static str {
@@ -24,6 +32,7 @@ impl Articulation {
             Self::Tenuto => "—",
             Self::Accent => ">",
             Self::Marcato => "∧",
+            Self::Staccatissimo => "▾",
         }
     }
     pub const fn glyph(self) -> &'static str {
@@ -32,7 +41,12 @@ impl Articulation {
             Self::Tenuto => "\u{e4a4}",
             Self::Accent => "\u{e4a0}",
             Self::Marcato => "\u{e4ac}",
+            Self::Staccatissimo => "\u{e4a6}",
         }
+    }
+    /// Played detached and short: the banks' short recordings serve both.
+    pub const fn is_short(self) -> bool {
+        matches!(self, Self::Staccato | Self::Staccatissimo)
     }
     pub const fn glyph_below(self) -> &'static str {
         match self {
@@ -40,6 +54,74 @@ impl Articulation {
             Self::Tenuto => "\u{e4a5}",
             Self::Accent => "\u{e4a1}",
             Self::Marcato => "\u{e4ad}",
+            Self::Staccatissimo => "\u{e4a7}",
+        }
+    }
+}
+/// A short ornament over the note. The trill, which lasts, is a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Ornament {
+    /// The note, the one below and the note again.
+    Mordent,
+    /// The note, the one above and the note again.
+    InvertedMordent,
+    /// The note above, the note, the one below and the note.
+    Turn,
+}
+impl Ornament {
+    pub const ALL: [Self; 3] = [Self::Mordent, Self::InvertedMordent, Self::Turn];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Mordent => "Mordente",
+            Self::InvertedMordent => "Mordente superior",
+            Self::Turn => "Grupeto",
+        }
+    }
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Mordent => "\u{e56d}",
+            Self::InvertedMordent => "\u{e56c}",
+            Self::Turn => "\u{e567}",
+        }
+    }
+    /// The neighbours played before the note settles, in diatonic steps
+    /// from it.
+    pub const fn neighbours(self) -> &'static [i16] {
+        match self {
+            Self::Mordent => &[0, -1],
+            Self::InvertedMordent => &[0, 1],
+            Self::Turn => &[1, 0, -1],
+        }
+    }
+}
+/// A break in the sound after the note, written over the staff to its right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Pause {
+    /// A breath: the note is cut a little short.
+    Breath,
+    /// A caesura: the note is cut short, a clear break.
+    Caesura,
+}
+impl Pause {
+    pub const ALL: [Self; 2] = [Self::Breath, Self::Caesura];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Breath => "Respiración",
+            Self::Caesura => "Cesura",
+        }
+    }
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Breath => "\u{e4ce}",
+            Self::Caesura => "\u{e4d1}",
+        }
+    }
+    /// The share of the note's written length that stays silent before the
+    /// next one.
+    pub const fn silence(self) -> (u32, u32) {
+        match self {
+            Self::Breath => (1, 4),
+            Self::Caesura => (1, 2),
         }
     }
 }
@@ -53,9 +135,36 @@ pub enum Dynamic {
     F,
     Ff,
     Fff,
+    /// Sforzato: a strong accent on the note; the level goes on as before.
+    Sfz,
+    /// Rinforzando: a reinforced note; the level goes on as before.
+    Rfz,
+    /// Forte, then piano at once.
+    Fp,
+    /// Sforzando, then piano at once.
+    Sfp,
+    /// Nothing: where a hairpin starts from or fades to silence.
+    Niente,
 }
 impl Dynamic {
-    pub const ALL: [Self; 8] = [
+    /// Every dynamic, in the order the ribbon and menus list them.
+    pub const ALL: [Self; 13] = [
+        Self::Ppp,
+        Self::Pp,
+        Self::P,
+        Self::Mp,
+        Self::Mf,
+        Self::F,
+        Self::Ff,
+        Self::Fff,
+        Self::Sfz,
+        Self::Rfz,
+        Self::Fp,
+        Self::Sfp,
+        Self::Niente,
+    ];
+    /// The levels that last until the next dynamic, from softest to loudest.
+    pub const LEVELS: [Self; 8] = [
         Self::Ppp,
         Self::Pp,
         Self::P,
@@ -75,9 +184,19 @@ impl Dynamic {
             Self::F => "f",
             Self::Ff => "ff",
             Self::Fff => "fff",
+            Self::Sfz => "sfz",
+            Self::Rfz => "rfz",
+            Self::Fp => "fp",
+            Self::Sfp => "sfp",
+            Self::Niente => "niente",
         }
     }
+    /// The attack's level on the MIDI velocity scale when the mark stands
+    /// alone, after mezzoforte.
     pub fn velocity(self) -> u8 {
+        self.attack(Self::Mf.velocity_of_level())
+    }
+    fn velocity_of_level(self) -> u8 {
         match self {
             Self::Ppp => 32,
             Self::Pp => 44,
@@ -87,6 +206,32 @@ impl Dynamic {
             Self::F => 100,
             Self::Ff => 112,
             Self::Fff => 124,
+            Self::Sfz | Self::Rfz | Self::Fp | Self::Sfp => 0,
+            // Silence on the expression scale; an attack still needs 1.
+            Self::Niente => 1,
+        }
+    }
+    /// The level the music keeps after this mark, from `before`, the level
+    /// it had: a level replaces it, an accent leaves it, fp and sfp fall to
+    /// piano.
+    pub fn after(self, before: u8) -> u8 {
+        match self {
+            Self::Sfz | Self::Rfz => before,
+            Self::Fp | Self::Sfp => Self::P.velocity_of_level(),
+            level => level.velocity_of_level(),
+        }
+    }
+    /// The level of the marked note's attack, from `before`.
+    pub fn attack(self, before: u8) -> u8 {
+        match self {
+            Self::Sfz => before
+                .saturating_add(24)
+                .max(Self::F.velocity_of_level())
+                .min(127),
+            Self::Rfz => before.saturating_add(16).min(127),
+            Self::Fp => Self::F.velocity_of_level(),
+            Self::Sfp => Self::Ff.velocity_of_level(),
+            level => level.velocity_of_level(),
         }
     }
     pub const fn glyph(self) -> &'static str {
@@ -99,6 +244,11 @@ impl Dynamic {
             Self::F => "\u{e522}",
             Self::Ff => "\u{e522}\u{e522}",
             Self::Fff => "\u{e522}\u{e522}\u{e522}",
+            Self::Sfz => "\u{e524}\u{e522}\u{e525}",
+            Self::Rfz => "\u{e523}\u{e522}\u{e525}",
+            Self::Fp => "\u{e522}\u{e520}",
+            Self::Sfp => "\u{e524}\u{e522}\u{e520}",
+            Self::Niente => "\u{e526}",
         }
     }
 }
@@ -165,6 +315,17 @@ pub struct Notation {
     pub dynamic: Option<Dynamic>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tremolo: Option<Tremolo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<Ornament>,
+    /// A breath or caesura after the note or rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause: Option<Pause>,
+    /// Drawn with another notehead; sounds the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notehead: Option<Notehead>,
+    /// Overrides the automatic beaming at this note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beam: Option<Beam>,
     /// Hold the note or rest; written over it, independent of articulation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fermata: bool,
@@ -285,11 +446,11 @@ impl Score {
                 .voice_ticks(voice);
             let total = totals
                 .entry((id.part, id.staff, id.measure, voice))
-                .or_insert(i32::from(used));
-            *total += i32::from(duration.ticks()) - i32::from(old.ticks());
+                .or_insert(i64::from(used));
+            *total += i64::from(duration.ticks()) - i64::from(old.ticks());
         }
         for ((_, _, bar, _), used) in totals {
-            if used > i32::from(self.time_at(bar).capacity()) {
+            if used > i64::from(self.time_at(bar).capacity()) {
                 return Err(ScoreError("La duración nueva no cabe en el compás"));
             }
         }
@@ -720,6 +881,40 @@ impl Score {
         notation.dynamic = value;
         if value.is_none() {
             notation.offsets.dynamic = None;
+        }
+        Ok(())
+    }
+    pub fn set_ornament(
+        &mut self,
+        id: ElementId,
+        value: Option<Ornament>,
+    ) -> Result<(), ScoreError> {
+        let event = self
+            .event(id)
+            .ok_or(ScoreError("Selecciona una nota o acorde"))?;
+        if event.pitches.is_empty() {
+            return Err(ScoreError("Un silencio no admite ornamentos"));
+        }
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
+        notation.ornament = value;
+        if value.is_none() {
+            notation.offsets.ornament = None;
+        }
+        Ok(())
+    }
+    pub fn set_pause(&mut self, id: ElementId, value: Option<Pause>) -> Result<(), ScoreError> {
+        self.event(id)
+            .ok_or(ScoreError("Selecciona una nota o silencio"))?;
+        let notation = &mut Arc::make_mut(
+            &mut self.part_mut(id.part)?.staff_mut(id.staff)?.measures[id.measure].events,
+        )[id.event]
+            .notation;
+        notation.pause = value;
+        if value.is_none() {
+            notation.offsets.pause = None;
         }
         Ok(())
     }

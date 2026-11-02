@@ -3,6 +3,9 @@ use score_core::{
     Articulation, Connection, ConnectionKind, Dynamic, KeyMode, KeySignature, Notation, Pitches,
     Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -76,7 +79,7 @@ fn musical_copy_preserves_chords_marks_internal_links_and_implicit_bar_gaps() {
     assert_eq!(e.score(), &before);
     assert_eq!(
         clip.events.iter().map(|e| e.offset).collect::<Vec<_>>(),
-        [0, 48, 192]
+        [0, u64::from(Q), u64::from(4 * Q)]
     );
     assert_eq!(clip.links.len(), 2);
     e.select_staff(StaffId::Lower);
@@ -107,7 +110,7 @@ fn musical_copy_preserves_chords_marks_internal_links_and_implicit_bar_gaps() {
         .unwrap()
         .staff(StaffId::Lower)
         .unwrap();
-    assert_eq!(lower.measures()[0].used_ticks(), 192);
+    assert_eq!(lower.measures()[0].used_ticks(), 4 * Q);
     assert!(
         lower.measures()[0]
             .iter()
@@ -125,6 +128,10 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
     event.notation = Notation {
         harmonic: None,
         tremolo: None,
+        ornament: None,
+        pause: None,
+        notehead: None,
+        beam: None,
         division: None,
         arpeggio: None,
         technique: None,
@@ -278,7 +285,7 @@ fn clipboard_carries_inherited_technique_splits_once_and_rejects_incompatible_de
     e.select(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.initial_technique, T::Pizzicato);
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     assert_eq!(clip.events[0].event.notation.technique, None);
     let mut target = Score::default();
     let violin = target.add_part(Instrument::Violin).unwrap();
@@ -330,7 +337,7 @@ fn hairpin_paste_remaps_end_to_first_split_note_and_carries_completed_levels() {
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.links.len(), 1);
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     let mut dst = Editor::default();
     dst.execute(Command::Insert(note(Step::G, Duration::Half)))
         .unwrap();
@@ -342,7 +349,7 @@ fn hairpin_paste_remaps_end_to_first_split_note_and_carries_completed_levels() {
         .find(|c| c.kind.is_hairpin())
         .unwrap();
     let tick = dst.score().event_tick(copied.end).unwrap();
-    assert_eq!(tick, 144);
+    assert_eq!(tick, u64::from(3 * Q));
     assert_eq!(copied.end.measure, 0); // The half note is split here and into bar 2.
     dst.score().validate().unwrap();
     e.select(c);
@@ -371,7 +378,7 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     e.select(a);
     e.extend_selection(b);
     let clip = e.copy_selection().unwrap();
-    assert_eq!(clip.version, 6);
+    assert_eq!(clip.version, 7);
     let mut dst = Editor::default();
     dst.paste(&clip).unwrap();
     let events: Vec<_> = dst.score().measures()[0]
@@ -384,7 +391,10 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
             Duration::Quarter.with_dotted(true),
             Duration::Eighth.with_triplet(true),
             Duration::Eighth.with_triplet(true),
-            Duration::Eighth.with_triplet(true)
+            Duration::Eighth.with_triplet(true),
+            // The rest of the bar, by beat.
+            Duration::Eighth,
+            Duration::Quarter
         ]
     );
     // Ordinary old payload offsets use 64 ticks/whole; migration is explicit.
@@ -395,11 +405,28 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     old.events[1].event.duration = Duration::Quarter;
     old.events[1].offset = 16;
     let upgraded = old.clone().upgraded().unwrap();
-    assert_eq!(upgraded.events[1].offset, 48);
-    assert_eq!(upgraded.version, 6);
+    assert_eq!(upgraded.events[1].offset, u64::from(Q));
+    assert_eq!(upgraded.version, 7);
+    // Version 6 counted 192 ticks per whole note.
+    let mut six = old.clone();
+    six.version = 6;
+    six.events[1].offset = 48;
+    assert_eq!(six.upgraded().unwrap().events[1].offset, u64::from(Q));
     let mut dst = Editor::default();
     dst.paste(&old).unwrap();
-    assert_eq!(dst.score().measures()[0].used_ticks(), 96);
+    // Both quarters arrive, and rests end the bar.
+    let pasted: Vec<_> = dst.score().measures()[0]
+        .iter()
+        .map(|(_, e)| (e.duration, e.pitches.is_empty()))
+        .collect();
+    assert_eq!(
+        pasted,
+        [
+            (Duration::Quarter, false),
+            (Duration::Quarter, false),
+            (Duration::Half, true)
+        ]
+    );
     // A duration crossing a bar is split with ties without losing dotted length.
     let mut src = Editor::default();
     src.execute(Command::Insert(note(
@@ -418,9 +445,9 @@ fn musical_clipboard_keeps_modified_figures_and_upgrades_legacy_tick_units() {
     assert_eq!(ids.len(), 2);
     assert_eq!(
         ids.iter()
-            .map(|id| u32::from(dst.score().event(*id).unwrap().duration.ticks()))
+            .map(|id| dst.score().event(*id).unwrap().duration.ticks())
             .sum::<u32>(),
-        72
+        3 * Q / 2
     );
     assert_eq!(
         dst.score()
@@ -445,8 +472,9 @@ fn unrepresentable_paste_boundaries_fail_without_partial_music_or_panics() {
         )))
         .unwrap();
     }
-    // 184 ticks leaves eight: a straight quarter cannot be divided there using
-    // the supported straight note values. No new bars or events may escape.
+    // 23 triplet sixteenths leave a third of a sixteenth: a straight quarter
+    // cannot be divided there using the supported straight note values. No
+    // new bars or events may escape.
     let before = dst.score().clone();
     let selected = dst.selected_ids();
     assert!(dst.paste(&clip).is_err());
@@ -579,4 +607,74 @@ fn copying_between_concert_and_transposing_instruments_keeps_sounding_pitch() {
             assert!(dest.score().measures()[0].is_empty());
         }
     }
+}
+
+#[test]
+fn a_tuplet_that_would_cross_the_barline_is_not_pasted() {
+    let mut src = Editor::default();
+    src.execute(Command::Write(note(
+        Step::C,
+        Duration::Eighth.with_triplet(true),
+    )))
+    .unwrap();
+    let first = src.selection().unwrap();
+    let last = ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 1)
+            .unwrap(),
+        ..first
+    };
+    src.select(first);
+    src.extend_selection(last);
+    let clip = src.copy_selection().unwrap();
+    let mut dst = Editor::default();
+    for duration in [Duration::Half, Duration::Quarter, Duration::Eighth] {
+        dst.execute(Command::Write(note(Step::E, duration)))
+            .unwrap();
+    }
+    let before = dst.score().clone();
+    let error = dst.paste(&clip).unwrap_err();
+    assert_eq!(error.0, "Un grupillo no puede cruzar la barra de compás");
+    assert_eq!(dst.score(), &before);
+}
+
+#[test]
+fn pasting_after_written_music_takes_the_place_of_the_rests_that_end_the_bar() {
+    let mut src = Editor::default();
+    for step in [Step::D, Step::E] {
+        src.execute(Command::Write(note(step, Duration::Quarter)))
+            .unwrap();
+    }
+    let first = ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 0)
+            .unwrap(),
+        ..src.selection().unwrap()
+    };
+    src.select(first);
+    src.extend_selection(ElementId {
+        event: src.score().measures()[0]
+            .voice_id_at(score_core::Voice::One, 1)
+            .unwrap(),
+        ..first
+    });
+    let clip = src.copy_selection().unwrap();
+    let mut dst = Editor::default();
+    dst.execute(Command::Write(note(Step::C, Duration::Quarter)))
+        .unwrap();
+    // The bar is C and rests; paste right after the C.
+    dst.paste(&clip).unwrap();
+    let bar: Vec<_> = dst.score().measures()[0]
+        .iter()
+        .map(|(_, e)| (e.duration, e.pitches.first().map(|p| p.step)))
+        .collect();
+    assert_eq!(
+        bar,
+        [
+            (Duration::Quarter, Some(Step::C)),
+            (Duration::Quarter, Some(Step::D)),
+            (Duration::Quarter, Some(Step::E)),
+            (Duration::Quarter, None)
+        ]
+    );
 }

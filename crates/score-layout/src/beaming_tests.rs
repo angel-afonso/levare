@@ -3,6 +3,9 @@ use score_core::{
     Articulation, Connection, ConnectionKind, Duration, Dynamic, Event, NoteValue, Pitch, Pitches,
     Step,
 };
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(Step::C, 4)),
@@ -64,8 +67,8 @@ fn eighths_and_sixteenths_group_by_quarter_beats_with_independent_hands() {
                 group
                     .elements
                     .iter()
-                    .map(|id| s.event_tick(*id).unwrap() / 48)
-                    .all(|beat| beat == s.event_tick(group.elements[0]).unwrap() / 48)
+                    .map(|id| s.event_tick(*id).unwrap() / u64::from(Q))
+                    .all(|beat| beat == s.event_tick(group.elements[0]).unwrap() / u64::from(Q))
             );
             for stem in &group.stems {
                 assert_eq!(stem.down, group.stems[0].down);
@@ -213,7 +216,7 @@ fn triplet_beams_follow_tuplet_limits_and_keep_numbers_and_partial_brackets() {
     ] {
         let mut s = Score::default();
         let part = s.parts()[0].id();
-        let count = usize::from(s.time().capacity() / duration.ticks());
+        let count = (s.time().capacity() / duration.ticks()) as usize;
         ids(&mut s, part, StaffId::Upper, 0, &vec![duration; count]);
         let layout = LayoutEngine::default().layout_compact(&s, 960.);
         let m = layout.measure(part, 0).unwrap();
@@ -474,4 +477,93 @@ fn grace_notes_sit_small_before_their_note_and_make_room_for_themselves() {
         .filter(|line| line.element == Some(b) && line.thickness > 3.)
         .count();
     assert_eq!(beams, 2);
+}
+#[test]
+fn beam_overrides_start_join_and_leave_out_notes() {
+    use score_core::Beam;
+    let mut s = Score::default();
+    let part = s.parts()[0].id();
+    let eighths = ids(&mut s, part, StaffId::Upper, 0, &[Duration::Eighth; 8]);
+    let groups = |s: &Score| {
+        let layout = LayoutEngine::default().layout_compact(s, 960.);
+        let m = layout.measure_on(part, StaffId::Upper, 0).unwrap();
+        m.content
+            .beams
+            .iter()
+            .map(|group| {
+                group
+                    .elements
+                    .iter()
+                    .map(|id| eighths.iter().position(|e| e == id).unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(groups(&s), [vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]]);
+    // Joining the third eighth carries its whole beat into the first beam.
+    s.set_beam(eighths[2], Some(Beam::Join)).unwrap();
+    // The sixth starts a beam that the seventh joins across the beat,
+    // which leaves the fifth and the last with their own flags.
+    s.set_beam(eighths[5], Some(Beam::Start)).unwrap();
+    s.set_beam(eighths[6], Some(Beam::Join)).unwrap();
+    s.set_beam(eighths[7], Some(Beam::Off)).unwrap();
+    assert_eq!(groups(&s), [vec![0, 1, 2, 3], vec![5, 6]]);
+    let rest = s
+        .insert_on(
+            part,
+            StaffId::Lower,
+            0,
+            0,
+            Event {
+                pitches: Pitches::default(),
+                ..note(Duration::Whole)
+            },
+        )
+        .unwrap();
+    assert!(s.set_beam(rest, Some(Beam::Start)).is_err());
+}
+
+#[test]
+fn noteheads_replace_the_oval_and_keep_the_stem_on_their_edge() {
+    use score_core::Notehead;
+    let mut s = Score::default();
+    let part = s.parts()[0].id();
+    let notes = ids(
+        &mut s,
+        part,
+        StaffId::Upper,
+        0,
+        &[Duration::Quarter, Duration::Half, Duration::Quarter],
+    );
+    for (id, head) in notes.iter().zip(Notehead::ALL) {
+        s.set_notehead(*id, Some(head)).unwrap();
+    }
+    let layout = LayoutEngine::default().layout_compact(&s, 960.);
+    let m = layout.measure_on(part, StaffId::Upper, 0).unwrap();
+    let glyph = |id| {
+        m.content
+            .glyphs
+            .iter()
+            .find(|g| g.element == Some(id))
+            .unwrap()
+    };
+    assert_eq!(glyph(notes[0]).text, "\u{e0a9}");
+    assert_eq!(glyph(notes[1]).text, "\u{e0d9}");
+    assert_eq!(glyph(notes[2]).text, "\u{e101}");
+    // Each head meets its up stem on its right edge.
+    let metrics = Metrics::bravura();
+    for id in &notes {
+        let head = glyph(*id);
+        let (_, _, right, _) = metrics.bounds(&head.text, false);
+        let stem = m
+            .content
+            .lines
+            .iter()
+            .find(|line| line.element == Some(*id) && line.from.x == line.to.x)
+            .unwrap();
+        assert!(
+            (head.position.x + right - stem.from.x).abs() < 0.01,
+            "{id:?}"
+        );
+    }
 }

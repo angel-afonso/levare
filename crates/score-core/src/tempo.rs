@@ -20,15 +20,17 @@ impl TempoBeat {
         Self::DottedQuarter,
         Self::DottedEighth,
     ];
-    pub fn ticks(self) -> u16 {
+    pub fn ticks(self) -> u32 {
+        use crate::Duration;
         match self {
-            Self::Half => 96,
-            Self::Quarter => 48,
-            Self::Eighth => 24,
-            Self::DottedHalf => 144,
-            Self::DottedQuarter => 72,
-            Self::DottedEighth => 36,
+            Self::Half => Duration::Half,
+            Self::Quarter => Duration::Quarter,
+            Self::Eighth => Duration::Eighth,
+            Self::DottedHalf => Duration::Half.with_dotted(true),
+            Self::DottedQuarter => Duration::Quarter.with_dotted(true),
+            Self::DottedEighth => Duration::Eighth.with_dotted(true),
         }
+        .ticks()
     }
     pub fn glyph(self) -> &'static str {
         match self {

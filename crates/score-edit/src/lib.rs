@@ -4,8 +4,11 @@ use score_core::{
 };
 
 pub mod clipboard;
+
 #[cfg(test)]
 mod comment_tests;
+#[cfg(test)]
+mod duration_tests;
 #[cfg(test)]
 mod grace_tests;
 #[cfg(test)]
@@ -21,6 +24,8 @@ mod range_tests;
 mod selection;
 #[cfg(test)]
 mod text_tests;
+#[cfg(test)]
+mod tuplet_tests;
 #[cfg(test)]
 mod write_tests;
 
@@ -60,6 +65,11 @@ pub enum Command {
     ToggleRehearsalMark,
     ToggleLayoutBreak(score_core::LayoutBreak),
     SetRehearsalStyle(score_core::RehearsalStyle),
+    SetNumbering(score_core::Numbering),
+    SetPageSetup(score_core::PageSetup),
+    /// Mark the selected bars of the active staff with %, emptying them, or
+    /// remove the mark when every one has it.
+    ToggleBarRepeat,
     RemoveEndings,
     Insert(Event),
     /// Sibelius-style entry: overwrite from the insertion point.
@@ -67,7 +77,7 @@ pub enum Command {
     /// Overwrite at a tick of the cursor's part, staff and voice.
     WriteAt {
         measure: usize,
-        tick: u16,
+        tick: u32,
         event: Event,
     },
     SetPartDivisi(bool),
@@ -76,7 +86,13 @@ pub enum Command {
     SetArpeggioBothHands(bool),
     SetDynamic(Option<score_core::Dynamic>),
     SetDotted(bool),
-    SetTriplet(bool),
+    /// No dots, one or two on the selection.
+    SetDots(u8),
+    /// A tuplet ratio, `actual` in the time of `normal`, counted in each
+    /// selected value; `None` takes the tuplet away. On a single event this
+    /// starts a group there, or turns its whole group into rests; on a
+    /// passage it changes each value.
+    SetTuplet(Option<(u8, u8)>),
     SetTechnique(Option<score_core::PlayingTechnique>),
     AddConnection(score_core::Connection),
     RemoveConnections(score_core::ConnectionKind),
@@ -98,6 +114,10 @@ pub enum Command {
     /// The ribbon's point marks: write `kind` on the selection, replacing its
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
+    /// Draw the selected notes with this head, or with the usual one again.
+    ToggleNotehead(score_core::Notehead),
+    /// Override the automatic beaming at the selected notes, or restore it.
+    ToggleBeam(score_core::Beam),
     /// Write words at a note or rest, or remove them with `None`.
     SetText(ElementId, score_core::TextKind, Option<String>),
     /// Sing a syllable on a note in a verse (from 0), or clear it.
@@ -115,7 +135,7 @@ pub enum Command {
     ReplacePitch(Pitch),
     MoveSelectedEvent {
         measure: usize,
-        tick: u16,
+        tick: u32,
     },
     SetDuration(score_core::NoteValue),
     InsertMeasure,
@@ -569,7 +589,7 @@ impl Editor {
                 }
                 next.score.set_technique(id, value)?;
             }
-            Command::SetDotted(value) | Command::SetTriplet(value) => {
+            Command::SetDotted(_) | Command::SetDots(_) => {
                 let ids = self.selected_ids();
                 if ids.is_empty() {
                     return Err(ScoreError("Selecciona notas, acordes o silencios"));
@@ -578,18 +598,71 @@ impl Editor {
                     .into_iter()
                     .filter_map(|id| {
                         let old = next.score.event(id).unwrap().duration;
-                        let new = if matches!(command, Command::SetDotted(_)) {
-                            old.with_dotted(value)
-                        } else {
-                            old.with_triplet(value)
+                        let new = match command {
+                            Command::SetDotted(value) => old.with_dotted(value),
+                            Command::SetDots(dots) => old.with_dots(dots),
+                            _ => unreachable!(),
                         };
                         (new != old).then_some((id, new))
                     })
                     .collect();
-                if edits.is_empty() {
-                    return Ok(false);
+                match edits[..] {
+                    [] => return Ok(false),
+                    [(id, duration)] if self.state.range_anchor.is_none() => {
+                        rewrite_duration(&mut next, id, duration)?;
+                    }
+                    _ => next.score.set_durations(&edits)?,
                 }
-                next.score.set_durations(&edits)?;
+            }
+            Command::SetTuplet(ratio) => {
+                let ids = self.selected_ids();
+                let tuplet = |value| {
+                    ratio
+                        .map(|(actual, normal)| {
+                            score_core::Tuplet::new(actual, normal, value)
+                                .ok_or(ScoreError("Esa proporción de grupillo no es válida"))
+                        })
+                        .transpose()
+                };
+                match ids[..] {
+                    [] => return Err(ScoreError("Selecciona notas, acordes o silencios")),
+                    [id] => {
+                        let Some(written) = set_tuplet_at(&mut next.score, id, &tuplet)? else {
+                            return Ok(false);
+                        };
+                        let index = next
+                            .score
+                            .part(written.part)
+                            .unwrap()
+                            .staff(written.staff)
+                            .unwrap()
+                            .measures()[written.measure]
+                            .voice_index_of(next.cursor.voice, written.event)
+                            .unwrap();
+                        next.selection = Some(written);
+                        next.range_anchor = None;
+                        next.tone = 0;
+                        next.cursor = Cursor {
+                            measure: written.measure,
+                            index: index + 1,
+                            ..next.cursor
+                        };
+                    }
+                    _ => {
+                        let mut edits = Vec::new();
+                        for id in ids {
+                            let old = next.score.event(id).unwrap().duration;
+                            let new = old.with_tuplet(tuplet(old.value())?);
+                            if new != old {
+                                edits.push((id, new));
+                            }
+                        }
+                        if edits.is_empty() {
+                            return Ok(false);
+                        }
+                        next.score.set_durations(&edits)?;
+                    }
+                }
             }
 
             Command::SetDynamic(value) => {
@@ -747,6 +820,25 @@ impl Editor {
                     next.score.set_tremolo(id, (!clear).then_some(mark))?;
                 }
             }
+            Command::ToggleNotehead(head) => {
+                let ids = self.selected_notes("Selecciona notas para cambiar su cabeza")?;
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.notehead == Some(head));
+                for id in ids {
+                    next.score.set_notehead(id, (!clear).then_some(head))?;
+                }
+            }
+            Command::ToggleBeam(beam) => {
+                let ids =
+                    self.selected_notes("Selecciona notas para cambiar su barra de corchea")?;
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.beam == Some(beam));
+                for id in ids {
+                    next.score.set_beam(id, (!clear).then_some(beam))?;
+                }
+            }
             Command::ToggleMark(kind) => {
                 let id = next
                     .selection
@@ -852,7 +944,7 @@ impl Editor {
                     .staff(c.staff)
                     .unwrap()
                     .measures()[c.measure];
-                let mut tick: u16 = bar
+                let mut tick: u32 = bar
                     .voice_iter(c.voice)
                     .take(c.index)
                     .map(|(_, e)| e.duration.ticks())
@@ -988,10 +1080,13 @@ impl Editor {
                         (old != new).then_some((id, new))
                     })
                     .collect();
-                if edits.is_empty() {
-                    return Ok(false);
+                match edits[..] {
+                    [] => return Ok(false),
+                    [(id, duration)] if self.state.range_anchor.is_none() => {
+                        rewrite_duration(&mut next, id, duration)?;
+                    }
+                    _ => next.score.set_durations(&edits)?,
                 }
-                next.score.set_durations(&edits)?;
             }
 
             Command::InsertMeasure => {
@@ -1028,6 +1123,42 @@ impl Editor {
             Command::SetRehearsalStyle(style) => {
                 if !next.score.set_rehearsal_style(style) {
                     return Ok(false);
+                }
+            }
+            Command::SetNumbering(numbering) => {
+                if !next.score.set_numbering(numbering)? {
+                    return Ok(false);
+                }
+            }
+            Command::SetPageSetup(setup) => {
+                if !next.score.set_page_setup(setup)? {
+                    return Ok(false);
+                }
+            }
+            Command::ToggleBarRepeat => {
+                let ids = self.selected_ids();
+                let cursor = next.cursor;
+                let bars = ids.iter().map(|id| id.measure);
+                let first = bars.clone().min().unwrap_or(cursor.measure);
+                let last = bars.max().unwrap_or(cursor.measure);
+                let part = next
+                    .score
+                    .part(cursor.part)
+                    .ok_or(ScoreError("El instrumento no existe"))?;
+                // A divisi staff shown from the upper one writes there.
+                let staff = part.input_source(cursor.staff, first).0;
+                let staff_bars = part
+                    .staff(staff)
+                    .ok_or(ScoreError("El pentagrama no existe"))?
+                    .measures();
+                let on = !(first..=last).all(|bar| staff_bars[bar].repeats_previous());
+                for bar in first..=last {
+                    next.score.set_bar_repeat(cursor.part, staff, bar, on)?;
+                }
+                next.selection = None;
+                next.range_anchor = None;
+                if (first..=last).contains(&cursor.measure) {
+                    next.cursor.index = 0;
                 }
             }
             Command::EditForm(_) | Command::SetEnding(_) | Command::RemoveEndings => {
@@ -1306,13 +1437,18 @@ impl Editor {
                 | Command::ToggleRehearsalMark
                 | Command::ToggleLayoutBreak(_)
                 | Command::SetRehearsalStyle(_)
+                | Command::SetNumbering(_)
+                | Command::SetPageSetup(_)
                 | Command::SetEnding(_)
                 | Command::RemoveEndings
                 | Command::SetDotted(_)
-                | Command::SetTriplet(_)
+                | Command::SetDots(_)
+                | Command::SetTuplet(_)
                 | Command::ToggleMark(
                     score_core::MarkKind::Harmonic(_) | score_core::MarkKind::Tremolo(_)
                 )
+                | Command::ToggleNotehead(_)
+                | Command::ToggleBeam(_)
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)
@@ -1586,6 +1722,102 @@ fn nearest_pitch(step: score_core::Step, reference: Pitch) -> Pitch {
         .find(|d| (0..=62).contains(d))
         .and_then(|d| Pitch::new(step, (d / 7) as u8))
         .unwrap_or(reference)
+}
+
+/// A new duration for one selected event, as Sibelius changes it: the event
+/// keeps its onset, marks and links; a longer one writes over what follows,
+/// across the barline with a tie if needed, and a shorter one leaves rests.
+/// Later music never moves.
+fn rewrite_duration(
+    next: &mut Snapshot,
+    id: ElementId,
+    duration: Duration,
+) -> Result<(), ScoreError> {
+    let event = *next
+        .score
+        .event(id)
+        .ok_or(ScoreError("Selecciona notas, acordes o silencios"))?;
+    let voice = next.score.voice_of(id).unwrap();
+    let tick =
+        (next.score.event_tick(id).unwrap() - next.score.measure_start_tick(id.measure)) as u32;
+    let written = next.score.overwrite(
+        id.part,
+        id.staff,
+        id.measure,
+        voice,
+        tick,
+        Event { duration, ..event },
+    )?;
+    let first = written[0];
+    let index = next
+        .score
+        .part(first.part)
+        .unwrap()
+        .staff(first.staff)
+        .unwrap()
+        .measures()[first.measure]
+        .voice_index_of(voice, first.event)
+        .unwrap();
+    next.selection = Some(first);
+    next.cursor = Cursor {
+        measure: first.measure,
+        index: index + 1,
+        ..next.cursor
+    };
+    Ok(())
+}
+
+/// Starts a group of `tuplet` at one event, Sibelius style: the event keeps
+/// its value inside the tuplet and the rest of the group becomes rests, over
+/// whatever followed. Without a tuplet, its whole group becomes plain rests.
+/// The event written first, or `None` if nothing changes.
+fn set_tuplet_at(
+    score: &mut Score,
+    id: ElementId,
+    tuplet: &dyn Fn(score_core::NoteValue) -> Result<Option<score_core::Tuplet>, ScoreError>,
+) -> Result<Option<ElementId>, ScoreError> {
+    let event = *score
+        .event(id)
+        .ok_or(ScoreError("Selecciona notas, acordes o silencios"))?;
+    let voice = score.voice_of(id).unwrap();
+    let tick = (score.event_tick(id).unwrap() - score.measure_start_tick(id.measure)) as u32;
+    let written = match tuplet(event.duration.value())? {
+        Some(tuplet) if event.duration.tuplet() == Some(tuplet) => return Ok(None),
+        Some(tuplet) => {
+            let event = Event {
+                duration: event.duration.with_tuplet(Some(tuplet)),
+                ..event
+            };
+            score.overwrite(id.part, id.staff, id.measure, voice, tick, event)?
+        }
+        None => {
+            let Some(group) = score
+                .part(id.part)
+                .unwrap()
+                .staff(id.staff)
+                .unwrap()
+                .measures()[id.measure]
+                .tuplet_groups(voice)
+                .into_iter()
+                .find(|group| group.events.contains(&id.event))
+            else {
+                return Ok(None);
+            };
+            let rests = score_core::Palette::modified()
+                .fewest(group.end - group.start)
+                .ok_or(ScoreError(
+                    "Este grupillo no ocupa un tiempo que puedan llenar silencios normales",
+                ))?;
+            let rest = Event {
+                pitches: score_core::Pitches::default(),
+                duration: rests[0],
+                notation: score_core::Notation::default(),
+            };
+            // A plain value on its first event replaces the whole group.
+            score.overwrite(id.part, id.staff, id.measure, voice, group.start, rest)?
+        }
+    };
+    Ok(Some(written[0]))
 }
 
 #[cfg(test)]
@@ -2121,7 +2353,7 @@ impl Editor {
     pub fn select_divisi_position(&mut self, point: score_core::DivisiPoint) {
         if let Some(id) = self.selection() {
             let start = (self.score().event_tick(id).unwrap()
-                - self.score().measure_start_tick(id.measure)) as u16;
+                - self.score().measure_start_tick(id.measure)) as u32;
             let end = start + self.score().event(id).unwrap().duration.ticks();
             if point.measure == id.measure && start <= point.tick && point.tick < end {
                 self.state.divisi_anchor = Some(point);
@@ -2149,7 +2381,7 @@ impl Snapshot {
             },
             |id| {
                 (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
-                    as u16
+                    as u32
             },
         );
         if tick == self.score.time_at(self.cursor.measure).capacity()
@@ -2168,7 +2400,7 @@ impl Snapshot {
                 score_core::DivisiPoint::new(
                     id.measure,
                     (self.score.event_tick(id).unwrap() - self.score.measure_start_tick(id.measure))
-                        as u16,
+                        as u32,
                 )
             };
             let a = position(anchor);

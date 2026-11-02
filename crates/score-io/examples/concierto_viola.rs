@@ -501,7 +501,7 @@ fn main() -> Result<()> {
                 desk(part, bar)
             };
             assert_eq!(
-                events.iter().map(|e| e.duration.ticks()).sum::<u16>(),
+                events.iter().map(|e| e.duration.ticks()).sum::<u32>(),
                 score.time_at(bar).capacity(),
                 "{part}:{bar}"
             );
@@ -728,7 +728,7 @@ fn main() -> Result<()> {
                 measure
                     .voice_iter(Voice::One)
                     .map(|(_, e)| e.duration.ticks())
-                    .sum::<u16>(),
+                    .sum::<u32>(),
                 score.time_at(bar).capacity()
             );
             for (_, event) in measure.iter() {

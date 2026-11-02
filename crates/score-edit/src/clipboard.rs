@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 pub const MAX_CLIPBOARD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_EVENTS: usize = 65_536;
-const MAX_TICKS: u64 = score_core::MAX_MEASURES as u64 * 3072;
+const MAX_TICKS: u64 = score_core::MAX_MEASURES as u64 * 16 * score_core::TICKS_PER_WHOLE as u64;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MusicalClipboard {
     pub format: String,
@@ -56,12 +56,23 @@ impl MusicalClipboard {
         if self.version == 5 {
             self.version = 6;
         }
+        if self.version == 6 {
+            // Version 7 counts ticks 3360 times finer, with 645 120 per whole.
+            let scale = u64::from(score_core::TICKS_PER_WHOLE / 192);
+            for item in &mut self.events {
+                item.offset = item
+                    .offset
+                    .checked_mul(scale)
+                    .ok_or(ScoreError("Pasaje demasiado largo"))?;
+            }
+            self.version = 7;
+        }
         self.validate()?;
         Ok(self)
     }
 
     pub fn validate(&self) -> Result<(), ScoreError> {
-        if self.format != "partitura-clipboard" || !(1..=6).contains(&self.version) {
+        if self.format != "partitura-clipboard" || !(1..=7).contains(&self.version) {
             return Err(ScoreError(
                 "El portapapeles no contiene música compatible de Levare",
             ));
@@ -145,7 +156,7 @@ impl Editor {
             .collect();
         let result = MusicalClipboard {
             format: "partitura-clipboard".into(),
-            version: 6,
+            version: 7,
             initial_technique: score.technique_at(first).unwrap(),
             key: score.written_key_at(first.part, first.measure),
             transposition: score.part(first.part).unwrap().transposition(),
@@ -230,16 +241,7 @@ impl Editor {
                     + 1,
             };
         }
-        let capacity = 3072u64; // largest supported bar, for reusable rhythm decomposition tables
-        let plain_pieces = RhythmPieces::new(Duration::ALL.to_vec(), capacity as usize);
-        let triplet_pieces = RhythmPieces::new(
-            Duration::ALL
-                .into_iter()
-                .map(|d| d.with_triplet(true))
-                .collect(),
-            capacity as usize,
-        );
-        let gap_pieces = RhythmPieces::new(Duration::all_modified(), capacity as usize);
+        let plain_pieces = score_core::Palette::plain();
         let prefix: u64 = next
             .score
             .part(next.cursor.part)
@@ -256,6 +258,22 @@ impl Editor {
             + u64::from(clip.events.last().unwrap().event.duration.ticks());
         if next.score.measure_at_tick(base + span - 1).0 >= score_core::MAX_MEASURES {
             return Err(ScoreError("El pegado supera el límite de compases"));
+        }
+        // The rests that keep the destination bars full are empty space for
+        // the passage; they are written again after it.
+        let (first_bar, last_bar) = (
+            next.cursor.measure,
+            next.score.measure_at_tick(base + span - 1).0,
+        );
+        for bar in first_bar..=last_bar.min(next.score.measures().len() - 1) {
+            let from = if bar == first_bar { prefix as u32 } else { 0 };
+            next.score.clear_trailing_rests(
+                next.cursor.part,
+                next.cursor.staff,
+                next.cursor.voice,
+                bar,
+                from,
+            )?;
         }
         let target_dynamic = dynamic_before(&next.score, next.cursor);
         let part = next.score.part(next.cursor.part).unwrap();
@@ -303,16 +321,25 @@ impl Editor {
         let mut ties = Vec::new();
         for (index, item) in clip.events.iter().enumerate() {
             while tick < base + item.offset {
-                let duration = gap_pieces
-                    .choose((base + item.offset - tick).min(remaining_in_bar(&next.score, tick)))?;
-                let rest = Event {
-                    pitches: Pitches::default(),
-                    duration,
-                    notation: Notation::default(),
-                };
-                let id = insert_piece(&mut next, tick, rest)?;
-                all_ids.push(id);
-                tick += u64::from(duration.ticks());
+                // The gap up to the barline, in rests that keep to its beats.
+                let (bar, local) = next.score.measure_at_tick(tick);
+                let span = (base + item.offset - tick).min(remaining_in_bar(&next.score, tick));
+                let rests = score_core::rests_by_beat(
+                    next.score.time_at(bar),
+                    local,
+                    u32::try_from(span).unwrap_or(u32::MAX),
+                )
+                .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))?;
+                for duration in rests {
+                    let rest = Event {
+                        pitches: Pitches::default(),
+                        duration,
+                        notation: Notation::default(),
+                    };
+                    let id = insert_piece(&mut next, tick, rest)?;
+                    all_ids.push(id);
+                    tick += u64::from(duration.ticks());
+                }
             }
             let mut event = item.event;
             if index == 0
@@ -335,13 +362,10 @@ impl Editor {
                 let available = remaining_in_bar(&next.score, tick);
                 let duration = if first.is_none() && remaining <= available {
                     event.duration
+                } else if event.duration.tuplet().is_some() {
+                    return Err(ScoreError("Un grupillo no puede cruzar la barra de compás"));
                 } else {
-                    let pieces = if event.duration.is_triplet() {
-                        &triplet_pieces
-                    } else {
-                        &plain_pieces
-                    };
-                    pieces.choose(remaining.min(available))?
+                    split_piece(&plain_pieces, remaining.min(available))?
                 };
                 let length = u64::from(duration.ticks());
                 let is_first = first.is_none();
@@ -362,14 +386,24 @@ impl Editor {
                     notation.lyrics = Default::default();
                     notation.chord = None;
                     notation.offsets.chord = None;
+                    notation.ornament = None;
+                    notation.offsets.ornament = None;
+                    // Only the first fragment starts or leaves its beam.
+                    notation.beam = None;
                 }
-                // A split note keeps one fermata, over its final fragment.
+                // A split note keeps one fermata and one breath, after its final
+                // fragment.
                 if !is_last {
                     notation.fermata = false;
                     notation.offsets.fermata = None;
+                    notation.pause = None;
+                    notation.offsets.pause = None;
                 }
                 if let Some(mark) = notation.articulation {
-                    let belongs = if matches!(mark, Articulation::Staccato | Articulation::Tenuto) {
+                    let belongs = if matches!(
+                        mark,
+                        Articulation::Staccato | Articulation::Staccatissimo | Articulation::Tenuto
+                    ) {
                         is_last
                     } else {
                         is_first
@@ -444,6 +478,12 @@ impl Editor {
                 kind: link.kind,
             })?;
         }
+        next.score.fill_rests_in(
+            next.cursor.part,
+            next.cursor.staff,
+            next.cursor.voice,
+            first_bar..=last_bar,
+        )?;
         next.score.validate()?;
         next.range_anchor = all_ids.first().copied();
         next.selection = all_ids.last().copied();
@@ -453,32 +493,13 @@ impl Editor {
         Ok(clip.events.len())
     }
 }
-/// A bounded decomposition table prevents greedy dead ends and rejects rhythms
-/// that cannot be split at this destination before committing any changes.
-struct RhythmPieces {
-    durations: Vec<Duration>,
-    representable: Vec<bool>,
-}
-impl RhythmPieces {
-    fn new(mut durations: Vec<Duration>, capacity: usize) -> Self {
-        durations.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-        let mut representable = vec![false; capacity + 1];
-        representable[0] = true;
-        for tick in 1..=capacity {
-            representable[tick] = durations.iter().any(|d| {
-                usize::from(d.ticks()) <= tick && representable[tick - usize::from(d.ticks())]
-            });
-        }
-        Self {
-            durations,
-            representable,
-        }
-    }
-    fn choose(&self, ticks: u64) -> Result<Duration, ScoreError> {
-        let ticks = ticks as usize;
-        self.durations.iter().copied().find(|d| usize::from(d.ticks()) <= ticks && self.representable.get(ticks - usize::from(d.ticks())) == Some(&true))
-            .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))
-    }
+/// The next piece of a rhythm split at this destination; choosing only pieces
+/// that leave a spellable remainder rejects impossible splits before any change.
+fn split_piece(pieces: &score_core::Palette, ticks: u64) -> Result<Duration, ScoreError> {
+    u32::try_from(ticks)
+        .ok()
+        .and_then(|ticks| pieces.longest_fitting(ticks))
+        .ok_or(ScoreError("Este ritmo no se puede dividir en ese punto. Elige un compás vacío o un destino alineado con el pasaje"))
 }
 fn insert_piece(next: &mut Snapshot, tick: u64, event: Event) -> Result<ElementId, ScoreError> {
     let measure = next.score.measure_at_tick(tick).0;

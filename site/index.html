@@ -50,10 +50,10 @@
     <div class="app ui desk" data-ui data-js hidden>
       <div class="ui-tabs">
         <span class="ui-menu">Archivo ▾</span>
-        <span class="ui-tab on">Escribir</span><span class="ui-tab">Articulaciones</span><span class="ui-tab">Dinámicas</span><span class="ui-tab">Texto</span><span class="ui-tab">Partitura</span><span class="ui-tab">Reproducción</span><span class="ui-tab">Revisión</span><span class="ui-tab">Vista</span>
+        <span class="ui-tab">Inicio</span><span class="ui-tab on">Entrada de notas</span><span class="ui-tab">Notaciones</span><span class="ui-tab">Texto</span><span class="ui-tab">Reproducción</span><span class="ui-tab">Diseño</span><span class="ui-tab">Revisión</span><span class="ui-tab">Vista</span>
         <span class="ui-pill" data-pill-wrap><i></i><span data-pill>Escribiendo · Negra · Voz 1</span></span>
       </div>
-      <div class="ui-ribbon" role="toolbar" aria-label="Cinta, pestaña Escribir">
+      <div class="ui-ribbon" role="toolbar" aria-label="Cinta, pestaña Entrada de notas">
         <div class="rg">
           <div class="rgc">
             <button type="button" class="ctl big on" data-entry aria-pressed="true"><svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="26" class="gbv">&#xE1D7;</text></svg><span class="cn">Escribir</span><span class="ck">N</span></button>
@@ -101,6 +101,8 @@
           <div class="rgc track" role="group" aria-label="Voz">
             <button type="button" class="ctl on" data-voice="1" aria-pressed="true"><span class="cg">1</span><span class="cn">Voz 1</span><span class="ck" data-mac="⌥1" data-pc="Alt+1">⌥1</span></button>
             <button type="button" class="ctl" data-voice="2" aria-pressed="false"><span class="cg">2</span><span class="cn">Voz 2</span><span class="ck" data-mac="⌥2" data-pc="Alt+2">⌥2</span></button>
+            <button type="button" class="ctl" data-voice="3" aria-pressed="false"><span class="cg">3</span><span class="cn">Voz 3</span><span class="ck" data-mac="⌥3" data-pc="Alt+3">⌥3</span></button>
+            <button type="button" class="ctl" data-voice="4" aria-pressed="false"><span class="cg">4</span><span class="cn">Voz 4</span><span class="ck" data-mac="⌥4" data-pc="Alt+4">⌥4</span></button>
           </div>
           <span class="rgt">Voz</span>
         </div>
@@ -109,12 +111,6 @@
             <button type="button" class="ctl" data-inert><svg viewBox="0 0 32 32" aria-hidden="true"><text x="13" y="28" class="gbv sm">&#xE0A4;</text><text x="13" y="20" class="gbv sm">&#xE0A4;</text><text x="13" y="12" class="gbv sm">&#xE0A4;</text></svg><span class="cn">Acorde</span><span class="ck" data-mac="⌥A" data-pc="Alt+A">⌥A</span></button>
           </div>
           <span class="rgt">Acorde</span>
-        </div>
-        <div class="rg">
-          <div class="rgc">
-            <button type="button" class="ctl" data-inert><span class="cg">2ª</span><span class="cn">Segunda</span><span class="ck" data-mac="⇧2" data-pc="Mayús+2">⇧2</span></button>
-          </div>
-          <span class="rgt">Intervalo</span>
         </div>
       </div>
       <div class="ui-strip">
@@ -193,7 +189,7 @@
         <span class="zone" data-zone="3" style="left:80.1%;top:18.8%;width:19.9%;height:74.8%"></span>
         <span class="zone" data-zone="4" style="left:0;top:93.6%;width:100%;height:6.4%"></span>
         <ol class="tour-list">
-          <li data-zone="0"><b>La cinta</b><span>Una pestaña por tarea. Bajo cada símbolo, su nombre y su tecla.</span></li>
+          <li data-zone="0"><b>La cinta</b><span>Las pestañas de Sibelius, en su orden. Bajo cada símbolo, su nombre y su tecla.</span></li>
           <li data-zone="1"><b>Partes</b><span>Las partes por familia, con su clave y su transposición, en Lista o en Mezcla.</span></li>
           <li data-zone="2"><b>La hoja</b><span>La partitura tal como se imprime y, encima, compás, tiempo, tempo, métrica y tonalidad.</span></li>
           <li data-zone="3"><b>Selección</b><span>Lo que tienes seleccionado y qué hacer con ello. Al lado, Sonido y Revisión.</span></li>
@@ -616,6 +612,7 @@
         <p class="lede">Lo que ya puedes usar hoy.</p>
         <ul class="ritems">
           <li>Entrada por teclado con atajos al estilo de Sibelius</li>
+          <li>Grupillos, doble puntillo y semifusas</li>
           <li>Articulaciones, dinámicas, adornos y líneas</li>
           <li>Título, tempo, letra, cifrado y marcas de ensayo</li>
           <li>Repeticiones, da capo, segno y saltos de página</li>

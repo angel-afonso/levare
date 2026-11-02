@@ -20,6 +20,49 @@ impl CommandStates for AppView {
                 .unwrap_or(editor.cursor().measure);
             CommandState::checked(editor.score().layout_break(bar) == Some(kind))
         };
+        if command == id::BAR_REPEAT {
+            let cursor = editor.cursor();
+            let part = editor.score().part(cursor.part).unwrap();
+            let staff = part.input_source(cursor.staff, cursor.measure).0;
+            return CommandState::checked(
+                part.staff(staff)
+                    .is_some_and(|s| s.measures()[cursor.measure].repeats_previous()),
+            );
+        }
+        let setup = editor.score().page_setup();
+        if command == id::LANDSCAPE {
+            return CommandState::checked(setup.landscape);
+        }
+        if command == id::HIDE_EMPTY_STAVES {
+            return CommandState::checked(setup.hide_empty_staves);
+        }
+        if let Some(chosen) = crate::page_setup_command(setup, command) {
+            return CommandState::checked(chosen == setup);
+        }
+        let numbering = editor.score().numbering();
+        if let Some(chosen) = crate::numbering_command(numbering, command) {
+            return CommandState::checked(chosen == numbering);
+        }
+        if let Some(action) = crate::appearance_command(command) {
+            // Lit while every selected note has it; rests are left out.
+            let notes: Vec<_> = editor
+                .selected_ids()
+                .into_iter()
+                .filter_map(|id| editor.score().event(id))
+                .filter(|event| !event.pitches.is_empty())
+                .map(|event| event.notation)
+                .collect();
+            let checked = !notes.is_empty()
+                && notes.iter().all(|notation| match action {
+                    Command::ToggleNotehead(head) => notation.notehead == Some(head),
+                    Command::ToggleBeam(beam) => notation.beam == Some(beam),
+                    _ => false,
+                });
+            return CommandState {
+                enabled: !notes.is_empty(),
+                ..CommandState::checked(checked)
+            };
+        }
         match command {
             id::SYSTEM_BREAK => return layout_break(score_core::LayoutBreak::System),
             id::PAGE_BREAK => return layout_break(score_core::LayoutBreak::Page),
@@ -213,6 +256,8 @@ impl CommandStates for AppView {
 
             id::VOICE_1 => CommandState::checked(editor.cursor().voice == score_core::Voice::One),
             id::VOICE_2 => CommandState::checked(editor.cursor().voice == score_core::Voice::Two),
+            id::VOICE_3 => CommandState::checked(editor.cursor().voice == score_core::Voice::Three),
+            id::VOICE_4 => CommandState::checked(editor.cursor().voice == score_core::Voice::Four),
             id::DIVIDE_PART | id::JOIN_PART => {
                 let part = editor.score().part(editor.cursor().part).unwrap();
                 CommandState {
@@ -230,12 +275,27 @@ impl CommandStates for AppView {
             id::EIGHTH => value(NoteValue::Eighth),
             id::SIXTEENTH => value(NoteValue::Sixteenth),
             id::THIRTY_SECOND => value(NoteValue::ThirtySecond),
-            id::DOT => CommandState::checked(duration.is_dotted()),
-            id::TRIPLET => CommandState::checked(duration.is_triplet()),
+            id::SIXTY_FOURTH => value(NoteValue::SixtyFourth),
+            id::DOT => CommandState::checked(duration.dots() == 1),
+            id::DOUBLE_DOT => CommandState::checked(duration.dots() == 2),
+            // Lit for a ratio no other button sets, or while its editor is open.
+            id::OTHER_TUPLET => CommandState::checked(
+                self.tuplet_picker.is_some()
+                    || tuplet_ratio(duration).is_some_and(|ratio| {
+                        !TUPLET_COMMANDS
+                            .iter()
+                            .any(|(id, _)| tuplet_command_ratio(*id) == Some(ratio))
+                    }),
+            ),
+            command if tuplet_command_ratio(command).is_some() => {
+                CommandState::checked(tuplet_ratio(duration) == tuplet_command_ratio(command))
+            }
 
             id::NATURAL => accidental(Some(Accidental::Natural)),
             id::SHARP => accidental(Some(Accidental::Sharp)),
             id::FLAT => accidental(Some(Accidental::Flat)),
+            id::DOUBLE_SHARP => accidental(Some(Accidental::DoubleSharp)),
+            id::DOUBLE_FLAT => accidental(Some(Accidental::DoubleFlat)),
             id::FOLLOW_KEY => accidental(None),
 
             id::TIE => CommandState::checked(selected_connection(self, ConnectionKind::Tie)),
@@ -259,6 +319,8 @@ impl CommandStates for AppView {
             id::REPEATS => CommandState::checked(self.playback.follow_repeats),
             id::LOOP => CommandState::checked(self.playback.looping),
             id::HALF_SPEED => CommandState::checked(self.playback.half_speed),
+            id::METRONOME => CommandState::checked(self.playback.metronome),
+            id::COUNT_IN => CommandState::checked(self.playback.count_in),
             id::CHORD_PLAYBACK => CommandState::checked(editor.score().chords_sound()),
             id::LYRICS => CommandState {
                 checked: self.lyric_editor.is_some()
@@ -314,17 +376,17 @@ impl CommandStates for AppView {
             }
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
-            id::TAB_NOTE_INPUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Write),
+            id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),
+            id::TAB_NOTE_INPUT => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::NoteInput)
+            }
             id::TAB_NOTATION => {
-                CommandState::checked(self.ui.tab == score_toolbar::TabId::Articulations)
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Notations)
             }
-            id::TAB_DYNAMICS => {
-                CommandState::checked(self.ui.tab == score_toolbar::TabId::Dynamics)
+            id::TAB_TEXT | id::TAB_DYNAMICS => {
+                CommandState::checked(self.ui.tab == score_toolbar::TabId::Text)
             }
-            id::TAB_TEXT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Text),
-            id::TAB_HOME | id::TAB_LAYOUT => {
-                CommandState::checked(self.ui.tab == score_toolbar::TabId::Score)
-            }
+            id::TAB_LAYOUT => CommandState::checked(self.ui.tab == score_toolbar::TabId::Layout),
             id::TAB_PLAYBACK => {
                 CommandState::checked(self.ui.tab == score_toolbar::TabId::Playback)
             }
@@ -346,14 +408,7 @@ fn form_state(editor: &score_edit::Editor, command: CommandId) -> Option<Command
         Command::EditForm(edit) => match edit {
             FormEdit::ToggleRepeatStart => first.repeat_start,
             FormEdit::ToggleRepeatEnd => last.repeat_end.is_some(),
-            FormEdit::Barline(_) => {
-                last.barline
-                    == if command == id::DOUBLE_BARLINE {
-                        Barline::Double
-                    } else {
-                        Barline::Final
-                    }
-            }
+            FormEdit::Barline(_) => Some(last.barline) == crate::barline_of(command),
             FormEdit::ToggleSegno => first.segno,
             FormEdit::ToggleCoda => first.coda,
             FormEdit::ToggleToCoda => last.to_coda,

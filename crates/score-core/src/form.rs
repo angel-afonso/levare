@@ -10,6 +10,14 @@ pub enum Barline {
     Single,
     Double,
     Final,
+    Dashed,
+    Dotted,
+    /// A short stroke through the top line only, as in early music.
+    Tick,
+    /// A stroke over the middle of the staff only.
+    Short,
+    /// No stroke: the bar still divides time but leaves the staff open.
+    Invisible,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Jump {

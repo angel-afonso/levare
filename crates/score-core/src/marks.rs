@@ -13,7 +13,9 @@ pub enum MarkKind {
     Division(Division),
     Arpeggio(Arpeggio),
     Articulation(Articulation),
+    Ornament(Ornament),
     Fermata,
+    Pause(Pause),
     Tremolo(Tremolo),
     Dynamic(Dynamic),
     Technique(PlayingTechnique),
@@ -34,7 +36,9 @@ pub enum MarkFamily {
     Division,
     Arpeggio,
     Articulation,
+    Ornament,
     Fermata,
+    Pause,
     Tremolo,
     Dynamic,
     Technique,
@@ -60,7 +64,7 @@ pub enum Placement {
 }
 
 impl MarkKind {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 51] = [
         Self::Division(Division::Divisi),
         Self::Division(Division::Unison),
         Self::Arpeggio(Arpeggio::Normal),
@@ -70,7 +74,13 @@ impl MarkKind {
         Self::Articulation(Articulation::Tenuto),
         Self::Articulation(Articulation::Accent),
         Self::Articulation(Articulation::Marcato),
+        Self::Articulation(Articulation::Staccatissimo),
+        Self::Ornament(Ornament::Mordent),
+        Self::Ornament(Ornament::InvertedMordent),
+        Self::Ornament(Ornament::Turn),
         Self::Fermata,
+        Self::Pause(Pause::Breath),
+        Self::Pause(Pause::Caesura),
         Self::Tremolo(Tremolo::One),
         Self::Tremolo(Tremolo::Two),
         Self::Tremolo(Tremolo::Three),
@@ -82,6 +92,11 @@ impl MarkKind {
         Self::Dynamic(Dynamic::F),
         Self::Dynamic(Dynamic::Ff),
         Self::Dynamic(Dynamic::Fff),
+        Self::Dynamic(Dynamic::Sfz),
+        Self::Dynamic(Dynamic::Rfz),
+        Self::Dynamic(Dynamic::Fp),
+        Self::Dynamic(Dynamic::Sfp),
+        Self::Dynamic(Dynamic::Niente),
         Self::Technique(PlayingTechnique::Pizzicato),
         Self::Technique(PlayingTechnique::Arco),
         Self::Harmonic(Harmonic::Natural),
@@ -108,7 +123,9 @@ impl MarkKind {
             Self::Division(mark) => mark.label(),
             Self::Arpeggio(mark) => mark.label(),
             Self::Articulation(mark) => mark.label(),
+            Self::Ornament(mark) => mark.label(),
             Self::Fermata => "Calderón",
+            Self::Pause(mark) => mark.label(),
             Self::Tremolo(mark) => mark.label(),
             Self::Dynamic(mark) => mark.label(),
             Self::Technique(mark) => mark.label(),
@@ -132,6 +149,11 @@ impl MarkKind {
                 Dynamic::F => "Forte",
                 Dynamic::Ff => "Fortissimo",
                 Dynamic::Fff => "Fortississimo",
+                Dynamic::Sfz => "Sforzato",
+                Dynamic::Rfz => "Rinforzando",
+                Dynamic::Fp => "Fortepiano",
+                Dynamic::Sfp => "Sforzando piano",
+                Dynamic::Niente => "Niente",
             },
             Self::Technique(PlayingTechnique::Pizzicato) => "Pizzicato",
             Self::Technique(PlayingTechnique::Arco) => "Arco",
@@ -159,7 +181,9 @@ impl MarkKind {
             Self::Division(_) => MarkFamily::Division,
             Self::Arpeggio(_) => MarkFamily::Arpeggio,
             Self::Articulation(_) => MarkFamily::Articulation,
+            Self::Ornament(_) => MarkFamily::Ornament,
             Self::Fermata => MarkFamily::Fermata,
+            Self::Pause(_) => MarkFamily::Pause,
             Self::Tremolo(_) => MarkFamily::Tremolo,
             Self::Dynamic(_) => MarkFamily::Dynamic,
             Self::Technique(_) => MarkFamily::Technique,
@@ -181,7 +205,9 @@ impl MarkKind {
             Self::Arpeggio(mark) => Some(mark.glyph()),
             Self::Harmonic(mark) => Some(mark.glyph()),
             Self::Articulation(mark) => Some(mark.glyph()),
+            Self::Ornament(mark) => Some(mark.glyph()),
             Self::Fermata => Some("\u{e4c0}"),
+            Self::Pause(mark) => Some(mark.glyph()),
             Self::Tremolo(mark) => Some(mark.glyph()),
             Self::Dynamic(mark) => Some(mark.glyph()),
             // Grace notes are engraved note by note; they have only a symbol.
@@ -222,6 +248,7 @@ impl MarkKind {
             self,
             Self::Arpeggio(_)
                 | Self::Articulation(_)
+                | Self::Ornament(_)
                 | Self::Harmonic(_)
                 | Self::Tremolo(_)
                 | Self::Grace(_)
@@ -236,7 +263,9 @@ impl MarkFamily {
             Self::Division => "Divisi y unísono",
             Self::Arpeggio => "Arpegio",
             Self::Articulation => "Articulación",
+            Self::Ornament => "Ornamento",
             Self::Fermata => "Calderón",
+            Self::Pause => "Respiración y cesura",
             Self::Tremolo => "Trémolo",
             Self::Dynamic => "Dinámica",
             Self::Technique => "Técnica",
@@ -265,7 +294,9 @@ pub enum MarkRef {
     Division(ElementId),
     Arpeggio(ElementId),
     Articulation(ElementId),
+    Ornament(ElementId),
     Fermata(ElementId),
+    Pause(ElementId),
     Tremolo(ElementId),
     Dynamic(ElementId),
     Technique(ElementId),
@@ -286,7 +317,9 @@ impl MarkRef {
             Self::Division(id)
             | Self::Arpeggio(id)
             | Self::Articulation(id)
+            | Self::Ornament(id)
             | Self::Fermata(id)
+            | Self::Pause(id)
             | Self::Tremolo(id)
             | Self::Dynamic(id)
             | Self::Technique(id)
@@ -306,6 +339,7 @@ impl MarkRef {
             Self::Dynamic(_)
                 | Self::Technique(_)
                 | Self::Fermata(_)
+                | Self::Pause(_)
                 | Self::Text(..)
                 | Self::Chord(_)
         ) || matches!(self, Self::Connection(connection) if connection.kind.is_hairpin())
@@ -316,7 +350,9 @@ impl MarkRef {
             MarkFamily::Division => Self::Division(id),
             MarkFamily::Arpeggio => Self::Arpeggio(id),
             MarkFamily::Articulation => Self::Articulation(id),
+            MarkFamily::Ornament => Self::Ornament(id),
             MarkFamily::Fermata => Self::Fermata(id),
+            MarkFamily::Pause => Self::Pause(id),
             MarkFamily::Tremolo => Self::Tremolo(id),
             MarkFamily::Dynamic => Self::Dynamic(id),
             MarkFamily::Technique => Self::Technique(id),
@@ -343,7 +379,7 @@ impl Score {
                 if part.has_passage_divisi() {
                     part.divisi_change_at_tick(
                         id.measure,
-                        (self.event_tick(id)? - self.measure_start_tick(id.measure)) as u16,
+                        (self.event_tick(id)? - self.measure_start_tick(id.measure)) as u32,
                     )
                     .map(MarkKind::Division)
                 } else {
@@ -354,7 +390,9 @@ impl Score {
                 .arpeggio_at(id)
                 .map(|mark| MarkKind::Arpeggio(mark.kind)),
             MarkRef::Articulation(id) => notation(id)?.articulation.map(MarkKind::Articulation),
+            MarkRef::Ornament(id) => notation(id)?.ornament.map(MarkKind::Ornament),
             MarkRef::Fermata(id) => notation(id)?.fermata.then_some(MarkKind::Fermata),
+            MarkRef::Pause(id) => notation(id)?.pause.map(MarkKind::Pause),
             MarkRef::Tremolo(id) => notation(id)?.tremolo.map(MarkKind::Tremolo),
             MarkRef::Dynamic(id) => notation(id)?.dynamic.map(MarkKind::Dynamic),
             MarkRef::Technique(id) => notation(id)?.technique.map(MarkKind::Technique),
@@ -436,7 +474,13 @@ impl Score {
                 self.set_articulation(id, Some(mark))
             }
             (MarkFamily::Articulation, _) => self.set_articulation(id, None),
+            (MarkFamily::Ornament, Some(MarkKind::Ornament(mark))) => {
+                self.set_ornament(id, Some(mark))
+            }
+            (MarkFamily::Ornament, _) => self.set_ornament(id, None),
             (MarkFamily::Fermata, kind) => self.set_fermata(id, kind.is_some()),
+            (MarkFamily::Pause, Some(MarkKind::Pause(mark))) => self.set_pause(id, Some(mark)),
+            (MarkFamily::Pause, _) => self.set_pause(id, None),
             (MarkFamily::Tremolo, Some(MarkKind::Tremolo(mark))) => {
                 self.set_tremolo(id, Some(mark))
             }
@@ -648,6 +692,50 @@ mod tests {
         assert_eq!(MarkKind::Fermata.placement(), Placement::Above);
         assert!(MarkKind::Fermata.allowed_on_rest());
         assert!(!MarkKind::Articulation(Articulation::Accent).allowed_on_rest());
+        assert_eq!(MarkFamily::Ornament.kinds().count(), Ornament::ALL.len());
+        assert_eq!(MarkFamily::Pause.kinds().count(), Pause::ALL.len());
+        assert!(!MarkKind::Ornament(Ornament::Turn).allowed_on_rest());
+        assert!(MarkKind::Pause(Pause::Breath).allowed_on_rest());
+    }
+
+    #[test]
+    fn ornaments_sit_on_notes_and_pauses_also_follow_rests() {
+        let mut score = Score::default();
+        let a = score.insert(0, 0, note(Step::C)).unwrap();
+        let rest = score
+            .insert(
+                0,
+                1,
+                Event {
+                    pitches: Pitches::default(),
+                    duration: Duration::Quarter,
+                    notation: Notation::default(),
+                },
+            )
+            .unwrap();
+        for kind in [
+            MarkKind::Ornament(Ornament::Mordent),
+            MarkKind::Pause(Pause::Caesura),
+        ] {
+            score.set_point_mark(a, kind.family(), Some(kind)).unwrap();
+            assert_eq!(score.point_mark(a, kind.family()), Some(kind));
+            let mark = MarkRef::point(kind.family(), a).unwrap();
+            assert_eq!(score.mark_label(mark).as_deref(), Some(kind.label()));
+            assert!(mark.can_move());
+        }
+        assert!(
+            score
+                .set_point_mark(
+                    rest,
+                    MarkFamily::Ornament,
+                    Some(MarkKind::Ornament(Ornament::Turn))
+                )
+                .is_err()
+        );
+        score.set_pause(rest, Some(Pause::Breath)).unwrap();
+        score.remove_mark(MarkRef::Ornament(a)).unwrap();
+        assert_eq!(score.event(a).unwrap().notation.ornament, None);
+        assert_eq!(score.event(a).unwrap().notation.pause, Some(Pause::Caesura));
     }
 
     #[test]

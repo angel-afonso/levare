@@ -101,6 +101,10 @@ fn clef(clef: Clef) -> &'static str {
         Clef::Tenor => "Do 4.ª",
         Clef::Bass => "Fa",
         Clef::Percussion => "Percusión",
+        Clef::TrebleOctaveDown => "Sol 8vb",
+        Clef::TrebleOctaveUp => "Sol 8va",
+        Clef::BassOctaveDown => "Fa 8vb",
+        Clef::BassOctaveUp => "Fa 8va",
     }
 }
 

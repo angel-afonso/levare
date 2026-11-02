@@ -1,9 +1,12 @@
 //! One voice of one measure as a line of text: `C4:4. R:8 [Eb4 G4]:2~ D5:8t{f}`.
+//! A tuplet follows the dots: `t` for a triplet, `(5)` for the usual ratio
+//! of five, `(7:8)` for any other, and `(3:2/8)` when it counts in another
+//! value than the note's.
 //! Pitches are written pitches in scientific octaves (`C4` is middle C), as
 //! stored in the score; the marks in braces are informational only.
 use score_core::{
     Accidental, ConnectionKind, Duration, ElementId, Event, MarkKind, NoteValue, PartId, Pitch,
-    Pitches, Score, StaffId, Step, Voice,
+    Pitches, Score, StaffId, Step, Tuplet, Voice,
 };
 use std::fmt;
 
@@ -124,27 +127,61 @@ pub fn format_voice(
 
 fn pitch_text(pitch: Pitch) -> String {
     let accidental = match pitch.accidental() {
+        Some(Accidental::DoubleSharp) => "##",
         Some(Accidental::Sharp) => "#",
-        Some(Accidental::Flat) => "b",
         Some(Accidental::Natural) => "n",
+        Some(Accidental::Flat) => "b",
+        Some(Accidental::DoubleFlat) => "bb",
         None => "",
     };
     format!("{:?}{accidental}{}", pitch.step, pitch.octave())
 }
 
-fn duration_text(duration: Duration) -> String {
-    let value = match duration.value() {
+/// A note value as its number: 4 for a quarter, 16 for a sixteenth.
+fn value_number(value: NoteValue) -> u8 {
+    match value {
         NoteValue::Whole => 1,
         NoteValue::Half => 2,
         NoteValue::Quarter => 4,
         NoteValue::Eighth => 8,
         NoteValue::Sixteenth => 16,
         NoteValue::ThirtySecond => 32,
+        NoteValue::SixtyFourth => 64,
+    }
+}
+
+fn value_from_number(number: &str) -> Option<NoteValue> {
+    Duration::ALL
+        .into_iter()
+        .map(Duration::value)
+        .find(|value| value_number(*value).to_string() == number)
+}
+
+fn tuplet_text(tuplet: Tuplet, value: NoteValue) -> String {
+    let in_value = tuplet.unit() == value;
+    if in_value && tuplet.is_triplet() {
+        return "t".into();
+    }
+    let ratio = if in_value && Tuplet::usual(tuplet.actual(), value) == Some(tuplet) {
+        tuplet.actual().to_string()
+    } else {
+        format!("{}:{}", tuplet.actual(), tuplet.normal())
     };
+    if in_value {
+        format!("({ratio})")
+    } else {
+        format!("({ratio}/{})", value_number(tuplet.unit()))
+    }
+}
+
+fn duration_text(duration: Duration) -> String {
     format!(
-        "{value}{}{}",
-        if duration.is_dotted() { "." } else { "" },
-        if duration.is_triplet() { "t" } else { "" }
+        "{}{}{}",
+        value_number(duration.value()),
+        ".".repeat(usize::from(duration.dots())),
+        duration
+            .tuplet()
+            .map_or_else(String::new, |t| tuplet_text(t, duration.value()))
     )
 }
 
@@ -266,14 +303,26 @@ impl Reader<'_> {
             .ok_or_else(|| {
                 format!("«{letter}» no es una altura; usa una letra de A a G o R para un silencio")
             })?;
-        let accidental = match self.peek() {
+        let mut accidental = match self.peek() {
             Some('#') => Some(Accidental::Sharp),
             Some('b') => Some(Accidental::Flat),
             Some('n') => Some(Accidental::Natural),
             _ => None,
         };
-        if accidental.is_some() {
+        if let Some(sign) = accidental {
             self.bump();
+            // A second sign of the same kind doubles it: F##4, Bbb3.
+            let double = match sign {
+                Accidental::Sharp => Some(('#', Accidental::DoubleSharp)),
+                Accidental::Flat => Some(('b', Accidental::DoubleFlat)),
+                _ => None,
+            };
+            if let Some((symbol, double)) = double
+                && self.peek() == Some(symbol)
+            {
+                self.bump();
+                accidental = Some(double);
+            }
         }
         let digits = self.digits();
         if digits.is_empty() {
@@ -299,25 +348,137 @@ impl Reader<'_> {
 
     fn duration(&mut self) -> Parsed<Duration> {
         let digits = self.digits();
-        let value = match digits {
-            "" => return Err("falta la duración tras «:» (1, 2, 4, 8, 16 o 32)".into()),
-            "1" => NoteValue::Whole,
-            "2" => NoteValue::Half,
-            "4" => NoteValue::Quarter,
-            "8" => NoteValue::Eighth,
-            "16" => NoteValue::Sixteenth,
-            "32" => NoteValue::ThirtySecond,
-            other => {
-                return Err(format!(
-                    "duración «{other}» no válida; usa 1, 2, 4, 8, 16 o 32"
-                ));
-            }
+        if digits.is_empty() {
+            return Err("falta la duración tras «:» (1, 2, 4, 8, 16, 32 o 64)".into());
+        }
+        let value = value_from_number(digits)
+            .ok_or_else(|| format!("duración «{digits}» no válida; usa 1, 2, 4, 8, 16, 32 o 64"))?;
+        let mut dots = 0;
+        while dots < Duration::MAX_DOTS && self.eat('.') {
+            dots += 1;
+        }
+        let tuplet = if self.eat('t') {
+            Some(Tuplet::triplet(value))
+        } else if self.eat('(') {
+            Some(self.tuplet(value)?)
+        } else {
+            None
         };
-        let dotted = self.eat('.');
-        let triplet = self.eat('t');
         Ok(Duration::default()
             .with_value(value)
-            .with_dotted(dotted)
-            .with_triplet(triplet))
+            .with_dots(dots)
+            .with_tuplet(tuplet))
+    }
+
+    /// `5)`, `7:8)` or `3:2/8)`, after the opening parenthesis.
+    fn tuplet(&mut self, value: NoteValue) -> Parsed<Tuplet> {
+        const FORM: &str = "escribe el grupillo como (5), (7:8) o (3:2/8)";
+        let number = |digits: &str| digits.parse::<u8>().ok();
+        let actual =
+            number(self.digits()).ok_or_else(|| format!("falta el número de notas; {FORM}"))?;
+        let normal = if self.eat(':') {
+            Some(
+                number(self.digits())
+                    .ok_or_else(|| format!("falta el tiempo del grupillo; {FORM}"))?,
+            )
+        } else {
+            None
+        };
+        let unit = if self.eat('/') {
+            let digits = self.digits().to_owned();
+            value_from_number(&digits).ok_or_else(|| {
+                format!("unidad «{digits}» no válida; usa 1, 2, 4, 8, 16, 32 o 64")
+            })?
+        } else {
+            value
+        };
+        if !self.eat(')') {
+            return Err(format!("falta «)» tras el grupillo; {FORM}"));
+        }
+        let tuplet = match normal {
+            Some(normal) => Tuplet::new(actual, normal, unit),
+            None => Tuplet::usual(actual, unit),
+        };
+        tuplet.ok_or_else(|| {
+            let ratio = normal.map_or(actual.to_string(), |normal| format!("{actual}:{normal}"));
+            format!(
+                "grupillo {ratio} no admitido: de 2 a 9 notas, en un tiempo de más de la mitad y menos del doble"
+            )
+        })
+    }
+}
+
+#[cfg(test)]
+mod duration_text_tests {
+    use super::*;
+
+    fn read(text: &str) -> Result<Duration, String> {
+        parse_voice(&format!("C4:{text}"))
+            .map(|events| events[0].event.duration)
+            .map_err(|error| error.message)
+    }
+
+    #[test]
+    fn every_supported_duration_reads_back_as_written() {
+        let units = [NoteValue::Quarter, NoteValue::Eighth, NoteValue::Sixteenth];
+        for base in Duration::ALL {
+            let value = base.value();
+            for dots in 0..=Duration::MAX_DOTS {
+                let tuplets = (2..=Tuplet::MAX_ACTUAL).flat_map(|actual| {
+                    (1..=2 * actual).flat_map(move |normal| {
+                        std::iter::once(value)
+                            .chain(units)
+                            .filter_map(move |unit| Tuplet::new(actual, normal, unit))
+                    })
+                });
+                for tuplet in std::iter::once(None).chain(tuplets.map(Some)) {
+                    let duration = base.with_dots(dots).with_tuplet(tuplet);
+                    let text = duration_text(duration);
+                    assert_eq!(read(&text), Ok(duration), "{text}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tuplets_are_written_as_briefly_as_their_ratio_allows() {
+        let in_value = |value: Duration, actual, normal| {
+            value.with_tuplet(Tuplet::new(actual, normal, value.value()))
+        };
+        assert_eq!(duration_text(Duration::Eighth.with_triplet(true)), "8t");
+        assert_eq!(duration_text(in_value(Duration::Sixteenth, 5, 4)), "16(5)");
+        assert_eq!(
+            duration_text(in_value(Duration::Sixteenth, 7, 8)),
+            "16(7:8)"
+        );
+        let quarter_in_eighths =
+            Duration::Quarter.with_tuplet(Some(Tuplet::triplet(NoteValue::Eighth)));
+        assert_eq!(duration_text(quarter_in_eighths), "4(3:2/8)");
+        assert_eq!(duration_text(Duration::SixtyFourth.with_dots(2)), "64..");
+    }
+
+    #[test]
+    fn earlier_texts_keep_their_meaning() {
+        assert_eq!(read("4."), Ok(Duration::Quarter.with_dotted(true)));
+        assert_eq!(read("8t"), Ok(Duration::Eighth.with_triplet(true)));
+        assert_eq!(
+            read("8.t"),
+            Ok(Duration::Eighth.with_dotted(true).with_triplet(true))
+        );
+    }
+
+    #[test]
+    fn malformed_tuplets_say_how_to_write_them() {
+        for text in ["16(", "16(5", "16(5:)", "16(5/7)"] {
+            let error = read(text).unwrap_err();
+            assert!(
+                error.contains("(5)") || error.contains("unidad"),
+                "{text}: {error}"
+            );
+        }
+        for text in ["16(10)", "16(3:3)", "16(5:1)"] {
+            let error = read(text).unwrap_err();
+            assert!(error.contains("no admitido"), "{text}: {error}");
+        }
     }
 }

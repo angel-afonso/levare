@@ -313,7 +313,7 @@ mod tests {
             (id::SAVE, "cmd-s", "⌘S"),
             (id::REDO, "cmd-y", "⌘Y"),
             (id::RESET_POSITION, "shift-cmd-p", "⇧⌘P"),
-            (id::TAB_NOTE_INPUT, "alt-cmd-1", "⌥⌘1"),
+            (id::TAB_HOME, "alt-cmd-1", "⌥⌘1"),
             (id::TEMPO_TEXT, "alt-cmd-t", "⌥⌘T"),
             (id::GO_TO_BAR, "alt-cmd-g", "⌥⌘G"),
             (id::DELETE_BAR, "cmd-backspace", "⌘⌫"),
@@ -334,7 +334,7 @@ mod tests {
                 (id::SAVE, "ctrl-s", "Ctrl+S"),
                 (id::REDO, "ctrl-y", "Ctrl+Y"),
                 (id::RESET_POSITION, "ctrl-shift-p", "Ctrl+Mayús+P"),
-                (id::TAB_NOTE_INPUT, "ctrl-!", "Ctrl+Mayús+1"),
+                (id::TAB_HOME, "ctrl-!", "Ctrl+Mayús+1"),
                 (id::TEMPO_TEXT, "ctrl-shift-t", "Ctrl+Mayús+T"),
                 (id::GO_TO_BAR, "ctrl-g", "Ctrl+G"),
                 (id::DELETE_BAR, "ctrl-backspace", "Ctrl+Retroceso"),
@@ -446,7 +446,7 @@ mod tests {
         let (keymap, problems) = resolve(&UserKeymap::new());
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(keymap.label(id::VOICE_1).as_deref(), Some("⌥1"));
-        assert_eq!(keymap.label(id::TAB_NOTE_INPUT).as_deref(), Some("⌥⌘1"));
+        assert_eq!(keymap.label(id::TAB_HOME).as_deref(), Some("⌥⌘1"));
     }
 
     #[test]

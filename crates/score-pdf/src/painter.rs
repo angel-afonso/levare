@@ -43,13 +43,12 @@ pub(crate) trait Canvas {
     fn show_text(&mut self, text: &str, style: Serif, size: f64);
 }
 
-/// Paper size in points: A3 for full scores of 12 parts or more, A4 otherwise.
+/// Paper size in points, as the score's page setup asks: by default A3 for
+/// full scores of 12 parts or more, A4 otherwise.
 pub(crate) fn paper(score: &Score, part: bool) -> (f64, f64) {
-    if !part && score.parts().len() >= 12 {
-        (841.8898, 1190.5512)
-    } else {
-        (595.2756, 841.8898)
-    }
+    let points = |mm: f32| (f64::from(mm) * 72. / 25.4 * 10_000.).round() / 10_000.;
+    let (width, height) = score.page_setup().paper_mm(score, part);
+    (points(width), points(height))
 }
 
 /// Print layout, independent of the screen's zoom and view.
@@ -96,16 +95,23 @@ pub(crate) fn page<C: Canvas>(
         face,
         engraving,
     };
+    // The heading, the copyright and the page number keep inside the margins.
+    let margin = page.margin;
+    let (width, height) = (page.width - 2. * margin, page.height - 2. * margin);
+    painter.canvas.save();
+    painter
+        .canvas
+        .translate(f64::from(margin), f64::from(margin));
     if index == 0 {
-        painter.header(score, page.width);
+        painter.header(score, width);
         painter.text(
             &score.credits().copyright,
             Serif::Regular,
             10.,
-            f64::from(page.width / 2.),
-            f64::from(page.top + page.height - 42.),
+            f64::from(width / 2.),
+            f64::from(page.top + height - 42.),
             Align::Center,
-            Some(f64::from(page.width - 112.)),
+            Some(f64::from(width - 112.)),
         );
     }
     if part {
@@ -113,21 +119,31 @@ pub(crate) fn page<C: Canvas>(
             &score.part_name(score.parts()[0].id()),
             Serif::Bold,
             22.,
-            f64::from(page.width / 2.),
+            f64::from(width / 2.),
             f64::from(page.top) + if index == 0 { 132. } else { 48. },
             Align::Center,
-            Some(f64::from(page.width - 112.)),
+            Some(f64::from(width - 112.)),
         );
     }
-    painter.text(
-        &format!("{} / {}", index + 1, layout.pages.len()),
-        Serif::Regular,
-        13.,
-        f64::from(page.width / 2.),
-        f64::from(page.top + page.height - 24.),
-        Align::Center,
-        None,
-    );
+    if let Some((number, place)) = layout.page_number(index) {
+        let (x, y, align) = match place {
+            score_layout::PageNumberPlace::Footer => {
+                (width / 2., page.top + height - 24., Align::Center)
+            }
+            score_layout::PageNumberPlace::TopLeft => (56., page.top + 36., Align::Left),
+            score_layout::PageNumberPlace::TopRight => (width - 56., page.top + 36., Align::Right),
+        };
+        painter.text(
+            &number,
+            Serif::Regular,
+            13.,
+            f64::from(x),
+            f64::from(y),
+            align,
+            None,
+        );
+    }
+    painter.canvas.restore();
     painter.page(
         layout,
         page.first_measure,
@@ -536,12 +552,17 @@ impl<C: Canvas> Painter<'_, C> {
                     false,
                 );
             }
+        }
+        for measure in layout
+            .numbered_bars()
+            .filter(|m| (first..=last).contains(&m.index))
+        {
             self.text(
                 &(measure.index + 1).to_string(),
                 Serif::Regular,
                 11.,
-                offset.x.into(),
-                (offset.y - 18.).into(),
+                measure.origin.x.into(),
+                (measure.origin.y - score_layout::BAR_NUMBER_RISE).into(),
                 Align::Left,
                 None,
             );

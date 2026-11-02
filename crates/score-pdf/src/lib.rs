@@ -277,6 +277,40 @@ mod portable_tests {
         let orchestra = example("orquesta-completa");
         assert!(orchestra.parts().len() >= 12);
         assert_eq!(painter::paper(&orchestra, false), (841.8898, 1190.5512));
+        // The page setup chooses the paper, also for a part.
+        let mut letter = example("trio");
+        letter
+            .set_page_setup(score_core::PageSetup {
+                paper: score_core::Paper::Letter,
+                landscape: true,
+                staff: Some(60),
+                hide_empty_staves: false,
+                margins: Default::default(),
+            })
+            .unwrap();
+        assert_eq!(painter::paper(&letter, false), (792., 612.));
+        check(&letter, false);
+        let part = letter.extract_part(letter.parts()[0].id()).unwrap();
+        assert_eq!(painter::paper(&part, true), (792., 612.));
+        // Hiding empty staves still prints every page of a large orchestra.
+        let mut hidden = example("menuetto-y-trio-orquesta");
+        hidden
+            .set_page_setup(score_core::PageSetup {
+                hide_empty_staves: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let full = painter::layout(&example("menuetto-y-trio-orquesta"), false);
+        assert!(check(&hidden, false).len() <= full.pages.len());
+        // Wide margins print the same paper with the heading inside them.
+        let mut margins = example("trio");
+        margins
+            .set_page_setup(score_core::PageSetup {
+                margins: score_core::Margins::ExtraWide,
+                ..Default::default()
+            })
+            .unwrap();
+        check(&margins, false);
     }
 
     #[test]

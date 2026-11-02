@@ -1,5 +1,8 @@
 use super::*;
 use score_core::{Connection, ConnectionKind, Division, Duration, MarkKind, Voice};
+
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
 fn note(step: score_core::Step, value: Duration) -> Event {
     Event {
         pitches: score_core::Pitches::single(Pitch::new(step, 4)),
@@ -42,7 +45,7 @@ fn alt_arrows_into_another_part_keep_the_sounding_position() {
     assert_eq!(editor.selection(), Some(ids[1][2]));
     assert_eq!(
         editor.divisi_position(),
-        score_core::DivisiPoint::new(0, 96)
+        score_core::DivisiPoint::new(0, 2 * Q)
     );
 }
 
@@ -127,10 +130,7 @@ fn alt_arrows_into_a_held_note_select_it() {
     editor.select(source);
     editor.select_display_staff_in(PartId(1), StaffId::Upper);
     assert_eq!(editor.selection(), Some(target));
-    assert_eq!(
-        editor.divisi_position(),
-        score_core::DivisiPoint::new(0, 48)
-    );
+    assert_eq!(editor.divisi_position(), score_core::DivisiPoint::new(0, Q));
 }
 
 #[test]
@@ -188,14 +188,14 @@ fn alt_arrows_from_voice_two_keep_it_when_available_and_fall_back_otherwise() {
     assert_eq!(editor.cursor().voice, Voice::Two);
     assert_eq!(
         editor.divisi_position(),
-        score_core::DivisiPoint::new(0, 96)
+        score_core::DivisiPoint::new(0, 2 * Q)
     );
     editor.select_display_staff_in(PartId(2), StaffId::Upper);
     assert_eq!(editor.selection(), Some(target_one));
     assert_eq!(editor.cursor().voice, Voice::One);
     assert_eq!(
         editor.divisi_position(),
-        score_core::DivisiPoint::new(0, 96)
+        score_core::DivisiPoint::new(0, 2 * Q)
     );
 }
 
@@ -250,14 +250,14 @@ fn voices_have_independent_capacity_navigation_selection_clipboard_and_history()
     assert_eq!(e.score().event_tick(first), Some(0));
     e.execute(Command::Insert(note(G, Duration::Half))).unwrap();
     let second = e.selection().unwrap();
-    assert_eq!(e.score().event_tick(second), Some(96));
+    assert_eq!(e.score().event_tick(second), Some(u64::from(2 * Q)));
     assert_eq!(e.score().measures()[0].len(), 6);
-    assert_eq!(e.score().measures()[0].used_ticks(), 192);
+    assert_eq!(e.score().measures()[0].used_ticks(), 4 * Q);
     e.select_all();
     assert_eq!(e.selected_ids(), [first, second]);
     let clip = e.copy_selection().unwrap();
     assert_eq!(clip.events.len(), 2);
-    assert_eq!(clip.events[1].offset, 96);
+    assert_eq!(clip.events[1].offset, u64::from(2 * Q));
     e.execute(Command::Erase).unwrap();
     assert!(e.score().event(first).unwrap().pitches.is_empty());
     assert_eq!(
@@ -294,7 +294,7 @@ fn independent_overlapping_slurs_remain_voice_local_and_divisi_preserves_music()
     let mut e = Editor::new(score).unwrap();
     e.select_part(violin);
     let mut voices = Vec::new();
-    for voice in Voice::ALL {
+    for voice in [Voice::One, Voice::Two] {
         e.select_voice(voice);
         e.execute(Command::Insert(note(C, Duration::Half))).unwrap();
         let a = e.selection().unwrap();
@@ -429,7 +429,7 @@ fn selected_divisi_passage_and_unis_boundaries_keep_both_voices_and_undo() {
     }
     let mut ids = Vec::new();
     for bar in 0..6 {
-        for voice in Voice::ALL {
+        for voice in [Voice::One, Voice::Two] {
             ids.push(
                 s.insert_in_voice(
                     p,
@@ -559,11 +559,11 @@ fn midbar_divisi_unis_and_selected_passages_use_exact_note_positions_and_undo() 
     let part = e.score().part(p).unwrap();
     assert_eq!(
         part.divisi_changes_in(0).collect::<Vec<_>>(),
-        [(48, Division::Divisi), (144, Division::Unison)]
+        [(Q, Division::Divisi), (3 * Q, Division::Unison)]
     );
-    assert!(!part.divisi_at_tick(0, 47));
-    assert!(part.divisi_at_tick(0, 48));
-    assert!(!part.divisi_at_tick(0, 144));
+    assert!(!part.divisi_at_tick(0, 47 * Q / 48));
+    assert!(part.divisi_at_tick(0, Q));
+    assert!(!part.divisi_at_tick(0, 3 * Q));
     assert_eq!(part.measures()[0].voice_len(Voice::Two), 1);
     e.undo();
     e.undo();
@@ -577,7 +577,7 @@ fn midbar_divisi_unis_and_selected_passages_use_exact_note_positions_and_undo() 
             .unwrap()
             .divisi_changes_in(0)
             .collect::<Vec<_>>(),
-        [(48, Division::Divisi), (144, Division::Unison)]
+        [(Q, Division::Divisi), (3 * Q, Division::Unison)]
     );
     assert_eq!(
         e.score().part(p).unwrap().measures()[0].voice_len(Voice::Two),
@@ -610,7 +610,7 @@ fn removing_a_midbar_boundary_after_rhythm_edits_never_resurrects_mirror_labels(
         .unwrap();
     s.set_division(b, Some(Division::Divisi)).unwrap();
     s.set_durations(&[(a, Duration::Half)]).unwrap();
-    s.remove_divisi_change_at(p, DivisiPoint::new(0, 48))
+    s.remove_divisi_change_at(p, DivisiPoint::new(0, Q))
         .unwrap();
     assert!(!s.part(p).unwrap().has_passage_divisi());
     assert_eq!(s.mark_kind(MarkRef::Division(b)), None);
@@ -627,7 +627,7 @@ fn removing_a_midbar_boundary_after_rhythm_edits_never_resurrects_mirror_labels(
     let before_cut = s.clone();
     // Two ticks are shorter than any written value, even a triplet thirty-second.
     assert!(
-        s.set_divisi_span(p, DivisiPoint::new(0, 2), None, true)
+        s.set_divisi_span(p, DivisiPoint::new(0, Q / 24), None, true)
             .is_err()
     );
     assert_eq!(s, before_cut);
@@ -635,7 +635,7 @@ fn removing_a_midbar_boundary_after_rhythm_edits_never_resurrects_mirror_labels(
         before
             .part(p)
             .unwrap()
-            .divisi_change_at_tick(0, 48)
+            .divisi_change_at_tick(0, Q)
             .is_none()
     );
 }
@@ -665,8 +665,8 @@ fn selecting_a_held_voice_keeps_exact_midbar_positions_for_editing_and_undo() {
         .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
@@ -674,23 +674,23 @@ fn selecting_a_held_voice_keeps_exact_midbar_positions_for_editing_and_undo() {
     e.select(upper[3]);
     e.select_display_staff(StaffId::Lower);
     assert_eq!(e.selection(), Some(held));
-    assert_eq!(e.divisi_position(), DivisiPoint::new(0, 144));
-    e.select_divisi_position(DivisiPoint::new(0, 48));
-    assert_eq!(e.divisi_position(), DivisiPoint::new(0, 48));
+    assert_eq!(e.divisi_position(), DivisiPoint::new(0, 3 * Q));
+    e.select_divisi_position(DivisiPoint::new(0, Q));
+    assert_eq!(e.divisi_position(), DivisiPoint::new(0, Q));
     e.execute(Command::ToggleMark(MarkKind::Division(Division::Unison)))
         .unwrap();
     assert_eq!(
-        e.score().part(p).unwrap().divisi_change_at_tick(0, 48),
+        e.score().part(p).unwrap().divisi_change_at_tick(0, Q),
         Some(Division::Unison)
     );
     e.undo();
-    assert_eq!(e.divisi_position(), DivisiPoint::new(0, 48));
+    assert_eq!(e.divisi_position(), DivisiPoint::new(0, Q));
     e.select(held);
-    e.select_divisi_position(DivisiPoint::new(0, 144));
+    e.select_divisi_position(DivisiPoint::new(0, 3 * Q));
     e.execute(Command::ToggleMark(MarkKind::Division(Division::Divisi)))
         .unwrap();
     assert_eq!(
-        e.score().part(p).unwrap().divisi_change_at_tick(0, 144),
+        e.score().part(p).unwrap().divisi_change_at_tick(0, 3 * Q),
         Some(Division::Divisi)
     );
     assert_eq!(e.score().event(held).unwrap().duration, Duration::Whole);
@@ -714,20 +714,20 @@ fn paste_clears_continuation_position_and_undo_restores_it() {
         .unwrap();
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();
     let mut e = Editor::new(s).unwrap();
     e.select(held);
-    e.select_divisi_position(DivisiPoint::new(0, 48));
+    e.select_divisi_position(DivisiPoint::new(0, Q));
     let clip = e.copy_selection().unwrap();
     e.paste(&clip).unwrap();
     assert_eq!(e.selection().unwrap().measure, 1);
     assert_eq!(e.divisi_position(), DivisiPoint::new(1, 0));
     e.undo();
-    assert_eq!(e.divisi_position(), DivisiPoint::new(0, 48));
+    assert_eq!(e.divisi_position(), DivisiPoint::new(0, Q));
     e.redo();
     assert_eq!(e.divisi_position(), DivisiPoint::new(1, 0));
 }
@@ -758,8 +758,8 @@ fn lower_staff_navigation_preserves_visible_notes_outside_midbar_divisi() {
     }
     s.set_divisi_span(
         p,
-        DivisiPoint::new(0, 48),
-        Some(DivisiPoint::new(0, 144)),
+        DivisiPoint::new(0, Q),
+        Some(DivisiPoint::new(0, 3 * Q)),
         true,
     )
     .unwrap();

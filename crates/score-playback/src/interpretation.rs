@@ -13,6 +13,9 @@ pub(crate) const DETACHED_MAX_GAP_MS: u64 = 60;
 /// A slurred staccato (portato) keeps more of its length than a plain staccato.
 pub(crate) const PORTATO_PERCENT: u64 = 75;
 pub(crate) const STACCATO_PERCENT: u64 = 50;
+pub(crate) const STACCATISSIMO_PERCENT: u64 = 25;
+/// Each quick note of a mordent or turn, at most.
+const ORNAMENT_NOTE_MS: u64 = 70;
 /// Connected notes under a slur overlap slightly, like a legato attack.
 pub(crate) const LEGATO_OVERLAP_MS: u64 = 25;
 // Small attack weights; expression CC11 remains on its written envelope.
@@ -95,6 +98,7 @@ pub(crate) fn sounding_end(
     match (articulation, slurred) {
         (Some(Articulation::Staccato), true) => start + length * PORTATO_PERCENT / 100,
         (Some(Articulation::Staccato), false) => start + length * STACCATO_PERCENT / 100,
+        (Some(Articulation::Staccatissimo), _) => start + length * STACCATISSIMO_PERCENT / 100,
         (Some(Articulation::Tenuto), _) | (_, true) => end,
         _ => {
             let gap = (length * (100 - DETACHED_PERCENT) / 100)
@@ -102,6 +106,20 @@ pub(crate) fn sounding_end(
             end - gap
         }
     }
+}
+
+/// The sounding end of a written interval ending in a breath or caesura:
+/// cut short before the next note, whatever its articulation.
+pub(crate) fn before_pause(
+    start: u64,
+    end: u64,
+    sounding: u64,
+    pause: Option<score_core::Pause>,
+) -> u64 {
+    pause.map_or(sounding, |pause| {
+        let (part, whole) = pause.silence();
+        sounding.min(end - (end - start) * u64::from(part) / u64::from(whole))
+    })
 }
 
 pub(crate) fn legato_overlap(rate: u32) -> u64 {
@@ -115,11 +133,11 @@ pub(crate) fn metric_offset(score: &Score, written_tick: u64) -> i8 {
     metric_offset_in_bar(score.time_at(measure), within)
 }
 
-fn metric_offset_in_bar(time: TimeSignature, within: u16) -> i8 {
+fn metric_offset_in_bar(time: TimeSignature, within: u32) -> i8 {
     if within == 0 {
         return DOWNBEAT_BOOST;
     }
-    let mut pulse = TICKS_PER_WHOLE / u16::from(time.denominator);
+    let mut pulse = TICKS_PER_WHOLE / u32::from(time.denominator);
     if time.denominator == 8 && [6, 9, 12].contains(&time.numerator) {
         pulse *= 3;
     }
@@ -191,7 +209,10 @@ fn splitmix64(mut value: u64) -> u64 {
 }
 
 pub(crate) fn human_variation(part_index: usize, written_tick: u64) -> (u64, i16) {
-    let seed = splitmix64((part_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ written_tick);
+    // Seeded with ticks of 192 per whole note, as before tuplets, so existing
+    // scores keep the same variation.
+    let tick = written_tick / u64::from(TICKS_PER_WHOLE / 192);
+    let seed = splitmix64((part_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ tick);
     let delay_ms = seed % (HUMAN_MAX_DELAY_MS + 1);
     let velocity =
         (splitmix64(seed) % (HUMAN_VELOCITY_SPREAD * 2 + 1)) as i16 - HUMAN_VELOCITY_SPREAD as i16;
@@ -238,7 +259,7 @@ pub(crate) fn shape(
             continue;
         }
         let measure = starts.partition_point(|start| *start <= sound.written_range.0) - 1;
-        let within = (sound.written_range.0 - starts[measure]) as u16;
+        let within = (sound.written_range.0 - starts[measure]) as u32;
         let metric = metric_offset_in_bar(score.time_at(measure), within);
         offsets[index] += i16::from(metric);
     }
@@ -356,6 +377,54 @@ pub(crate) fn graces(
     let principal = &mut sounds[index + pitches.len()];
     principal.start += each * count;
     principal.attack_duration = principal.attack_duration.saturating_sub(each * count);
+}
+
+/// A mordent or turn plays its neighbours quickly at the start of a single
+/// note, which then sounds for the rest of its length.
+pub(crate) fn ornaments(score: &Score, sounds: &mut Vec<super::SoundSpan>, from: usize, rate: u32) {
+    for sound in sounds.split_off(from) {
+        let ornament = score
+            .event(sound.element)
+            .and_then(|event| event.notation.ornament)
+            .filter(|_| !sound.grace && sound.pitches.len() == 1);
+        let notes: Option<Vec<_>> = ornament.and_then(|ornament| {
+            ornament
+                .neighbours()
+                .iter()
+                .map(|&steps| score.neighbour(sound.element, steps))
+                .collect()
+        });
+        let Some(notes) = notes else {
+            sounds.push(sound);
+            continue;
+        };
+        let length = sound.written_end.saturating_sub(sound.start);
+        let count = notes.len() as u64;
+        let each = (u64::from(rate) * ORNAMENT_NOTE_MS / 1000)
+            .min(length / (count + 1))
+            .max(1);
+        for (index, pitch) in notes.into_iter().enumerate() {
+            let start = sound.start + each * index as u64;
+            sounds.push(super::SoundSpan {
+                start,
+                end: start + each,
+                attack_duration: each,
+                written_end: start + each,
+                pitches: score_core::Pitches::single(Some(pitch)),
+                boost: if index == 0 { sound.boost } else { 0 },
+                articulation: if index == 0 { sound.articulation } else { None },
+                slurred: false,
+                ..sound
+            });
+        }
+        let start = sound.start + each * count;
+        sounds.push(super::SoundSpan {
+            start,
+            attack_duration: sound.attack_duration.saturating_sub(each * count),
+            boost: 0,
+            ..sound
+        });
+    }
 }
 
 /// Trills alternate every single note they cover with the note above, about
@@ -667,6 +736,10 @@ mod tests {
         assert_eq!(
             sounding_end(0, quarter, Some(Articulation::Staccato), false, rate),
             12_000
+        );
+        assert_eq!(
+            sounding_end(0, quarter, Some(Articulation::Staccatissimo), true, rate),
+            6_000
         );
         assert_eq!(
             sounding_end(0, quarter, Some(Articulation::Staccato), true, rate),

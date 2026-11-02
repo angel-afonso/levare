@@ -581,7 +581,7 @@ impl SoundEngine for NativeBank {
         // portato: the sustained recording with the plan's shorter length.
         let voice = if note.technique == PlayingTechnique::Pizzicato {
             lane.pizz.as_mut()
-        } else if note.articulation == Some(Articulation::Staccato)
+        } else if note.articulation.is_some_and(Articulation::is_short)
             && !note.legato
             && lane.short.as_ref().is_some_and(covers)
         {
@@ -1046,7 +1046,7 @@ mod tests {
             bounds.iter().filter(|b| **b <= level).count() - 1
         };
         // ppp, pp, p, mp, mf, f, ff, fff.
-        let dynamics = score_core::Dynamic::ALL.map(|d| u32::from(d.velocity()));
+        let dynamics = score_core::Dynamic::LEVELS.map(|d| u32::from(d.velocity()));
         let two = "lovel=0 hivel=62 lovel=63 hivel=127";
         assert_eq!(dynamics.map(|v| layer(two, v)), [0, 0, 0, 0, 1, 1, 1, 1]);
         let three = "lovel=0 hivel=41 lovel=42 hivel=83 lovel=84 hivel=127";

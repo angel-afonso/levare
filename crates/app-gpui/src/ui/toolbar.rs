@@ -47,6 +47,9 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
             )
         }
         Visual::Chord => Some(music_chord(view, size, color).into_any_element()),
+        Visual::Beam { flagged, beamed } => {
+            Some(music_beam(view, size, color, flagged, beamed).into_any_element())
+        }
         Visual::Tie | Visual::Slur => {
             Some(music_connection(view, size, color, visual == Visual::Slur).into_any_element())
         }
@@ -1060,8 +1063,9 @@ pub fn tabs(view: &AppView, cx: &Context<AppView>) -> Div {
 struct Entry<'a> {
     writing: bool,
     duration: Option<&'a str>,
-    dotted: bool,
-    triplet: bool,
+    dots: u8,
+    /// «tresillo», «quintillo»…
+    tuplet: Option<&'a str>,
     voice: u8,
     chord: bool,
     /// The key that starts writing, offered while selecting.
@@ -1079,11 +1083,14 @@ impl Entry<'_> {
         let mut parts = vec!["Escribiendo".to_string()];
         if let Some(duration) = self.duration {
             let mut figure = duration.to_string();
-            if self.dotted {
-                figure.push_str(" con puntillo");
+            match self.dots {
+                0 => {}
+                1 => figure.push_str(" con puntillo"),
+                _ => figure.push_str(" con doble puntillo"),
             }
-            if self.triplet {
-                figure.push_str(" en tresillo");
+            if let Some(tuplet) = self.tuplet {
+                figure.push_str(" en ");
+                figure.push_str(tuplet);
             }
             parts.push(figure);
         }
@@ -1103,8 +1110,8 @@ impl Entry<'_> {
             return text;
         }
         Entry {
-            dotted: false,
-            triplet: false,
+            dots: 0,
+            tuplet: None,
             chord: false,
             key: None,
             ..*self
@@ -1124,22 +1131,20 @@ fn entry_pill(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
         id::EIGHTH,
         id::SIXTEENTH,
         id::THIRTY_SECOND,
+        id::SIXTY_FOURTH,
     ]
     .into_iter()
     .find(|command| view.state(*command).checked)
     .and_then(|command| view.shortcuts.registry.get(command.as_str()))
     .map(|spec| spec.label);
     let key = view.shortcuts.label(id::TOGGLE_NOTE_INPUT);
+    let rhythm = super::active_duration(view);
     let text = Entry {
         writing,
         duration,
-        dotted: view.state(id::DOT).checked,
-        triplet: view.state(id::TRIPLET).checked,
-        voice: if view.state(id::VOICE_1).checked {
-            1
-        } else {
-            2
-        },
+        dots: rhythm.dots(),
+        tuplet: rhythm.tuplet().map(score_core::Tuplet::name),
+        voice: view.document.editor.cursor().voice.number(),
         chord: view.state(id::CHORD_MODE).checked,
         key: key.as_deref(),
     }
@@ -1217,8 +1222,8 @@ mod tests {
         Entry {
             writing,
             duration,
-            dotted,
-            triplet,
+            dots: u8::from(dotted),
+            tuplet: triplet.then_some("tresillo"),
             voice,
             chord,
             key,
@@ -1343,6 +1348,10 @@ mod tests {
                             assert!(font.covers(harmonic.glyph()), "{}", group.title)
                         }
                         Visual::Chord => assert!(font.covers(super::super::CHORD_NOTE)),
+                        Visual::Beam { .. } => {
+                            assert!(font.covers(super::super::CONNECTION_HEAD));
+                            assert!(font.covers(super::super::BEAM_FLAG));
+                        }
                         Visual::Tie | Visual::Slur => {
                             assert!(font.covers(super::super::CONNECTION_UP));
                             assert!(font.covers(super::super::CONNECTION_DOWN));

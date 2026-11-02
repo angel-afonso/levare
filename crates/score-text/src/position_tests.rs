@@ -4,6 +4,9 @@ use score_core::{
 };
 use score_edit::{Command, Editor};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn time(numerator: u8, denominator: u8) -> TimeSignature {
     TimeSignature {
         numerator,
@@ -85,19 +88,19 @@ fn ambiguous_part_lists_candidates() {
 fn beat_ticks_in_simple_and_compound() {
     let simple = score_in(time(4, 4), 1);
     assert_eq!(beat_tick(&simple, 0, 1.), Ok(0));
-    assert_eq!(beat_tick(&simple, 0, 3.), Ok(96));
-    assert_eq!(beat_tick(&simple, 0, 2.5), Ok(72));
+    assert_eq!(beat_tick(&simple, 0, 3.), Ok(2 * Q));
+    assert_eq!(beat_tick(&simple, 0, 2.5), Ok(3 * Q / 2));
     let compound = score_in(time(6, 8), 1);
-    assert_eq!(beat_tick(&compound, 0, 4.), Ok(72));
-    assert_eq!(beat_tick(&compound, 0, 6.), Ok(120));
+    assert_eq!(beat_tick(&compound, 0, 4.), Ok(3 * Q / 2));
+    assert_eq!(beat_tick(&compound, 0, 6.), Ok(5 * Q / 2));
 }
 
 #[test]
 fn beat_follows_the_time_signature_of_its_own_bar() {
     let mut score = score_in(time(4, 4), 3);
     score.set_time_signature_at(1, time(6, 8)).unwrap();
-    assert_eq!(beat_tick(&score, 0, 4.), Ok(144));
-    assert_eq!(beat_tick(&score, 1, 4.), Ok(72));
+    assert_eq!(beat_tick(&score, 0, 4.), Ok(3 * Q));
+    assert_eq!(beat_tick(&score, 1, 4.), Ok(3 * Q / 2));
 }
 
 #[test]
@@ -117,7 +120,7 @@ fn beat_must_land_on_a_tick() {
     let score = score_in(time(4, 4), 1);
     let error = beat_tick(&score, 0, 1.01).unwrap_err();
     assert!(error.contains("1.01"), "{error}");
-    // A third of a beat is exactly 16 ticks.
+    // A third of a beat is a whole number of ticks.
     assert!(beat_tick(&score, 0, 1.0 + 1. / 3.).is_ok());
 }
 
@@ -129,7 +132,7 @@ fn event_at_reports_onsets() {
         editor.execute(Command::Write(quarter())).unwrap();
     }
     let part = editor.score().parts()[0].id();
-    let found = event_at(editor.score(), part, StaffId::Upper, Voice::One, 0, 96).unwrap();
+    let found = event_at(editor.score(), part, StaffId::Upper, Voice::One, 0, 2 * Q).unwrap();
     assert_eq!(
         (found.part, found.staff, found.measure),
         (part, StaffId::Upper, 0)
@@ -138,7 +141,7 @@ fn event_at_reports_onsets() {
         .voice_id_at(Voice::One, 2)
         .unwrap();
     assert_eq!(found.event, expected);
-    let error = event_at(editor.score(), part, StaffId::Upper, Voice::One, 0, 24).unwrap_err();
+    let error = event_at(editor.score(), part, StaffId::Upper, Voice::One, 0, Q / 2).unwrap_err();
     assert!(error.contains("1, 2, 3, 4"), "{error}");
     let error = event_at(editor.score(), part, StaffId::Upper, Voice::Two, 0, 0).unwrap_err();
     assert!(error.contains("voz 2"), "{error}");
@@ -157,7 +160,7 @@ fn pickup_bar_numbering() {
     assert_eq!(bar_index(&score, 4), Ok(3));
     assert_eq!(beat_tick(&score, 0, 1.), Ok(0));
     assert!(beat_tick(&score, 0, 2.).is_err());
-    assert_eq!(beat_tick(&score, 1, 4.), Ok(144));
+    assert_eq!(beat_tick(&score, 1, 4.), Ok(3 * Q));
     let error = bar_index(&score, 5).unwrap_err();
     assert!(error.contains("4 compases"), "{error}");
     assert!(bar_index(&score, 0).is_err());
@@ -194,6 +197,23 @@ fn fractional_onsets_round_trip() {
     assert_eq!(labels.len(), ticks.len(), "{error}");
     for (label, tick) in labels.into_iter().zip(ticks) {
         assert_eq!(beat_tick(editor.score(), 0, label), Ok(tick), "{label}");
+    }
+}
+
+#[test]
+fn printed_beats_land_on_the_simplest_division_of_the_beat() {
+    let score = score_in(time(4, 4), 1);
+    // As `beat_label` prints the onsets of a triplet, a quintuplet and
+    // sixty-fourths.
+    for (beat, tick) in [
+        (1.333, Q / 3),
+        (1.667, 2 * Q / 3),
+        (1.2, Q / 5),
+        (1.8, 4 * Q / 5),
+        (1.063, Q / 16),
+        (2.938, Q + 15 * Q / 16),
+    ] {
+        assert_eq!(beat_tick(&score, 0, beat), Ok(tick), "{beat}");
     }
 }
 

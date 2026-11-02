@@ -1025,7 +1025,7 @@ impl AppView {
                         if mode == crate::note_drag::Motion::Time {
                             time.map_or_else(|| "Posición original · Esc cancela".into(), |t| {
                                 let time = self.document.editor.score().time_at(t.measure);
-                                let beat = 1. + f64::from(t.tick) / f64::from(score_core::TICKS_PER_WHOLE / u16::from(time.denominator));
+                                let beat = 1. + f64::from(t.tick) / f64::from(score_core::TICKS_PER_WHOLE / u32::from(time.denominator));
                                 format!("{} · Compás {} · Tiempo {beat:.2} · Suelta para aplicar; Esc cancela", if t.swap { "Intercambiar figuras" } else { "Mover figura" }, t.measure + 1)
                             })
                         } else { format!("{pitch} · Suelta para aplicar; Esc cancela") }
@@ -1122,8 +1122,8 @@ pub(super) fn passage_bounds(layout: &Layout, ids: &[ElementId]) -> Vec<Bounds<P
             if b <= a {
                 continue;
             }
-            let a = (a - m.start_tick) as u16;
-            let b = (b - m.start_tick) as u16;
+            let a = (a - m.start_tick) as u32;
+            let b = (b - m.start_tick) as u32;
             let left = if a == 0 {
                 0.
             } else {
@@ -1616,8 +1616,11 @@ mod tests {
         score
             .set_divisi_span(
                 part,
-                score_core::DivisiPoint::new(0, 48),
-                Some(score_core::DivisiPoint::new(0, 144)),
+                score_core::DivisiPoint::new(0, score_core::TICKS_PER_QUARTER),
+                Some(score_core::DivisiPoint::new(
+                    0,
+                    3 * score_core::TICKS_PER_QUARTER,
+                )),
                 true,
             )
             .unwrap();
@@ -1647,8 +1650,12 @@ mod tests {
             );
         }
         let lower = layout.measure_on(part, StaffId::Lower, 0).unwrap();
-        let (voice, index) =
-            lower.insertion_near(score_core::Voice::Two, lower.content.x_at_tick(96.));
+        let (voice, index) = lower.insertion_near(
+            score_core::Voice::Two,
+            lower
+                .content
+                .x_at_tick(f64::from(2 * score_core::TICKS_PER_QUARTER)),
+        );
         assert_eq!(voice, score_core::Voice::Two);
         assert_eq!(index, 2);
     }

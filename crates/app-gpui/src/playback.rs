@@ -36,6 +36,10 @@ pub struct Playback {
     seek_tick: Option<u64>,
     /// Rehearsal at half the written tempo.
     pub half_speed: bool,
+    /// Click every beat while playing.
+    pub metronome: bool,
+    /// One bar of clicks before playback starts.
+    pub count_in: bool,
     /// Play `loop_ticks` again and again, or the whole score without them.
     pub looping: bool,
     loop_ticks: Option<(u64, u64)>,
@@ -81,6 +85,8 @@ impl Playback {
             clock: None,
             seek_tick: None,
             half_speed: false,
+            metronome: false,
+            count_in: false,
             looping: false,
             loop_ticks: None,
             last_start: None,
@@ -377,13 +383,17 @@ impl Playback {
                 "No hay salida de audio. Pulsa Reintentar audio en Sonidos.".into()
             })
         })?;
-        let plan = Arc::new(transport_plan(
+        let mut plan = transport_plan(
             score,
             self.tempo,
             output.sample_rate(),
             self.follow_repeats,
             self.style,
-        )?);
+        )?;
+        if self.metronome {
+            plan.add_clicks(score);
+        }
+        let plan = Arc::new(plan);
         let requested = self
             .seek_tick
             .or_else(|| selection.and_then(|id| score.event_tick(id)));
@@ -396,6 +406,15 @@ impl Playback {
             ),
             _ => self.seek_tick,
         };
+        if self.count_in {
+            let frame = match (start, selection) {
+                (Some(tick), _) => plan.timeline.frame_at(tick, output.sample_rate()),
+                (None, Some(id)) => plan.frame_for_element(id).unwrap_or(0),
+                (None, None) => 0,
+            };
+            let (beats, interval) = plan.count_in(score, frame);
+            output.control.count_in(beats, interval);
+        }
         if let Some(tick) = start {
             let frame = plan.timeline.frame_at(tick, output.sample_rate());
             output.control.play_from_frame(plan, frame)
@@ -432,6 +451,25 @@ impl Playback {
         } else {
             Tempo::default()
         };
+        match place {
+            Some(tick) => self.seek(score, tick),
+            None => Ok(()),
+        }
+    }
+
+    /// Switch the metronome, keeping the place of a playback in progress.
+    pub fn set_metronome(
+        &mut self,
+        on: bool,
+        score: &Score,
+        cursor: score_edit::Cursor,
+    ) -> Result<(), String> {
+        if on == self.metronome {
+            return Ok(());
+        }
+        let place = (self.is_playing() || self.is_paused())
+            .then(|| self.position(score, cursor).tick.floor() as u64);
+        self.metronome = on;
         match place {
             Some(tick) => self.seek(score, tick),
             None => Ok(()),
@@ -492,13 +530,17 @@ impl Playback {
         let was_paused = self.is_paused();
         if was_playing || was_paused {
             let output = self.output.as_mut().expect("active audio output");
-            let plan = Arc::new(transport_plan(
+            let mut plan = transport_plan(
                 score,
                 self.tempo,
                 output.sample_rate(),
                 self.follow_repeats,
                 self.style,
-            )?);
+            )?;
+            if self.metronome {
+                plan.add_clicks(score);
+            }
+            let plan = Arc::new(plan);
             output
                 .control
                 .play_from_frame(
@@ -671,6 +713,8 @@ fn transport_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A quarter note.
+    const Q: u64 = score_core::TICKS_PER_QUARTER as u64;
 
     fn offline() -> Playback {
         Playback {
@@ -690,6 +734,8 @@ mod tests {
             clock: None,
             seek_tick: None,
             half_speed: false,
+            metronome: false,
+            count_in: false,
             looping: false,
             loop_ticks: None,
             last_start: None,
@@ -715,12 +761,15 @@ mod tests {
         let mut score = Score::default();
         let mut playback = offline();
         let cursor = score_edit::Cursor::default();
-        playback.seek(&score, 432).unwrap();
+        playback.seek(&score, 9 * Q).unwrap();
         assert!(!playback.is_playing());
         assert!(!playback.is_paused());
         playback.tick();
         let chosen = playback.position(&score, cursor);
-        assert_eq!((chosen.tick, chosen.measure, chosen.beat), (432., 2, 2.));
+        assert_eq!(
+            (chosen.tick, chosen.measure, chosen.beat),
+            ((9 * Q) as f64, 2, 2.)
+        );
         let moved_cursor = score_edit::Cursor {
             measure: 1,
             ..cursor
@@ -745,7 +794,7 @@ mod tests {
     fn the_frame_position_follows_edits_undo_tempo_and_repeats() {
         let mut editor = score_edit::Editor::default();
         let mut playback = offline();
-        playback.seek(editor.score(), 432).unwrap();
+        playback.seek(editor.score(), 9 * Q).unwrap();
         let fresh = |playback: &Playback, editor: &score_edit::Editor| {
             playback.position(editor.score(), editor.cursor()).seconds
         };
@@ -783,12 +832,12 @@ mod tests {
         let score = Score::default();
         let mut playback = offline();
         let cursor = score_edit::Cursor::default();
-        playback.seek(&score, 432).unwrap();
+        playback.seek(&score, 9 * Q).unwrap();
         let normal = playback.timeline(&score).frame_at(432, 48_000);
         playback.set_half_speed(true, &score, cursor).unwrap();
         assert!(playback.half_speed);
         assert_eq!(playback.timeline(&score).frame_at(432, 48_000), normal * 2);
-        assert_eq!(playback.position(&score, cursor).tick, 432.);
+        assert_eq!(playback.position(&score, cursor).tick, (9 * Q) as f64);
         assert!(!playback.is_playing());
         playback.set_half_speed(false, &score, cursor).unwrap();
         assert_eq!(playback.timeline(&score).frame_at(432, 48_000), normal);
@@ -805,7 +854,7 @@ mod tests {
         assert_eq!(playback.loop_frames(&score, 48_000), Some((0, whole)));
         // Bar 2 of 4/4 at quarter = 120: two seconds each.
         playback
-            .set_looping(true, Some((192, 384)), &score, cursor)
+            .set_looping(true, Some((4 * Q, 8 * Q)), &score, cursor)
             .unwrap();
         assert_eq!(
             playback.loop_frames(&score, 48_000),
@@ -818,7 +867,7 @@ mod tests {
         );
         // An empty passage loops the whole score; turning it off loops nothing.
         playback
-            .set_looping(true, Some((384, 384)), &score, cursor)
+            .set_looping(true, Some((8 * Q, 8 * Q)), &score, cursor)
             .unwrap();
         assert_eq!(playback.loop_frames(&score, 48_000).unwrap().0, 0);
         playback.set_looping(false, None, &score, cursor).unwrap();
@@ -922,7 +971,7 @@ mod tests {
         let mut playback = offline();
         assert!(playback.follow_repeats);
         playback.clock = Some((192_000, 48_000));
-        playback.seek_tick = Some(192);
+        playback.seek_tick = Some(4 * Q);
         playback.toggle_repeats();
         assert!(!playback.follow_repeats);
         assert!(playback.clock.is_none());

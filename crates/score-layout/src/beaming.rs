@@ -1,7 +1,7 @@
 //! Automatic, staff-local beaming. Grouping is derived from written rhythm and
 //! meter; it never changes musical events or their playback durations.
 use super::*;
-use score_core::NoteValue;
+use score_core::{Beam, Duration, NoteValue};
 
 const THICKNESS: f32 = 5.;
 const SEPARATION: f32 = 8.;
@@ -35,12 +35,13 @@ impl MeasureLayout {
 }
 struct Note {
     element: ElementId,
-    tick: u16,
+    tick: u32,
     onset: f32,
     high: f32,
     low: f32,
     levels: u8,
-    triplet: bool,
+    /// How long an eighth lasts here, in or out of a tuplet.
+    eighth: u32,
 }
 struct Group {
     notes: Vec<Note>,
@@ -61,12 +62,13 @@ fn levels(value: NoteValue) -> u8 {
         NoteValue::Eighth => 1,
         NoteValue::Sixteenth => 2,
         NoteValue::ThirtySecond => 3,
+        NoteValue::SixtyFourth => 4,
         _ => 0,
     }
 }
 /// Simple meters follow their denominator beats. Compound meters use three
 /// denominator units; odd short meters use explicit, documented defaults.
-fn beats(time: TimeSignature) -> Vec<u16> {
+fn beats(time: TimeSignature) -> Vec<u32> {
     let n = time.numerator;
     let units: Vec<u8> = if n.is_multiple_of(3) && (n > 3 || time.denominator >= 8) {
         vec![3; usize::from(n / 3)]
@@ -85,10 +87,10 @@ fn beats(time: TimeSignature) -> Vec<u16> {
     } else {
         vec![1; usize::from(n)]
     };
-    let unit = score_core::TICKS_PER_WHOLE / u16::from(time.denominator);
+    let unit = score_core::TICKS_PER_WHOLE / u32::from(time.denominator);
     let mut boundaries = vec![0];
     for group in units {
-        boundaries.push(boundaries.last().unwrap() + u16::from(group) * unit);
+        boundaries.push(boundaries.last().unwrap() + u32::from(group) * unit);
     }
     boundaries
 }
@@ -105,13 +107,14 @@ impl Plan {
         let tuplets: HashMap<_, _> = rhythm::groups(measure, part, staff, index)
             .into_iter()
             .enumerate()
-            .flat_map(|(i, group)| group.into_iter().map(move |id| (id, i)))
+            .flat_map(|(i, group)| group.elements.into_iter().map(move |id| (id, i)))
             .collect();
         let boundaries = beats(time);
         let mut groups = Vec::new();
         let mut notes: Vec<Note> = Vec::new();
         for voice in Voice::ALL {
             let mut previous = None;
+            let mut joined = None;
             let mut tick = 0;
             let flush = |notes: &mut Vec<Note>, groups: &mut Vec<Group>| {
                 if notes.len() >= 2 {
@@ -122,8 +125,8 @@ impl Plan {
                         .fold(f32::NEG_INFINITY, f32::max);
                     groups.push(Group {
                         notes: std::mem::take(notes),
-                        down: if measure.has_two_voices() {
-                            voice == Voice::Two
+                        down: if measure.has_several_voices() {
+                            voice.is_lower()
                         } else {
                             (high + low) / 2. <= 20.
                         },
@@ -142,16 +145,28 @@ impl Plan {
                 let end = tick + value.duration.ticks();
                 let level = levels(value.duration.value());
                 let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
-                let key = if level == 0 || value.pitches.is_empty() {
+                let beam = value.notation.beam;
+                let natural = if level == 0 || value.pitches.is_empty() || beam == Some(Beam::Off) {
                     None
-                } else if value.duration.is_triplet() {
+                } else if value.duration.tuplet().is_some() {
                     Some(Boundary::Tuplet(tuplets[&id]))
-                } else if end <= boundaries[beat + 1] {
+                } else if end <= boundaries[beat + 1] || beam == Some(Beam::Start) {
+                    // Started by hand, a note across the beat may still lead a beam.
                     Some(Boundary::Beat(beat))
                 } else {
                     None
                 };
-                if key.is_none() || key != previous {
+                // A joined note carries the rest of its beat into the previous beam.
+                let key = if beam == Some(Beam::Join) && natural.is_some() && previous.is_some() {
+                    joined = natural.map(|natural| (natural, previous.unwrap()));
+                    previous
+                } else {
+                    match joined {
+                        Some((from, to)) if natural == Some(from) => Some(to),
+                        _ => natural,
+                    }
+                };
+                if key.is_none() || key != previous || beam == Some(Beam::Start) {
                     flush(&mut notes, &mut groups);
                 }
                 if key.is_some() {
@@ -169,7 +184,9 @@ impl Plan {
                             .unwrap()),
                         low: y(value.pitches.first().unwrap()),
                         levels: level,
-                        triplet: value.duration.is_triplet(),
+                        eighth: Duration::Eighth
+                            .with_tuplet(value.duration.tuplet())
+                            .ticks(),
                     });
                 }
                 previous = key;
@@ -252,12 +269,7 @@ impl Plan {
                             level,
                         ));
                     } else {
-                        let unit = if notes[i].triplet {
-                            score_core::TICKS_PER_QUARTER / 3
-                        } else {
-                            score_core::TICKS_PER_QUARTER / 2
-                        };
-                        let pair_ticks = unit >> (level - 2);
+                        let pair_ticks = notes[i].eighth >> (level - 2);
                         let prefer_right = notes[i].tick.is_multiple_of(pair_ticks);
                         let right = (prefer_right && i + 1 < notes.len()) || i == 0;
                         let x = stem_x(&notes[i]);

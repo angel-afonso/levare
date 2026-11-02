@@ -1,6 +1,9 @@
 use super::*;
 use std::io::Write;
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn wrap(instrument: &str, measures: &str) -> String {
     format!(
         "<score-partwise version=\"4.0\"><work><work-title>Prueba externa</work-title></work><part-list><score-part id=\"P1\"><part-name>{instrument}</part-name></score-part></part-list><part id=\"P1\">{measures}</part></score-partwise>"
@@ -169,7 +172,7 @@ fn foreign_piano_with_backups_chords_and_two_voices_keeps_exact_positions() {
             .find(|(_, _, _, e)| !e.pitches.is_empty())
             .unwrap()
             .1,
-        48
+        Q
     );
 }
 
@@ -267,19 +270,23 @@ fn unsupported_content_warns_and_unrepresentable_music_is_rejected() {
     let invalid = wrap(
         "Piano",
         &format!(
-            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{}<backup><duration>4</duration></backup>{}<backup><duration>4</duration></backup>{}</measure>",
-            n("C", 4, 1, 1),
-            n("E", 4, 2, 1),
-            n("G", 4, 3, 1)
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{}</measure>",
+            ["C", "E", "G", "B", "D"]
+                .iter()
+                .enumerate()
+                .map(|(voice, step)| n(step, 4, voice as u8 + 1, 1))
+                .collect::<Vec<_>>()
+                .join("<backup><duration>4</duration></backup>")
         ),
     );
     assert!(
         decode(invalid.as_bytes())
             .unwrap_err()
             .to_string()
-            .contains("dos voces")
+            .contains("cuatro voces")
     );
-    assert!(decode(wrap("Violin","<measure><attributes><divisions>16</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>64th</type></note></measure>").as_bytes()).is_err());
+    // A 128th is shorter than any value Levare writes.
+    assert!(decode(wrap("Violin","<measure><attributes><divisions>32</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>128th</type></note></measure>").as_bytes()).is_err());
     assert!(decode(b"<score-partwise>broken").is_err());
 }
 
@@ -336,14 +343,14 @@ fn pickups_and_directions_inside_sustained_notes_keep_their_lengths_and_onsets()
         ),
     );
     let result = import(&xml);
-    assert_eq!(result.score.time_at(0).capacity(), 48);
-    assert_eq!(result.score.time_at(1).capacity(), 144);
+    assert_eq!(result.score.time_at(0).capacity(), Q);
+    assert_eq!(result.score.time_at(1).capacity(), 3 * Q);
     let bar = &result.score.parts()[0].measures()[1];
     let (_, tick, _, _) = bar
         .timed_iter()
         .find(|(_, _, _, e)| e.notation.dynamic == Some(Dynamic::F))
         .unwrap();
-    assert_eq!(tick, 96);
+    assert_eq!(tick, 2 * Q);
     assert_eq!(result.score.connections().len(), 1);
 }
 
@@ -736,4 +743,77 @@ fn rehearsal_from_later_part_and_timewise_and_long_labels() {
         assert_eq!(result.score.rehearsal_label(0).unwrap().chars().count(), 16);
         assert!(!result.warnings.is_empty());
     }
+}
+
+/// One bar of 4/4 on a violin, with `divisions` per quarter.
+fn violin_bar(divisions: u32, notes: &str) -> String {
+    wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>{divisions}</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>{notes}</measure>"
+        ),
+    )
+}
+
+fn tuplet_note(duration: u32, kind: &str, ratio: (u8, u8), extra: &str, bracket: &str) -> String {
+    format!(
+        "<note><pitch><step>C</step><octave>5</octave></pitch><duration>{duration}</duration><voice>1</voice><type>{kind}</type><time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes>{extra}</time-modification><notations>{bracket}</notations></note>",
+        ratio.0, ratio.1
+    )
+}
+
+#[test]
+fn tuplets_of_any_supported_ratio_import_with_their_unit() {
+    // A quarter and an eighth in a triplet of eighths: one group. With 15
+    // divisions to the quarter, they last 10 and 5.
+    let notes = [
+        tuplet_note(
+            10,
+            "quarter",
+            (3, 2),
+            "<normal-type>eighth</normal-type>",
+            "<tuplet type=\"start\"/>",
+        ),
+        tuplet_note(5, "eighth", (3, 2), "", "<tuplet type=\"stop\"/>"),
+        // Five sixteenths in the time of four.
+        tuplet_note(3, "16th", (5, 4), "", ""),
+        tuplet_note(3, "16th", (5, 4), "", ""),
+        tuplet_note(3, "16th", (5, 4), "", ""),
+        tuplet_note(3, "16th", (5, 4), "", ""),
+        tuplet_note(3, "16th", (5, 4), "", ""),
+    ]
+    .concat();
+    let half = "<note><rest/><duration>30</duration><voice>1</voice><type>half</type></note>";
+    let score = import(&violin_bar(15, &format!("{notes}{half}"))).score;
+    let bar = &score.parts()[0].measures()[0];
+    let groups = bar.tuplet_groups(Voice::One);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(
+        groups[0].tuplet,
+        Tuplet::new(3, 2, NoteValue::Eighth).unwrap()
+    );
+    assert_eq!(groups[0].events.len(), 2);
+    assert!(groups.iter().all(|g| g.is_complete()));
+    assert_eq!(
+        groups[1].tuplet,
+        Tuplet::new(5, 4, NoteValue::Sixteenth).unwrap()
+    );
+    assert_eq!(bar.voice_ticks(Voice::One), score.time().capacity());
+}
+
+#[test]
+fn nested_and_unsupported_tuplets_are_refused_with_their_bar() {
+    let two_starts = "<tuplet type=\"start\" number=\"1\"/><tuplet type=\"start\" number=\"2\"/>";
+    let nested = violin_bar(15, &tuplet_note(2, "16th", (15, 8), "", two_starts));
+    let error = decode(nested.as_bytes()).unwrap_err().to_string();
+    assert!(
+        error.contains("grupillos anidados en el compás 1"),
+        "{error}"
+    );
+    let eleven = violin_bar(11, &tuplet_note(4, "16th", (11, 8), "", ""));
+    let error = decode(eleven.as_bytes()).unwrap_err().to_string();
+    assert!(
+        error.contains("un grupillo que Levare no admite en el compás 1"),
+        "{error}"
+    );
 }

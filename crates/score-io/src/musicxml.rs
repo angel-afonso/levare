@@ -20,6 +20,9 @@ struct PartIndex {
     shared_arpeggios: HashMap<ElementId, (Arpeggio, u8)>,
     /// Syllables that continue a word begun before them, by verse.
     continued: HashSet<(ElementId, u8)>,
+    /// Events that start and stop a tuplet group.
+    tuplet_starts: HashSet<ElementId>,
+    tuplet_stops: HashSet<ElementId>,
 }
 impl PartIndex {
     fn new(score: &Score, part: &Part) -> Self {
@@ -101,6 +104,22 @@ impl PartIndex {
                 }
             }
         }
+        for staff in part.staves() {
+            for (bar, measure) in staff.measures().iter().enumerate() {
+                for voice in Voice::ALL {
+                    for group in measure.tuplet_groups(voice) {
+                        let id = |event| ElementId {
+                            part: part.id(),
+                            staff: staff.id(),
+                            measure: bar,
+                            event,
+                        };
+                        index.tuplet_starts.insert(id(group.events[0]));
+                        index.tuplet_stops.insert(id(*group.events.last().unwrap()));
+                    }
+                }
+            }
+        }
         index
     }
     fn endpoints(&self, id: ElementId) -> &[(ConnectionKind, bool)] {
@@ -125,13 +144,17 @@ fn escape(text: &str) -> String {
     out
 }
 fn value(d: Duration) -> &'static str {
-    match d.value() {
+    type_name(d.value())
+}
+fn type_name(value: NoteValue) -> &'static str {
+    match value {
         NoteValue::Whole => "whole",
         NoteValue::Half => "half",
         NoteValue::Quarter => "quarter",
         NoteValue::Eighth => "eighth",
         NoteValue::Sixteenth => "16th",
         NoteValue::ThirtySecond => "32nd",
+        NoteValue::SixtyFourth => "64th",
     }
 }
 fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
@@ -142,13 +165,30 @@ fn pitch(xml: &mut String, p: Pitch, alteration: i8) {
         p.octave()
     );
 }
-fn direction(xml: &mut String, body: &str, tick: u16, voice: u8, staff: u8, sound: &str) {
+/// MusicXML's element for a dynamic: its label, except niente's «n».
+fn dynamic_tag(dynamic: Dynamic) -> &'static str {
+    match dynamic {
+        Dynamic::Niente => "n",
+        other => other.label(),
+    }
+}
+/// MusicXML's name for a written sign.
+fn accidental_name(sign: Accidental) -> &'static str {
+    match sign {
+        Accidental::DoubleFlat => "flat-flat",
+        Accidental::Flat => "flat",
+        Accidental::Natural => "natural",
+        Accidental::Sharp => "sharp",
+        Accidental::DoubleSharp => "double-sharp",
+    }
+}
+fn direction(xml: &mut String, body: &str, tick: u32, voice: u8, staff: u8, sound: &str) {
     let _ = writeln!(
         xml,
         "<direction><direction-type>{body}</direction-type><offset sound=\"yes\">{tick}</offset><voice>{voice}</voice><staff>{staff}</staff>{sound}</direction>"
     );
 }
-fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
+fn words(xml: &mut String, text: &str, tick: u32, voice: u8, staff: u8) {
     direction(
         xml,
         &format!("<words font-style=\"italic\">{}</words>", escape(text)),
@@ -159,7 +199,7 @@ fn words(xml: &mut String, text: &str, tick: u16, voice: u8, staff: u8) {
     );
 }
 /// A chord symbol: root, kind with its printed suffix, and bass.
-fn harmony(xml: &mut String, chord: ChordSymbol, tick: u16, staff: u8) {
+fn harmony(xml: &mut String, chord: ChordSymbol, tick: u32, staff: u8) {
     let root = |name: &str, root: ChordRoot| {
         format!(
             "<{name}><{name}-step>{:?}</{name}-step><{name}-alter>{}</{name}-alter></{name}>",
@@ -187,7 +227,7 @@ fn harmony(xml: &mut String, chord: ChordSymbol, tick: u16, staff: u8) {
     );
 }
 /// Written words: an expression in italics below, an instruction above.
-fn staff_text(xml: &mut String, words: Words, kind: TextKind, tick: u16, voice: u8, staff: u8) {
+fn staff_text(xml: &mut String, words: Words, kind: TextKind, tick: u32, voice: u8, staff: u8) {
     let (placement, style) = match kind {
         TextKind::Expression => ("below", " font-style=\"italic\""),
         TextKind::Technique => ("above", ""),
@@ -242,6 +282,11 @@ fn right_barline(xml: &mut String, score: &Score, bar: usize) {
             Barline::Final => Some("light-heavy"),
             Barline::Single if bar + 1 == score.measures().len() => Some("light-heavy"),
             Barline::Single => None,
+            Barline::Dashed => Some("dashed"),
+            Barline::Dotted => Some("dotted"),
+            Barline::Tick => Some("tick"),
+            Barline::Short => Some("short"),
+            Barline::Invisible => Some("none"),
         }
     };
     if style.is_none() && ending.is_none() {
@@ -309,7 +354,7 @@ fn navigation_directions(xml: &mut String, score: &Score, bar: usize) {
     }
 }
 
-fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u16) -> u8 {
+fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u32) -> u8 {
     if staff == StaffId::Lower
         || (part.has_passage_divisi() && voice == Voice::Two && part.divisi_at_tick(bar, tick))
     {
@@ -318,9 +363,10 @@ fn staff_number(part: &Part, staff: StaffId, voice: Voice, bar: usize, tick: u16
         1
     }
 }
+/// Voices 1–4 on the upper staff and 5–8 on the lower, as MuseScore writes them.
 fn voice_number(staff: StaffId, voice: Voice) -> u8 {
     if staff == StaffId::Lower {
-        voice.number() + 2
+        voice.number() + 4
     } else {
         voice.number()
     }
@@ -414,7 +460,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
             for source in part.staves() {
                 let measure = &source.measures()[bar];
                 for voice in Voice::ALL {
-                    if voice == Voice::Two && measure.voice_len(voice) == 0 {
+                    if voice != Voice::One && measure.voice_len(voice) == 0 {
                         continue;
                     }
                     if !first {
@@ -461,7 +507,7 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
                                 first: piece == 0,
                                 last: piece + 1 == pieces.len(),
                                 split: pieces.len() > 1,
-                                two_voices: measure.has_two_voices()
+                                two_voices: measure.has_several_voices()
                                     && !(part.has_passage_divisi() && part.bar_fully_divisi(bar)),
                             };
                             notes(&mut xml, score, &index, fragment);
@@ -486,7 +532,52 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
         xml.push_str("</part>\n");
     }
     xml.push_str("</score-partwise>\n");
-    Ok(xml.into_bytes())
+    Ok(coarsen_ticks(&xml).into_bytes())
+}
+
+/// Elements whose content is a length in ticks.
+const TICK_ELEMENTS: [&str; 3] = ["<duration>", "<offset>", "<offset sound=\"yes\">"];
+
+/// Divide every length by the largest unit that keeps it whole, starting from
+/// the 192 ticks per whole note that Levare exported before tuplets, so other
+/// programs read small numbers and older exports keep their divisions.
+fn coarsen_ticks(xml: &str) -> String {
+    // Where each number starts and ends, in document order.
+    let mut numbers: Vec<(usize, usize)> = TICK_ELEMENTS
+        .iter()
+        .chain(&["<divisions>"])
+        .flat_map(|open| {
+            xml.match_indices(open).map(move |(at, _)| {
+                let start = at + open.len();
+                (start, start + xml[start..].find('<').unwrap_or(0))
+            })
+        })
+        .collect();
+    numbers.sort_unstable();
+    let value = |&(start, end): &(usize, usize)| xml[start..end].parse::<u32>().ok();
+    let unit = numbers
+        .iter()
+        .filter(|&&(start, _)| !xml[..start].ends_with("<divisions>"))
+        .filter_map(value)
+        .fold(TICKS_PER_QUARTER / 48, gcd);
+    if unit == 1 {
+        return xml.to_owned();
+    }
+    let mut out = String::with_capacity(xml.len());
+    let mut copied = 0;
+    for number in &numbers {
+        if let Some(ticks) = value(number) {
+            out.push_str(&xml[copied..number.0]);
+            let _ = write!(out, "{}", ticks / unit);
+            copied = number.1;
+        }
+    }
+    out.push_str(&xml[copied..]);
+    out
+}
+
+fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 /// Flush and replace atomically, leaving an existing destination intact on error.
@@ -533,17 +624,26 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
         if bar != 0 && part.clef_change_at(staff_id, bar).is_none() {
             continue;
         }
-        let (sign, line) = match part.clef_at(staff_id, bar) {
+        let clef = part.clef_at(staff_id, bar);
+        let (sign, line) = match clef.base() {
             Clef::Treble => ("G", 2),
             Clef::Alto => ("C", 3),
             Clef::Tenor => ("C", 4),
             Clef::Bass => ("F", 4),
-            Clef::Percussion => ("percussion", 2),
+            _ => ("percussion", 2),
         };
         let _ = write!(
             xml,
-            "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line></clef>"
+            "<clef number=\"{staff}\"><sign>{sign}</sign><line>{line}</line>"
         );
+        if clef.octave() != 0 {
+            let _ = write!(
+                xml,
+                "<clef-octave-change>{}</clef-octave-change>",
+                clef.octave()
+            );
+        }
+        xml.push_str("</clef>");
     }
     if part.has_passage_divisi() {
         let show = if part.bar_has_divisi(bar) {
@@ -565,6 +665,30 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
             interval.diatonic - octaves * 7,
             interval.chromatic - octaves * 12
         );
+    }
+    // Last, as MusicXML orders it: a run of % bars is one measure-repeat,
+    // stopped by the first bar after it.
+    for (number, staff) in part.staves().iter().enumerate() {
+        let repeat = |bar: usize| {
+            staff
+                .measures()
+                .get(bar)
+                .is_some_and(|m| m.repeats_previous())
+        };
+        let kind = if repeat(bar) && !(bar > 0 && repeat(bar - 1)) {
+            Some("start\" slashes=\"1\">1")
+        } else if !repeat(bar) && bar > 0 && repeat(bar - 1) {
+            Some("stop\">")
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            let _ = write!(
+                xml,
+                "<measure-style number=\"{}\"><measure-repeat type=\"{kind}</measure-repeat></measure-style>",
+                number + 1
+            );
+        }
     }
     xml.push_str("</attributes>\n");
 }
@@ -632,7 +756,7 @@ fn directions(
             if let Some(dynamic) = event.notation.dynamic {
                 direction(
                     xml,
-                    &format!("<dynamics><{}/></dynamics>", dynamic.label()),
+                    &format!("<dynamics><{}/></dynamics>", dynamic_tag(dynamic)),
                     tick,
                     number,
                     staff,
@@ -738,11 +862,7 @@ fn graces(xml: &mut String, grace: Grace, key: KeySignature, voice: u8, staff: u
             if count == 1 { "eighth" } else { "16th" }
         );
         if let Some(sign) = p.accidental() {
-            let sign = match sign {
-                Accidental::Flat => "flat",
-                Accidental::Natural => "natural",
-                Accidental::Sharp => "sharp",
-            };
+            let sign = accidental_name(sign);
             let _ = write!(xml, "<accidental>{sign}</accidental>");
         }
         let _ = write!(xml, "<stem>up</stem><staff>{staff}</staff>");
@@ -838,31 +958,47 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             "<voice>{number}</voice><type>{}</type>",
             value(f.duration)
         );
-        if f.duration.is_dotted() {
+        for _ in 0..f.duration.dots() {
             xml.push_str("<dot/>");
         }
         if let Some(&(p, _, _)) = pitches.get(tone)
             && let Some(sign) = p.accidental()
         {
-            let sign = match sign {
-                Accidental::Flat => "flat",
-                Accidental::Natural => "natural",
-                Accidental::Sharp => "sharp",
-            };
+            let sign = accidental_name(sign);
             let _ = write!(xml, "<accidental>{sign}</accidental>");
         }
-        if f.duration.is_triplet() {
-            xml.push_str("<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>");
+        if let Some(tuplet) = f.duration.tuplet() {
+            let _ = write!(
+                xml,
+                "<time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes>",
+                tuplet.actual(),
+                tuplet.normal()
+            );
+            // The unit is said when it is not the note's own value.
+            if tuplet.unit() != f.duration.value() {
+                let _ = write!(
+                    xml,
+                    "<normal-type>{}</normal-type>",
+                    type_name(tuplet.unit())
+                );
+            }
+            xml.push_str("</time-modification>");
         }
         if f.two_voices && !pitches.is_empty() && f.duration.value() != NoteValue::Whole {
-            xml.push_str(if f.voice == Voice::One {
-                "<stem>up</stem>"
-            } else {
+            xml.push_str(if f.voice.is_lower() {
                 "<stem>down</stem>"
+            } else {
+                "<stem>up</stem>"
             });
         }
         if touch {
             xml.push_str("<notehead>diamond</notehead>");
+        } else if let Some(head) = f.event.notation.notehead {
+            xml.push_str(match head {
+                Notehead::Cross => "<notehead>x</notehead>",
+                Notehead::Diamond => "<notehead>diamond</notehead>",
+                Notehead::Slash => "<notehead>slash</notehead>",
+            });
         }
         let _ = write!(xml, "<staff>{}</staff><notations>", f.staff);
         if !pitches.is_empty() {
@@ -871,6 +1007,14 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             }
             if tie_start {
                 xml.push_str("<tied type=\"start\"/>");
+            }
+        }
+        if tone == 0 && f.duration.tuplet().is_some() {
+            if f.first && index.tuplet_starts.contains(&f.id) {
+                xml.push_str("<tuplet type=\"start\"/>");
+            }
+            if f.last && index.tuplet_stops.contains(&f.id) {
+                xml.push_str("<tuplet type=\"stop\"/>");
             }
         }
         if tone == 0 {
@@ -884,6 +1028,7 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                     let _ = write!(xml, "<slur type=\"{kind}\" number=\"{number}\"/>");
                 }
             }
+            let mut articulations = String::new();
             if f.first
                 && let Some(art) = f.event.notation.articulation
             {
@@ -892,8 +1037,21 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                     Articulation::Tenuto => "tenuto",
                     Articulation::Accent => "accent",
                     Articulation::Marcato => "strong-accent",
+                    Articulation::Staccatissimo => "staccatissimo",
                 };
-                let _ = write!(xml, "<articulations><{tag}/></articulations>");
+                let _ = write!(articulations, "<{tag}/>");
+            }
+            // A breath or caesura follows the sound, after the last tied note.
+            if f.last
+                && let Some(pause) = f.event.notation.pause
+            {
+                articulations.push_str(match pause {
+                    Pause::Breath => "<breath-mark/>",
+                    Pause::Caesura => "<caesura/>",
+                });
+            }
+            if !articulations.is_empty() {
+                let _ = write!(xml, "<articulations>{articulations}</articulations>");
             }
             let ends = index.endpoints(f.id);
             if f.last && ends.contains(&(ConnectionKind::Glissando, false)) {
@@ -917,6 +1075,15 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             }
             if f.last && !single && ends.contains(&(ConnectionKind::Trill, true)) {
                 let _ = write!(ornaments, "<wavy-line type=\"stop\" number=\"{number}\"/>");
+            }
+            if f.first
+                && let Some(ornament) = f.event.notation.ornament
+            {
+                ornaments.push_str(match ornament {
+                    Ornament::Mordent => "<mordent/>",
+                    Ornament::InvertedMordent => "<inverted-mordent/>",
+                    Ornament::Turn => "<turn/>",
+                });
             }
             if f.first
                 && let Some(tremolo) = f.event.notation.tremolo
@@ -994,26 +1161,9 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
 }
 
 /// Exact spelling for a note cut by a mid-bar staff change; ties join the pieces.
-fn durations(ticks: u16) -> Result<Vec<Duration>, FileError> {
-    let mut values = Duration::all_modified();
-    values.sort_by_key(|d| (std::cmp::Reverse(d.ticks()), d.is_triplet(), d.is_dotted()));
-    let mut best = vec![None; usize::from(ticks) + 1];
-    best[0] = Some(Vec::new());
-    for tick in 1..best.len() {
-        for &d in &values {
-            let len = usize::from(d.ticks());
-            if len <= tick
-                && let Some(rest) = &best[tick - len]
-                && best[tick].as_ref().is_none_or(|b| b.len() > rest.len() + 1)
-            {
-                let mut next = vec![d];
-                next.extend(rest);
-                best[tick] = Some(next);
-            }
-        }
-    }
-    best.pop()
-        .flatten()
+fn durations(ticks: u32) -> Result<Vec<Duration>, FileError> {
+    score_core::Palette::modified()
+        .fewest(ticks)
         .ok_or_else(|| error("No se puede representar el corte de divisi en MusicXML"))
 }
 

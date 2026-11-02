@@ -3,16 +3,16 @@
 
 use score_keymap::{CommandId, id};
 
-/// One tab per task, in the order they appear and ⌥⌘1–8 (Ctrl+Mayús+1–8 on
-/// Windows and Linux) open them.
+/// The tabs of Sibelius that Levare has functions for, in Sibelius' order,
+/// which ⌥⌘1–8 (Ctrl+Mayús+1–8 on Windows and Linux) follow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabId {
-    Write,
-    Articulations,
-    Dynamics,
+    Home,
+    NoteInput,
+    Notations,
     Text,
-    Score,
     Playback,
+    Layout,
     Review,
     View,
 }
@@ -20,28 +20,27 @@ pub enum TabId {
 impl TabId {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Write => "Escribir",
-            Self::Articulations => "Articulaciones",
-            Self::Dynamics => "Dinámicas",
+            Self::Home => "Inicio",
+            Self::NoteInput => "Entrada de notas",
+            Self::Notations => "Notaciones",
             Self::Text => "Texto",
-            Self::Score => "Partitura",
             Self::Playback => "Reproducción",
+            Self::Layout => "Diseño",
             Self::Review => "Revisión",
             Self::View => "Vista",
         }
     }
 
-    /// The command that shows this tab. Published ids keep their old names:
-    /// `TAB_NOTE_INPUT` opens Escribir, `TAB_NOTATION` Articulaciones and
-    /// `TAB_HOME` Partitura.
+    /// The command that shows this tab. `TAB_DYNAMICS`, published when
+    /// Dinámicas was a tab, opens Texto, where Sibelius writes dynamics.
     pub fn command(self) -> CommandId {
         match self {
-            Self::Write => id::TAB_NOTE_INPUT,
-            Self::Articulations => id::TAB_NOTATION,
-            Self::Dynamics => id::TAB_DYNAMICS,
+            Self::Home => id::TAB_HOME,
+            Self::NoteInput => id::TAB_NOTE_INPUT,
+            Self::Notations => id::TAB_NOTATION,
             Self::Text => id::TAB_TEXT,
-            Self::Score => id::TAB_HOME,
             Self::Playback => id::TAB_PLAYBACK,
+            Self::Layout => id::TAB_LAYOUT,
             Self::Review => id::TAB_REVIEW,
             Self::View => id::TAB_VIEW,
         }
@@ -64,6 +63,12 @@ pub enum Visual {
     /// Music-font noteheads joined by the font's tie contour.
     Tie,
     Slur,
+    /// Eighth notes drawn with Bravura heads: `flagged` ones with their own
+    /// flags, then `beamed` ones under one beam.
+    Beam {
+        flagged: u8,
+        beamed: u8,
+    },
     /// Bravura staff, optionally combined with a barline.
     Staff,
     Bar,
@@ -175,7 +180,7 @@ const fn toggle(control: Control) -> Control {
 use Visual::{Icon, Label, Music, Text};
 use score_core::{
     Arpeggio as R, Articulation as A, ConnectionKind as K, Dynamic as D, GraceKind as G,
-    Harmonic as H, MarkKind, PlayingTechnique as T, Tremolo as M,
+    Harmonic as H, MarkKind, Ornament as O, Pause as P, PlayingTechnique as T, Tremolo as M,
 };
 
 /// A catalog mark: its command and symbol come from the catalog.
@@ -195,11 +200,11 @@ const fn mark(kind: MarkKind, label: &'static str, hint: &'static str) -> Contro
 /// Same sentence for both hairpins: they are written in two clicks.
 const HAIRPIN_HINT: &str =
     "Selecciona un pasaje, o marca inicio y final con el mismo botón. Esc cancela.";
-const VOICE_HINT: &str = "Dos voces: plicas arriba para la voz 1 y abajo para la voz 2. Cada una conserva su propio ritmo.";
+const VOICE_HINT: &str = "Hasta cuatro voces: plicas arriba para las voces 1 y 3, abajo para la 2 y la 4. Cada una conserva su propio ritmo.";
 const DIVISI_HINT: &str = "div. abre dos pentagramas desde la posición elegida; unis. vuelve a uno. También dentro de un compás.";
 const HARMONIC_HINT: &str = "Armónicos: natural = altura sonora; artificial = nota pisada + rombo automático a la cuarta. Vuelve a pulsar para quitarlo.";
 
-// Escribir
+// Entrada de notas
 
 const ENTRY: GroupSpec = GroupSpec {
     dropdown: false,
@@ -287,14 +292,80 @@ const MODIFY: GroupSpec = GroupSpec {
             id::TRIPLET,
             Music("\u{e883}"),
             "Tresillo",
-            "Tres figuras en el tiempo de dos. Los tresillos se agrupan de tres en tres con la misma figura.",
+            "Tres figuras en el tiempo de dos. Sobre una nota empieza un tresillo y rellena el grupo con silencios; otra vez, convierte el grupo en silencios.",
         )),
         tile(
             id::REST,
             Music("\u{e4e5}"),
             "Silencio",
-            "Escribe un silencio con la duración elegida.",
+            "Escribe un silencio de la duración elegida.",
         ),
+    ],
+};
+/// The rarer values, from one dropdown next to Modificar, as Sibelius keeps
+/// them on its second keypad layout. Each tuplet acts like Tresillo.
+const TUPLET_HINT: &str = "Sobre una nota empieza el grupillo y rellena el grupo con silencios; otra vez, convierte el grupo en silencios.";
+const MORE_VALUES: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Más figuras",
+    visual: Music("\u{e885}"),
+    priority: 6,
+    controls: &[
+        toggle(tile(
+            id::SIXTY_FOURTH,
+            Music("\u{e1dd}"),
+            "Semifusa",
+            "Un dieciseisavo de tiempo.",
+        )),
+        toggle(tile(
+            id::DOUBLE_DOT,
+            Music("\u{e1e7}\u{e1e7}"),
+            "Doble puntillo",
+            "Alarga la figura tres cuartos de su valor.",
+        )),
+        toggle(tile(id::DUPLET, Music("\u{e882}"), "Dosillo", TUPLET_HINT)),
+        toggle(tile(
+            id::QUADRUPLET,
+            Music("\u{e884}"),
+            "Cuatrillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::QUINTUPLET,
+            Music("\u{e885}"),
+            "Quintillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::SEXTUPLET,
+            Music("\u{e886}"),
+            "Seisillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::SEPTUPLET,
+            Music("\u{e887}"),
+            "Septillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::OCTUPLET,
+            Music("\u{e888}"),
+            "Octillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::NONUPLET,
+            Music("\u{e889}"),
+            "Nonillo",
+            TUPLET_HINT,
+        )),
+        toggle(tile(
+            id::OTHER_TUPLET,
+            Label("n:m"),
+            "Otro grupillo",
+            "Elige cuántas notas y en el tiempo de cuántas, en la pestaña Selección.",
+        )),
     ],
 };
 const ACCIDENTALS: GroupSpec = GroupSpec {
@@ -320,6 +391,18 @@ const ACCIDENTALS: GroupSpec = GroupSpec {
             Music("\u{e260}"),
             "Bemol",
             "Baja la nota un semitono. Pulsa otra vez para quitarlo.",
+        )),
+        choice(tile(
+            id::DOUBLE_SHARP,
+            Music("\u{e263}"),
+            "Doble ♯",
+            "Sube la nota dos semitonos. Pulsa otra vez para quitarlo.",
+        )),
+        choice(tile(
+            id::DOUBLE_FLAT,
+            Music("\u{e264}"),
+            "Doble ♭",
+            "Baja la nota dos semitonos. Pulsa otra vez para quitarlo.",
         )),
         choice(tile(
             id::FOLLOW_KEY,
@@ -357,27 +440,25 @@ const VOICES: GroupSpec = GroupSpec {
     controls: &[
         choice(tile(id::VOICE_1, Label("1"), "Voz 1", VOICE_HINT)),
         choice(tile(id::VOICE_2, Label("2"), "Voz 2", VOICE_HINT)),
+        choice(tile(id::VOICE_3, Label("3"), "Voz 3", VOICE_HINT)),
+        choice(tile(id::VOICE_4, Label("4"), "Voz 4", VOICE_HINT)),
     ],
 };
+/// Both ways of building a chord: stacking the notes you write, or adding an
+/// interval above the selected one. The split button lights up while the chord
+/// mode is on.
 const CHORDS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Acorde",
     visual: Visual::Chord,
-    priority: 4,
-    controls: &[toggle(tile(
-        id::CHORD_MODE,
-        Visual::Chord,
-        "Acorde",
-        "Las notas que escribas se apilan en la misma posición.",
-    ))],
-};
-/// The intervals that stack a note above the selected one.
-const INTERVALS: GroupSpec = GroupSpec {
-    dropdown: true,
-    title: "Intervalo",
-    visual: Label("3ª"),
     priority: 3,
     controls: &[
+        toggle(tile(
+            id::CHORD_MODE,
+            Visual::Chord,
+            "Acorde",
+            "Las notas que escribas se apilan en la misma posición.",
+        )),
         tile(
             id::INTERVAL_2,
             Label("2ª"),
@@ -423,7 +504,7 @@ const INTERVALS: GroupSpec = GroupSpec {
     ],
 };
 
-// Articulaciones
+// Notaciones
 
 const ARTICULATIONS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -452,14 +533,54 @@ const ARTICULATIONS: GroupSpec = GroupSpec {
             "Acento fuerte y marcado.",
         )),
         toggle(mark(
+            MarkKind::Articulation(A::Staccatissimo),
+            "Staccatissimo",
+            "Más corta que el staccato.",
+        )),
+        toggle(mark(
             MarkKind::Fermata,
             "Calderón",
             "Mantiene la nota a criterio del intérprete.",
         )),
     ],
 };
+/// Ornaments and pauses, from one dropdown as Sibelius keeps them in its
+/// Symbols gallery.
+const SYMBOLS: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Símbolos",
+    visual: Music("\u{e56c}"),
+    priority: 3,
+    controls: &[
+        toggle(mark(
+            MarkKind::Ornament(O::Mordent),
+            "Mordente",
+            "La nota, la de abajo y otra vez la nota, rápido.",
+        )),
+        toggle(mark(
+            MarkKind::Ornament(O::InvertedMordent),
+            "Mordente superior",
+            "La nota, la de arriba y otra vez la nota, rápido.",
+        )),
+        toggle(mark(
+            MarkKind::Ornament(O::Turn),
+            "Grupeto",
+            "La nota de arriba, la nota, la de abajo y la nota.",
+        )),
+        toggle(mark(
+            MarkKind::Pause(P::Breath),
+            "Respiración",
+            "Corta un poco la nota antes de la siguiente.",
+        )),
+        toggle(mark(
+            MarkKind::Pause(P::Caesura),
+            "Cesura",
+            "Una pausa clara después de la nota.",
+        )),
+    ],
+};
 const GRACES: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Nota de adorno",
     visual: Music("\u{e560}"),
     priority: 5,
@@ -484,7 +605,7 @@ const GRACES: GroupSpec = GroupSpec {
     ],
 };
 const ARPEGGIOS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Arpegio",
     visual: Music("\u{e63c}"),
     priority: 3,
@@ -514,7 +635,7 @@ const ARPEGGIOS: GroupSpec = GroupSpec {
     ],
 };
 const TREMOLOS: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Trémolo",
     visual: Music("\u{e221}"),
     priority: 2,
@@ -565,7 +686,7 @@ const TECHNIQUE: GroupSpec = GroupSpec {
     ],
 };
 
-// Dinámicas
+// Dynamics go to Texto, hairpins and lines to Notaciones, divisi to Inicio
 
 const DYNAMICS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -615,11 +736,46 @@ const DYNAMICS: GroupSpec = GroupSpec {
         ),
     ],
 };
-const HAIRPINS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Regulador",
+/// Accents and sudden changes, from one dropdown beside the levels.
+const MORE_DYNAMICS: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Más dinámicas",
+    visual: Music("\u{e524}\u{e522}\u{e525}"),
+    priority: 3,
+    controls: &[
+        mark(
+            MarkKind::Dynamic(D::Sfz),
+            "sfz",
+            "Acento fuerte en la nota; luego sigue el nivel de antes.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Rfz),
+            "rfz",
+            "Refuerza la nota; luego sigue el nivel de antes.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Fp),
+            "fp",
+            "Ataque forte y enseguida piano.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Sfp),
+            "sfp",
+            "Sforzando y enseguida piano.",
+        ),
+        mark(
+            MarkKind::Dynamic(D::Niente),
+            "niente",
+            "Desde o hasta el silencio, al principio o al final de un regulador.",
+        ),
+    ],
+};
+/// Hairpins and lines, from one dropdown as Sibelius' Lines gallery.
+const LINES: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Líneas",
     visual: Music("\u{e53e}"),
-    priority: 5,
+    priority: 4,
     controls: &[
         toggle(mark(
             MarkKind::Connection(K::Crescendo),
@@ -631,14 +787,6 @@ const HAIRPINS: GroupSpec = GroupSpec {
             "Diminuendo",
             HAIRPIN_HINT,
         )),
-    ],
-};
-const LINES: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Líneas",
-    visual: Music("\u{e511}"),
-    priority: 4,
-    controls: &[
         toggle(mark(
             MarkKind::Connection(K::OttavaAlta),
             "8va",
@@ -688,7 +836,7 @@ const HEADER: GroupSpec = GroupSpec {
     controls: &[large(
         id::SCORE_INFO,
         Label("Aa"),
-        "Título y créditos",
+        "Título…",
         "Título, subtítulo, compositor, arreglista y demás créditos.",
     )],
 };
@@ -775,7 +923,7 @@ const REHEARSAL: GroupSpec = GroupSpec {
 };
 /// How every rehearsal mark of the score is numbered.
 const REHEARSAL_STYLE: GroupSpec = GroupSpec {
-    dropdown: false,
+    dropdown: true,
     title: "Estilo de ensayo",
     visual: Label("A"),
     priority: 2,
@@ -801,7 +949,57 @@ const REHEARSAL_STYLE: GroupSpec = GroupSpec {
     ],
 };
 
-// Partitura
+// Inicio
+
+/// Sibelius opens Inicio with the clipboard; Repetir sits beside it as the
+/// one-key copy and paste.
+const CLIPBOARD: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Portapapeles",
+    visual: Icon("clipboard"),
+    priority: 5,
+    controls: &[
+        large(
+            id::PASTE,
+            Icon("clipboard"),
+            "Pegar",
+            "Pega lo copiado a partir de la selección.",
+        ),
+        tile(id::COPY, Icon("copy"), "Copiar", "Copia la selección."),
+        tile(
+            id::CUT,
+            Icon("cut"),
+            "Cortar",
+            "Copia la selección y la quita de la partitura.",
+        ),
+        tile(
+            id::REPEAT,
+            Icon("repeat"),
+            "Repetir",
+            "Repite justo después la nota, el acorde o el silencio seleccionado.",
+        ),
+    ],
+};
+const SELECT: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Seleccionar",
+    visual: Visual::Staff,
+    priority: 3,
+    controls: &[
+        tile(
+            id::SELECT_ALL,
+            Visual::Staff,
+            "Todo",
+            "Selecciona el pentagrama entero.",
+        ),
+        tile(
+            id::GO_TO_BAR,
+            Label("#"),
+            "Ir al compás…",
+            "Lleva la selección al compás que indiques.",
+        ),
+    ],
+};
 
 const INSTRUMENTS: GroupSpec = GroupSpec {
     dropdown: false,
@@ -850,6 +1048,9 @@ const BARS: GroupSpec = GroupSpec {
         ),
     ],
 };
+
+// Clefs and barlines go to Notaciones, Fine and the jumps to Texto
+
 /// What starts or changes the staff itself.
 const CHANGES: GroupSpec = GroupSpec {
     dropdown: false,
@@ -877,9 +1078,13 @@ const CHANGES: GroupSpec = GroupSpec {
         ),
     ],
 };
+/// Repeats, endings and barlines from one dropdown, like Sibelius' barline
+/// gallery.
+/// Sibelius' barline gallery: the repeat barlines, the endings and the line
+/// that closes the selected bar.
 const REPEATS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Repeticiones",
+    dropdown: true,
+    title: "Barra",
     visual: Music("\u{e041}"),
     priority: 4,
     controls: &[
@@ -919,11 +1124,49 @@ const REPEATS: GroupSpec = GroupSpec {
             "Final",
             "Barra final.",
         )),
+        toggle(tile(
+            id::DASHED_BARLINE,
+            Music("\u{e036}"),
+            "Discontinua",
+            "Barra discontinua al final del compás: una división secundaria.",
+        )),
+        toggle(tile(
+            id::DOTTED_BARLINE,
+            Music("\u{e037}"),
+            "Punteada",
+            "Barra punteada al final del compás: una división secundaria.",
+        )),
+        toggle(tile(
+            id::TICK_BARLINE,
+            Music("\u{e039}"),
+            "Marca",
+            "Solo un trazo sobre la línea superior, como en la música antigua.",
+        )),
+        toggle(tile(
+            id::SHORT_BARLINE,
+            Music("\u{e038}"),
+            "Corta",
+            "Un trazo en el centro del pentagrama.",
+        )),
+        toggle(tile(
+            id::BAR_REPEAT,
+            Music("\u{e500}"),
+            "Compás %",
+            "El compás vacío repite el anterior: se escribe % y suena igual. Escribir en él lo quita.",
+        )),
+        toggle(tile(
+            id::INVISIBLE_BARLINE,
+            Label("inv."),
+            "Invisible",
+            "Sin barra: el compás sigue dividiendo el tiempo.",
+        )),
     ],
 };
+/// The signs and the jumps back to them, from one dropdown as Sibelius
+/// keeps its repeat text in one gallery.
 const SIGNS: GroupSpec = GroupSpec {
-    dropdown: false,
-    title: "Da capo y segno",
+    dropdown: true,
+    title: "D.C. / D.S.",
     visual: Music("\u{e047}"),
     priority: 3,
     controls: &[
@@ -945,15 +1188,6 @@ const SIGNS: GroupSpec = GroupSpec {
             "Fine",
             "Donde termina la obra tras volver.",
         )),
-    ],
-};
-/// The jumps back, chosen from a dropdown next to their signs.
-const JUMPS: GroupSpec = GroupSpec {
-    dropdown: true,
-    title: "D.C. / D.S.",
-    visual: Text("D.C."),
-    priority: 3,
-    controls: &[
         toggle(tile(
             id::DA_CAPO,
             Text("D.C."),
@@ -998,7 +1232,211 @@ const JUMPS: GroupSpec = GroupSpec {
         )),
     ],
 };
+// Diseño
+
 /// The user's own system and page ends, after the selected bar.
+const MARGINS_HINT: &str = "Espacio alrededor de la música en la vista de página y el PDF: anchos añade 6 mm por lado; muy anchos, 12.";
+const PAPER_HINT: &str = "El papel de la vista de página y del PDF. Automático: A3 para doce instrumentos o más, A4 si no.";
+/// Sibelius' Document Setup, reduced to the paper and its orientation.
+const PAPER: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Papel",
+    visual: Icon("page"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::PAPER_AUTOMATIC,
+            Label("auto"),
+            "Automático",
+            PAPER_HINT,
+        )),
+        choice(tile(id::PAPER_A4, Label("A4"), "A4", PAPER_HINT)),
+        choice(tile(id::PAPER_LETTER, Label("8½"), "Carta", PAPER_HINT)),
+        choice(tile(id::PAPER_A3, Label("A3"), "A3", PAPER_HINT)),
+        choice(tile(
+            id::PAPER_TABLOID,
+            Label("Tab."),
+            "Tabloide",
+            PAPER_HINT,
+        )),
+        toggle(tile(
+            id::LANDSCAPE,
+            Label("↔"),
+            "Horizontal",
+            "Gira la página: más compases por sistema.",
+        )),
+        choice(tile(
+            id::MARGINS_NORMAL,
+            Label("="),
+            "Márgenes normales",
+            MARGINS_HINT,
+        )),
+        choice(tile(
+            id::MARGINS_WIDE,
+            Label("+6"),
+            "Márgenes anchos",
+            MARGINS_HINT,
+        )),
+        choice(tile(
+            id::MARGINS_EXTRA_WIDE,
+            Label("+12"),
+            "Márgenes muy anchos",
+            MARGINS_HINT,
+        )),
+    ],
+};
+const STAFF_SIZE_HINT: &str = "Altura del pentagrama impreso, de la primera a la quinta línea. Automático: según el número de instrumentos.";
+const STAFF_SIZE: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Pentagrama",
+    visual: Visual::Staff,
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::STAFF_SIZE_AUTOMATIC,
+            Label("auto"),
+            "Automático",
+            STAFF_SIZE_HINT,
+        )),
+        choice(tile(id::STAFF_SIZE_7, Label("7"), "7 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_6, Label("6"), "6 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_5, Label("5"), "5 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_4, Label("4"), "4 mm", STAFF_SIZE_HINT)),
+    ],
+};
+const BAR_NUMBERS_HINT: &str = "Qué compases llevan su número, sobre el pentagrama superior de cada sistema. El primero nunca.";
+/// Sibelius' bar number frequencies; the first bar is never numbered.
+const BAR_NUMBERS: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Números de compás",
+    visual: Label("12"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::BAR_NUMBERS_SYSTEM,
+            Label("|12"),
+            "Sistema",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_BAR,
+            Label("123"),
+            "Cada compás",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_5,
+            Label("5"),
+            "Cada 5",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_EVERY_10,
+            Label("10"),
+            "Cada 10",
+            BAR_NUMBERS_HINT,
+        )),
+        choice(tile(
+            id::BAR_NUMBERS_HIDDEN,
+            Label("–"),
+            "Ninguno",
+            BAR_NUMBERS_HINT,
+        )),
+    ],
+};
+const PAGE_NUMBERS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Números de página",
+    visual: Label("1/3"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::PAGE_NUMBERS_FOOTER,
+            Label("1/3"),
+            "Al pie",
+            "«2 / 5» centrado al pie de cada página.",
+        )),
+        choice(tile(
+            id::PAGE_NUMBERS_CORNER,
+            Label("2"),
+            "Esquina",
+            "El número arriba, en la esquina exterior, desde la segunda página, como en Sibelius.",
+        )),
+        choice(tile(
+            id::PAGE_NUMBERS_HIDDEN,
+            Label("no"),
+            "Ninguno",
+            "Páginas sin número.",
+        )),
+    ],
+};
+/// Noteheads change only the drawing: the note keeps its pitch and sound.
+const NOTEHEADS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Cabeza",
+    visual: Music("\u{e0a9}"),
+    priority: 2,
+    controls: &[
+        toggle(tile(
+            id::NOTEHEAD_CROSS,
+            Music("\u{e0a9}"),
+            "En x",
+            "Cabeza en x: notas habladas, sin altura definida o fantasma. Suenan igual.",
+        )),
+        toggle(tile(
+            id::NOTEHEAD_DIAMOND,
+            Music("\u{e0db}"),
+            "Rombo",
+            "Cabeza de rombo, abierta en blancas y redondas. Suena igual.",
+        )),
+        toggle(tile(
+            id::NOTEHEAD_SLASH,
+            Music("\u{e101}"),
+            "Diagonal",
+            "Cabeza diagonal (slash): el ritmo sobre el que improvisar. Suena igual.",
+        )),
+    ],
+};
+/// Beam overrides at a note, as Sibelius' keypad and MuseScore's beam
+/// properties offer; the automatic beaming applies everywhere else.
+const BEAMS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Barra de corchea",
+    visual: Visual::Beam {
+        flagged: 0,
+        beamed: 2,
+    },
+    priority: 2,
+    controls: &[
+        toggle(tile(
+            id::BEAM_START,
+            Visual::Beam {
+                flagged: 1,
+                beamed: 2,
+            },
+            "Iniciar",
+            "La barra de corchea empieza en esta nota, aunque esté dentro de un tiempo.",
+        )),
+        toggle(tile(
+            id::BEAM_JOIN,
+            Visual::Beam {
+                flagged: 0,
+                beamed: 3,
+            },
+            "Unir",
+            "La nota se une a la barra de la anterior, aunque cruce el tiempo.",
+        )),
+        toggle(tile(
+            id::BEAM_OFF,
+            Visual::Beam {
+                flagged: 2,
+                beamed: 0,
+            },
+            "Sin barra",
+            "La nota lleva su propio corchete, sin barra.",
+        )),
+    ],
+};
 const BREAKS: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Sistema y página",
@@ -1017,7 +1455,26 @@ const BREAKS: GroupSpec = GroupSpec {
             "Nueva página",
             "El siguiente compás empieza una página nueva.",
         )),
+        toggle(tile(
+            id::HIDE_EMPTY_STAVES,
+            Visual::Staff,
+            "Ocultar vacíos",
+            "En la vista de página y el PDF, tras el primer sistema, quita los pentagramas de los instrumentos que no tocan en ese sistema.",
+        )),
     ],
+};
+
+const POSITION: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Posición",
+    visual: Icon("undo"),
+    priority: 1,
+    controls: &[tile(
+        id::RESET_POSITION,
+        Icon("undo"),
+        "Restablecer",
+        "Devuelve a su sitio lo que has movido a mano.",
+    )],
 };
 
 // Reproducción
@@ -1072,6 +1529,18 @@ const PRACTICE: GroupSpec = GroupSpec {
             Icon("repeats"),
             "Repeticiones",
             "Sigue las barras de repetición al reproducir.",
+        )),
+        toggle(tile(
+            id::METRONOME,
+            Icon("metronome"),
+            "Metrónomo",
+            "Un clic en cada tiempo mientras suena, más fuerte en el primero del compás.",
+        )),
+        toggle(tile(
+            id::COUNT_IN,
+            Icon("count-in"),
+            "Cuenta previa",
+            "Un compás de clics antes de empezar a reproducir.",
         )),
     ],
 };
@@ -1272,53 +1741,77 @@ const RIBBON: GroupSpec = GroupSpec {
     ))],
 };
 
-/// Levare's ribbon, one tab per task. File is not a tab: it is the
-/// dropdown in `menu`. Undo and redo live in the title bar's quick access;
-/// the clipboard lives in Edición and its keys, the panels in the header.
-/// There are no remove buttons: select the mark's note in the score and
-/// press its active control again, or delete the selection.
-/// A tab without real functions is not shown: Parts returns when its
+/// Levare's ribbon, laid out as Sibelius': Inicio, Entrada de notas,
+/// Notaciones, Texto, Reproducción, Diseño, Revisión and Vista. File is not
+/// a tab: it is the dropdown in `menu`. Undo and redo live in the title
+/// bar's quick access, the panels in the header. Durations, accidentals and
+/// voices stay in Entrada de notas, where MuseScore keeps its note input
+/// toolbar, instead of Sibelius' separate keypad. There are no remove
+/// buttons: select the mark's note in the score and press its active control
+/// again, or delete the selection. Apariencia and Partes return when their
 /// functions exist.
 pub const TABS: &[TabSpec] = &[
     TabSpec {
-        id: TabId::Write,
+        id: TabId::Home,
+        groups: &[CLIPBOARD, INSTRUMENTS, DIVISI, BARS, SELECT],
+    },
+    TabSpec {
+        id: TabId::NoteInput,
         groups: &[
             ENTRY,
             DURATION,
             MODIFY,
+            MORE_VALUES,
             ACCIDENTALS,
             TIES,
             VOICES,
             CHORDS,
-            INTERVALS,
         ],
     },
     TabSpec {
-        id: TabId::Articulations,
-        groups: &[ARTICULATIONS, GRACES, ARPEGGIOS, TREMOLOS, TECHNIQUE],
-    },
-    TabSpec {
-        id: TabId::Dynamics,
-        groups: &[DYNAMICS, HAIRPINS, LINES, DIVISI],
+        id: TabId::Notations,
+        groups: &[
+            CHANGES,
+            REPEATS,
+            ARTICULATIONS,
+            LINES,
+            TECHNIQUE,
+            SYMBOLS,
+            GRACES,
+            ARPEGGIOS,
+            TREMOLOS,
+        ],
     },
     TabSpec {
         id: TabId::Text,
         groups: &[
             HEADER,
             TEMPO,
+            DYNAMICS,
+            MORE_DYNAMICS,
             STAFF_TEXT,
             LYRICS,
             REHEARSAL,
             REHEARSAL_STYLE,
+            SIGNS,
         ],
-    },
-    TabSpec {
-        id: TabId::Score,
-        groups: &[INSTRUMENTS, BARS, CHANGES, REPEATS, SIGNS, JUMPS, BREAKS],
     },
     TabSpec {
         id: TabId::Playback,
         groups: &[TRANSPORT, PRACTICE, SOUND],
+    },
+    TabSpec {
+        id: TabId::Layout,
+        groups: &[
+            PAPER,
+            STAFF_SIZE,
+            BREAKS,
+            BAR_NUMBERS,
+            PAGE_NUMBERS,
+            NOTEHEADS,
+            BEAMS,
+            POSITION,
+        ],
     },
     TabSpec {
         id: TabId::Review,
@@ -1402,23 +1895,23 @@ mod tests {
             CHANGES,
             DURATION,
             MODIFY,
+            MORE_VALUES,
             ACCIDENTALS,
             TIES,
             VOICES,
             CHORDS,
-            INTERVALS,
             ARTICULATIONS,
             GRACES,
             ARPEGGIOS,
             DYNAMICS,
-            HAIRPINS,
             LINES,
             TECHNIQUE,
             TREMOLOS,
             DIVISI,
             REPEATS,
             SIGNS,
-            JUMPS,
+            NOTEHEADS,
+            BEAMS,
         ] {
             for visual in
                 std::iter::once(group.visual).chain(group.controls.iter().map(|c| c.visual))
@@ -1432,6 +1925,7 @@ mod tests {
                             | Visual::Chord
                             | Visual::Tie
                             | Visual::Slur
+                            | Visual::Beam { .. }
                             | Visual::Staff
                             | Visual::Bar
                             | Visual::Text(_)
@@ -1565,7 +2059,9 @@ mod tests {
             assert!(!commands.contains(&absent), "{absent}");
         }
         for present in [
-            id::REST,
+            id::SIXTY_FOURTH,
+            id::DOUBLE_DOT,
+            id::OTHER_TUPLET,
             id::FOLLOW_KEY,
             id::ENTRY_OCTAVE_UP,
             id::ENTRY_OCTAVE_DOWN,
@@ -1583,12 +2079,12 @@ mod tests {
     #[test]
     fn every_tab_has_a_spec() {
         for id in [
-            TabId::Write,
-            TabId::Articulations,
-            TabId::Dynamics,
+            TabId::Home,
+            TabId::NoteInput,
+            TabId::Notations,
             TabId::Text,
-            TabId::Score,
             TabId::Playback,
+            TabId::Layout,
             TabId::Review,
             TabId::View,
         ] {
@@ -1635,13 +2131,14 @@ mod task_tests {
     use crate::menu::{BAR_MARK_CONTEXT_MENU, FILE_MENU, MARK_CONTEXT_MENU, NOTE_CONTEXT_MENU};
     use score_keymap::{KeySequence, Platform, Profile, Registry};
 
+    /// Sibelius' order, without Apariencia and Partes.
     const ORDER: [(TabId, &str); 8] = [
-        (TabId::Write, "Escribir"),
-        (TabId::Articulations, "Articulaciones"),
-        (TabId::Dynamics, "Dinámicas"),
+        (TabId::Home, "Inicio"),
+        (TabId::NoteInput, "Entrada de notas"),
+        (TabId::Notations, "Notaciones"),
         (TabId::Text, "Texto"),
-        (TabId::Score, "Partitura"),
         (TabId::Playback, "Reproducción"),
+        (TabId::Layout, "Diseño"),
         (TabId::Review, "Revisión"),
         (TabId::View, "Vista"),
     ];
@@ -1791,10 +2288,9 @@ mod task_tests {
         id::TOGGLE_RIBBON,
     ];
 
-    /// Left the ribbon for the app's native Edición and Vista menus
+    /// Left the ribbon for the app's native Vista menu
     /// (`app-gpui/src/shortcuts.rs`, which checks they are still there).
     const NATIVE_MENUS: &[CommandId] = &[
-        id::SELECT_ALL,
         id::TOGGLE_INSTRUMENTS_PANEL,
         id::TOGGLE_INSPECTOR,
         id::FULL_SCREEN,
@@ -1807,7 +2303,7 @@ mod task_tests {
     }
 
     #[test]
-    fn tabs_follow_the_task_order() {
+    fn tabs_follow_sibelius_order() {
         let tabs: Vec<_> = TABS.iter().map(|tab| (tab.id, tab.id.label())).collect();
         assert_eq!(tabs, ORDER);
     }
@@ -1826,6 +2322,27 @@ mod task_tests {
                 assert!(control.hint.ends_with('.'), "{what}: {}", control.hint);
             }
         }
+    }
+
+    #[test]
+    fn more_values_holds_the_rare_rhythms_and_every_tuplet_but_the_triplet() {
+        let commands: Vec<_> = MORE_VALUES.controls.iter().map(|c| c.command).collect();
+        assert_eq!(
+            commands,
+            [
+                id::SIXTY_FOURTH,
+                id::DOUBLE_DOT,
+                id::DUPLET,
+                id::QUADRUPLET,
+                id::QUINTUPLET,
+                id::SEXTUPLET,
+                id::SEPTUPLET,
+                id::OCTUPLET,
+                id::NONUPLET,
+                id::OTHER_TUPLET,
+            ]
+        );
+        assert!(MODIFY.controls.iter().any(|c| c.command == id::TRIPLET));
     }
 
     #[test]
@@ -1850,17 +2367,44 @@ mod task_tests {
         }
     }
 
+    /// Sibelius' Inicio, with the clipboard and the selection: the commands
+    /// that once left the ribbon for Edición are back. Silencio returns to
+    /// Entrada de notas, beside the dot, as on MuseScore's toolbar.
+    #[test]
+    fn home_and_note_input_hold_the_editing_tools_of_sibelius() {
+        let commands = |id| -> Vec<_> {
+            tab(id)
+                .groups
+                .iter()
+                .flat_map(|group| group.controls)
+                .map(|control| control.command)
+                .collect()
+        };
+        let home = commands(TabId::Home);
+        for command in [
+            id::PASTE,
+            id::COPY,
+            id::CUT,
+            id::REPEAT,
+            id::SELECT_ALL,
+            id::GO_TO_BAR,
+            id::ADD_INSTRUMENT,
+            id::DELETE_BAR,
+            id::DIVISI,
+        ] {
+            assert!(home.contains(&command), "{command}");
+        }
+        let note_input = commands(TabId::NoteInput);
+        assert!(note_input.contains(&id::REST));
+        assert!(commands(TabId::Text).contains(&id::DYNAMIC_MF));
+        assert!(commands(TabId::Notations).contains(&id::CRESCENDO));
+        assert!(commands(TabId::Layout).contains(&id::RESET_POSITION));
+    }
+
     #[test]
     fn old_tab_shortcuts_open_a_tab() {
         let registry = Registry::builtin();
-        for command in [
-            id::TAB_HOME,
-            id::TAB_LAYOUT,
-            id::TAB_NOTATION,
-            id::TAB_DYNAMICS,
-        ] {
-            assert!(registry.get(command.as_str()).is_some(), "{command}");
-        }
+        assert!(registry.get(id::TAB_DYNAMICS.as_str()).is_some());
         for (platform, modifier) in [
             (Platform::MacOs, "alt"),
             (Platform::Windows, "shift"),
@@ -1872,7 +2416,7 @@ mod task_tests {
                     KeySequence::parse(&format!("{modifier}-secondary-{}", index + 1)).unwrap();
                 assert_eq!(profile.keys_for(tab.command()), vec![keys], "{tab:?}");
             }
-            assert!(profile.keys_for(id::TAB_LAYOUT).is_empty());
+            assert!(profile.keys_for(id::TAB_DYNAMICS).is_empty());
         }
     }
 }

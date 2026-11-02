@@ -119,18 +119,28 @@ five-instrument ensemble.
   field (`⌘F` on macOS, `Ctrl+F` on Windows and Linux) finds every command by name,
   including those that are only in the macOS menus, such as selecting all or full
   screen. Where this README names a menu other than **Archivo**, use the search there.
-- **Ribbon:** eight tabs, one per task (`⌥⌘1`–`8`, or `Ctrl+Mayús+1`–`8` on Windows and
-  Linux, open them).
-  **Escribir** gathers what you choose for each note: note input and octave, duration,
-  dot, triplet and rest, accidental, tie and slur, voice, and chords by interval.
-  **Articulaciones**: articulations and fermata, grace notes, arpeggios, tremolos and
-  string technique. **Dinámicas**: *ppp* to *fff*, hairpins, lines (8va, pedal, trill,
-  glissando) and divisi. **Texto**: title and credits, tempo, staff text, lyrics and
-  chord symbols, rehearsal marks and their style. **Partitura**: instruments, bars,
-  changes of clef, key and time signature, repeats, da capo and segno, and system and
-  page breaks. **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Revisión**: check, warnings, instrument range and comments. **Vista**: page
-  mode, zoom and collapsing the ribbon.
+- **Ribbon:** eight tabs laid out as in Sibelius (`⌥⌘1`–`8`, or `Ctrl+Mayús+1`–`8` on
+  Windows and Linux, open them).
+  **Inicio**: clipboard (paste, copy, cut and repeat), instruments, divisi, bars, and
+  selecting the whole staff or going to a bar.
+  **Entrada de notas** gathers what you choose for each note, as MuseScore's note input
+  toolbar does: note input and octave, duration, dot, triplet and rest, the rarer values
+  in **Más figuras** (sixty-fourth, double dot, the other tuplets), accidental (double
+  sharp and double flat too), tie and slur, voices 1 to 4, and **Acorde**, a dropdown
+  with the chord mode and the intervals.
+  **Notaciones**: changes of clef, key and time signature, repeats and barlines in **Barra**,
+  articulations and fermata, hairpins and lines (8va, pedal, trill, glissando), string
+  technique, symbols (mordents, turn, breath and caesura), grace notes, arpeggios and
+  tremolos. Like Sibelius' galleries, repeats, lines, symbols, grace notes, arpeggios
+  and tremolos each open from one dropdown.
+  **Texto**: title and credits, tempo, dynamics from *ppp* to *fff* and, in a dropdown,
+  *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
+  rehearsal marks and their style, and the signs and jumps in
+  **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, metronome and
+  count-in, audition, mixer and sounds. **Diseño**: paper and staff size, system and page breaks, hiding empty staves,
+  bar and page numbers, noteheads, beam overrides and resetting what was moved by hand.
+  **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
+  zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
   chosen, and mutually exclusive options (duration, accidental, voice) share a track.
   Each symbol has its name and key below it, and each group has its title underneath.
@@ -214,8 +224,7 @@ five-instrument ensemble.
   licenses folder that ships with Levare.
 
 Controls marked **Pendiente** (or with a dashed border on the ribbon) do not work yet:
-several document tabs, search, direct printing, MIDI/real-time input, voices 3–4,
-manual stems, per-note velocity/sounding duration, mute/solo and timbre changes.
+several document tabs, search, direct printing, MIDI/real-time input, manual stems, per-note velocity/sounding duration, mute/solo and timbre changes.
 Saving updates the chosen file; automatic recovery also keeps a copy of the session to
 reopen it after an unexpected quit.
 
@@ -293,8 +302,10 @@ without repeating them permanently next to the buttons.
 | `⇧A`–`⇧G` | `Mayús+A`–`G` | Add that note above the selected chord |
 | `⇧2`–`⇧9` | `Mayús+2`–`9` | Add a second … ninth above (following the key signature) |
 | `1` `2` `3` `4` `5` `6` | the same | Thirty-second, sixteenth, eighth, quarter, half, whole |
+| `.` | `.` | Dot |
+| `⌘2`–`⌘9` | `Ctrl+2`–`Ctrl+9` | Duplet, triplet (`⌘3`), quadruplet … nonuplet |
 | `7` / `8` / `9` | the same | Natural / sharp / flat; repeating it removes it |
-| `0` | `0` | Rest with the current duration |
+| `0` | `0` | Rest with the current duration; outside note input, turn the selection into rests |
 | `↩` | `Intro` | Tie to the next note or chord |
 | `S` | `S` | Start and then end of a slur |
 | `R` | `R` | Repeat the selected note, chord or rest |
@@ -302,7 +313,7 @@ without repeating them permanently next to the buttons.
 | `⌘↑` / `⌘↓` | `Ctrl+↑` / `Ctrl+↓` | Up / down an octave |
 | `⌥↑` / `⌥↓` | `Alt+↑` / `Alt+↓` | Upper / lower note of the chord and, at the end, the neighboring staff |
 | `←` / `→`, `⇥` / `⇧⇥` | `←` / `→`, `Tab` / `Mayús+Tab` | Previous / next element |
-| `⌫` / `⌦` | `Retroceso` / `Supr` | Delete the selected element |
+| `⌫` / `⌦` | `Retroceso` / `Supr` | Turn the selected notes into rests, keeping their time |
 | `Espacio` / `P` | `Espacio` / `P` | Play, pause or resume / play from the selection |
 | `Esc` | `Esc` | Stop; if already stopped, clear the selection |
 | `⌘B` | `Ctrl+B` | Add a bar at the end |
@@ -320,9 +331,24 @@ Sibelius keys with no function yet (`L` lines, `Z` symbols, `⌥3`/`⌥4` extra 
 have no default shortcut, as in Sibelius's laptop profile; assign them in Preferences
 if you use them often.
 
-A full bar moves on to the next one when you enter another note value. If there is no
-next bar, it is created. A value longer than the remaining duration is refused without
-changing the document. Changing the duration affects the next entry. You can open
+Writing follows Sibelius. Each note is written over what follows it, and a written
+bar stays full: the rest of it shows as rests, which the next notes overwrite and which
+you can select and write over. A value longer than what is left in the bar is split and
+tied into the next one; a full bar moves on to the next, which is created if needed.
+Bars that an older score left short are completed with rests when it opens.
+
+The rests Levare writes keep to the beats of the bar: a quarter note at the start of a
+4/4 bar leaves a quarter rest and a half rest, and a dotted quarter an eighth rest and a
+half rest. Only a half rest on either half of 4/4 (a dotted half in 12/8) joins two
+beats; within a beat each rest starts on its own value, and in 6/8 a quarter rest may
+finish a beat after an eighth note. Rests next to each other are not merged.
+
+With nothing selected, a new value or dot applies to the next notes. With one note,
+chord or rest selected, it rewrites it where it is: a longer value writes over what
+follows, tied across the barline if needed, and a shorter one leaves rests; later notes
+never move, and the note keeps its marks and ties. With a passage selected, each of its
+values changes and the music after it moves to make room, or the change is refused if
+the bar would overflow. You can open
 [`examples/primera-melodia.partitura`](examples/primera-melodia.partitura) as an
 example.
 
@@ -347,7 +373,7 @@ from Revisión. The conventions and sources are in
 checks the events of the selected passage and the form marks of its bars. It looks for
 notes out of range, repeat starts without an end and jumps that lack a Segno, Fine or
 To Coda; it also checks that a To Coda has a later target and a jump that triggers it.
-Empty bars and implicit rests are valid.
+Empty bars are valid.
 
 **Revisión › Avisos › Mostrar** opens the Revisión panel. Each row explains the warning
 and its instrument and bar; clicking it selects the exact note of the chord or shows
@@ -392,8 +418,10 @@ and does not change playback.
 
 ## Clef changes
 
-In **Partitura › Cambios › Clave…** (`Q`) you can choose treble, bass, alto or tenor
-clef for the active instrument. Choose the start of the piece or the current bar: the
+In **Notaciones › Cambios › Clave…** (`Q`) you can choose treble, bass, alto or tenor
+clef for the active instrument, or a treble or bass clef with an 8 below or above (for
+tenor voices, guitar or double bass parts, for example): they draw the notes an octave
+away from where they sound. Choose the start of the piece or the current bar: the
 clef holds until the next change. On piano and other two-staff instruments, each staff
 keeps its own clef; the branches of a divisi section share the instrument's clef. Notes
 keep their pitches and their sound. You can restore the previous clef, undo and redo;
@@ -417,8 +445,9 @@ a bar.
   heads) to another beat or bar, within its voice and staff. A blue copy shows the
   destination; releasing applies a single edit. **Esc** cancels and **⌘Z** undoes. The
   duration is kept and rests are left at the origin, without shifting the other notes.
-  The destination snaps to sixteenths (thirty-seconds if the value is a thirty-second),
-  their triplets for triplet values, or existing entries. If there is a note/chord of
+  The destination snaps to sixteenths (the value itself if it is shorter), or existing
+  entries; a note of a tuplet snaps to the positions of its group and moves only within
+  it. If there is a note/chord of
   the same duration, the values swap. Incompatible overlaps or a value that does not
   fit are refused with an explanation, without changing the work. When crossing a key
   signature, the accidentals needed to keep the sounding pitches are added. Ties and
@@ -437,62 +466,98 @@ a bar.
   crosses a barline, it is split and tied; aligned bars are created for all
   instruments when needed.
 
-Pasting does not replace existing music: if the passage does not fit in the
-destination bars, the reason is shown and the document stays intact. Choose an empty
-bar or a point with enough room. Each paste or cut is undone in a single step.
+Pasting takes the place of the plain rests that end the destination bars and fills the
+bar again after the passage, but it does not replace notes, or rests with marks, ties
+or comments: if the passage does not fit, the reason is shown and the document stays
+intact. Choose an empty bar or a point with enough room. Each paste or cut is undone in
+a single step.
 
 The musical clipboard is the system's and works between Levare windows. Plain text or
 images from other applications are not read as notes. Passage selection covers one
 staff at a time; you can copy each piano hand separately. Ties and slurs with ends
 outside the passage are not copied.
 
-## Dots and triplets
+## Dots and tuplets
 
-In **Escribir › Duración** choose the value and in **Escribir › Modificar** turn on
-**Puntillo** or **Tresillo**. Default shortcuts: **`.`** and **⌘3**, configurable in
-Preferences. They are also in the **Edición** menu. The modes stay on for the following
-notes and rests until you press them again; changing the base value keeps the modes.
+In **Entrada de notas › Duración** choose the value and in **Entrada de notas › Modificar** turn on
+**Puntillo** or **Tresillo**. The rarer values share the **Más figuras** dropdown next
+to it, as Sibelius keeps them on its second keypad layout: **Semifusa**, **Doble
+puntillo**, the tuplets of 2 and 4 to 9 notes and **Otro grupillo…**. Default shortcuts:
+**`.`** for the dot and **⌘2** to **⌘9** for the tuplets, as in Sibelius (**⌘3** is the
+triplet); the sixty-fourth and the double dot have no default key. All of them are in
+the command search and can be given keys in Preferences; Puntillo, Doble puntillo,
+Tresillo and Otro grupillo are also in the **Edición** menu. The choices stay on for the
+following notes and rests until you press them again; changing the base value keeps
+them.
 
-With a note or chord selected its duration changes; with a passage selected it applies
-to all its values in a single operation. The dot adds half (for example, dotted
-quarter = quarter + eighth). The triplet uses a **3:2** ratio: three triplet eighths
-last exactly one quarter. You can combine dot and triplet. Playback, ties, hairpins and
-both piano hands use these exact durations.
+The dot adds half the value, the double dot three quarters (a double-dotted quarter is a
+quarter, an eighth and a sixteenth). Each tuplet uses its usual ratio: 2:3, 3:2, 4:3,
+5:4, 6:4, 7:4, 8:6 and 9:8, so five sixteenths in a quintuplet last one quarter.
+**Otro grupillo…** opens in the **Selección** tab: choose one of the usual ratios, or
+how many notes in the time of how many (from 2 to 9 notes, in more than half and less
+than double their time), and press **Aplicar**. Playback, ties, hairpins and both piano
+hands use these exact durations.
 
-The engraving places the dots outside the lines and groups up to three consecutive,
-equal triplet values with a **3**, above the beam when the group is complete or with a
-bracket otherwise. Incomplete groups stay visible while you write; a change of value or
-a new bar starts another group. This covers triplets of equal values, without nested
-groups or other tuplet numbers.
+With one note, chord or rest selected, a tuplet starts there, as in Sibelius: the note
+keeps its value inside the tuplet and the rest of the group becomes rests, over whatever
+followed. Pressing the same tuplet again on any note of the group turns the whole group
+into rests. **Puntillo** and **Doble puntillo** rewrite the selected note in place, like
+any change of value (see [Usage](#usage)). With a passage selected, each one applies to
+all its values in a single operation.
 
-Changes are saved, support undo/redo and are kept when copying and pasting. If an edit
-makes the duration longer than what fits in the bar, it is refused entirely. Pasting
-keeps the original values that fit; those that cross a barline are split with ties
-when the destination allows writing the split. If it cannot be written with the
-available values, choose an empty bar or a destination aligned with the passage.
-Example: [`examples/ritmos.partitura`](examples/ritmos.partitura).
+Writing a tuplet value where no tuplet is open fills the rest of its group with rests,
+which the next notes overwrite. A group may mix values: a quarter and an eighth make one
+triplet of eighths. Inside a group only values of that tuplet fit, up to its end;
+another value written on its first note replaces the whole group, and written on a later
+note it is refused. A tuplet cannot cross the barline, nor can other music cut one in
+half: write from its first note to replace it. A note of a tuplet moves only within its
+group. Tuplets inside other tuplets are not supported.
+
+The engraving places the dots outside the lines and writes each group's number: above
+its beam alone when the group is complete and has a beam of its own, with a bracket
+otherwise. Incomplete groups stay visible while you write.
+
+Changes are saved, support undo/redo and are kept when copying and pasting; a tuplet
+that would cross the barline at the destination is not pasted. MusicXML keeps every
+ratio both ways, with its unit when it is not the note's own value; it refuses nested
+tuplets and names the bar. Example:
+[`examples/ritmos.partitura`](examples/ritmos.partitura).
 
 ## Automatic beams
 
-Eighths, sixteenths and thirty-seconds are beamed automatically by beat, also in
-chords and in each piano hand separately. Sixteenths use a second beam and
-thirty-seconds a third, with the stem half a space longer; mixed rhythms add partial
-beams. Rests, barlines and the bounds of each triplet separate the groups. An isolated
-note keeps its own flag.
+Eighths, sixteenths, thirty-seconds and sixty-fourths are beamed automatically by beat,
+also in chords and in each piano hand separately. Sixteenths use a second beam,
+thirty-seconds a third and sixty-fourths a fourth; from the third flag on, each one
+lengthens the stem by half a space. Mixed rhythms add partial beams. Rests, barlines and the bounds of each tuplet separate
+the groups. An isolated note keeps its own flag.
 
 In 4/4 they group by quarters; in 2/2, by halves; in 6/8, 9/8 and 12/8, by groups of
-three eighths. The defaults for 5/8 and 7/8 are **3+2** and **2+2+3**. Complete
-triplets of eighths or sixteenths show only the **3** by their beam; incomplete groups
-or groups with rests keep the bracket.
+three eighths. The defaults for 5/8 and 7/8 are **3+2** and **2+2+3**. A complete
+tuplet under a beam of its own shows only its number by the beam; incomplete groups or
+groups with rests keep the bracket.
 
 They are recalculated when writing, editing, pasting or undoing, and when opening older
 scores. They change neither durations nor playback. Example:
 [`examples/barras.partitura`](examples/barras.partitura).
 
+To beam otherwise, select notes and choose in **Diseño › Barra de corchea**, as on
+Sibelius' keypad: **Iniciar** starts a new beam at the note, even inside a beat; **Unir**
+joins the note, and the rest of its beat, to the previous beam; **Sin barra** gives it
+its own flag. Choosing the same option again returns the note to automatic beaming.
+The choices are saved in the native file; MusicXML lets the program that opens it beam
+again.
+
+## Noteheads
+
+**Diseño › Cabeza** draws the selected notes with a cross, a diamond (open on halves and
+wholes) or a slash (**Diagonal**). The notes keep their pitch and sound, and rests are left out. Choose
+the same head again to bring back the oval. Noteheads are saved in the native file, the
+PDF and MusicXML.
+
 ## Ties, slurs, dynamics and articulations
 
-The ribbon (**Escribir** for ties and slurs, **Articulaciones** for articulations,
-arpeggios and technique, **Dinámicas** for dynamics and hairpins), the **Selección**
+The ribbon (**Entrada de notas** for ties and slurs, **Notaciones** for articulations,
+hairpins, arpeggios and technique, **Texto** for dynamics), the **Selección**
 tab of the right panel (to remove them) and the **Expresión** menu edit these marks on
 notes and chords of any staff. All changes are saved and support undo/redo. Example:
 [`examples/piano-expresion.partitura`](examples/piano-expresion.partitura).
@@ -515,15 +580,20 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   to the next marking on the same staff. Each piano hand keeps its own dynamic. With no
   marking, mf is used (MIDI velocity 88). A dynamic can be placed on a rest to prepare
   the next entry. Pressing the note's active dynamic again removes it.
+  **Texto › Más dinámicas** adds sfz, rfz, fp, sfp and niente. sfz and rfz strike their
+  note harder (sfz at least forte, +24; rfz +16) and the level goes on as before; fp
+  strikes forte and sfp fortissimo, and both fall to piano at once; niente is silence,
+  for a hairpin that fades to nothing or grows out of it. MusicXML writes niente as
+  `<n/>` and reads sf, sffz and fz as sfz and rf as rfz.
 - **Articulations:** with no marking, each note sounds for 92 % (with a gap of at most
-  60 ms) to separate it from the next; staccato shortens the sound to 50 %; tenuto
-  keeps the full duration; accent and marcato strengthen the attack (+16/+24 velocity,
-  up to 127).
+  60 ms) to separate it from the next; staccato shortens the sound to 50 % and
+  staccatissimo to 25 %; tenuto keeps the full duration; accent and marcato strengthen
+  the attack (+16/+24 velocity, up to 127).
   They affect every note of the chord, without changing its written duration. In a
   tied chain the initial attack is kept; a final staccato shortens the chain's combined
   sounding duration to 50 %. This keeps the sound when a value is split while pasting.
 
-- **Arpeggios:** select a chord and choose **Articulaciones › Arpegio** (also in the
+- **Arpeggios:** select a chord and choose **Notaciones › Arpegio** (also in the
   **Expresión** menu). There are normal, upward and downward markings. The Bravura line
   fits the chord's height and sits to the left of its accidentals. Normal and upward
   sound from low to high; downward, from high to low. The notes are staggered without
@@ -539,12 +609,25 @@ notes and chords of any staff. All changes are saved and support undo/redo. Exam
   split across bars, the arpeggio stays on the first fragment.
   Example: [`examples/piano-arpegios.partitura`](examples/piano-arpegios.partitura).
 
-- **Fermata:** in **Articulaciones › Articulación** or the **Expresión** menu. It goes
+- **Fermata:** in **Notaciones › Articulación** or the **Expresión** menu. It goes
   on notes or rests, alongside any articulation. In playback, that moment lasts twice
   as long in every part and the music continues afterwards; the ruler and the clock
   account for it.
 
-- **Grace notes:** in **Articulaciones › Nota de adorno**, select the note and choose
+- **Ornaments:** **Mordente**, **Mordente superior** and **Grupeto**, in
+  **Notaciones › Símbolos** or the **Expresión** menu, go over a single note or chord,
+  outside its articulation and inside its fermata. In playback, a single note plays its
+  neighbours in the key, 70 ms each at most: the mordent the note below, the upper
+  mordent the note above, the turn the note above, the note and the note below; then
+  the note sounds for the rest of its value.
+
+- **Breath and caesura:** **Respiración** and **Cesura**, in **Notaciones › Símbolos**
+  or the **Expresión** menu, are written over the staff after a note or rest. They do
+  not change the bar's time: the breath cuts the note's sound by a quarter of its
+  value and the caesura by half, and either one breaks a slur there. When a note is
+  split across bars they stay after its last fragment.
+
+- **Grace notes:** in **Notaciones › Nota de adorno**, select the note and choose
   **Acciaccatura** (small, slashed, almost no time) or **Appoggiatura** (leans on the
   note and takes half its value). The grace note starts at the note's pitch; `;` adds
   another, up to four, written beamed with two beams. The new one stays selected:
@@ -608,7 +691,7 @@ All support Undo/Redo, and Esc cancels a drag in progress.
 Select a passage with **Shift+click** or **Shift+arrows** and press **H** for a
 crescendo (`<`) or **Shift+H** for a diminuendo (`>`). You can also select the first
 note, press the hairpin, select the last one and press the same button or shortcut
-again. **Esc** cancels the pending start. The actions are in **Dinámicas › Regulador**
+again. **Esc** cancels the pending start. The actions are in **Notaciones › Líneas**
 and the **Expresión** menu. The shortcuts can be changed in Preferences.
 
 The hairpin goes from the start of the first note to the start of the last one. It can
@@ -631,7 +714,7 @@ Example: [`examples/reguladores.partitura`](examples/reguladores.partitura).
 
 ## Lines: 8va, 8vb, pedal, trill and glissando
 
-On the ribbon, in **Dinámicas › Líneas**, select a passage (or a single note) and
+On the ribbon, in **Notaciones › Líneas**, select a passage (or a single note) and
 choose the line. It is drawn from the first note to the end of the last one, breaks at
 line changes and each kind takes its own lane, outside the notes, slurs and dynamics.
 
@@ -713,7 +796,7 @@ them.
 ## Pizzicato and arco
 
 Select a note, chord or rest of **violin, viola, cello or double bass**. On the
-ribbon, in **Articulaciones › Técnica de cuerda**, or in the **Expresión** menu, choose
+ribbon, in **Notaciones › Técnica de cuerda**, or in the **Expresión** menu, choose
 **pizz.** to play by plucking the string and **arco** to return to the usual sound. The
 marking appears in italics above the staff and holds until the instrument's next mark,
 also when playing from a selection. A mark on a rest prepares the next entry.
@@ -730,7 +813,7 @@ Example:
 ## String harmonics
 
 Select a note or a passage and use **Expresión › Armónico natural** or **Armónico
-artificial**, also available on the ribbon (**Articulaciones › Técnica de cuerda**).
+artificial**, also available on the ribbon (**Notaciones › Técnica de cuerda**).
 Press the same option again to remove it; you can also select the circle or the
 diamond and delete only that mark. Undo history, the clipboard, autosave and PDF export
 keep them.
@@ -741,7 +824,7 @@ keep them.
   from C0 to B6 to keep the sound within the editor's range.
 
 They are marks on each event, compatible with arco, pizzicato, articulations, ties and
-slurs, two voices and divisi. On a passage they apply to all the selected notes in a
+slurs, voices and divisi. On a passage they apply to all the selected notes in a
 single operation; rests do not take harmonics. Playback respects the sounding pitch
 and uses Levare's own synthesized timbre for harmonics: sustained and airy with the
 bow, with a short attack and a decaying resonance in pizzicato. It also works when
@@ -799,7 +882,8 @@ There are clarinets in C, B♭ and A, E♭ clarinet, bass clarinet, cor anglais,
 F, trumpets in C, B♭ and D, cornet and saxophones; the octave transpositions of
 piccolo, contrabassoon, double bass, guitar, celesta, xylophone and glockenspiel are
 included. Harp, piano, organ, celesta, marimba and vibraphone use two staves. Scores of
-12 parts or more are exported to PDF on A3; individual parts stay on A4. The voices are
+12 parts or more are exported to PDF on A3 and individual parts on A4, unless
+**Diseño › Papel** chooses another paper. The voices are
 **Voz** (solo), **Soprano**, **Contralto**, **Tenor** and **Bajo**; the tenor is written
 in treble clef an octave above how it sounds. No sound pack includes voices, so they
 sound with the choir of the built-in General MIDI bank. Snare drum, bass drum, cymbals,
@@ -807,7 +891,7 @@ triangle, tambourine and tam-tam have a percussion clef without key signature an
 stroke per voice. Their sounds are approximated with the built-in General MIDI bank;
 profiles with the same program share a timbre.
 
-Each staff takes two voices; single-staff instruments can use divisi. Older documents
+Each staff takes up to four voices; single-staff instruments can use divisi. Older documents
 keep their original pitches and sound, including the double bass previously written in
 sounding pitch. You can open
 [`examples/orquesta-completa.partitura`](examples/orquesta-completa.partitura) to check
@@ -833,25 +917,29 @@ the existing piano notes stay in the right hand and an empty left hand is added.
 can open [`examples/trio.partitura`](examples/trio.partitura) to hear an ensemble of
 piano, flute and cello.
 
-## Two voices and divisi
+## Voices and divisi
 
-Choose **Voz 1** or **Voz 2** in **Escribir › Voz** or with **⌥1 / ⌥2**. Each voice has
-its own notes, rests and durations within the same bar; it does not use up the other's
+Choose **Voz 1** to **Voz 4** in **Entrada de notas › Voz** or with **⌥1–⌥4**. Each voice has
+its own notes, rests and durations within the same bar; it does not use up the others'
 rhythmic space. Choosing an empty voice turns on writing from the start of the bar. If
 it already contains music, its first note is selected: use the arrows to go through it
 and **N** to continue writing after the selection. Use rests to delay an entry.
 
-When both voices are present, voice 1 has stems up and voice 2 stems down. Beams,
-triplets, ties, slurs and articulations belong to their voice. Selecting, copying,
+When several voices are present, voices 1 and 3 have stems up and voices 2 and 4 stems
+down, as in Sibelius and MuseScore. A voice whose stem goes the same way as an earlier
+voice's on the same beat moves beside it, and the rests of voices 3 and 4 sit further out
+than those of 1 and 2. Each voice has its colour in the caret and the note preview: blue,
+green, purple and pink. Beams, triplets, ties, slurs and articulations belong to their voice. Selecting, copying,
 pasting and deleting a passage act on the active voice; clicking a note makes its
 voice active. In a unison with coinciding heads, the active voice is chosen. Each piano
-hand also takes its two voices.
+hand also takes its four voices.
 
 For an instrumental section, **div.** opens two staves from the selected note or rest:
-voice 1 in **Divisi I** and voice 2 in **Divisi II**, keeping the clef. **unis.** marks
+voice 1 in **Divisi I** and voice 2 in **Divisi II**, keeping the clef. Empty voices 3 and
+4 first: Levare explains it and changes nothing. **unis.** marks
 the return to playing together at the chosen position. Notes keep their voice,
 identity, rhythm and connections; changing the layout does not change playback. The
-buttons are in **Dinámicas › Divisi** (**Dividir** and **Unir**) and the Expresión
+buttons are in **Inicio › Divisi** (**Dividir** and **Unir**) and the Expresión
 menu; they also work on an empty bar.
 
 To divide only a range, select its notes with **Shift + click** or by dragging and
@@ -923,6 +1011,23 @@ The ribbon's **Vista** tab switches between **Página**, **Continua** and
 - **Pentagrama:** all bars in one horizontal strip, with the instruments aligned and
   sideways scrolling.
 
+### Hiding empty staves
+
+**Diseño › Sistema y página › Ocultar vacíos** leaves out, after the first system, the
+staves of every part that has no note in a system, as Sibelius' «Hide Empty Staves»
+does; the other staves move up and the pages hold more music. A system where nothing
+plays keeps every part. It applies to the page view, the PDF and the parts; the
+continuous and single-staff views always show every staff, to write in them.
+
+### Bar and page numbers
+
+As in Sibelius and MuseScore, bar numbers go above the top staff of each system at its
+first bar. **Diseño › Números de compás** (or the **Vista** menu) numbers instead every
+bar, every 5 or every 10 bars, or none. The first bar is never numbered.
+**Diseño › Números de página** puts «2 / 5» at the foot of every page, the number alone
+at the top outside corner from the second page on, or no number. Both choices are
+saved with the score and apply to the screen, the PDF and the exported parts.
+
 **⌘0** fits a whole page to the window. The **− / +** buttons and the zoom shortcuts
 work in all three views. Changing view keeps the selection, the input point and
 playback. If a full system needs more room because of its density or number of
@@ -930,9 +1035,11 @@ instruments, the pages grow to keep it.
 
 ## Sharps, flats and naturals
 
-In **Escribir › Alteración**, choose Armadura, **♯**, **♭** or **♮** before writing. That
-option holds for the next notes and for those you add to the chord with ⇧+letter.
-Armadura uses the chosen key; ♮ forces a natural note with an explicit natural sign.
+In **Entrada de notas › Alteración**, choose Armadura, **♮**, **♯**, **♭**, **𝄪** (double
+sharp) or **𝄫** (double flat) before writing. That option holds for the next notes and
+for those you add to the chord with ⇧+letter. Armadura uses the chosen key; ♮ forces a
+natural note with an explicit natural sign. The double sharp and double flat have no key
+by default, as on Sibelius' second keypad layout; give them one in **Atajos**.
 
 To change an existing note, select it and press **Aplicar ♯**, **Aplicar ♭** or
 **Aplicar ♮**. In a chord, first choose its head with a click or its name in the
@@ -947,8 +1054,9 @@ A note that follows the key signature after its own accidental gets a cautionary
 when needed in that bar. Notes in other octaves do not inherit an individual
 accidental. The notation state resets in every bar and is kept separate between hands.
 The signs of chords are spread in columns. Transposing with the arrows keeps the kind
-of the note's own accidental. There are no double accidentals or automatic enharmonic
-changes yet.
+of the note's own accidental. Double sharps and flats are exported to and read from
+MusicXML as written; transposing instruments still respell a note that would need one
+to its enharmonic equivalent. There are no automatic enharmonic changes yet.
 
 You can open [`examples/piano-alteraciones.partitura`](examples/piano-alteraciones.partitura).
 
@@ -960,7 +1068,7 @@ also in the **Tonalidad** menu. There are 30 options, from seven flats to seven 
 including the relative minors. The key signature appears after the clef in every
 system, on every staff.
 
-With **Escribir › Alteración › Armadura**, notes and chords use its sharps or flats in
+With **Entrada de notas › Alteración › Armadura**, notes and chords use its sharps or flats in
 every octave: in G major, writing F produces F♯ without repeating a sharp before each
 note. **Aplicar ♮** (`7`) writes an F natural; **Seguir armadura** or pressing `7` again
 turns it back into F♯. The Selección tab shows the written pitch and, if the part
@@ -1065,6 +1173,14 @@ are respected.
 - **Media velocidad** (`⇧Espacio`, or **½×**): plays at 50 % of the written tempo,
   without changing the score's markings. When stopped, it starts playing; when playing,
   it changes speed at the same point. It also works with the loop.
+- **Metrónomo** (**Reproducción › Práctica** or the Reproducción menu): a click on every
+  beat while playing, higher and louder on the first beat of each bar. It follows the
+  time signature (two clicks a bar in 6/8, three in 9/8), tempo changes, fermatas,
+  repeats and half speed. Switching it while playing keeps the place. Levare makes the
+  click itself, so it sounds the same with every sound bank.
+- **Cuenta previa**: one bar of clicks, in the time signature and tempo where playback
+  starts, before the music. The playhead waits through it; notes already sounding at
+  the start come in with the music.
 - **Repetir la última reproducción** (`⌥Espacio`; `Alt+Espacio` on Windows,
   `Mayús+Alt+Espacio` on Linux): starts again from where the previous playback started.
 - **Línea de reproducción al inicio** (`⌘↖` or `⌘[`; `Ctrl+Inicio` on Windows and
@@ -1154,7 +1270,7 @@ un problema…**, which opens the GitHub issue form with the version and system 
 ## Correcting notes and bars
 
 Click a note to leave input and edit it: **A–G** replaces the chosen pitch; the values
-in **Escribir › Duración** change its duration, including any dot or triplet it already
+in **Entrada de notas › Duración** change its duration, including any dot or triplet it already
 had. In chords the rest of the notes are kept. If the new duration does not fit, the
 operation is refused entirely. **N** turns new note input back on.
 
@@ -1163,7 +1279,7 @@ following notes keep their beat. **Edición › Eliminar notas y su tiempo** and
 **Cortar** remove the elements and move the following ones earlier within the bar.
 Everything supports undo and redo.
 
-In **Partitura › Compases**, **Antes** (⇧⌘B) adds an empty bar before the current one
+In **Inicio › Compases**, **Antes** (⇧⌘B) adds an empty bar before the current one
 and **Eliminar** (⌘Backspace) deletes the bars the selection spans, or the current one
 if there is no passage. They affect every instrument and hand; they move the markings
 with the music and keep the effective time signature, key and tempo of the first bar
@@ -1171,9 +1287,19 @@ kept. At least one bar always remains.
 
 ## Repeats, endings and jumps
 
-In **Partitura › Repeticiones** write the start and end of a repeat, first and second
-endings, the double barline and the final barline. **Da capo y segno** has Segno, Coda
-and Fine, and the **D.C. / D.S.** dropdown gathers To Coda and the jumps; the
+In **Notaciones › Barra**, as in Sibelius' barline gallery, write the start and end of a
+repeat, first and second endings, and the line that closes the bar: double, final,
+dashed, dotted, tick (a short stroke through the top line), short (over the middle of
+the staff) or invisible. Dashed, dotted, tick, short and invisible lines stay on each
+staff and do not join the staves of a piano or a group.
+
+**Compás %** in the same dropdown turns the selected bars of the active staff, or the
+cursor's bar, into bar repeats: they are emptied and show %, and they play the bar
+before them again, or the music several % bars back repeat. Choose it again to remove
+the mark; writing a note in the bar removes it too. The first bar cannot repeat, and a
+% needs the same time signature as the bar before it. MusicXML keeps it as a
+`measure-repeat`. In **Texto**, the **D.C. / D.S.**
+dropdown gathers Segno, Coda, Fine, To Coda and the jumps; the
 **Repeticiones** menu also gathers the six D.C./D.S. variants and the options to remove
 the form.
 
@@ -1192,7 +1318,7 @@ written order.
 
 ## Single-note and chord tremolos
 
-Select a note, chord or passage without rests and choose **Articulaciones › Trémolo**:
+Select a note, chord or passage without rests and choose **Notaciones › Trémolo**:
 one, two or three strokes. The mark crosses the stem; on whole notes it goes above the
 head. Another variant replaces the previous one and pressing the active one again
 removes it. You can also select the mark and delete it while keeping the note. Each
@@ -1248,7 +1374,15 @@ the full score and every part in both formats.
 
 ## Exporting PDF
 
-Select **PDF** in the export dialog to save every page on A4. The PDF uses Bravura's
+Select **PDF** in the export dialog to save every page on the score's paper: A4, or A3
+for 12 parts or more, unless **Diseño › Papel** chooses A4, Letter, A3 or Tabloid,
+upright or **Horizontal**. **Diseño › Pentagrama** sets the printed staff height to 7,
+6, 5 or 4 mm; **Automático** lets the number of parts decide, about 8.4 mm for one or
+two parts and 5.3 mm for an ensemble on A4, and keeps that size on larger paper, which
+then holds more music. A system too tall for the page is reduced to fit. The same
+dropdown sets the margins: **normales**, **anchos** (6 mm more on every side) or **muy
+anchos** (12 mm); the music, the heading, the copyright and the page number move
+inside them on screen and in the PDF. The PDF uses Bravura's
 vector outlines, includes the markings and arpeggios across the hands, and lays out the
 pages independently of the screen's view and zoom. It includes no selections or
 interface controls. Individual parts carry the instrument in the header, without
@@ -1304,7 +1438,7 @@ Importing creates an editable copy with no native path and marks it as unsaved.
 **Guardar** asks for a **.levare** file; the original MusicXML is not changed. The
 imported copy also takes part in autosave and recovery.
 
-Notes, chords of uniform duration, rests, up to two voices per staff and two staves per
+Notes, chords of uniform duration, rests, up to four voices per staff and two staves per
 instrument are kept; time signature, key signature, tempo, dynamics, basic
 articulations, complete ties and slurs, hairpins, fermatas, arco/pizzicato, harmonics
 and arpeggios. Transposing parts keep their transposition interval and are rebuilt in
@@ -1315,7 +1449,7 @@ recalculated with Levare's engraving.
 If something is left out or adapted, a warning appears on opening: for example, lyrics,
 free text, ornaments, chord symbols, instruments without an equivalent and ties or
 slurs that affect only some notes of a chord. Cases that cannot represent the music
-correctly are refused with an explanation, including more than two voices per staff,
+correctly are refused with an explanation, including more than four voices per staff,
 rhythms beyond the supported resolution, microtones, different simultaneous time
 signatures and touch harmonics with no deducible sounding pitch. Natural harmonics
 without a pitch type are read at the written pitch with a warning. The artificial
@@ -1378,9 +1512,9 @@ Process and secrets: [`docs/releasing.md`](docs/releasing.md).
 
 ## Current scope
 
-Two voices per staff and divisi on one or two staves, chords of up to eight notes with
+Four voices per staff and divisi on one or two staves, chords of up to eight notes with
 sharps, flats and naturals, six durations (from the whole note to the thirty-second)
-with dots and triplets, and treble, C and bass clefs. The engraving includes beaming,
+with dots and triplets, and treble, C and bass clefs, also with an octave 8. The engraving includes beaming,
 ledger lines, articulations, dynamics, ties and slurs, hairpins, grace notes, lines,
 text, lyrics and chord symbols, with a per-bar cache.
 Playback mixes the parts on a common clock, with start from selection, pause and

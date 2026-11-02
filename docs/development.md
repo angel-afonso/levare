@@ -764,8 +764,9 @@ score-keymap          registry (labels, pending) and active map (keys)
 AppView::run          single point of execution · ui/command_state.rs implements CommandStates
 ```
 
-- **Description** (`spec.rs`): eight tabs by task (`TabId`: Escribir, Articulaciones,
-  Dinámicas, Texto, Partitura, Reproducción, Revisión, Vista), their groups and controls.
+- **Description** (`spec.rs`): eight tabs in Sibelius' order (`TabId`: Inicio, Entrada
+  de notas, Notaciones, Texto, Reproducción, Diseño, Revisión, Vista), their groups and
+  controls.
   Each control is a `CommandId` with a size (large or tile), a function (`Role`: choice,
   toggle or action), a glyph, a short name and a hint. It contains no status texts or
   keys.
@@ -1076,9 +1077,9 @@ duration; note values act on the selection. Delete removes the sound, keeping th
 and the marks valid for rests. The deletion that shortens the time is still available
 for Cortar and the Edición menu.
 
-`score-pdf` is an adapter without GPUI: it builds `ViewMode::Page`, maps each sheet to A4
-and draws lines, beams, curves with Bravura metrics, hairpins, texts and the font's
-original outlines through one painter. macOS prints through Quartz/CoreText with the
+`score-pdf` is an adapter without GPUI: it builds `ViewMode::Page`, maps each sheet to the
+score's paper (`PageSetup::paper_mm`) and draws lines, beams, curves with Bravura
+metrics, hairpins, texts and the font's original outlines through one painter. macOS prints through Quartz/CoreText with the
 system's Times New Roman; Windows and Linux use the portable writer (`krilla`) with the
 bundled Liberation Serif, which has the same widths, so the pages match. Musical texts
 share `score-layout::repertoire` with screen and menus; ordinary text is shaped in whole
@@ -1094,18 +1095,22 @@ child process killed by force before reopening. PDF checks piano, strings and mu
 documents, as well as invalid targets and preserving files. Visual check through
 Poppler: piano with arpeggios across hands and a two-page quartet.
 
-## Two voices and divisi
+## Voices and divisi
 
-`Voice::{One, Two}` identifies two sequences per bar with a common store of `EventId`.
-`order` keeps the original voice and `second_order` adds the second without changing old
-IDs. `timed_iter` computes the start within each voice; the bar's capacity is the maximum
+`Voice::{One, Two, Three, Four}` identifies four sequences per bar with a common store of
+`EventId`. `order` keeps the original voice; `second_order`, `third_order` and
+`fourth_order` add the others without changing old IDs, and are left out of the file when
+empty, so documents with one or two voices are written as before. `timed_iter` computes the start within each voice; the bar's capacity is the maximum
 of its durations, not the sum. Validation refuses duplicate IDs between sequences and
 overflows of each voice. Cursor, range selection, clipboard, input, deletion and
 navigation keep the voice. Rhythmic connections and ties must join events of the same
 voice; phrases of different voices can overlap.
 
-Engraving uses a shared time grid, opposite stems, beams and triplets per voice,
-separate rests and horizontal shifting of coinciding seconds. Accidentals are resolved
+Engraving uses a shared time grid, opposite stems (`Voice::is_lower`: 1 and 3 up, 2 and 4
+down), beams and triplets per voice, separate rests (3 above 1, 4 below 2) and horizontal
+shifting: a voice moves beside an earlier one on the same tick when their heads are a
+second apart or closer, or when both stems go the same way. Divisi shows voices 1 and 2
+on its two staves, so validation refuses voices 3 and 4 in any bar with divisi. Accidentals are resolved
 chronologically for the whole staff. When clicking coinciding unison noteheads the active
 voice is preferred. Lower articulations and fermatas use their original Bravura glyphs.
 Texts and dynamics reserve room in front of the stems of both voices.
@@ -1143,18 +1148,22 @@ to merge more than two voices and to convert a piano. Dynamics, hairpins and tec
 stay shared by the section; the piano's hands keep their independent expression.
 
 The playback plan creates one track per voice with its own intervals, attacks and
-sustains, aligned on the common clock. Preparing the expression considers simultaneous
+sustains, aligned on the common clock. `PlaybackPlan::add_clicks` adds a
+`Message::Click` on every beat of every performed bar; the renderer sounds it with its
+own fading sine burst, mixed after the instruments, so the metronome needs no bank. A
+count-in travels with `Command::Play`: the renderer clicks its beats without moving the
+frame and attacks the held notes when it ends. Preparing the expression considers simultaneous
 sounds and keeps the ranges per track; groups that overlap reserve a common margin. The
-active elements of up to 192 tracks (`MAX_STAVES` × 2 voices) and up to 1,536 sustained
-pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test compares every
-scheduled message before dividing, after dividing and after joining, including
-technique, dynamic and hairpin. Edit/undo, capacity per voice, copying with a
+active elements of up to 384 tracks (`MAX_TRACKS`, `MAX_STAVES` × 4 voices) and up to
+3,072 sustained pitches (`MAX_SOUNDING_NOTES`) fit in fixed buffers. The division test
+compares every scheduled message before dividing, after dividing and after joining,
+including technique, dynamic and hairpin. Edit/undo, capacity per voice, copying with a
 simultaneous dynamic, coinciding noteheads, chronological accidentals, loading/recovery
 and export of the `voces-y-divisi` and `divisi-dos-pentagramas` examples are tested too.
 
 ## Next deliveries
 
-1. **Musical editing:** enharmonics and double accidentals, voices 3–4 and editing of
+1. **Musical editing:** enharmonics and double accidentals, and editing of
    general irregular groups.
 2. **Safety of the work:** more tests with `proptest`, document fixtures and fuzzed
    importers.
@@ -1396,6 +1405,19 @@ views and no clipping when printing tall systems.
 For orchestras of 12 parts or more, page view also adapts its width to the tallest
 system, avoiding a narrow column when the whole score is reduced. The full-score PDF uses
 A3; parts and small ensembles keep A4.
+
+`PageSetup` chooses the paper, its orientation and the staff height. Page view turns
+them into staff spaces: a fixed staff height of `h` mm on paper `w` mm wide gives a page
+`w · 40 / h` units wide (a staff is 40 units), and the page height follows the paper's
+proportion. With the automatic size the widths above are scaled by the paper's width
+over the automatic paper's, so the printed staff keeps its size. A fixed size turns off
+the orchestra's width resolution; `paginate` still enlarges a sheet that cannot hold
+its tallest system, and the PDF then reduces it to the paper.
+
+`Margins` add room on every side. Page view engraves the music in the page width minus
+both margins, moves it right by one (`Layout::move_right`) and paginates with the
+margin above and below; `Page::margin` lets the app and the PDF keep the heading, the
+copyright and the page number inside it.
 
 The selector reserves a flexible width for the name and keeps the segments of musical
 text on a single line, with stable row heights and quantity controls outside the text

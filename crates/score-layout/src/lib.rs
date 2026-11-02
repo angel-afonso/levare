@@ -22,7 +22,7 @@ pub use beaming::{BeamGroup, BeamSegment, BeamStem};
 mod views;
 pub use views::{Page, System, ViewMode};
 mod rhythm;
-pub use rhythm::TupletGroup;
+pub use rhythm::{DOT_STEP, TupletGroup};
 mod expression;
 pub use expression::{Curve, Hairpin, Hit, MarkBox, PianoArpeggioLayout};
 mod grace;
@@ -33,6 +33,8 @@ mod lyrics;
 mod offsets;
 
 pub const STAFF_SPACE: f32 = 10.;
+/// How far above a bar's top line its number sits.
+pub const BAR_NUMBER_RISE: f32 = 18.;
 pub const MUSIC_SIZE: f32 = STAFF_SPACE * 4.;
 pub const STAFF_LABEL_SIZE: f32 = 16.;
 
@@ -107,8 +109,8 @@ fn label_words(text: &'static str) -> score_core::Words {
 #[derive(Clone, Debug)]
 pub struct EventPosition {
     pub voice: Voice,
-    pub tick: u16,
-    pub end_tick: u16,
+    pub tick: u32,
+    pub end_tick: u32,
     pub id: ElementId,
     pub pitch: Option<score_core::Pitch>,
     pub center: Point,
@@ -129,10 +131,10 @@ pub struct MeasureLayout {
     pub beams: Vec<BeamGroup>,
     pub events: Vec<EventPosition>,
     pub staff_spans: Vec<(f32, f32)>,
-    pub cursor_x: Vec<f32>,
-    pub second_cursor_x: Vec<f32>,
+    /// Caret positions before each event and at the end, one list per voice.
+    pub cursor_x: [Vec<f32>; 4],
     /// Shared rhythmic onsets, including bar end, for a continuous playhead.
-    pub time_positions: Vec<(u16, f32)>,
+    pub time_positions: Vec<(u32, f32)>,
     pub top: f32,
     pub bottom: f32,
     pub ink_top: f32,
@@ -180,11 +182,11 @@ impl MeasureLayout {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VoiceRegion {
     pub voice: Voice,
-    pub start: u16,
-    pub end: u16,
+    pub start: u32,
+    pub end: u32,
 }
 impl VoiceRegion {
-    pub fn contains(&self, voice: Voice, tick: u16) -> bool {
+    pub fn contains(&self, voice: Voice, tick: u32) -> bool {
         self.voice == voice && self.start <= tick && tick < self.end
     }
 }
@@ -197,7 +199,7 @@ pub struct PlacedMeasure {
     pub source_staff: StaffId,
     pub source_voice: Option<Voice>,
     pub regions: Vec<VoiceRegion>,
-    pub source_onsets: [Vec<u16>; 2],
+    pub source_onsets: [Vec<u32>; 4],
     pub part: PartId,
     pub index: usize,
     pub origin: Point,
@@ -217,7 +219,7 @@ impl PlacedMeasure {
                 Voice::One
             }
         });
-        let onsets = &self.source_onsets[usize::from(voice == Voice::Two)];
+        let onsets = &self.source_onsets[voice.index()];
         let capacity = self.content.time_positions.last().unwrap().0;
         let index = onsets
             .iter()
@@ -318,9 +320,54 @@ pub struct Layout {
     /// Hyphens and extenders between sung syllables.
     pub lyric_lines: Vec<Line>,
     pub piano_arpeggios: Vec<PianoArpeggioLayout>,
+    /// Which bars and pages carry their numbers.
+    pub numbering: score_core::Numbering,
+}
+
+/// Where a page's number is printed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageNumberPlace {
+    Footer,
+    TopLeft,
+    TopRight,
 }
 
 impl Layout {
+    /// The bars that show their number: one per bar, on the top staff of
+    /// its system. The number goes `BAR_NUMBER_RISE` above the bar's origin.
+    pub fn numbered_bars(&self) -> impl Iterator<Item = &PlacedMeasure> {
+        let mut tops = HashMap::<usize, f32>::new();
+        for measure in &self.measures {
+            tops.entry(measure.system_start)
+                .and_modify(|top| *top = top.min(measure.origin.y))
+                .or_insert(measure.origin.y);
+        }
+        let bars = self.numbering.bars;
+        self.measures.iter().filter(move |measure| {
+            measure.origin.y == tops[&measure.system_start]
+                && bars.shows(measure.index, measure.index == measure.system_start)
+        })
+    }
+    /// The text of page `index`'s number and where it goes, if it has one.
+    pub fn page_number(&self, index: usize) -> Option<(String, PageNumberPlace)> {
+        match self.numbering.pages {
+            score_core::PageNumbers::Footer => Some((
+                format!("{} / {}", index + 1, self.pages.len()),
+                PageNumberPlace::Footer,
+            )),
+            score_core::PageNumbers::Corner if index > 0 => Some((
+                (index + 1).to_string(),
+                // The outside corner: page 2 is a left-hand page.
+                if index.is_multiple_of(2) {
+                    PageNumberPlace::TopRight
+                } else {
+                    PageNumberPlace::TopLeft
+                },
+            )),
+            _ => None,
+        }
+    }
+
     pub fn hit_bar_mark(&self, point: Point) -> Option<BarMarkRef> {
         if let Some(measure) = self.hit_tempo(point) {
             return Some(BarMarkRef {
@@ -436,7 +483,7 @@ impl Layout {
         &self,
         point: Point,
         preferred: Voice,
-    ) -> Option<(ElementId, Option<score_core::Pitch>, u16)> {
+    ) -> Option<(ElementId, Option<score_core::Pitch>, u32)> {
         let point = Point {
             x: point.x / self.scale,
             y: point.y / self.scale,
@@ -541,7 +588,7 @@ impl Layout {
             .measures
             .iter()
             .find(|m| m.part == part && m.source_staff == staff && m.index == measure)?;
-        let tick = f64::from(*source.source_onsets[usize::from(voice == Voice::Two)].get(index)?);
+        let tick = f64::from(*source.source_onsets[voice.index()].get(index)?);
         let capacity = source.content.time_positions.last()?.0;
         let placed = self.voice_measure_at_tick(
             part,
@@ -552,11 +599,13 @@ impl Layout {
         )?;
         Some(Point {
             x: (placed.origin.x
-                + *if voice == Voice::One || placed.source_voice.is_some() {
-                    placed.content.cursor_x.get(index)?
+                // A divisi staff shows its source voice as the first one.
+                + *placed.content.cursor_x[if placed.source_voice.is_some() {
+                    0
                 } else {
-                    placed.content.second_cursor_x.get(index)?
-                })
+                    voice.index()
+                }]
+                .get(index)?)
                 * self.scale,
             y: placed.origin.y * self.scale,
         })
@@ -581,15 +630,15 @@ impl Layout {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Rhythm {
-    ticks: Vec<u16>,
+    ticks: Vec<u32>,
     positions: Vec<f32>,
 }
 impl Rhythm {
-    fn ticks(score: &Score, index: usize, metrics: &Metrics) -> (Vec<u16>, Vec<f32>, f32) {
+    fn ticks(score: &Score, index: usize, metrics: &Metrics) -> (Vec<u32>, Vec<f32>, f32) {
         let mut ticks = vec![0, score.time_at(index).capacity()];
         let mut wide = HashSet::new();
-        let mut left = HashMap::<u16, f32>::new();
-        let mut right = HashMap::<u16, f32>::new();
+        let mut left = HashMap::<u32, f32>::new();
+        let mut right = HashMap::<u32, f32>::new();
         let piano_arpeggios: HashSet<_> = score
             .piano_arpeggios()
             .iter()
@@ -607,7 +656,7 @@ impl Rhythm {
                     score.written_key_at(part.id(), index),
                 );
                 for (_, tick, id, event) in staff.measures()[index].timed_iter() {
-                    if staff.measures()[index].has_two_voices()
+                    if staff.measures()[index].has_several_voices()
                         || event.duration.is_dotted()
                         || event.notation.dynamic.is_some()
                         || event.notation.technique.is_some()
@@ -616,10 +665,18 @@ impl Rhythm {
                     {
                         wide.insert(tick);
                     }
+                    if event.duration.dots() > 1 {
+                        // The second dot needs its own room after the note.
+                        let width = 40. + rhythm::DOT_STEP;
+                        right
+                            .entry(tick)
+                            .and_modify(|v| *v = v.max(width))
+                            .or_insert(width);
+                    }
                     if let Some(mark) = event.notation.dynamic {
                         let (l, _, r, _) = metrics.bounds(mark.glyph(), false);
                         let width =
-                            (r - l).max(mark.label().chars().count() as f32 * 14. + 6.) + 6.;
+                            (r - l).max(mark.glyph().chars().count() as f32 * 14. + 6.) + 6.;
                         right
                             .entry(tick)
                             .and_modify(|v| *v = v.max(width))
@@ -676,12 +733,12 @@ impl Rhythm {
             .collect();
         (ticks, gaps, left.get(&0).copied().unwrap_or(0.))
     }
-    fn new(grid: (Vec<u16>, Vec<f32>, f32), prefix: f32, width: f32, trailing: f32) -> Self {
+    fn new(grid: (Vec<u32>, Vec<f32>, f32), prefix: f32, width: f32, trailing: f32) -> Self {
         let (ticks, gaps, leading) = grid;
         let prefix = prefix + leading;
         let weights: Vec<f32> = ticks
             .windows(2)
-            .map(|pair| f32::from(pair[1] - pair[0]).sqrt())
+            .map(|pair| ((pair[1] - pair[0]) as f32).sqrt())
             .collect();
         let minimum = gaps.iter().sum::<f32>();
         let scale =
@@ -694,7 +751,7 @@ impl Rhythm {
         }
         Self { ticks, positions }
     }
-    fn x(&self, tick: u16) -> f32 {
+    fn x(&self, tick: u32) -> f32 {
         self.positions[self
             .ticks
             .binary_search(&tick)
@@ -708,6 +765,11 @@ enum BarEnd {
     Double,
     Final,
     RepeatEnd,
+    Dashed,
+    Dotted,
+    Tick,
+    Short,
+    Invisible,
 }
 
 /// Repeats take precedence; the final bar closes automatically.
@@ -721,6 +783,11 @@ fn bar_end(score: &Score, index: usize) -> BarEnd {
             score_core::Barline::Final => BarEnd::Final,
             score_core::Barline::Single if index + 1 == score.measures().len() => BarEnd::Final,
             score_core::Barline::Single => BarEnd::Single,
+            score_core::Barline::Dashed => BarEnd::Dashed,
+            score_core::Barline::Dotted => BarEnd::Dotted,
+            score_core::Barline::Tick => BarEnd::Tick,
+            score_core::Barline::Short => BarEnd::Short,
+            score_core::Barline::Invisible => BarEnd::Invisible,
         }
     }
 }
@@ -735,7 +802,10 @@ fn repeat_trailing(score: &Score, index: usize) -> f32 {
 
 fn barline_strokes(end: BarEnd, x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
     match end {
-        BarEnd::Single => vec![(x, metrics.bar)],
+        BarEnd::Single | BarEnd::Dashed | BarEnd::Tick | BarEnd::Short => vec![(x, metrics.bar)],
+        // Square dots, as wide as a final bar's thin stroke is long.
+        BarEnd::Dotted => vec![(x, metrics.bar * 2.)],
+        BarEnd::Invisible => Vec::new(),
         BarEnd::Double => vec![
             (x, metrics.bar),
             (x - metrics.bar_gap - metrics.bar, metrics.bar),
@@ -748,6 +818,36 @@ fn barline_strokes(end: BarEnd, x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
             ),
         ],
     }
+}
+
+/// The vertical pieces of a barline on one staff: the whole height for solid
+/// styles, dashes, dots in the spaces, or only part of the staff.
+fn barline_segments(end: BarEnd) -> Vec<(f32, f32)> {
+    let height = 4. * STAFF_SPACE;
+    let repeat = |from: f32, length: f32| {
+        (0..4)
+            .map(|space| {
+                let y = from + space as f32 * STAFF_SPACE;
+                (y, y + length)
+            })
+            .collect()
+    };
+    match end {
+        BarEnd::Dashed => repeat(STAFF_SPACE * 0.2, STAFF_SPACE * 0.6),
+        BarEnd::Dotted => repeat(STAFF_SPACE / 2. - 1., 2.),
+        BarEnd::Tick => vec![(-STAFF_SPACE / 2., STAFF_SPACE / 2.)],
+        BarEnd::Short => vec![(STAFF_SPACE, height - STAFF_SPACE)],
+        BarEnd::Invisible => Vec::new(),
+        _ => vec![(0., height)],
+    }
+}
+
+/// Only solid barlines run on between the staves of a piano or a group.
+fn joins_staves(end: BarEnd) -> bool {
+    !matches!(
+        end,
+        BarEnd::Dashed | BarEnd::Dotted | BarEnd::Tick | BarEnd::Short | BarEnd::Invisible
+    )
 }
 
 fn repeat_start_strokes(x: f32, metrics: &Metrics) -> Vec<(f32, f32)> {
@@ -772,7 +872,7 @@ fn connector_repeat_start_strokes(
 
 struct CacheEntry {
     regions: Vec<VoiceRegion>,
-    boundaries: Vec<(u16, score_core::Division)>,
+    boundaries: Vec<(u32, score_core::Division)>,
     source: (StaffId, Option<Voice>),
     measure: Measure,
     time: TimeSignature,
@@ -808,7 +908,7 @@ struct Engraving<'a> {
     time_changed: bool,
     rhythm: &'a Rhythm,
     hidden: &'a HashSet<score_core::EventId>,
-    accidental_resets: &'a [u16],
+    accidental_resets: &'a [u32],
 }
 
 struct Metrics {
@@ -930,6 +1030,8 @@ pub struct LayoutEngine {
     cache: HashMap<(PartId, StaffId, usize), CacheEntry>,
     metrics: Metrics,
     orchestra_page: Option<views::OrchestraPage>,
+    /// Set for page view when the score hides empty staves.
+    hide_empty_staves: bool,
     pub recomputed_measures: usize,
 }
 impl Default for LayoutEngine {
@@ -938,6 +1040,7 @@ impl Default for LayoutEngine {
             cache: HashMap::new(),
             metrics: Metrics::bravura(),
             orchestra_page: None,
+            hide_empty_staves: false,
             recomputed_measures: 0,
         }
     }
@@ -1176,7 +1279,32 @@ impl LayoutEngine {
             let row_first = placed.len();
             let mut first_staff_y = None;
             let mut last_staff_y = 0.;
-            for part in score.parts() {
+            let row = row_start..row_start + columns.len();
+            // A preview keeps the staves its base shows; otherwise a part
+            // with no note in this system is left out after the first one.
+            let left_out = |part: &score_core::Part| match pinned {
+                Some(base) => !base
+                    .measures
+                    .iter()
+                    .any(|m| m.part == part.id() && row.contains(&m.index)),
+                None => {
+                    self.hide_empty_staves
+                        && row_start > 0
+                        && part.staves().iter().all(|staff| {
+                            row.clone().all(|bar| {
+                                staff.measures()[bar]
+                                    .iter()
+                                    .all(|(_, event)| event.pitches.is_empty())
+                            })
+                        })
+                }
+            };
+            let mut shown: Vec<_> = score.parts().iter().filter(|p| !left_out(p)).collect();
+            // A system never goes blank: with nothing playing, every part stays.
+            if shown.is_empty() {
+                shown = score.parts().iter().collect();
+            }
+            for part in shown {
                 let family = part.instrument().family();
                 if previous_part.is_some_and(|(previous_family, _)| previous_family != family) {
                     y += 16.;
@@ -1570,7 +1698,14 @@ impl LayoutEngine {
                         }
                         let strokes = measure.map_or_else(
                             || vec![(x, self.metrics.bar)],
-                            |m| barline_strokes(bar_end(score, m.index), x, &self.metrics),
+                            |m| {
+                                let end = bar_end(score, m.index);
+                                if joins_staves(end) {
+                                    barline_strokes(end, x, &self.metrics)
+                                } else {
+                                    Vec::new()
+                                }
+                            },
                         );
                         for (x, thickness) in strokes {
                             connectors.push(Line {
@@ -1615,11 +1750,16 @@ impl LayoutEngine {
                             .iter()
                             .filter(|measure| measure.origin.y == top)
                         {
-                            let mut strokes = barline_strokes(
-                                bar_end(score, measure.index),
-                                measure.origin.x + measure.width,
-                                &self.metrics,
-                            );
+                            let end = bar_end(score, measure.index);
+                            let mut strokes = if joins_staves(end) {
+                                barline_strokes(
+                                    end,
+                                    measure.origin.x + measure.width,
+                                    &self.metrics,
+                                )
+                            } else {
+                                Vec::new()
+                            };
                             if score.bar_form(measure.index).repeat_start {
                                 strokes.extend(connector_repeat_start_strokes(
                                     score,
@@ -1727,6 +1867,7 @@ impl LayoutEngine {
         let lyric_lines = lyrics::lines(&placed, self.metrics.staff * 1.2);
         let piano_arpeggios = expression::piano_arpeggios(score, &placed, &self.metrics);
         Layout {
+            numbering: score.numbering(),
             curves,
             hairpins,
             line_marks,
@@ -2061,7 +2202,7 @@ fn signature_prefix(score: &Score, index: usize, first: bool) -> f32 {
         }
 }
 fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
-    match (clef, flats) {
+    match (clef.base(), flats) {
         (Clef::Treble, false) => [0., 15., -5., 10., 25., 5., 20.],
         (Clef::Treble, true) => [20., 5., 25., 10., 30., 15., 35.],
         (Clef::Alto, false) => [5., 20., 0., 15., 30., 10., 25.],
@@ -2070,7 +2211,7 @@ fn key_positions(clef: Clef, flats: bool) -> [f32; 7] {
         (Clef::Tenor, true) => [15., 0., 20., 5., 25., 10., 30.],
         (Clef::Bass, false) => [10., 25., 5., 20., 35., 15., 30.],
         (Clef::Bass, true) => [30., 15., 35., 20., 40., 25., 10.],
-        (Clef::Percussion, _) => [20.; 7],
+        _ => [20.; 7],
     }
 }
 
@@ -2114,7 +2255,7 @@ fn measure_accidentals(
 fn measure_accidentals_with_resets(
     measure: &Measure,
     key: KeySignature,
-    resets: &[u16],
+    resets: &[u32],
 ) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
     // Unmarked pitches follow the key; explicit signs override it. Remember local
     // notation per octave and reset to the signature at each measure boundary.
@@ -2189,10 +2330,26 @@ fn measure_accidentals_with_resets(
         })
         .collect()
 }
+/// How far left of the notehead column `column` of signs ends: 14 px per
+/// column, 21 for one holding a double flat, the widest sign.
+fn column_offset(signs: &[PlacedAccidental], column: usize) -> f32 {
+    (0..=column)
+        .map(|column| {
+            if signs
+                .iter()
+                .any(|sign| sign.column == column && sign.sign == -2)
+            {
+                21.
+            } else {
+                14.
+            }
+        })
+        .sum()
+}
 fn accidental_padding(signs: &[PlacedAccidental]) -> f32 {
     signs
         .iter()
-        .map(|sign| (sign.column + 1) as f32 * 14. + 22.)
+        .map(|sign| column_offset(signs, sign.column) + 22.)
         .fold(0., f32::max)
 }
 fn engrave_accidentals(
@@ -2237,7 +2394,7 @@ fn engrave_accidentals(
             rotated: false,
             text: char::from_u32(code).unwrap().to_string(),
             position: Point {
-                x: left - 8. - (sign.column + 1) as f32 * 14.,
+                x: left - 8. - column_offset(signs, sign.column),
                 y,
             },
             element: Some(id),
@@ -2245,38 +2402,49 @@ fn engrave_accidentals(
     }
 }
 
-fn voice_offset(measure: &Measure, voice: Voice, tick: u16) -> f32 {
-    if voice != Voice::Two {
-        return 0.;
+/// Where a rest sits when voices share the staff: voices 1 and 3 above the
+/// middle, 2 and 4 below, the extra voices one space further out.
+fn rest_y(voice: Voice) -> f32 {
+    match voice {
+        Voice::One => 5.,
+        Voice::Two => 35.,
+        Voice::Three => -5.,
+        Voice::Four => 45.,
     }
-    let one = measure
-        .timed_iter()
-        .find(|(v, t, _, _)| *v == Voice::One && *t == tick);
-    let two = measure
-        .timed_iter()
-        .find(|(v, t, _, _)| *v == Voice::Two && *t == tick);
-    match (one, two) {
-        (Some((_, _, _, a)), Some((_, _, _, b)))
-            if a.pitches == b.pitches
+}
+
+/// A voice moves right of an earlier one starting at the same tick when their
+/// heads would touch (a second apart or closer) or when both stems point the
+/// same way; identical notes share their heads.
+fn voice_offset(measure: &Measure, voice: Voice, tick: u32) -> f32 {
+    let at = |voice: Voice| {
+        measure
+            .timed_iter()
+            .find(|(v, t, _, _)| *v == voice && *t == tick)
+            .map(|(_, _, _, event)| event)
+    };
+    let Some(b) = at(voice) else {
+        return 0.;
+    };
+    let touches = |a: &score_core::Event| {
+        written_pitches(a, KeySignature::default())
+            .iter()
+            .any(|(a, _, _, _)| {
+                written_pitches(b, KeySignature::default())
+                    .iter()
+                    .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
+            })
+    };
+    let shifted = Voice::ALL[..voice.index()].iter().any(|&earlier| {
+        at(earlier).is_some_and(|a| {
+            let shared = a.pitches == b.pitches
                 && a.duration == b.duration
                 && a.notation.harmonic == b.notation.harmonic
-                && a.notation.harmonic != Some(score_core::Harmonic::Artificial) =>
-        {
-            0.
-        }
-        (Some((_, _, _, a)), Some((_, _, _, b)))
-            if written_pitches(a, KeySignature::default())
-                .iter()
-                .any(|(a, _, _, _)| {
-                    written_pitches(b, KeySignature::default())
-                        .iter()
-                        .any(|(b, _, _, _)| (a.diatonic() - b.diatonic()).abs() <= 1)
-                }) =>
-        {
-            14.
-        }
-        _ => 0.,
-    }
+                && a.notation.harmonic != Some(score_core::Harmonic::Artificial);
+            !shared && (earlier.is_lower() == voice.is_lower() || touches(a))
+        })
+    });
+    if shifted { 14. } else { 0. }
 }
 
 fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> MeasureLayout {
@@ -2310,8 +2478,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         beams: Vec::new(),
         events: Vec::new(),
         staff_spans: vec![(0., width)],
-        cursor_x: Vec::new(),
-        second_cursor_x: Vec::new(),
+        cursor_x: Default::default(),
         time_positions: rhythm
             .ticks
             .iter()
@@ -2343,7 +2510,9 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         );
     }
     for (x, thickness) in barline_strokes(end, width, metrics) {
-        line(x, 0., x, 40., thickness);
+        for (top, bottom) in barline_segments(end) {
+            line(x, top, x, bottom, thickness);
+        }
     }
     if first {
         line(0., 0., 0., 40., metrics.bar);
@@ -2380,12 +2549,11 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
             text: clef.glyph().into(),
             position: Point {
                 x: 10.,
-                y: match clef {
+                y: match clef.base() {
                     Clef::Treble => 30.,
                     Clef::Alto => 20.,
-                    Clef::Tenor => 10.,
-                    Clef::Bass => 10.,
-                    Clef::Percussion => 20.,
+                    Clef::Tenor | Clef::Bass => 10.,
+                    _ => 20.,
                 },
             },
             element: None,
@@ -2466,12 +2634,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
     for (voice, tick, id, event) in measure.timed_iter() {
         let onset = rhythm.x(tick) + voice_offset(measure, voice, tick);
-        let forced = measure.has_two_voices().then_some(voice == Voice::Two);
-        if voice == Voice::One {
-            result.cursor_x.push(onset - 8.);
-        } else {
-            result.second_cursor_x.push(onset - 8.);
-        }
+        let forced = measure.has_several_voices().then_some(voice.is_lower());
+        result.cursor_x[voice.index()].push(onset - 8.);
         if hidden.contains(&id) {
             continue;
         }
@@ -2491,6 +2655,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         );
         if event.pitches.len() > 1
             || event.notation.tremolo.is_some()
+            || event.notation.notehead.is_some()
             || event.notation.harmonic == Some(score_core::Harmonic::Artificial)
         {
             engrave_chord(
@@ -2529,8 +2694,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                     40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
                 }
             })
-            .unwrap_or(if measure.has_two_voices() {
-                if voice == Voice::One { 5. } else { 35. }
+            .unwrap_or(if measure.has_several_voices() {
+                rest_y(voice)
             } else {
                 20.
             });
@@ -2552,6 +2717,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Eighth => 0xe1d7 + down,
                 score_core::NoteValue::Sixteenth => 0xe1d9 + down,
                 score_core::NoteValue::ThirtySecond => 0xe1db + down,
+                score_core::NoteValue::SixtyFourth => 0xe1dd + down,
             }
         } else {
             match event.duration.value() {
@@ -2561,13 +2727,14 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 score_core::NoteValue::Eighth => 0xe4e6,
                 score_core::NoteValue::Sixteenth => 0xe4e7,
                 score_core::NoteValue::ThirtySecond => 0xe4e8,
+                score_core::NoteValue::SixtyFourth => 0xe4e9,
             }
         };
         let glyph_y = if event.pitches.first().is_none()
             && event.duration.value() == score_core::NoteValue::Whole
         {
-            if measure.has_two_voices() {
-                if voice == Voice::One { 0. } else { 30. }
+            if measure.has_several_voices() {
+                rest_y(voice) - 5.
             } else {
                 10.
             }
@@ -2630,19 +2797,32 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         }
         rhythm::dots(&mut result, *event, element, metrics);
     }
-    result
-        .cursor_x
-        .push(rhythm.x(measure.voice_ticks(Voice::One)) - 8.);
-    result
-        .second_cursor_x
-        .push(rhythm.x(measure.voice_ticks(Voice::Two)) - 8.);
-    if measure.voice_len(Voice::One) == 0 {
+    for voice in Voice::ALL {
+        result.cursor_x[voice.index()].push(rhythm.x(measure.voice_ticks(voice)) - 8.);
+    }
+    if measure.repeats_previous() {
+        // The % sits on the middle line, centred in the bar.
+        let (left, _, right, _) = metrics.bounds("\u{e500}", false);
+        result.glyphs.push(Glyph {
+            rotated: false,
+            text: "\u{e500}".into(),
+            position: Point {
+                x: start + (width - start) / 2. - (left + right) / 2.,
+                y: 20.,
+            },
+            element: None,
+        });
+    } else if measure.voice_len(Voice::One) == 0 {
         result.glyphs.push(Glyph {
             rotated: false,
             text: "\u{e4e3}".into(),
             position: Point {
                 x: start + (width - start) * 0.4,
-                y: if measure.has_two_voices() { 0. } else { 10. },
+                y: if measure.has_several_voices() {
+                    0.
+                } else {
+                    10.
+                },
             },
             element: None,
         });
@@ -2778,11 +2958,31 @@ fn engrave_chord(
     } else {
         metrics.head
     };
-    let base = onset + (metrics.head - head_width) / 2.;
-    let head = match event.duration.value() {
-        score_core::NoteValue::Whole => 0xe0a2,
-        score_core::NoteValue::Half => 0xe0a3,
-        _ => 0xe0a4,
+    let mut base = onset + (metrics.head - head_width) / 2.;
+    let head = match event.notation.notehead {
+        Some(notehead) => notehead.glyph(event.duration.value()),
+        None => match event.duration.value() {
+            score_core::NoteValue::Whole => '\u{e0a2}',
+            score_core::NoteValue::Half => '\u{e0a3}',
+            _ => '\u{e0a4}',
+        },
+    }
+    .to_string();
+    let head_width = if event.notation.notehead.is_some() {
+        // Another head keeps the stem on its edge: its right edge for an
+        // up stem, its left for a down stem; a whole note stays centred.
+        let (l, _, r, _) = metrics.bounds(&head, false);
+        let width = r - l;
+        base = if event.duration.value() == score_core::NoteValue::Whole {
+            onset + (metrics.head - width) / 2.
+        } else if down {
+            onset
+        } else {
+            onset + metrics.head - width
+        } - l;
+        width
+    } else {
+        head_width
     };
     let mut pitches: Vec<_> = event
         .pitches
@@ -2830,7 +3030,7 @@ fn engrave_chord(
             text: if generated {
                 diamond.into()
             } else {
-                char::from_u32(head).unwrap().to_string()
+                head.clone()
             },
             position: Point { x, y },
             element: Some(id),
@@ -2895,11 +3095,12 @@ fn engrave_chord(
     }
     if !beamed && event.duration.value() != score_core::NoteValue::Whole {
         let stem_x = if down { onset } else { onset + metrics.head };
-        // A third flag needs half a space more stem to clear the notehead.
-        let length = if event.duration.value() == score_core::NoteValue::ThirtySecond {
-            40.
-        } else {
-            35.
+        // A third flag needs half a space more stem to clear the notehead,
+        // and a fourth another half.
+        let length = match event.duration.value() {
+            score_core::NoteValue::ThirtySecond => 40.,
+            score_core::NoteValue::SixtyFourth => 45.,
+            _ => 35.,
         };
         let end_y = if down { low + length } else { high - length };
         result.lines.push(Line {
@@ -2918,6 +3119,7 @@ fn engrave_chord(
             score_core::NoteValue::Eighth => Some(if down { 0xe241 } else { 0xe240 }),
             score_core::NoteValue::Sixteenth => Some(if down { 0xe243 } else { 0xe242 }),
             score_core::NoteValue::ThirtySecond => Some(if down { 0xe245 } else { 0xe244 }),
+            score_core::NoteValue::SixtyFourth => Some(if down { 0xe247 } else { 0xe246 }),
             _ => None,
         };
         if let Some(flag) = flag {
@@ -3077,7 +3279,7 @@ mod tests {
                 );
                 if !signs.is_empty() {
                     let last = signs.last().unwrap().position.x + 10.;
-                    assert!(bar.content.cursor_x[0] > last);
+                    assert!(bar.content.cursor_x[0][0] > last);
                     if bar.index == 0 {
                         let time = bar
                             .content
@@ -3183,6 +3385,111 @@ mod tests {
                 .iter()
                 .any(|g| g.element.is_none() && g.text == "\u{e262}")
         );
+    }
+
+    #[test]
+    fn ornaments_stack_between_articulation_and_fermata_and_pauses_follow_the_note() {
+        let mut score = Score::default();
+        let id = score
+            .insert(
+                0,
+                0,
+                Event {
+                    notation: Default::default(),
+                    pitches: score_core::Pitches::single(Pitch::new(Step::G, 4)),
+                    duration: Duration::Quarter,
+                },
+            )
+            .unwrap();
+        score
+            .set_articulation(id, Some(score_core::Articulation::Staccatissimo))
+            .unwrap();
+        score
+            .set_ornament(id, Some(score_core::Ornament::Turn))
+            .unwrap();
+        score.set_fermata(id, true).unwrap();
+        score
+            .set_pause(id, Some(score_core::Pause::Breath))
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let bar = layout.measure_on(id.part, id.staff, 0).unwrap();
+        let mark = |mark: MarkRef| {
+            bar.content
+                .marks
+                .iter()
+                .find(|placed| placed.mark == mark)
+                .unwrap()
+                .center
+        };
+        let articulation = mark(MarkRef::Articulation(id));
+        let ornament = mark(MarkRef::Ornament(id));
+        let fermata = mark(MarkRef::Fermata(id));
+        assert!(fermata.y < ornament.y && ornament.y < articulation.y);
+        let head = bar
+            .content
+            .events
+            .iter()
+            .find(|head| head.id == id)
+            .unwrap()
+            .center;
+        let breath = mark(MarkRef::Pause(id));
+        assert!(breath.x > head.x + 12. && breath.y < 0.);
+        for glyph in ["\u{e4a6}", "\u{e567}", "\u{e4ce}"] {
+            assert!(
+                bar.content.glyphs.iter().any(|g| g.text == glyph),
+                "{glyph}"
+            );
+        }
+    }
+
+    #[test]
+    fn double_signs_are_drawn_clear_of_the_head_and_cancelled_later() {
+        let c = Pitch::new(Step::C, 4).unwrap();
+        let mut score = Score::default();
+        let signs = [
+            Some(Accidental::DoubleSharp),
+            None,
+            Some(Accidental::DoubleFlat),
+            Some(Accidental::DoubleFlat),
+        ];
+        let mut ids = Vec::new();
+        for (index, sign) in signs.into_iter().enumerate() {
+            ids.push(
+                score
+                    .insert(
+                        0,
+                        index,
+                        Event {
+                            notation: Default::default(),
+                            pitches: score_core::Pitches::single(Some(c.with_accidental(sign))),
+                            duration: Duration::Quarter,
+                        },
+                    )
+                    .unwrap(),
+            );
+        }
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let bar = layout.measure_on(ids[0].part, ids[0].staff, 0).unwrap();
+        let sign = |id| {
+            bar.content.glyphs.iter().find(|g| {
+                g.element == Some(id)
+                    && ('\u{e260}'..='\u{e264}').contains(&g.text.chars().next().unwrap())
+            })
+        };
+        // An explicit sign is always drawn, even when it repeats.
+        let expected = ["\u{e263}", "\u{e261}", "\u{e264}", "\u{e264}"];
+        for (&id, code) in ids.iter().zip(expected) {
+            let sign = sign(id).unwrap();
+            assert_eq!(sign.text, code);
+            let head = bar
+                .content
+                .events
+                .iter()
+                .find(|head| head.id == id)
+                .unwrap();
+            // Bravura's double flat is 16.4 px wide; it ends clear of the head.
+            assert!(sign.position.x + 17. < head.center.x - 6., "{code}");
+        }
     }
 
     #[test]
@@ -3374,7 +3681,7 @@ mod tests {
                 .filter(|event| event.id == id)
                 .collect();
             assert_eq!(heads.len(), 3);
-            assert_eq!(measure.content.cursor_x.len(), 2); // One rhythmic event.
+            assert_eq!(measure.content.cursor_x[0].len(), 2); // One rhythmic event.
             assert!(heads.iter().all(|head| head.center.x == heads[0].center.x));
             let stems = measure
                 .content
@@ -3765,6 +4072,82 @@ mod tests {
         );
         assert!(!layout.connectors.is_empty());
     }
+    #[test]
+    fn octave_clefs_draw_their_8_and_move_notes_an_octave() {
+        let mut score = Score::default();
+        let voice = score.add_part(score_core::Instrument::Violin).unwrap();
+        score.append_measure().unwrap();
+        for bar in 0..2 {
+            score
+                .insert_in(
+                    voice,
+                    bar,
+                    0,
+                    Event {
+                        notation: Default::default(),
+                        pitches: score_core::Pitches::single(Pitch::new(Step::C, 4)),
+                        duration: Duration::Whole,
+                    },
+                )
+                .unwrap();
+        }
+        score
+            .set_clef_at(voice, StaffId::Upper, 1, Clef::TrebleOctaveDown)
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let plain = layout.measure(voice, 0).unwrap();
+        let octave = layout.measure(voice, 1).unwrap();
+        // Middle C sounds where a treble clef with an 8 below writes C5.
+        assert_eq!(plain.content.events[0].center.y, 50.);
+        assert_eq!(octave.content.events[0].center.y, 15.);
+        assert!(
+            octave
+                .content
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.text == "\u{e052}")
+        );
+    }
+
+    #[test]
+    fn barline_styles_draw_dashes_dots_or_part_of_the_staff() {
+        let segments = |end| barline_segments(end);
+        assert_eq!(segments(BarEnd::Single), vec![(0., 40.)]);
+        assert_eq!(segments(BarEnd::Dashed).len(), 4);
+        // One dot in the middle of each space.
+        assert_eq!(
+            segments(BarEnd::Dotted)
+                .iter()
+                .map(|(top, bottom)| (top + bottom) / 2.)
+                .collect::<Vec<_>>(),
+            [5., 15., 25., 35.]
+        );
+        assert_eq!(segments(BarEnd::Tick), vec![(-5., 5.)]);
+        assert_eq!(segments(BarEnd::Short), vec![(10., 30.)]);
+        assert!(segments(BarEnd::Invisible).is_empty());
+        assert!(joins_staves(BarEnd::Final) && !joins_staves(BarEnd::Dashed));
+        let mut score = Score::default();
+        score
+            .set_bar_form(
+                0,
+                score_core::BarForm {
+                    barline: score_core::Barline::Invisible,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let layout = LayoutEngine::default().layout(&score, 960.);
+        let piano = score.parts()[0].id();
+        let bar = layout.measure(piano, 0).unwrap();
+        // Only the five staff lines and the opening stroke are left.
+        assert!(
+            bar.content
+                .lines
+                .iter()
+                .all(|line| line.from.y == line.to.y || line.from.x == 0.)
+        );
+    }
+
     #[test]
     fn edits_recompute_only_changed_measure_and_hit_test_tracks_ids() {
         let mut score = Score::default();

@@ -8,3 +8,6 @@ license.workspace = true
 serde.workspace = true
 imbl.workspace = true
 slotmap.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

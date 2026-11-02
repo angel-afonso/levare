@@ -10,7 +10,7 @@ pub(super) struct Ghost {
     pub staff: StaffId,
     pub measure: usize,
     pub voice: Voice,
-    pub tick: u16,
+    pub tick: u32,
     pub pitch: Pitch,
     pub duration: Duration,
     /// Notehead left edge and center in unscaled layout units.
@@ -42,8 +42,8 @@ pub(super) fn ghost_at(
     let (voice, _) = placed.insertion_near(preferred, local.x);
     let bar = &score_part.staff(placed.source_staff)?.measures()[measure];
     let capacity = score.time_at(measure).capacity();
-    let step = usize::from(duration.ticks());
-    let tick = placed.source_onsets[usize::from(voice == Voice::Two)]
+    let step = duration.ticks() as usize;
+    let tick = placed.source_onsets[voice.index()]
         .iter()
         .copied()
         .chain((0..capacity).step_by(step))

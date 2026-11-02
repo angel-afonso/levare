@@ -1,6 +1,9 @@
 use super::*;
 use score_core::{Pitches, Step};
 
+/// A quarter note.
+const Q: u32 = score_core::TICKS_PER_QUARTER;
+
 fn event(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -33,7 +36,7 @@ fn insert_in_the_middle_still_shifts_later_notes() {
         .map(|(_, e)| e.pitches.iter().next().unwrap().step)
         .collect();
     assert_eq!(steps, [Step::C, Step::E, Step::D]);
-    assert_eq!(editor.score().event_tick(d), Some(old_tick + 48));
+    assert_eq!(editor.score().event_tick(d), Some(old_tick + u64::from(Q)));
 }
 
 #[test]
@@ -187,7 +190,7 @@ fn write_at_tick_uses_the_cursor_part_staff_and_voice() {
     editor
         .execute(Command::WriteAt {
             measure: 0,
-            tick: 96,
+            tick: 2 * Q,
             event: event(Step::C, Duration::Quarter),
         })
         .unwrap();
@@ -202,10 +205,13 @@ fn write_at_tick_uses_the_cursor_part_staff_and_voice() {
         .voice_iter(score_core::Voice::One)
         .map(|(_, e)| *e)
         .collect();
-    assert_eq!(events.len(), 2);
+    // A half rest before it and a quarter rest to end the bar.
+    assert_eq!(events.len(), 3);
     assert!(events[0].pitches.is_empty());
     assert_eq!(events[0].duration, Duration::Half);
     assert_eq!(events[1].pitches, event(Step::C, Duration::Quarter).pitches);
+    assert!(events[2].pitches.is_empty());
+    assert_eq!(events[2].duration, Duration::Quarter);
     assert!(editor.score().event(lower).is_some());
     assert_eq!(editor.selection().unwrap().staff, StaffId::Lower);
 }
@@ -222,4 +228,106 @@ fn chord_entry_after_write_still_adds_pitches() {
         .unwrap();
     let selected = editor.selection().unwrap();
     assert_eq!(editor.score().event(selected).unwrap().pitches.len(), 2);
+}
+
+#[test]
+fn noteheads_and_beams_toggle_on_the_notes_of_a_passage_and_undo() {
+    use score_core::{Beam, Notehead};
+    let mut score = Score::default();
+    let a = score
+        .insert(0, 0, event(Step::C, Duration::Quarter))
+        .unwrap();
+    score
+        .insert(
+            0,
+            1,
+            Event {
+                pitches: Pitches::default(),
+                ..event(Step::C, Duration::Quarter)
+            },
+        )
+        .unwrap();
+    let b = score
+        .insert(0, 2, event(Step::E, Duration::Quarter))
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(a);
+    editor.extend_selection(b);
+    let before = editor.score().clone();
+    editor
+        .execute(Command::ToggleNotehead(Notehead::Cross))
+        .unwrap();
+    for id in [a, b] {
+        assert_eq!(
+            editor.score().event(id).unwrap().notation.notehead,
+            Some(Notehead::Cross)
+        );
+    }
+    // The same head again restores the oval on every note.
+    editor
+        .execute(Command::ToggleNotehead(Notehead::Cross))
+        .unwrap();
+    assert_eq!(editor.score(), &before);
+    editor.execute(Command::ToggleBeam(Beam::Off)).unwrap();
+    assert_eq!(
+        editor.score().event(b).unwrap().notation.beam,
+        Some(Beam::Off)
+    );
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+    editor.select(
+        editor.score().measures()[0]
+            .id_at(1)
+            .map(|event| ElementId { event, ..a })
+            .unwrap(),
+    );
+    assert!(
+        editor
+            .execute(Command::ToggleNotehead(Notehead::Slash))
+            .is_err()
+    );
+}
+
+#[test]
+fn bar_repeats_toggle_on_the_selected_bars_and_writing_replaces_them() {
+    let mut score = Score::default();
+    let ids: Vec<_> = (0..3)
+        .map(|bar| {
+            score
+                .insert(bar, 0, event(Step::C, Duration::Quarter))
+                .unwrap()
+        })
+        .collect();
+    let (second, third) = (ids[1], ids[2]);
+    let mut editor = Editor::new(score).unwrap();
+    let before = editor.score().clone();
+    editor.select(second);
+    editor.extend_selection(third);
+    editor.execute(Command::ToggleBarRepeat).unwrap();
+    let bars = |editor: &Editor| {
+        editor
+            .score()
+            .measures()
+            .iter()
+            .map(|m| m.repeats_previous())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(bars(&editor), [false, true, true, false]);
+    assert!(editor.score().measures()[1].is_empty());
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+    editor.redo();
+    // Writing into a % bar puts music back in it.
+    editor.set_cursor(Cursor {
+        measure: 2,
+        index: 0,
+        ..Cursor::default()
+    });
+    editor
+        .execute(Command::Insert(event(Step::D, Duration::Quarter)))
+        .unwrap();
+    assert_eq!(bars(&editor), [false, true, false, false]);
+    // The first bar has nothing to repeat.
+    editor.set_cursor(Cursor::default());
+    assert!(editor.execute(Command::ToggleBarRepeat).is_err());
 }

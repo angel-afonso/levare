@@ -506,7 +506,26 @@ mod tests {
             }
         }
         split.sort_unstable();
-        assert_eq!(split, vec!["D.C. / D.S.", "Intervalo"]);
+        // Sibelius' galleries: one button opens a family of symbols.
+        assert_eq!(
+            split,
+            vec![
+                "Acorde",
+                "Arpegio",
+                "Barra",
+                "D.C. / D.S.",
+                "Estilo de ensayo",
+                "Líneas",
+                "Más dinámicas",
+                "Más figuras",
+                "Nota de adorno",
+                "Números de compás",
+                "Papel",
+                "Pentagrama",
+                "Símbolos",
+                "Trémolo",
+            ]
+        );
     }
 
     fn controls(view: &ToolbarView) -> Vec<&ControlView> {
@@ -528,7 +547,7 @@ mod tests {
                 },
             ),
         ]);
-        let input = view(TabId::Write, 2000., &states);
+        let input = view(TabId::NoteInput, 2000., &states);
         let find = |view: &ToolbarView, command| {
             controls(view)
                 .into_iter()
@@ -546,9 +565,9 @@ mod tests {
         assert_eq!(slur.label, "Terminar");
         assert_eq!(slur.name, "Expresión");
         assert_eq!(slur.keys.as_deref(), Some("S"));
-        let articulations = view(TabId::Articulations, 2000., &states);
+        let articulations = view(TabId::Notations, 2000., &states);
         assert_eq!(find(&articulations, id::STACCATO).keys, None);
-        let score = view(TabId::Score, 2000., &states);
+        let score = view(TabId::Home, 2000., &states);
         assert_eq!(find(&score, id::ADD_INSTRUMENT).label, "Añadir…");
     }
 
@@ -557,7 +576,7 @@ mod tests {
         // Pressing S mid-gesture must not move Ligadura or its neighbours.
         let metrics = Metrics::default();
         let row = |states: &Fake| {
-            view(TabId::Write, 1420., states)
+            view(TabId::NoteInput, 1420., states)
                 .groups
                 .iter()
                 .map(|group| (group.mode, group.width_in(group.mode)))
@@ -572,7 +591,7 @@ mod tests {
             },
         )]);
         assert_eq!(row(&open), row(&Fake(vec![])));
-        let slur = controls(&view(TabId::Write, 1420., &open))
+        let slur = controls(&view(TabId::NoteInput, 1420., &open))
             .into_iter()
             .find(|control| control.command == id::SLUR)
             .cloned()
@@ -586,8 +605,8 @@ mod tests {
 
     #[test]
     fn choice_tiles_form_one_segment() {
-        let width = full_width(&view(TabId::Write, 5000., &Fake(vec![])));
-        let input = view(TabId::Write, width, &Fake(vec![]));
+        let width = full_width(&view(TabId::NoteInput, 5000., &Fake(vec![])));
+        let input = view(TabId::NoteInput, width, &Fake(vec![]));
         let group = |title| input.groups.iter().find(|g| g.title == title).unwrap();
         let duration = group("Duración");
         let Item::Segment { controls, .. } = &duration.items[0] else {
@@ -615,13 +634,13 @@ mod tests {
         );
         let voices = group("Voz");
         assert!(
-            matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 2)
+            matches!(voices.items.as_slice(), [Item::Segment { controls, .. }] if controls.len() == 4)
         );
     }
 
     #[test]
     fn expanded_segments_are_named() {
-        let input = view(TabId::Write, 5000., &Fake(vec![]));
+        let input = view(TabId::NoteInput, 5000., &Fake(vec![]));
         let duration = input.groups.iter().find(|g| g.title == "Duración").unwrap();
         assert_eq!(duration.mode, GroupMode::Expanded);
         assert!(matches!(
@@ -639,9 +658,10 @@ mod tests {
         for width in [500., 900., 1420., 5000.] {
             for (tab_id, title, commands, selected) in [
                 (
-                    TabId::Write,
-                    "Intervalo",
+                    TabId::NoteInput,
+                    "Acorde",
                     &[
+                        id::CHORD_MODE,
                         id::INTERVAL_2,
                         id::INTERVAL_3,
                         id::INTERVAL_4,
@@ -653,9 +673,12 @@ mod tests {
                     id::INTERVAL_3,
                 ),
                 (
-                    TabId::Score,
+                    TabId::Text,
                     "D.C. / D.S.",
                     &[
+                        id::SEGNO,
+                        id::CODA,
+                        id::FINE,
                         id::DA_CAPO,
                         id::DA_CAPO_AL_FINE,
                         id::DA_CAPO_AL_CODA,
@@ -767,7 +790,7 @@ mod tests {
                 );
             }
         }
-        let input = view(TabId::Write, available, &Fake(vec![]));
+        let input = view(TabId::NoteInput, available, &Fake(vec![]));
         let duration = input
             .groups
             .iter()
@@ -859,9 +882,15 @@ mod tests {
     }
 
     /// The widths are measured on macOS's system font and ⌘-style keys.
-    /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there Escribir
-    /// and Partitura drop one group's names at 1440; their fonts still need
-    /// measuring.
+    /// Windows and Linux spell keys out (`Ctrl+Mayús+B`), so there the
+    /// tightest tabs drop one more group's names at 1440; their fonts still
+    /// need measuring. Entrada de notas holds what Sibelius spreads over its
+    /// keypad, so on macOS too Modificar, Alteración and Ligadura show only
+    /// their symbols and keys there, over their group's title: the dot, the
+    /// tuplet, the rest, the five signs, the tie and the slur read without
+    /// names, so that the four voices keep theirs.
+    /// Texto's dynamics are named as they are drawn, so they drop names that
+    /// only repeat them.
     #[test]
     fn at_1440_every_tab_shows_names_and_keys() {
         let metrics = Metrics::default();
@@ -874,6 +903,12 @@ mod tests {
                 .filter(|group| !group.dropdown && group.mode != GroupMode::Expanded)
                 .map(|group| group.title)
                 .collect();
+            if spec.id == TabId::NoteInput && titles == ["Modificar", "Alteración", "Ligadura"] {
+                continue;
+            }
+            if spec.id == TabId::Text && titles == ["Dinámica"] {
+                continue;
+            }
             if !titles.is_empty() {
                 unnamed.push(format!(
                     "{:?} needs {:.1}: {}",
@@ -898,9 +933,9 @@ mod tests {
     fn writing_keeps_durations_entry_and_accidentals_longest() {
         let last = ["Duración", "Entrada", "Alteración"];
         let middle = ["Voz", "Modificar"];
-        let first = ["Ligadura", "Acorde", "Intervalo"];
+        let first = ["Ligadura", "Acorde"];
         let priority = |title: &str| {
-            tab(TabId::Write)
+            tab(TabId::NoteInput)
                 .groups
                 .iter()
                 .find(|group| group.title == title)
@@ -914,11 +949,13 @@ mod tests {
                 }
             }
         }
-        let row = view(TabId::Write, 1000., &Fake(vec![]));
+        // At 1000 the durations and the entry keep their buttons; Alteración
+        // folds there since Más figuras takes its room.
+        let row = view(TabId::NoteInput, 1000., &Fake(vec![]));
         for group in row
             .groups
             .iter()
-            .filter(|group| last.contains(&group.title))
+            .filter(|group| last[..2].contains(&group.title))
         {
             assert_ne!(group.mode, GroupMode::Folded, "{}", group.title);
         }

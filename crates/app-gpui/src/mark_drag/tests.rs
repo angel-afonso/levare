@@ -21,6 +21,8 @@ fn fixture() -> (Score, MarkRef) {
         )
         .unwrap();
     score.set_dynamic(id, Some(Dynamic::P)).unwrap();
+    // As an opened document has it: the bar ends in rests.
+    score.fill_rests().unwrap();
     (score, MarkRef::Dynamic(id))
 }
 
@@ -142,17 +144,21 @@ fn existing_offset_is_the_base() {
 fn ties_tremolos_and_arpeggios_do_not_start_a_drag() {
     let (mut score, dynamic) = fixture();
     let a = dynamic.anchor();
+    // Over the rest that follows it, as typing would.
     let b = score
-        .insert(
+        .overwrite(
+            a.part,
+            a.staff,
             0,
-            1,
+            score_core::Voice::One,
+            score_core::TICKS_PER_QUARTER,
             Event {
                 duration: Duration::Quarter,
                 pitches: Pitches::single(score_core::Pitch::new(Step::C, 4)),
                 notation: Default::default(),
             },
         )
-        .unwrap();
+        .unwrap()[0];
     let tie = MarkRef::Connection(Connection {
         start: a,
         end: b,

@@ -182,15 +182,20 @@ fn format_round_trips() {
         .unwrap();
     let part = editor.score().parts()[0].id();
     let text = format_voice(editor.score(), part, StaffId::Upper, 0, Voice::One);
-    assert_eq!(text, "C4:4.{f} R:8 [Eb4 G4 C5]:4~ [Eb4 G4 C5]:8t");
+    // Writing the triplet eighth filled the rest of its group with a quarter
+    // counted in its eighths.
+    assert_eq!(
+        text,
+        "C4:4.{f} R:8 [Eb4 G4 C5]:4~ [Eb4 G4 C5]:8t R:4(3:2/8)"
+    );
     let parsed = parse_voice(&text).unwrap();
-    assert_eq!(parsed.len(), events.len());
+    assert_eq!(parsed.len(), events.len() + 1);
     for (parsed, original) in parsed.iter().zip(events) {
         assert_eq!(parsed.event.pitches, original.pitches);
         assert_eq!(parsed.event.duration, original.duration);
     }
     let ties: Vec<_> = parsed.iter().map(|e| e.tie_to_next).collect();
-    assert_eq!(ties, [false, false, true, false]);
+    assert_eq!(ties, [false, false, true, false, false]);
     assert!(text.contains(Dynamic::F.label()));
 }
 
@@ -214,7 +219,7 @@ fn format_names_span_marks_at_both_ends() {
     );
     assert!(text.contains(&format!("{{{slur} (fin)}}")), "{text}");
     assert!(!text.contains('~'));
-    assert_eq!(parse_voice(&text).unwrap().len(), 4);
+    assert_eq!(parse_voice(&text).unwrap().len(), 5);
 }
 
 #[test]
@@ -244,5 +249,32 @@ fn formats_written_pitch_for_transposing_parts() {
         }))
         .unwrap();
     let text = format_voice(editor.score(), part, StaffId::Upper, 0, Voice::One);
-    assert_eq!(text, "D5:4");
+    assert_eq!(text, "D5:4 R:4 R:2");
+}
+
+#[test]
+fn doubled_signs_read_and_write_as_double_accidentals() {
+    let events = parse_voice("F##4:4 Bbb3:4 Bb3:4 Cn4:4").unwrap();
+    let accidentals: Vec<_> = events
+        .iter()
+        .map(|e| e.event.pitches.first().unwrap().accidental())
+        .collect();
+    assert_eq!(
+        accidentals,
+        [
+            Some(Accidental::DoubleSharp),
+            Some(Accidental::DoubleFlat),
+            Some(Accidental::Flat),
+            Some(Accidental::Natural),
+        ]
+    );
+    let mut score = Score::default();
+    let part = score.parts()[0].id();
+    for (beat, written) in events.into_iter().enumerate() {
+        score.insert_in(part, 0, beat, written.event).unwrap();
+    }
+    assert_eq!(
+        format_voice(&score, part, StaffId::Upper, 0, Voice::One),
+        "F##4:4 Bbb3:4 Bb3:4 Cn4:4"
+    );
 }

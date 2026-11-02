@@ -327,22 +327,27 @@ mod tests {
         score.insert(1, 1, note(Step::E, true)).unwrap();
         let after = score.insert(2, 0, note(Step::F, false)).unwrap();
         let timeline = Timeline::new(&score, Tempo::default());
-        assert_eq!(timeline.frame_at(192, 48_000), 96_000);
-        assert_eq!(timeline.frame_at(336, 48_000), 288_000);
-        assert_eq!(timeline.frame_at(480, 48_000), 336_000);
-        assert_eq!(timeline.frame_at(624, 48_000), 408_000);
+        let q = TICKS_PER_QUARTER;
+        assert_eq!(timeline.frame_at(4 * q, 48_000), 96_000);
+        assert_eq!(timeline.frame_at(7 * q, 48_000), 288_000);
+        assert_eq!(timeline.frame_at(10 * q, 48_000), 336_000);
+        assert_eq!(timeline.frame_at(13 * q, 48_000), 408_000);
         let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
         assert_eq!(plan.frame_for_element(after), Some(288_000));
+        // Positions in 48ths of a quarter, around each change; a frame is a
+        // few ticks long, so the round trip is exact to a small part of one.
+        let step = q / 48;
         for rate in [44_100, 48_000, 96_000] {
             for tick in [
                 0, 1, 191, 192, 239, 240, 270, 287, 288, 335, 336, 479, 480, 623, 624, 700,
             ] {
+                let tick = tick * step;
                 let frame = timeline.frame_at(tick, rate);
-                assert!((timeline.tick_at(frame, rate) - tick as f64).abs() < 0.003);
+                assert!((timeline.tick_at(frame, rate) - tick as f64).abs() < 0.003 * step as f64);
             }
         }
         let slower = Timeline::new(&score, Tempo::new(60).unwrap());
-        assert_eq!(slower.frame_at(624, 48_000), 816_000);
+        assert_eq!(slower.frame_at(13 * q, 48_000), 816_000);
     }
 
     #[test]
@@ -366,19 +371,21 @@ mod tests {
             .unwrap();
         let tempo = Tempo::default();
         let timeline = Timeline::new(&score, tempo);
-        let q = 48; // ticks per quarter
+        let q = TICKS_PER_QUARTER;
         assert_eq!(timeline.frame_at(q, 48_000), 24_000);
         assert_eq!(timeline.frame_at(2 * q, 48_000), 72_000, "held twice");
         assert_eq!(timeline.frame_at(3 * q, 48_000), 96_000);
         assert_eq!(timeline.seconds_at(2. * q as f64), 1.5);
-        for tick in [0., 30., 48., 60., 96., 120., 400.] {
+        // In 48ths of a quarter, at whole frames.
+        let step = (q / 48) as f64;
+        for tick in [0., 30., 48., 60., 96., 120., 400.].map(|t| t * step) {
             let frame = timeline.frame_at(tick as u64, 48_000);
             assert!(
-                (timeline.tick_at(frame, 48_000) - tick).abs() < 1e-6,
+                (timeline.tick_at(frame, 48_000) - tick).abs() < 1e-6 * step,
                 "{tick}"
             );
         }
-        assert_eq!(timeline.tick_at(48_000, 48_000), 72.);
+        assert_eq!(timeline.tick_at(48_000, 48_000), (3 * q / 2) as f64);
 
         let plan = PlaybackPlan::new(&score, tempo, 48_000).unwrap();
         assert_eq!(plan.frame_for_element(after), Some(72_000));
@@ -405,7 +412,7 @@ mod tests {
         let flute = score.add_part(Instrument::Flute).unwrap();
         score.insert_in(flute, 0, 0, note(Step::E, true)).unwrap();
         let timeline = Timeline::new(&score, Tempo::default());
-        assert_eq!(timeline.frame_at(48, 48_000), 48_000);
-        assert_eq!(timeline.frame_at(96, 48_000), 72_000);
+        assert_eq!(timeline.frame_at(TICKS_PER_QUARTER, 48_000), 48_000);
+        assert_eq!(timeline.frame_at(2 * TICKS_PER_QUARTER, 48_000), 72_000);
     }
 }

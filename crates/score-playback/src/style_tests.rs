@@ -4,6 +4,9 @@ use score_core::{
     Notation, TimeSignature, Tremolo, Voice,
 };
 
+/// A quarter note.
+const Q: u64 = crate::TICKS_PER_QUARTER;
+
 fn note(step: Step, duration: Duration) -> Event {
     Event {
         pitches: Pitches::single(Pitch::new(step, 4)),
@@ -61,7 +64,7 @@ fn literal_style_keeps_the_orchestral_plan_exact() {
 #[test]
 fn metric_offset_follows_simple_and_compound_beats() {
     let mut score = Score::default();
-    for (tick, expected) in [(0, 4), (48, 1), (96, 2), (24, -2)] {
+    for (tick, expected) in [(0, 4), (Q, 1), (2 * Q, 2), (Q / 2, -2)] {
         assert_eq!(
             interpretation::metric_offset(&score, tick),
             expected,
@@ -77,7 +80,7 @@ fn metric_offset_follows_simple_and_compound_beats() {
             },
         )
         .unwrap();
-    assert_eq!(interpretation::metric_offset(&score, 48), 1);
+    assert_eq!(interpretation::metric_offset(&score, Q), 1);
     score
         .set_time_signature_at(
             0,
@@ -87,8 +90,8 @@ fn metric_offset_follows_simple_and_compound_beats() {
             },
         )
         .unwrap();
-    assert_eq!(interpretation::metric_offset(&score, 72), 1);
-    assert_eq!(interpretation::metric_offset(&score, 24), -2);
+    assert_eq!(interpretation::metric_offset(&score, 3 * Q / 2), 1);
+    assert_eq!(interpretation::metric_offset(&score, Q / 2), -2);
     score.append_measure().unwrap();
     score
         .set_time_signature_at(
@@ -101,7 +104,7 @@ fn metric_offset_follows_simple_and_compound_beats() {
         .unwrap();
     let next_bar = score.measure_start_tick(1);
     assert_eq!(interpretation::metric_offset(&score, next_bar), 4);
-    assert_eq!(interpretation::metric_offset(&score, next_bar + 48), 1);
+    assert_eq!(interpretation::metric_offset(&score, next_bar + Q), 1);
 }
 
 #[test]
@@ -247,7 +250,7 @@ fn phrase_slur_connects_notes_across_written_rests() {
     let plan =
         PlaybackPlan::with_style(&score, Tempo::default(), 48_000, false, Style::Natural).unwrap();
     assert_eq!(plan.sounds.len(), 3);
-    assert_eq!(plan.sounds[1].written_range.0, 96);
+    assert_eq!(plan.sounds[1].written_range.0, 2 * Q);
     let (_, variation) = interpretation::human_variation(0, plan.sounds[1].written_range.0);
     let metric = interpretation::metric_offset(&score, plan.sounds[1].written_range.0);
     assert_eq!(
@@ -257,7 +260,7 @@ fn phrase_slur_connects_notes_across_written_rests() {
             - variation,
         2
     );
-    assert_eq!(score.event_tick(second), Some(96));
+    assert_eq!(score.event_tick(second), Some(2 * Q));
 }
 
 #[test]
@@ -593,4 +596,88 @@ fn natural_velocity_saturates_at_both_midi_limits() {
     );
     assert!((1..=127).contains(&plan.sounds[0].level));
     assert_eq!(plan.sounds[1].level, 127);
+}
+
+#[test]
+fn the_metronome_clicks_each_beat_and_accents_each_bar() {
+    let clicks = |score: &Score| {
+        let mut plan = PlaybackPlan::with_repeats(score, Tempo::default(), 48_000, true).unwrap();
+        plan.add_clicks(score);
+        plan.messages
+            .iter()
+            .filter_map(|m| match m.message {
+                Message::Click { accent } => Some((m.frame, accent)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut score = Score::default();
+    // Four bars of 4/4 at quarter = 120: a click every half second.
+    let four = clicks(&score);
+    assert_eq!(four.len(), 16);
+    assert!(four.iter().enumerate().all(|(beat, &(frame, accent))| {
+        frame == beat as u64 * 24_000 && accent == (beat % 4 == 0)
+    }));
+    // 6/8 beats in dotted quarters: two clicks a bar.
+    score
+        .set_time_signature_at(
+            0,
+            TimeSignature {
+                numerator: 6,
+                denominator: 8,
+            },
+        )
+        .unwrap();
+    let compound = clicks(&score);
+    assert_eq!(compound.len(), 8);
+    assert_eq!(compound[1].0, 36_000);
+    // Plans keep their notes in order, clicks among them.
+    let mut plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+    plan.add_clicks(&score);
+    assert!(plan.messages.windows(2).all(|w| w[0].frame <= w[1].frame));
+    assert_eq!(plan.count_in(&score, 0), (2, 36_000));
+}
+
+#[test]
+fn a_bar_repeat_plays_the_bar_before_it_again() {
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    for (index, step) in [Step::C, Step::E, Step::G, Step::C].into_iter().enumerate() {
+        score
+            .insert_in(
+                piano,
+                0,
+                index,
+                Event {
+                    pitches: Pitches::single(Pitch::new(step, 4)),
+                    duration: Duration::Quarter,
+                    notation: Notation::default(),
+                },
+            )
+            .unwrap();
+    }
+    let attacks = |score: &Score| {
+        let plan = PlaybackPlan::new(score, Tempo::default(), 48_000).unwrap();
+        plan.messages
+            .iter()
+            .filter_map(|m| match m.message {
+                Message::NoteOn(note) => Some((m.frame, note.key)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let once = attacks(&score);
+    for bar in [1, 2] {
+        score
+            .set_bar_repeat(piano, StaffId::Upper, bar, true)
+            .unwrap();
+    }
+    let thrice = attacks(&score);
+    assert_eq!(thrice.len(), 3 * once.len());
+    // The second and third bars repeat the first, two seconds later each.
+    for (copy, &(frame, key)) in thrice.iter().enumerate() {
+        let (first, first_key) = once[copy % once.len()];
+        assert_eq!(key, first_key);
+        assert_eq!(frame, first + (copy / once.len()) as u64 * 96_000);
+    }
 }

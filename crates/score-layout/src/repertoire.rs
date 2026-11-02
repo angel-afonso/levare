@@ -6,23 +6,41 @@ pub fn glyph_codes() -> impl Iterator<Item = u32> {
         .chain([0xe031, 0xe032, 0xe040, 0xe041, 0xe044, 0xe047, 0xe048])
         .chain([0xe050, 0xe05c, 0xe062, 0xe069])
         .chain(0xe080..=0xe089)
-        .chain(0xe1d2..=0xe1dc)
+        // Notes with stems and flags, down to the sixty-fourth.
+        .chain(0xe1d2..=0xe1de)
         .chain(0xe0a2..=0xe0a4)
         .chain(0xe220..=0xe222)
-        .chain(0xe240..=0xe245)
+        .chain(0xe240..=0xe247)
         .chain(0xe260..=0xe264)
         .chain([0xe614, 0xe0dd])
-        .chain(0xe4e3..=0xe4e8)
+        .chain(0xe4e3..=0xe4e9)
+        // Tuplet numbers 0–9.
+        .chain(0xe880..=0xe889)
         // Ribbon symbols for the acciaccatura and the appoggiatura.
         .chain([0xe560, 0xe562])
         // 8va, 8vb, Ped., trill, trill wiggle and glissando.
         .chain([0xe511, 0xe51c, 0xe650, 0xe566, 0xeaa4, 0xe585])
         .chain([0xe634, 0xe635, 0xe63c, 0xeaa9, 0xeaaa, 0xeaad, 0xeaae])
-        .chain([0xe1e7, 0xe1fd, 0xe883, 0xe4c0, 0xe53e, 0xe53f])
+        .chain([0xe1e7, 0xe1fd, 0xe4c0, 0xe53e, 0xe53f])
         .chain([
             0xe4a0, 0xe4a1, 0xe4a2, 0xe4a3, 0xe4a4, 0xe4a5, 0xe4ac, 0xe4ad, 0xe4c1, 0xe520, 0xe521,
             0xe522,
         ])
+        // The r, s, z and n of sfz, rfz, sfp and niente.
+        .chain(0xe523..=0xe526)
+        // Staccatissimo above and below, the mordents, the turn, the breath
+        // mark and the caesura.
+        .chain([0xe4a6, 0xe4a7, 0xe56c, 0xe56d, 0xe567, 0xe4ce, 0xe4d1])
+        // Treble and bass clefs with an 8 below or above.
+        .chain([0xe052, 0xe053, 0xe064, 0xe065])
+        // Ribbon symbols for the dashed, dotted, short and tick barlines.
+        .chain(0xe036..=0xe039)
+        // Cross, diamond and slash noteheads, open and filled.
+        .chain([
+            0xe0a7, 0xe0a8, 0xe0a9, 0xe0d8, 0xe0d9, 0xe0db, 0xe101, 0xe102, 0xe103,
+        ])
+        // The bar repeat.
+        .chain([0xe500])
 }
 
 /// Convert ordinary Unicode notation to the exact glyphs used in the score.
