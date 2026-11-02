@@ -986,12 +986,20 @@ const TRANSFORM: GroupSpec = GroupSpec {
     title: "Notas",
     visual: Label("±"),
     priority: 3,
-    controls: &[toggle(tile(
-        id::TRANSPOSE,
-        Label("±"),
-        "Transportar…",
-        "Mueve las notas seleccionadas un intervalo, con sus notas de adorno y cifrados, escritos con el nombre que les corresponde.",
-    ))],
+    controls: &[
+        toggle(tile(
+            id::TRANSPOSE,
+            Label("±"),
+            "Transportar…",
+            "Mueve las notas seleccionadas un intervalo, con sus notas de adorno y cifrados, escritos con el nombre que les corresponde.",
+        )),
+        tile(
+            id::FLIP,
+            Label("↑↓"),
+            "Invertir",
+            "Da la vuelta a la plica de las notas seleccionadas, o a la ligadura seleccionada. Otra vez, vuelve a su lado automático.",
+        ),
+    ],
 };
 const SELECT: GroupSpec = GroupSpec {
     dropdown: false,

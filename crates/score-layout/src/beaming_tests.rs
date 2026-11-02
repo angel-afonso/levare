@@ -567,3 +567,66 @@ fn noteheads_replace_the_oval_and_keep_the_stem_on_their_edge() {
         );
     }
 }
+
+#[test]
+fn stems_and_curves_turned_by_hand_change_side() {
+    use score_core::Stem;
+    let mut s = Score::default();
+    let part = s.parts()[0].id();
+    let notes = ids(
+        &mut s,
+        part,
+        StaffId::Upper,
+        0,
+        &[
+            Duration::Quarter,
+            Duration::Quarter,
+            Duration::Eighth,
+            Duration::Eighth,
+        ],
+    );
+    let tie = Connection {
+        start: notes[0],
+        end: notes[1],
+        kind: ConnectionKind::Tie,
+    };
+    let slur = Connection {
+        start: notes[2],
+        end: notes[3],
+        kind: ConnectionKind::Slur,
+    };
+    s.add_connection(tie).unwrap();
+    s.add_connection(slur).unwrap();
+    // Negative bends arch upwards.
+    let bend = |s: &Score, connection| {
+        let layout = LayoutEngine::default().layout_compact(s, 960.);
+        layout
+            .curves
+            .iter()
+            .find(|c| c.connection == connection)
+            .unwrap()
+            .bend
+    };
+    // Middle C's tie goes under its up stem; turned down, over it.
+    let layout = LayoutEngine::default().layout_compact(&s, 960.);
+    assert_eq!(layout.stem_down(notes[0]), Some(false));
+    assert!(bend(&s, tie) > 0.);
+    s.set_stem(notes[0], Some(Stem::Down)).unwrap();
+    let layout = LayoutEngine::default().layout_compact(&s, 960.);
+    assert_eq!(layout.stem_down(notes[0]), Some(true));
+    assert!(bend(&s, tie) < 0.);
+    // A slur arches over the staff until it is flipped by hand.
+    assert!(bend(&s, slur) < 0.);
+    s.flip_curve(slur).unwrap();
+    assert!(bend(&s, slur) > 0.);
+    s.flip_curve(tie).unwrap();
+    assert!(bend(&s, tie) > 0.);
+    // One stem turned by hand turns its whole beam.
+    s.set_stem(notes[3], Some(Stem::Down)).unwrap();
+    let layout = LayoutEngine::default().layout_compact(&s, 960.);
+    assert_eq!(layout.stem_down(notes[2]), Some(true));
+    // A curve that no longer exists is no longer flipped.
+    s.remove(notes[1]).unwrap();
+    assert!(!s.curve_flipped(tie) && s.curve_flipped(slur));
+    s.validate().unwrap();
+}

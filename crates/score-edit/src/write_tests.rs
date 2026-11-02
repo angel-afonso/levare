@@ -368,3 +368,44 @@ fn a_passage_transposes_by_an_interval_and_undoes_in_one_step() {
     editor.undo();
     assert_eq!(editor.score(), &before);
 }
+
+#[test]
+fn stems_and_curves_flip_by_hand_save_and_undo() {
+    use score_core::{Connection, ConnectionKind, Stem};
+    let mut score = Score::default();
+    let a = score
+        .insert(0, 0, event(Step::C, Duration::Quarter))
+        .unwrap();
+    let b = score
+        .insert(0, 1, event(Step::C, Duration::Quarter))
+        .unwrap();
+    let tie = Connection {
+        start: a,
+        end: b,
+        kind: ConnectionKind::Tie,
+    };
+    score.add_connection(tie).unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    let before = editor.score().clone();
+    editor
+        .execute(Command::SetStems(vec![
+            (a, Some(Stem::Down)),
+            (b, Some(Stem::Down)),
+        ]))
+        .unwrap();
+    editor.execute(Command::FlipCurve(tie)).unwrap();
+    assert_eq!(
+        editor.score().event(a).unwrap().notation.stem,
+        Some(Stem::Down)
+    );
+    assert!(editor.score().curve_flipped(tie));
+    let saved = editor.score().clone();
+    assert_eq!(
+        serde_json::from_value::<Score>(serde_json::to_value(&saved).unwrap()).unwrap(),
+        saved
+    );
+    assert!(editor.execute(Command::SetStems(Vec::new())).is_err());
+    editor.undo();
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+}

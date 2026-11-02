@@ -1775,6 +1775,7 @@ impl AppView {
             id::DOUBLE_DOT => self.toggle_dots(2, cx),
             id::OTHER_TUPLET => self.toggle_tuplet_picker(cx),
             id::TRANSPOSE => self.toggle_transpose_picker(cx),
+            id::FLIP => self.flip(cx),
             id::DUPLET
             | id::TRIPLET
             | id::QUADRUPLET
@@ -2295,6 +2296,41 @@ impl AppView {
             self.show_editor_tab();
         }
         cx.notify();
+    }
+    /// X, as in Sibelius: a selected tie or slur goes to its other side;
+    /// selected notes turn their stems, or give them back to the automatic
+    /// rule when they were turned by hand.
+    fn flip(&mut self, cx: &mut Context<Self>) {
+        if let Some(score_core::MarkRef::Connection(connection)) = self.selected_mark()
+            && connection.kind.is_curve()
+        {
+            self.edit(Command::FlipCurve(connection), cx);
+            return;
+        }
+        let editor = &self.document.editor;
+        let stems = editor
+            .selected_ids()
+            .into_iter()
+            .filter_map(|id| {
+                let event = editor.score().event(id)?;
+                if event.pitches.is_empty() {
+                    return None;
+                }
+                if event.notation.stem.is_some() {
+                    return Some((id, None));
+                }
+                let down = self.layout.stem_down(id)?;
+                Some((
+                    id,
+                    Some(if down {
+                        score_core::Stem::Up
+                    } else {
+                        score_core::Stem::Down
+                    }),
+                ))
+            })
+            .collect();
+        self.edit(Command::SetStems(stems), cx);
     }
     /// Transportar's button: move the selection, and close when it moved.
     fn apply_transpose(&mut self, choice: TransposeChoice, cx: &mut Context<Self>) {

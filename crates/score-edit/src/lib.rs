@@ -143,6 +143,10 @@ pub enum Command {
     Transpose(i16),
     /// Move the selected notes, grace notes and chord symbols by an interval.
     TransposeBy(score_core::Interval),
+    /// Turn stems by hand, or give them back to the automatic rule (`None`).
+    SetStems(Vec<(ElementId, Option<score_core::Stem>)>),
+    /// Draw a tie or slur on its other side, or back.
+    FlipCurve(score_core::Connection),
     AddPitch(Pitch),
     RemoveHighestPitch,
     SetAccidental(Option<Accidental>),
@@ -1268,6 +1272,17 @@ impl Editor {
                 };
                 next.selection = None;
             }
+            Command::SetStems(ref stems) => {
+                if stems.is_empty() {
+                    return Err(ScoreError("Selecciona notas con plica o una ligadura"));
+                }
+                for &(id, stem) in stems {
+                    next.score.set_stem(id, stem)?;
+                }
+            }
+            Command::FlipCurve(connection) => {
+                next.score.flip_curve(connection)?;
+            }
             Command::TransposeBy(interval) => {
                 let ids = self.selected_ids();
                 if ids.is_empty() {
@@ -1462,6 +1477,8 @@ impl Editor {
                 | Command::ToggleNotehead(_)
                 | Command::ToggleBeam(_)
                 | Command::TransposeBy(_)
+                | Command::SetStems(_)
+                | Command::FlipCurve(_)
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)

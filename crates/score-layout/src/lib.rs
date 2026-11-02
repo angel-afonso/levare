@@ -333,6 +333,35 @@ pub enum PageNumberPlace {
 }
 
 impl Layout {
+    /// Whether the drawn stem of `id` points down; `None` without a stem.
+    pub fn stem_down(&self, id: ElementId) -> Option<bool> {
+        let content = &self
+            .measures
+            .iter()
+            .find(|m| m.part == id.part && m.content.events.iter().any(|e| e.id == id))?
+            .content;
+        if let Some(stem) = content.beam_stem(id) {
+            return Some(stem.down);
+        }
+        if let Some(line) = content
+            .lines
+            .iter()
+            .find(|line| line.element == Some(id) && line.from.x == line.to.x)
+        {
+            return Some(line.to.y > line.from.y);
+        }
+        // A note drawn whole: Bravura alternates up and down stems.
+        content
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.element == Some(id))
+            .find_map(|glyph| {
+                let code = u32::from(glyph.text.chars().next()?);
+                (0xe1d3..=0xe1de)
+                    .contains(&code)
+                    .then_some((code - 0xe1d3) % 2 == 1)
+            })
+    }
     /// The bars that show their number: one per bar, on the top staff of
     /// its system. The number goes `BAR_NUMBER_RISE` above the bar's origin.
     pub fn numbered_bars(&self) -> impl Iterator<Item = &PlacedMeasure> {
@@ -2634,7 +2663,11 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
     for (voice, tick, id, event) in measure.timed_iter() {
         let onset = rhythm.x(tick) + voice_offset(measure, voice, tick);
-        let forced = measure.has_several_voices().then_some(voice.is_lower());
+        let forced = event
+            .notation
+            .stem
+            .map(|stem| stem == score_core::Stem::Down)
+            .or(measure.has_several_voices().then_some(voice.is_lower()));
         result.cursor_x[voice.index()].push(onset - 8.);
         if hidden.contains(&id) {
             continue;

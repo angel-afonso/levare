@@ -806,11 +806,15 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                             .fold(f32::NEG_INFINITY, f32::max))
                         / 2.
             } else {
-                start
-                    .content
-                    .beam_stem(c.start)
-                    .map_or(a.center.y > 20., |stem| !stem.down)
-            };
+                // Opposite a stem turned by hand, or the stem drawn.
+                match score.event(c.start).and_then(|event| event.notation.stem) {
+                    Some(stem) => stem == score_core::Stem::Up,
+                    None => start
+                        .content
+                        .beam_stem(c.start)
+                        .map_or(a.center.y > 20., |stem| !stem.down),
+                }
+            } != score.curve_flipped(*c);
             if c.kind == ConnectionKind::Tie
                 && start.system_start == end.system_start
                 && start.staff != end.staff
@@ -856,7 +860,9 @@ pub(super) fn curves(score: &Score, index: &PlacedIndex, metrics: &Metrics) -> V
                         .fold((f32::INFINITY, f32::NEG_INFINITY), |a, b| {
                             (a.0.min(b.0), a.1.max(b.1))
                         });
-                    if score.voice_of(c.start).is_some_and(Voice::is_lower) {
+                    if score.voice_of(c.start).is_some_and(Voice::is_lower)
+                        != score.curve_flipped(*c)
+                    {
                         (bottom + 8., bottom + 8., 14.)
                     } else {
                         (top - 8., top - 8., -14.)
@@ -1058,7 +1064,7 @@ pub(super) fn hairpin_y<'a>(
 pub(super) fn curve_lanes(score: &Score) -> HashMap<(PartId, StaffId, usize), (bool, bool)> {
     let mut lanes = HashMap::<_, (bool, bool)>::new();
     for c in score.connections().iter().filter(|c| c.kind.is_curve()) {
-        let below = score.voice_of(c.start).is_some_and(Voice::is_lower);
+        let below = score.voice_of(c.start).is_some_and(Voice::is_lower) != score.curve_flipped(*c);
         for index in c.start.measure..=c.end.measure {
             let lanes = lanes
                 .entry((c.start.part, c.start.staff, index))

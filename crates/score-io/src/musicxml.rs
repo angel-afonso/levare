@@ -984,8 +984,16 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
             }
             xml.push_str("</time-modification>");
         }
-        if f.two_voices && !pitches.is_empty() && f.duration.value() != NoteValue::Whole {
-            xml.push_str(if f.voice.is_lower() {
+        // A stem turned by hand, or the side of its voice.
+        let down = match f.event.notation.stem {
+            Some(stem) => Some(stem == score_core::Stem::Down),
+            None => f.two_voices.then_some(f.voice.is_lower()),
+        };
+        if let Some(down) = down
+            && !pitches.is_empty()
+            && f.duration.value() != NoteValue::Whole
+        {
+            xml.push_str(if down {
                 "<stem>down</stem>"
             } else {
                 "<stem>up</stem>"

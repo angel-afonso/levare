@@ -439,6 +439,14 @@ If one note would leave the range, nothing moves. Undo takes the whole passage b
 the passage stays selected for another step. The up and down arrows still move a
 selected note by a step.
 
+## Flipping stems, ties and slurs
+
+**Inicio › Notas › Invertir** (`X`, as in Sibelius) turns the stems of the selected notes
+to the other side; a stem turned in a beam turns the whole beam, and a tie follows the
+stem it is opposite. Press it again to give the stems back to the automatic rule. With a
+tie or slur selected, `X` draws it on its other side instead, and again takes it back.
+Both are saved in the native file; MusicXML keeps the turned stems.
+
 ## Copying, cutting and pasting music
 
 - **Shift + drag over the notes, or drag from the empty staff**, to select a whole

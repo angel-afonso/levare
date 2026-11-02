@@ -42,6 +42,8 @@ struct Note {
     levels: u8,
     /// How long an eighth lasts here, in or out of a tuplet.
     eighth: u32,
+    /// A stem turned down (`true`) or up by hand.
+    down: Option<bool>,
 }
 struct Group {
     notes: Vec<Note>,
@@ -123,13 +125,17 @@ impl Plan {
                         .iter()
                         .map(|n| n.low)
                         .fold(f32::NEG_INFINITY, f32::max);
-                    groups.push(Group {
-                        notes: std::mem::take(notes),
-                        down: if measure.has_several_voices() {
+                    // A stem turned by hand turns its whole group.
+                    let down = notes.iter().find_map(|note| note.down).unwrap_or(
+                        if measure.has_several_voices() {
                             voice.is_lower()
                         } else {
                             (high + low) / 2. <= 20.
                         },
+                    );
+                    groups.push(Group {
+                        notes: std::mem::take(notes),
+                        down,
                     });
                 } else {
                     notes.clear();
@@ -174,6 +180,10 @@ impl Plan {
                         40. - f32::from(pitch.diatonic() - clef.bottom_diatonic()) * 5.
                     };
                     notes.push(Note {
+                        down: value
+                            .notation
+                            .stem
+                            .map(|stem| stem == score_core::Stem::Down),
                         element: id,
                         tick,
                         onset: rhythm.x(tick) + voice_offset(measure, voice, tick),

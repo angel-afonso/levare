@@ -28,7 +28,7 @@ pub use dynamics::{DynamicEnvelope, DynamicSegment};
 mod tremolo;
 pub use tremolo::Tremolo;
 mod appearance;
-pub use appearance::{Beam, Notehead};
+pub use appearance::{Beam, Notehead, Stem};
 mod grace;
 pub use grace::{Grace, GraceKind, MAX_GRACE_NOTES};
 mod text;
@@ -553,6 +553,9 @@ pub struct Score {
     connections: Vector<Connection>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     connection_offsets: Vector<ConnectionOffset>,
+    /// Ties and slurs turned to the other side by hand.
+    #[serde(default, skip_serializing_if = "Vector::is_empty")]
+    flipped_curves: Vector<Connection>,
     #[serde(default, skip_serializing_if = "Vector::is_empty")]
     piano_arpeggios: Vector<PianoArpeggio>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -587,6 +590,7 @@ impl Default for Score {
             next_part_id: 1,
             connections: Vector::new(),
             connection_offsets: Vector::new(),
+            flipped_curves: Vector::new(),
             piano_arpeggios: Vector::new(),
             form: Default::default(),
             endings: Vector::new(),
@@ -987,6 +991,13 @@ impl Score {
         }
         self.page_setup.validate()?;
         self.validate_bar_repeats()?;
+        if self
+            .flipped_curves
+            .iter()
+            .any(|c| !c.kind.is_curve() || !self.connections.contains(c))
+        {
+            return Err(ScoreError("Ligadura invertida inexistente"));
+        }
         self.validate_form()?;
         self.validate_rehearsals()?;
         self.validate_breaks()?;
@@ -1047,7 +1058,9 @@ impl Score {
                             return Err(ScoreError("Articulación en silencio"));
                         }
                         if event.pitches.is_empty()
-                            && (event.notation.notehead.is_some() || event.notation.beam.is_some())
+                            && (event.notation.notehead.is_some()
+                                || event.notation.beam.is_some()
+                                || event.notation.stem.is_some())
                         {
                             return Err(ScoreError("Cabeza o barra de corchea en silencio"));
                         }
