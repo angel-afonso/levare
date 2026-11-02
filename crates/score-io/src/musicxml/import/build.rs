@@ -168,6 +168,8 @@ fn music(
             .is_some_and(|(h, _)| *h == Harmonic::Artificial)
     });
     if artificial || (tones.len() == 2 && tones.iter().any(|t| t.diamond)) {
+        // The diamond belongs to the harmonic, which draws its own.
+        notation.notehead = None;
         if tones.len() == 1
             && tones[0]
                 .harmonic

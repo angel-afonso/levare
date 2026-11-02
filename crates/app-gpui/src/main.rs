@@ -1610,6 +1610,9 @@ impl AppView {
                 cx,
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
+            command if appearance_command(command).is_some() => {
+                self.edit(appearance_command(command).unwrap(), cx)
+            }
             id::SYSTEM_BREAK => self.edit(
                 Command::ToggleLayoutBreak(score_core::LayoutBreak::System),
                 cx,
@@ -3930,6 +3933,20 @@ fn form_bounds(editor: &score_edit::Editor) -> (usize, usize) {
         .unwrap_or(editor.cursor().measure);
     let end = ids.iter().map(|id| id.measure).max().unwrap_or(start);
     (start, end)
+}
+
+/// Noteheads and beam overrides: each command toggles one on the selected notes.
+fn appearance_command(command: CommandId) -> Option<Command> {
+    use score_core::{Beam, Notehead};
+    Some(match command {
+        id::NOTEHEAD_CROSS => Command::ToggleNotehead(Notehead::Cross),
+        id::NOTEHEAD_DIAMOND => Command::ToggleNotehead(Notehead::Diamond),
+        id::NOTEHEAD_SLASH => Command::ToggleNotehead(Notehead::Slash),
+        id::BEAM_START => Command::ToggleBeam(Beam::Start),
+        id::BEAM_JOIN => Command::ToggleBeam(Beam::Join),
+        id::BEAM_OFF => Command::ToggleBeam(Beam::Off),
+        _ => return None,
+    })
 }
 
 /// The barline each barline command writes; choosing it again restores the single line.

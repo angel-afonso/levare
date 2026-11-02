@@ -1,7 +1,7 @@
 //! Automatic, staff-local beaming. Grouping is derived from written rhythm and
 //! meter; it never changes musical events or their playback durations.
 use super::*;
-use score_core::{Duration, NoteValue};
+use score_core::{Beam, Duration, NoteValue};
 
 const THICKNESS: f32 = 5.;
 const SEPARATION: f32 = 8.;
@@ -114,6 +114,7 @@ impl Plan {
         let mut notes: Vec<Note> = Vec::new();
         for voice in Voice::ALL {
             let mut previous = None;
+            let mut joined = None;
             let mut tick = 0;
             let flush = |notes: &mut Vec<Note>, groups: &mut Vec<Group>| {
                 if notes.len() >= 2 {
@@ -144,16 +145,28 @@ impl Plan {
                 let end = tick + value.duration.ticks();
                 let level = levels(value.duration.value());
                 let beat = boundaries.partition_point(|b| *b <= tick).saturating_sub(1);
-                let key = if level == 0 || value.pitches.is_empty() {
+                let beam = value.notation.beam;
+                let natural = if level == 0 || value.pitches.is_empty() || beam == Some(Beam::Off) {
                     None
                 } else if value.duration.tuplet().is_some() {
                     Some(Boundary::Tuplet(tuplets[&id]))
-                } else if end <= boundaries[beat + 1] {
+                } else if end <= boundaries[beat + 1] || beam == Some(Beam::Start) {
+                    // Started by hand, a note across the beat may still lead a beam.
                     Some(Boundary::Beat(beat))
                 } else {
                     None
                 };
-                if key.is_none() || key != previous {
+                // A joined note carries the rest of its beat into the previous beam.
+                let key = if beam == Some(Beam::Join) && natural.is_some() && previous.is_some() {
+                    joined = natural.map(|natural| (natural, previous.unwrap()));
+                    previous
+                } else {
+                    match joined {
+                        Some((from, to)) if natural == Some(from) => Some(to),
+                        _ => natural,
+                    }
+                };
+                if key.is_none() || key != previous || beam == Some(Beam::Start) {
                     flush(&mut notes, &mut groups);
                 }
                 if key.is_some() {

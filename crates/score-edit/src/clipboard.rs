@@ -388,6 +388,8 @@ impl Editor {
                     notation.offsets.chord = None;
                     notation.ornament = None;
                     notation.offsets.ornament = None;
+                    // Only the first fragment starts or leaves its beam.
+                    notation.beam = None;
                 }
                 // A split note keeps one fermata and one breath, after its final
                 // fragment.

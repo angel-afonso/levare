@@ -130,6 +130,8 @@ fn paste_spanning_bar_splits_long_notes_and_ties_them_as_one_transaction() {
         tremolo: None,
         ornament: None,
         pause: None,
+        notehead: None,
+        beam: None,
         division: None,
         arpeggio: None,
         technique: None,

@@ -720,6 +720,7 @@ fn read_part(
                         }
                         last.notation.fermata |= event.notation.fermata;
                         last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
+                        last.notation.notehead = last.notation.notehead.or(event.notation.notehead);
                         last.notation.pause = last.notation.pause.or(event.notation.pause);
                         if event.notation.tremolo.is_some() {
                             last.notation.tremolo = event.notation.tremolo;
@@ -1255,6 +1256,13 @@ fn read_note(
             };
             (kind, role.to_owned())
         });
+    notation.notehead = match text(n, "notehead") {
+        Some("x" | "cross") => Some(Notehead::Cross),
+        // A diamond with a harmonic is its touched note, not a notehead.
+        Some("diamond") if harmonic.is_none() => Some(Notehead::Diamond),
+        Some("slash") => Some(Notehead::Slash),
+        _ => None,
+    };
     let mut pitches = if let Some(p) = child(n, "pitch") {
         vec![Tone {
             pitch: pitch_value(p, state.transpose[staff], state.intervals[staff], warnings)?,

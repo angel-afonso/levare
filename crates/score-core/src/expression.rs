@@ -320,6 +320,12 @@ pub struct Notation {
     /// A breath or caesura after the note or rest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause: Option<Pause>,
+    /// Drawn with another notehead; sounds the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notehead: Option<Notehead>,
+    /// Overrides the automatic beaming at this note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beam: Option<Beam>,
     /// Hold the note or rest; written over it, independent of articulation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fermata: bool,

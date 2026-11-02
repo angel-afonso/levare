@@ -969,6 +969,12 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
         }
         if touch {
             xml.push_str("<notehead>diamond</notehead>");
+        } else if let Some(head) = f.event.notation.notehead {
+            xml.push_str(match head {
+                Notehead::Cross => "<notehead>x</notehead>",
+                Notehead::Diamond => "<notehead>diamond</notehead>",
+                Notehead::Slash => "<notehead>slash</notehead>",
+            });
         }
         let _ = write!(xml, "<staff>{}</staff><notations>", f.staff);
         if !pitches.is_empty() {

@@ -310,6 +310,12 @@ pub mod id {
         TREMOLO_1 = "expresion.tremolo-1";
         TREMOLO_2 = "expresion.tremolo-2";
         TREMOLO_3 = "expresion.tremolo-3";
+        NOTEHEAD_CROSS = "notacion.cabeza-x";
+        NOTEHEAD_DIAMOND = "notacion.cabeza-rombo";
+        NOTEHEAD_SLASH = "notacion.cabeza-diagonal";
+        BEAM_START = "notacion.barra-corchea.iniciar";
+        BEAM_JOIN = "notacion.barra-corchea.unir";
+        BEAM_OFF = "notacion.barra-corchea.sin";
         DYNAMIC_PPP = "expresion.dinamica.ppp";
         DYNAMIC_PP = "expresion.dinamica.pp";
         DYNAMIC_P = "expresion.dinamica.p";
@@ -607,6 +613,12 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::TREMOLO_1, C::Expression, "Trémolo de una barra", S, false, R),
     spec(id::TREMOLO_2, C::Expression, "Trémolo de dos barras", S, false, R),
     spec(id::TREMOLO_3, C::Expression, "Trémolo de tres barras", S, false, R),
+    spec(id::NOTEHEAD_CROSS, C::Notation, "Cabeza en x", S, false, R),
+    spec(id::NOTEHEAD_DIAMOND, C::Notation, "Cabeza de rombo", S, false, R),
+    spec(id::NOTEHEAD_SLASH, C::Notation, "Cabeza diagonal", S, false, R),
+    spec(id::BEAM_START, C::Notation, "Iniciar barra de corchea", S, false, R),
+    spec(id::BEAM_JOIN, C::Notation, "Unir a la barra anterior", S, false, R),
+    spec(id::BEAM_OFF, C::Notation, "Sin barra de corchea", S, false, R),
     spec(id::DYNAMIC_PPP, C::Expression, "Dinámica ppp", S, false, R),
     spec(id::DYNAMIC_PP, C::Expression, "Dinámica pp", S, false, R),
     spec(id::DYNAMIC_P, C::Expression, "Dinámica p", S, false, R),

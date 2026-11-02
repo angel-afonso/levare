@@ -20,6 +20,26 @@ impl CommandStates for AppView {
                 .unwrap_or(editor.cursor().measure);
             CommandState::checked(editor.score().layout_break(bar) == Some(kind))
         };
+        if let Some(action) = crate::appearance_command(command) {
+            // Lit while every selected note has it; rests are left out.
+            let notes: Vec<_> = editor
+                .selected_ids()
+                .into_iter()
+                .filter_map(|id| editor.score().event(id))
+                .filter(|event| !event.pitches.is_empty())
+                .map(|event| event.notation)
+                .collect();
+            let checked = !notes.is_empty()
+                && notes.iter().all(|notation| match action {
+                    Command::ToggleNotehead(head) => notation.notehead == Some(head),
+                    Command::ToggleBeam(beam) => notation.beam == Some(beam),
+                    _ => false,
+                });
+            return CommandState {
+                enabled: !notes.is_empty(),
+                ..CommandState::checked(checked)
+            };
+        }
         match command {
             id::SYSTEM_BREAK => return layout_break(score_core::LayoutBreak::System),
             id::PAGE_BREAK => return layout_break(score_core::LayoutBreak::Page),

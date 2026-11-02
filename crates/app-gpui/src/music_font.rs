@@ -384,7 +384,11 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 130);
+        assert_eq!(font.outlines.len(), 139);
+        // Cross, diamond and slash noteheads.
+        assert!(
+            font.covers("\u{e0a7}\u{e0a8}\u{e0a9}\u{e0d8}\u{e0d9}\u{e0db}\u{e101}\u{e102}\u{e103}")
+        );
         // Clefs with an 8 and the dashed, dotted, short and tick barlines.
         assert!(font.covers("\u{e052}\u{e053}\u{e064}\u{e065}\u{e036}\u{e037}\u{e038}\u{e039}"));
         // The letters of sfz, rfz, sfp and niente.

@@ -20,6 +20,8 @@ mod dynamics;
 pub use dynamics::{DynamicEnvelope, DynamicSegment};
 mod tremolo;
 pub use tremolo::Tremolo;
+mod appearance;
+pub use appearance::{Beam, Notehead};
 mod grace;
 pub use grace::{Grace, GraceKind, MAX_GRACE_NOTES};
 mod text;
@@ -1019,6 +1021,11 @@ impl Score {
                         }
                         if event.pitches.is_empty() && event.notation.articulation.is_some() {
                             return Err(ScoreError("Articulación en silencio"));
+                        }
+                        if event.pitches.is_empty()
+                            && (event.notation.notehead.is_some() || event.notation.beam.is_some())
+                        {
+                            return Err(ScoreError("Cabeza o barra de corchea en silencio"));
                         }
                         Self::validate_grace(event)?;
                         Self::validate_lyrics(event)?;

@@ -109,6 +109,10 @@ pub enum Command {
     /// The ribbon's point marks: write `kind` on the selection, replacing its
     /// family's mark, or remove it when it is already there.
     ToggleMark(score_core::MarkKind),
+    /// Draw the selected notes with this head, or with the usual one again.
+    ToggleNotehead(score_core::Notehead),
+    /// Override the automatic beaming at the selected notes, or restore it.
+    ToggleBeam(score_core::Beam),
     /// Write words at a note or rest, or remove them with `None`.
     SetText(ElementId, score_core::TextKind, Option<String>),
     /// Sing a syllable on a note in a verse (from 0), or clear it.
@@ -811,6 +815,25 @@ impl Editor {
                     next.score.set_tremolo(id, (!clear).then_some(mark))?;
                 }
             }
+            Command::ToggleNotehead(head) => {
+                let ids = self.selected_notes("Selecciona notas para cambiar su cabeza")?;
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.notehead == Some(head));
+                for id in ids {
+                    next.score.set_notehead(id, (!clear).then_some(head))?;
+                }
+            }
+            Command::ToggleBeam(beam) => {
+                let ids =
+                    self.selected_notes("Selecciona notas para cambiar su barra de corchea")?;
+                let clear = ids
+                    .iter()
+                    .all(|id| next.score.event(*id).unwrap().notation.beam == Some(beam));
+                for id in ids {
+                    next.score.set_beam(id, (!clear).then_some(beam))?;
+                }
+            }
             Command::ToggleMark(kind) => {
                 let id = next
                     .selection
@@ -1381,6 +1404,8 @@ impl Editor {
                 | Command::ToggleMark(
                     score_core::MarkKind::Harmonic(_) | score_core::MarkKind::Tremolo(_)
                 )
+                | Command::ToggleNotehead(_)
+                | Command::ToggleBeam(_)
                 | Command::SetDuration(_)
                 | Command::SetMarkOffset(_, _)
                 | Command::MoveMark(..)

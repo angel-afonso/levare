@@ -31,7 +31,9 @@ name and key, choice tracks, groups without cards) stays.
   Regulador, Líneas, Técnica de cuerda, Nota de adorno, Arpegio and Trémolo.
 - Texto takes the dynamics, as Sibelius writes them as Expression text, and the signs and
   jumps in one **D.C. / D.S.** dropdown.
-- Diseño: Sistema y página, and Posición (Restablecer).
+- Diseño: Sistema y página, Cabeza (cross, diamond and slash noteheads), Barra de corchea
+  (start, join, none) and Posición (Restablecer). Noteheads and beams change only the
+  drawing, and Notaciones has no room left at 1440 px.
 - At 1440 px only dropdowns fold. To fit, the families Sibelius shows as galleries are
   dropdowns: Barra, Líneas, Nota de adorno, Arpegio, Trémolo, D.C. / D.S. and
   Estilo de ensayo. Entrada de notas drops the names of Modificar, Alteración and

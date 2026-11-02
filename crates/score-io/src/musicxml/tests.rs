@@ -1221,3 +1221,38 @@ fn barline_styles_round_trip_through_musicxml() {
         score
     );
 }
+
+#[test]
+fn noteheads_round_trip_and_beam_overrides_stay_in_the_native_file() {
+    let mut score = Score::new("Cabezas".into(), &[Instrument::Violin], 2).unwrap();
+    let part = score.parts()[0].id();
+    let mut ids = Vec::new();
+    for (index, step) in [Step::C, Step::D, Step::E].into_iter().enumerate() {
+        ids.push(
+            score
+                .insert_in(part, 0, index, note(step, 4, Duration::Quarter))
+                .unwrap(),
+        );
+    }
+    for (id, head) in ids.iter().zip(Notehead::ALL) {
+        score.set_notehead(*id, Some(head)).unwrap();
+    }
+    score.set_beam(ids[0], Some(Beam::Off)).unwrap();
+    let text = xml(&score);
+    for head in ["x", "diamond", "slash"] {
+        assert!(
+            text.contains(&format!("<notehead>{head}</notehead>")),
+            "{head}"
+        );
+    }
+    let imported = decode(text.as_bytes()).unwrap().score;
+    let heads: Vec<_> = imported.parts()[0].staves()[0].measures()[0]
+        .iter()
+        .map(|(_, event)| event.notation.notehead)
+        .collect();
+    assert_eq!(heads[..3], Notehead::ALL.map(Some));
+    assert_eq!(
+        crate::decode(&crate::encode(&score).unwrap()).unwrap(),
+        score
+    );
+}

@@ -63,6 +63,12 @@ pub enum Visual {
     /// Music-font noteheads joined by the font's tie contour.
     Tie,
     Slur,
+    /// Eighth notes drawn with Bravura heads: `flagged` ones with their own
+    /// flags, then `beamed` ones under one beam.
+    Beam {
+        flagged: u8,
+        beamed: u8,
+    },
     /// Bravura staff, optionally combined with a barline.
     Staff,
     Bar,
@@ -1223,6 +1229,73 @@ const SIGNS: GroupSpec = GroupSpec {
 // Diseño
 
 /// The user's own system and page ends, after the selected bar.
+/// Noteheads change only the drawing: the note keeps its pitch and sound.
+const NOTEHEADS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Cabeza",
+    visual: Music("\u{e0a9}"),
+    priority: 2,
+    controls: &[
+        toggle(tile(
+            id::NOTEHEAD_CROSS,
+            Music("\u{e0a9}"),
+            "En x",
+            "Cabeza en x: notas habladas, sin altura definida o fantasma. Suenan igual.",
+        )),
+        toggle(tile(
+            id::NOTEHEAD_DIAMOND,
+            Music("\u{e0db}"),
+            "Rombo",
+            "Cabeza de rombo, abierta en blancas y redondas. Suena igual.",
+        )),
+        toggle(tile(
+            id::NOTEHEAD_SLASH,
+            Music("\u{e101}"),
+            "Diagonal",
+            "Cabeza diagonal (slash): el ritmo sobre el que improvisar. Suena igual.",
+        )),
+    ],
+};
+/// Beam overrides at a note, as Sibelius' keypad and MuseScore's beam
+/// properties offer; the automatic beaming applies everywhere else.
+const BEAMS: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Barra de corchea",
+    visual: Visual::Beam {
+        flagged: 0,
+        beamed: 2,
+    },
+    priority: 2,
+    controls: &[
+        toggle(tile(
+            id::BEAM_START,
+            Visual::Beam {
+                flagged: 1,
+                beamed: 2,
+            },
+            "Iniciar",
+            "La barra de corchea empieza en esta nota, aunque esté dentro de un tiempo.",
+        )),
+        toggle(tile(
+            id::BEAM_JOIN,
+            Visual::Beam {
+                flagged: 0,
+                beamed: 3,
+            },
+            "Unir",
+            "La nota se une a la barra de la anterior, aunque cruce el tiempo.",
+        )),
+        toggle(tile(
+            id::BEAM_OFF,
+            Visual::Beam {
+                flagged: 2,
+                beamed: 0,
+            },
+            "Sin barra",
+            "La nota lleva su propio corchete, sin barra.",
+        )),
+    ],
+};
 const BREAKS: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Sistema y página",
@@ -1570,7 +1643,7 @@ pub const TABS: &[TabSpec] = &[
     },
     TabSpec {
         id: TabId::Layout,
-        groups: &[BREAKS, POSITION],
+        groups: &[BREAKS, NOTEHEADS, BEAMS, POSITION],
     },
     TabSpec {
         id: TabId::Review,
@@ -1669,6 +1742,8 @@ mod tests {
             DIVISI,
             REPEATS,
             SIGNS,
+            NOTEHEADS,
+            BEAMS,
         ] {
             for visual in
                 std::iter::once(group.visual).chain(group.controls.iter().map(|c| c.visual))
@@ -1682,6 +1757,7 @@ mod tests {
                             | Visual::Chord
                             | Visual::Tie
                             | Visual::Slur
+                            | Visual::Beam { .. }
                             | Visual::Staff
                             | Visual::Bar
                             | Visual::Text(_)

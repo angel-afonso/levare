@@ -748,6 +748,77 @@ fn music_connection(view: &AppView, size: f32, color: u32, slur: bool) -> impl I
     .flex_shrink_0()
 }
 
+pub(crate) const BEAM_FLAG: &str = "\u{e240}"; // Bravura flag8thUp.
+
+/// Ribbon icons for beam overrides: `flagged` eighths with their own flags,
+/// then `beamed` eighths sharing one beam, all stems up as in a melody.
+fn music_beam(view: &AppView, size: f32, color: u32, flagged: u8, beamed: u8) -> impl IntoElement {
+    let font = view.music_font.clone();
+    let note_size = size * 0.72;
+    let space = note_size / 4.;
+    let head = f32::from(font.bounds(CONNECTION_HEAD, note_size).size.width);
+    let count = usize::from(flagged + beamed).max(1);
+    let step = head * 1.9;
+    let width = step * (count - 1) as f32 + head + space;
+    let stem = 3.3 * space;
+    let thin = (0.12 * space).max(1.);
+    let height = (size * 0.8).max(stem + 1.5 * space);
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let left = (f32::from(bounds.size.width) - width) / 2.;
+            // Bravura heads sit centred on their baseline.
+            let base = (f32::from(bounds.size.height) + stem) / 2. - 0.5 * space;
+            let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
+            let mut fill = |x0: f32, y0: f32, x1: f32, y1: f32| {
+                let mut path = PathBuilder::fill();
+                path.move_to(at(x0, y0));
+                path.line_to(at(x1, y0));
+                path.line_to(at(x1, y1));
+                path.line_to(at(x0, y1));
+                path.close();
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, rgb(color));
+                }
+            };
+            let stem_x = |index: usize| left + step * index as f32 + head - thin;
+            for index in 0..count {
+                fill(stem_x(index), base - stem, stem_x(index) + thin, base);
+            }
+            if beamed > 0 {
+                let first = usize::from(flagged);
+                fill(
+                    stem_x(first),
+                    base - stem,
+                    stem_x(count - 1) + thin,
+                    base - stem + 0.5 * space,
+                );
+            }
+            for index in 0..count {
+                font.paint_sized(
+                    CONNECTION_HEAD,
+                    at(left + step * index as f32, base),
+                    color,
+                    note_size,
+                    window,
+                );
+                if index < usize::from(flagged) {
+                    font.paint_sized(
+                        BEAM_FLAG,
+                        at(stem_x(index), base - stem),
+                        color,
+                        note_size,
+                        window,
+                    );
+                }
+            }
+        },
+    )
+    .w(px(width))
+    .h(px(height))
+    .flex_shrink_0()
+}
+
 /// Center the combined ink of original Bravura glyphs at their own baselines.
 fn music_glyphs<const N: usize>(
     view: &AppView,

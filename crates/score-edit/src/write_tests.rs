@@ -229,3 +229,61 @@ fn chord_entry_after_write_still_adds_pitches() {
     let selected = editor.selection().unwrap();
     assert_eq!(editor.score().event(selected).unwrap().pitches.len(), 2);
 }
+
+#[test]
+fn noteheads_and_beams_toggle_on_the_notes_of_a_passage_and_undo() {
+    use score_core::{Beam, Notehead};
+    let mut score = Score::default();
+    let a = score
+        .insert(0, 0, event(Step::C, Duration::Quarter))
+        .unwrap();
+    score
+        .insert(
+            0,
+            1,
+            Event {
+                pitches: Pitches::default(),
+                ..event(Step::C, Duration::Quarter)
+            },
+        )
+        .unwrap();
+    let b = score
+        .insert(0, 2, event(Step::E, Duration::Quarter))
+        .unwrap();
+    let mut editor = Editor::new(score).unwrap();
+    editor.select(a);
+    editor.extend_selection(b);
+    let before = editor.score().clone();
+    editor
+        .execute(Command::ToggleNotehead(Notehead::Cross))
+        .unwrap();
+    for id in [a, b] {
+        assert_eq!(
+            editor.score().event(id).unwrap().notation.notehead,
+            Some(Notehead::Cross)
+        );
+    }
+    // The same head again restores the oval on every note.
+    editor
+        .execute(Command::ToggleNotehead(Notehead::Cross))
+        .unwrap();
+    assert_eq!(editor.score(), &before);
+    editor.execute(Command::ToggleBeam(Beam::Off)).unwrap();
+    assert_eq!(
+        editor.score().event(b).unwrap().notation.beam,
+        Some(Beam::Off)
+    );
+    editor.undo();
+    assert_eq!(editor.score(), &before);
+    editor.select(
+        editor.score().measures()[0]
+            .id_at(1)
+            .map(|event| ElementId { event, ..a })
+            .unwrap(),
+    );
+    assert!(
+        editor
+            .execute(Command::ToggleNotehead(Notehead::Slash))
+            .is_err()
+    );
+}

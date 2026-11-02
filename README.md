@@ -137,7 +137,8 @@ five-instrument ensemble.
   *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
   rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Diseño**: system and page breaks and resetting what was moved by hand.
+  sounds. **Diseño**: system and page breaks, noteheads, beam overrides and resetting
+  what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
   zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
@@ -538,6 +539,20 @@ groups with rests keep the bracket.
 They are recalculated when writing, editing, pasting or undoing, and when opening older
 scores. They change neither durations nor playback. Example:
 [`examples/barras.partitura`](examples/barras.partitura).
+
+To beam otherwise, select notes and choose in **Diseño › Barra de corchea**, as on
+Sibelius' keypad: **Iniciar** starts a new beam at the note, even inside a beat; **Unir**
+joins the note, and the rest of its beat, to the previous beam; **Sin barra** gives it
+its own flag. Choosing the same option again returns the note to automatic beaming.
+The choices are saved in the native file; MusicXML lets the program that opens it beam
+again.
+
+## Noteheads
+
+**Diseño › Cabeza** draws the selected notes with a cross, a diamond (open on halves and
+wholes) or a slash (**Diagonal**). The notes keep their pitch and sound, and rests are left out. Choose
+the same head again to bring back the oval. Noteheads are saved in the native file, the
+PDF and MusicXML.
 
 ## Ties, slurs, dynamics and articulations
 

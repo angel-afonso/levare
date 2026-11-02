@@ -212,6 +212,8 @@ impl Score {
         event.notation.tremolo = None;
         event.notation.ornament = None;
         event.notation.offsets.ornament = None;
+        event.notation.notehead = None;
+        event.notation.beam = None;
         self.prune_connections();
         Ok(())
     }

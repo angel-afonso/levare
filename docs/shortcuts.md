@@ -197,6 +197,12 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Pedal de resonancia |  |
 | — | — | Trino |  |
 | — | — | Glissando hasta la nota siguiente |  |
+| — | — | Cabeza en x |  |
+| — | — | Cabeza de rombo |  |
+| — | — | Cabeza diagonal |  |
+| — | — | Iniciar barra de corchea |  |
+| — | — | Unir a la barra anterior |  |
+| — | — | Sin barra de corchea |  |
 | `K` | `K` | Tonalidad… |  |
 | `T` | `T` | Compás de tiempo… |  |
 | `Q` | `Q` | Clave… |  |

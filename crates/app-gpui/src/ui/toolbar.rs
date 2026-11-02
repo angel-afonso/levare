@@ -47,6 +47,9 @@ fn visual(view: &AppView, visual: Visual, size: f32, color: u32) -> Option<AnyEl
             )
         }
         Visual::Chord => Some(music_chord(view, size, color).into_any_element()),
+        Visual::Beam { flagged, beamed } => {
+            Some(music_beam(view, size, color, flagged, beamed).into_any_element())
+        }
         Visual::Tie | Visual::Slur => {
             Some(music_connection(view, size, color, visual == Visual::Slur).into_any_element())
         }
@@ -1345,6 +1348,10 @@ mod tests {
                             assert!(font.covers(harmonic.glyph()), "{}", group.title)
                         }
                         Visual::Chord => assert!(font.covers(super::super::CHORD_NOTE)),
+                        Visual::Beam { .. } => {
+                            assert!(font.covers(super::super::CONNECTION_HEAD));
+                            assert!(font.covers(super::super::BEAM_FLAG));
+                        }
                         Visual::Tie | Visual::Slur => {
                             assert!(font.covers(super::super::CONNECTION_UP));
                             assert!(font.covers(super::super::CONNECTION_DOWN));

@@ -2579,6 +2579,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         );
         if event.pitches.len() > 1
             || event.notation.tremolo.is_some()
+            || event.notation.notehead.is_some()
             || event.notation.harmonic == Some(score_core::Harmonic::Artificial)
         {
             engrave_chord(
@@ -2869,11 +2870,31 @@ fn engrave_chord(
     } else {
         metrics.head
     };
-    let base = onset + (metrics.head - head_width) / 2.;
-    let head = match event.duration.value() {
-        score_core::NoteValue::Whole => 0xe0a2,
-        score_core::NoteValue::Half => 0xe0a3,
-        _ => 0xe0a4,
+    let mut base = onset + (metrics.head - head_width) / 2.;
+    let head = match event.notation.notehead {
+        Some(notehead) => notehead.glyph(event.duration.value()),
+        None => match event.duration.value() {
+            score_core::NoteValue::Whole => '\u{e0a2}',
+            score_core::NoteValue::Half => '\u{e0a3}',
+            _ => '\u{e0a4}',
+        },
+    }
+    .to_string();
+    let head_width = if event.notation.notehead.is_some() {
+        // Another head keeps the stem on its edge: its right edge for an
+        // up stem, its left for a down stem; a whole note stays centred.
+        let (l, _, r, _) = metrics.bounds(&head, false);
+        let width = r - l;
+        base = if event.duration.value() == score_core::NoteValue::Whole {
+            onset + (metrics.head - width) / 2.
+        } else if down {
+            onset
+        } else {
+            onset + metrics.head - width
+        } - l;
+        width
+    } else {
+        head_width
     };
     let mut pitches: Vec<_> = event
         .pitches
@@ -2921,7 +2942,7 @@ fn engrave_chord(
             text: if generated {
                 diamond.into()
             } else {
-                char::from_u32(head).unwrap().to_string()
+                head.clone()
             },
             position: Point { x, y },
             element: Some(id),

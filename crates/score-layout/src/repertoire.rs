@@ -35,6 +35,10 @@ pub fn glyph_codes() -> impl Iterator<Item = u32> {
         .chain([0xe052, 0xe053, 0xe064, 0xe065])
         // Ribbon symbols for the dashed, dotted, short and tick barlines.
         .chain(0xe036..=0xe039)
+        // Cross, diamond and slash noteheads, open and filled.
+        .chain([
+            0xe0a7, 0xe0a8, 0xe0a9, 0xe0d8, 0xe0d9, 0xe0db, 0xe101, 0xe102, 0xe103,
+        ])
 }
 
 /// Convert ordinary Unicode notation to the exact glyphs used in the score.
