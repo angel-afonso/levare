@@ -7,6 +7,8 @@ use std::{fmt, sync::Arc};
 mod breaks;
 mod numbering;
 pub use numbering::{BarNumbers, Numbering, PageNumbers};
+mod page_setup;
+pub use page_setup::{PageSetup, Paper, STAFF_SIZES};
 mod rehearsal;
 pub use breaks::LayoutBreak;
 use rehearsal::rehearsal_style_is_default;
@@ -528,6 +530,8 @@ pub struct Score {
     rehearsal_style: RehearsalStyle,
     #[serde(default, skip_serializing_if = "Numbering::is_default")]
     numbering: Numbering,
+    #[serde(default, skip_serializing_if = "PageSetup::is_default")]
+    page_setup: PageSetup,
     #[serde(default)]
     key_signature: KeySignature,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -566,6 +570,7 @@ impl Default for Score {
             bar_offsets: Default::default(),
             rehearsal_style: Default::default(),
             numbering: Default::default(),
+            page_setup: Default::default(),
             key_signature: KeySignature::default(),
             time_changes: Default::default(),
             key_changes: Default::default(),
@@ -971,6 +976,7 @@ impl Score {
         if matches!(self.numbering.bars, BarNumbers::Every(step) if step < 2) {
             return Err(ScoreError("Numeración de compases inválida"));
         }
+        self.page_setup.validate()?;
         self.validate_form()?;
         self.validate_rehearsals()?;
         self.validate_breaks()?;

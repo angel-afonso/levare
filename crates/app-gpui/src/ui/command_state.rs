@@ -20,6 +20,13 @@ impl CommandStates for AppView {
                 .unwrap_or(editor.cursor().measure);
             CommandState::checked(editor.score().layout_break(bar) == Some(kind))
         };
+        let setup = editor.score().page_setup();
+        if command == id::LANDSCAPE {
+            return CommandState::checked(setup.landscape);
+        }
+        if let Some(chosen) = crate::page_setup_command(setup, command) {
+            return CommandState::checked(chosen == setup);
+        }
         let numbering = editor.score().numbering();
         if let Some(chosen) = crate::numbering_command(numbering, command) {
             return CommandState::checked(chosen == numbering);

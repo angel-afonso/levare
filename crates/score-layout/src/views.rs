@@ -69,7 +69,14 @@ impl LayoutEngine {
         mode: ViewMode,
         part: bool,
     ) -> Layout {
-        let orchestra_page = !part && score.parts().len() >= 12;
+        let setup = score.page_setup();
+        let (paper_width, paper_height) = setup.paper_mm(score, part);
+        let aspect = paper_height / paper_width;
+        // A chosen staff size fixes the page width in staff spaces; otherwise
+        // the number of parts decides, as on Levare's own paper, and a larger
+        // paper holds more music at the same size.
+        let reference = score_core::PageSetup::default().paper_mm(score, part).0;
+        let orchestra_page = !part && score.parts().len() >= 12 && setup.staff.is_none();
         let staves = if orchestra_page && mode == ViewMode::Page {
             score
                 .parts()
@@ -86,14 +93,19 @@ impl LayoutEngine {
             .as_ref()
             .filter(|resolved| orchestra_page && resolved.staves == staves)
             .map(|resolved| (resolved.width, resolved.tallest));
-        let mut page_width = if orchestra_page {
+        let mut page_width = if let Some(tenths) = setup.staff {
+            paper_width * 4. * STAFF_SPACE / (f32::from(tenths) / 10.)
+        } else if orchestra_page {
             resolved.map_or(ENSEMBLE_PAGE_WIDTH, |(width, _)| width)
-        } else if part {
-            PART_PAGE_WIDTH
-        } else if score.parts().len() >= 3 {
-            ENSEMBLE_PAGE_WIDTH
         } else {
-            PAGE_WIDTH
+            paper_width / reference
+                * if part {
+                    PART_PAGE_WIDTH
+                } else if score.parts().len() >= 3 {
+                    ENSEMBLE_PAGE_WIDTH
+                } else {
+                    PAGE_WIDTH
+                }
         };
         let mut layout = self.layout_with_spacing(
             score,
@@ -129,8 +141,7 @@ impl LayoutEngine {
                 spacing::compact(&mut layout, &self.metrics);
             }
             loop {
-                let orchestra_width =
-                    (tallest(&layout) + HEADER + MARGIN) / std::f32::consts::SQRT_2;
+                let orchestra_width = (tallest(&layout) + HEADER + MARGIN) / aspect;
                 if orchestra_width <= layout.width + 0.5 {
                     break;
                 }
@@ -159,7 +170,12 @@ impl LayoutEngine {
                     .map(|(bar, _)| bar)
                     .collect()
             };
-            layout.paginate(16., MARGIN + if part { 16. } else { 0. }, &page_after);
+            layout.paginate(
+                (page_width, aspect),
+                16.,
+                MARGIN + if part { 16. } else { 0. },
+                &page_after,
+            );
         } else {
             let mut next_top = HEADER;
             let shifts: Vec<_> = layout
@@ -241,8 +257,10 @@ impl Layout {
             .position(|page| (page.first_measure..=page.last_measure).contains(&measure))
     }
 
+    /// `sheet` is the narrowest page width and the paper's height over its width.
     fn paginate(
         &mut self,
+        (narrowest, aspect): (f32, f32),
         system_gap: f32,
         continuation_top: f32,
         page_after: &std::collections::BTreeSet<usize>,
@@ -250,13 +268,13 @@ impl Layout {
         // An indivisible system may be wider/taller than a normal sheet (dense
         // bar or large orchestra). Enlarge every sheet consistently; never crop
         // ink, split piano hands or stretch the musical glyphs.
-        let width = self.width.max(PAGE_WIDTH);
+        let width = self.width.max(narrowest);
         let tallest = self
             .systems
             .iter()
             .map(|s| s.bottom - s.top)
             .fold(0., f32::max);
-        let height = (width * std::f32::consts::SQRT_2).max(tallest + HEADER + MARGIN);
+        let height = (width * aspect).max(tallest + HEADER + MARGIN);
         let mut page_top = 0.;
         let mut next_top = HEADER;
         let mut first_measure = 0;

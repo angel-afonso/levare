@@ -250,6 +250,17 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Número de página al pie |  |
 | — | — | Número de página en la esquina |  |
 | — | — | Sin números de página |  |
+| — | — | Papel automático |  |
+| — | — | Papel A4 |  |
+| — | — | Papel carta |  |
+| — | — | Papel A3 |  |
+| — | — | Papel tabloide |  |
+| — | — | Página horizontal |  |
+| — | — | Tamaño de pentagrama automático |  |
+| — | — | Pentagrama de 7 mm |  |
+| — | — | Pentagrama de 6 mm |  |
+| — | — | Pentagrama de 5 mm |  |
+| — | — | Pentagrama de 4 mm |  |
 
 ## Instrumentos
 

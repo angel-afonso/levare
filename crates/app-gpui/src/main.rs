@@ -1611,6 +1611,14 @@ impl AppView {
             ),
             id::REHEARSAL_MARK => self.edit(Command::ToggleRehearsalMark, cx),
             command
+                if page_setup_command(self.document.editor.score().page_setup(), command)
+                    .is_some() =>
+            {
+                let setup =
+                    page_setup_command(self.document.editor.score().page_setup(), command).unwrap();
+                self.edit(Command::SetPageSetup(setup), cx)
+            }
+            command
                 if numbering_command(self.document.editor.score().numbering(), command)
                     .is_some() =>
             {
@@ -3953,6 +3961,33 @@ fn appearance_command(command: CommandId) -> Option<Command> {
         id::BEAM_START => Command::ToggleBeam(Beam::Start),
         id::BEAM_JOIN => Command::ToggleBeam(Beam::Join),
         id::BEAM_OFF => Command::ToggleBeam(Beam::Off),
+        _ => return None,
+    })
+}
+
+/// The page setup each paper or staff size command chooses; Horizontal turns the page.
+fn page_setup_command(
+    setup: score_core::PageSetup,
+    command: CommandId,
+) -> Option<score_core::PageSetup> {
+    use score_core::{PageSetup, Paper};
+    let paper = |paper| PageSetup { paper, ..setup };
+    let staff = |staff| PageSetup { staff, ..setup };
+    Some(match command {
+        id::PAPER_AUTOMATIC => paper(Paper::Automatic),
+        id::PAPER_A4 => paper(Paper::A4),
+        id::PAPER_LETTER => paper(Paper::Letter),
+        id::PAPER_A3 => paper(Paper::A3),
+        id::PAPER_TABLOID => paper(Paper::Tabloid),
+        id::LANDSCAPE => PageSetup {
+            landscape: !setup.landscape,
+            ..setup
+        },
+        id::STAFF_SIZE_AUTOMATIC => staff(None),
+        id::STAFF_SIZE_7 => staff(Some(70)),
+        id::STAFF_SIZE_6 => staff(Some(60)),
+        id::STAFF_SIZE_5 => staff(Some(50)),
+        id::STAFF_SIZE_4 => staff(Some(40)),
         _ => return None,
     })
 }

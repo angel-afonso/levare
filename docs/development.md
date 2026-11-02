@@ -1077,9 +1077,9 @@ duration; note values act on the selection. Delete removes the sound, keeping th
 and the marks valid for rests. The deletion that shortens the time is still available
 for Cortar and the Edición menu.
 
-`score-pdf` is an adapter without GPUI: it builds `ViewMode::Page`, maps each sheet to A4
-and draws lines, beams, curves with Bravura metrics, hairpins, texts and the font's
-original outlines through one painter. macOS prints through Quartz/CoreText with the
+`score-pdf` is an adapter without GPUI: it builds `ViewMode::Page`, maps each sheet to the
+score's paper (`PageSetup::paper_mm`) and draws lines, beams, curves with Bravura
+metrics, hairpins, texts and the font's original outlines through one painter. macOS prints through Quartz/CoreText with the
 system's Times New Roman; Windows and Linux use the portable writer (`krilla`) with the
 bundled Liberation Serif, which has the same widths, so the pages match. Musical texts
 share `score-layout::repertoire` with screen and menus; ordinary text is shaped in whole
@@ -1401,6 +1401,14 @@ views and no clipping when printing tall systems.
 For orchestras of 12 parts or more, page view also adapts its width to the tallest
 system, avoiding a narrow column when the whole score is reduced. The full-score PDF uses
 A3; parts and small ensembles keep A4.
+
+`PageSetup` chooses the paper, its orientation and the staff height. Page view turns
+them into staff spaces: a fixed staff height of `h` mm on paper `w` mm wide gives a page
+`w · 40 / h` units wide (a staff is 40 units), and the page height follows the paper's
+proportion. With the automatic size the widths above are scaled by the paper's width
+over the automatic paper's, so the printed staff keeps its size. A fixed size turns off
+the orchestra's width resolution; `paginate` still enlarges a sheet that cannot hold
+its tallest system, and the PDF then reduces it to the paper.
 
 The selector reserves a flexible width for the name and keeps the segments of musical
 text on a single line, with stable row heights and quantity controls outside the text

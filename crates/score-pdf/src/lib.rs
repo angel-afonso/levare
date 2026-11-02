@@ -277,6 +277,19 @@ mod portable_tests {
         let orchestra = example("orquesta-completa");
         assert!(orchestra.parts().len() >= 12);
         assert_eq!(painter::paper(&orchestra, false), (841.8898, 1190.5512));
+        // The page setup chooses the paper, also for a part.
+        let mut letter = example("trio");
+        letter
+            .set_page_setup(score_core::PageSetup {
+                paper: score_core::Paper::Letter,
+                landscape: true,
+                staff: Some(60),
+            })
+            .unwrap();
+        assert_eq!(painter::paper(&letter, false), (792., 612.));
+        check(&letter, false);
+        let part = letter.extract_part(letter.parts()[0].id()).unwrap();
+        assert_eq!(painter::paper(&part, true), (792., 612.));
     }
 
     #[test]

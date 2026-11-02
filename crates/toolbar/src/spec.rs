@@ -1229,6 +1229,56 @@ const SIGNS: GroupSpec = GroupSpec {
 // Diseño
 
 /// The user's own system and page ends, after the selected bar.
+const PAPER_HINT: &str = "El papel de la vista de página y del PDF. Automático: A3 para doce instrumentos o más, A4 si no.";
+/// Sibelius' Document Setup, reduced to the paper and its orientation.
+const PAPER: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Papel",
+    visual: Icon("page"),
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::PAPER_AUTOMATIC,
+            Label("auto"),
+            "Automático",
+            PAPER_HINT,
+        )),
+        choice(tile(id::PAPER_A4, Label("A4"), "A4", PAPER_HINT)),
+        choice(tile(id::PAPER_LETTER, Label("8½"), "Carta", PAPER_HINT)),
+        choice(tile(id::PAPER_A3, Label("A3"), "A3", PAPER_HINT)),
+        choice(tile(
+            id::PAPER_TABLOID,
+            Label("Tab."),
+            "Tabloide",
+            PAPER_HINT,
+        )),
+        toggle(tile(
+            id::LANDSCAPE,
+            Label("↔"),
+            "Horizontal",
+            "Gira la página: más compases por sistema.",
+        )),
+    ],
+};
+const STAFF_SIZE_HINT: &str = "Altura del pentagrama impreso, de la primera a la quinta línea. Automático: según el número de instrumentos.";
+const STAFF_SIZE: GroupSpec = GroupSpec {
+    dropdown: true,
+    title: "Pentagrama",
+    visual: Visual::Staff,
+    priority: 2,
+    controls: &[
+        choice(tile(
+            id::STAFF_SIZE_AUTOMATIC,
+            Label("auto"),
+            "Automático",
+            STAFF_SIZE_HINT,
+        )),
+        choice(tile(id::STAFF_SIZE_7, Label("7"), "7 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_6, Label("6"), "6 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_5, Label("5"), "5 mm", STAFF_SIZE_HINT)),
+        choice(tile(id::STAFF_SIZE_4, Label("4"), "4 mm", STAFF_SIZE_HINT)),
+    ],
+};
 const BAR_NUMBERS_HINT: &str = "Qué compases llevan su número, sobre el pentagrama superior de cada sistema. El primero nunca.";
 /// Sibelius' bar number frequencies; the first bar is never numbered.
 const BAR_NUMBERS: GroupSpec = GroupSpec {
@@ -1710,6 +1760,8 @@ pub const TABS: &[TabSpec] = &[
     TabSpec {
         id: TabId::Layout,
         groups: &[
+            PAPER,
+            STAFF_SIZE,
             BREAKS,
             BAR_NUMBERS,
             PAGE_NUMBERS,

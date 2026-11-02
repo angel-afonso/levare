@@ -390,3 +390,61 @@ fn bar_numbers_follow_the_setting_on_the_top_staff_and_pages_number_their_corner
             .is_err()
     );
 }
+
+#[test]
+fn paper_and_staff_size_shape_the_page() {
+    use score_core::{PageSetup, Paper};
+    let (mut score, _) = piece(40);
+    let page = |score: &Score| {
+        let layout = LayoutEngine::default().layout_view(score, 1000., ViewMode::Page);
+        let page = layout.pages[0].clone();
+        (
+            page.width,
+            page.height,
+            layout.systems.len(),
+            layout.pages.len(),
+        )
+    };
+    let (width, height, _, pages) = page(&score);
+    assert_eq!(width, 1000.);
+    assert!((height / width - std::f32::consts::SQRT_2).abs() < 0.001);
+    // A 5 mm staff on A4: 210 mm hold 42 staff heights, so pages hold more.
+    score
+        .set_page_setup(PageSetup {
+            staff: Some(50),
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let (small, _, _, fewer) = page(&score);
+    assert!((small - 210. * 40. / 5.).abs() < 0.01);
+    assert!(fewer < pages);
+    // Landscape Letter: the page turns and keeps the staff size.
+    score
+        .set_page_setup(PageSetup {
+            paper: Paper::Letter,
+            landscape: true,
+            staff: Some(50),
+        })
+        .unwrap();
+    let (wide, tall, _, _) = page(&score);
+    assert!((wide - 279.4 * 40. / 5.).abs() < 0.01);
+    assert!((tall / wide - 215.9 / 279.4).abs() < 0.001);
+    // Automatic size on A3 keeps the A4 staff and fits more music.
+    score
+        .set_page_setup(PageSetup {
+            paper: Paper::A3,
+            ..PageSetup::default()
+        })
+        .unwrap();
+    let (a3, _, _, wider) = page(&score);
+    assert!((a3 - 1000. * 297. / 210.).abs() < 0.01);
+    assert!(wider < pages);
+    assert!(
+        score
+            .set_page_setup(PageSetup {
+                staff: Some(5),
+                ..PageSetup::default()
+            })
+            .is_err()
+    );
+}

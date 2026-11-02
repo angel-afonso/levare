@@ -519,6 +519,8 @@ mod tests {
                 "Más dinámicas",
                 "Más figuras",
                 "Nota de adorno",
+                "Papel",
+                "Pentagrama",
                 "Símbolos",
                 "Trémolo",
             ]

@@ -137,8 +137,8 @@ five-instrument ensemble.
   *sfz*, *rfz*, *fp*, *sfp* and *niente*, staff text, lyrics and chord symbols,
   rehearsal marks and their style, and the signs and jumps in
   **D.C. / D.S.** **Reproducción**: play, loop, half speed, repeats, audition, mixer and
-  sounds. **Diseño**: system and page breaks, bar and page numbers, noteheads, beam
-  overrides and resetting what was moved by hand.
+  sounds. **Diseño**: paper and staff size, system and page breaks, bar and page
+  numbers, noteheads, beam overrides and resetting what was moved by hand.
   **Revisión**: check, warnings, instrument range and comments. **Vista**: page mode,
   zoom and collapsing the ribbon.
   Every control is drawn the same way: no background at rest, blue when active or
@@ -882,7 +882,8 @@ There are clarinets in C, B♭ and A, E♭ clarinet, bass clarinet, cor anglais,
 F, trumpets in C, B♭ and D, cornet and saxophones; the octave transpositions of
 piccolo, contrabassoon, double bass, guitar, celesta, xylophone and glockenspiel are
 included. Harp, piano, organ, celesta, marimba and vibraphone use two staves. Scores of
-12 parts or more are exported to PDF on A3; individual parts stay on A4. The voices are
+12 parts or more are exported to PDF on A3 and individual parts on A4, unless
+**Diseño › Papel** chooses another paper. The voices are
 **Voz** (solo), **Soprano**, **Contralto**, **Tenor** and **Bajo**; the tenor is written
 in treble clef an octave above how it sounds. No sound pack includes voices, so they
 sound with the choir of the built-in General MIDI bank. Snare drum, bass drum, cymbals,
@@ -1350,7 +1351,12 @@ the full score and every part in both formats.
 
 ## Exporting PDF
 
-Select **PDF** in the export dialog to save every page on A4. The PDF uses Bravura's
+Select **PDF** in the export dialog to save every page on the score's paper: A4, or A3
+for 12 parts or more, unless **Diseño › Papel** chooses A4, Letter, A3 or Tabloid,
+upright or **Horizontal**. **Diseño › Pentagrama** sets the printed staff height to 7,
+6, 5 or 4 mm; **Automático** lets the number of parts decide, about 8.4 mm for one or
+two parts and 5.3 mm for an ensemble on A4, and keeps that size on larger paper, which
+then holds more music. A system too tall for the page is reduced to fit. The PDF uses Bravura's
 vector outlines, includes the markings and arpeggios across the hands, and lays out the
 pages independently of the screen's view and zoom. It includes no selections or
 interface controls. Individual parts carry the instrument in the header, without

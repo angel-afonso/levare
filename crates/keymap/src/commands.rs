@@ -394,6 +394,17 @@ pub mod id {
         PAGE_NUMBERS_FOOTER = "compases.paginas.pie";
         PAGE_NUMBERS_CORNER = "compases.paginas.esquina";
         PAGE_NUMBERS_HIDDEN = "compases.paginas.ninguno";
+        PAPER_AUTOMATIC = "pagina.papel.automatico";
+        PAPER_A4 = "pagina.papel.a4";
+        PAPER_LETTER = "pagina.papel.carta";
+        PAPER_A3 = "pagina.papel.a3";
+        PAPER_TABLOID = "pagina.papel.tabloide";
+        LANDSCAPE = "pagina.horizontal";
+        STAFF_SIZE_AUTOMATIC = "pagina.pentagrama.automatico";
+        STAFF_SIZE_7 = "pagina.pentagrama.7";
+        STAFF_SIZE_6 = "pagina.pentagrama.6";
+        STAFF_SIZE_5 = "pagina.pentagrama.5";
+        STAFF_SIZE_4 = "pagina.pentagrama.4";
 
         ADD_INSTRUMENT = "instrumentos.anadir";
         ADD_PIANO = "instrumentos.piano";
@@ -694,6 +705,17 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAGE_NUMBERS_FOOTER, C::Bars, "Número de página al pie", G, false, R),
     spec(id::PAGE_NUMBERS_CORNER, C::Bars, "Número de página en la esquina", G, false, R),
     spec(id::PAGE_NUMBERS_HIDDEN, C::Bars, "Sin números de página", G, false, R),
+    spec(id::PAPER_AUTOMATIC, C::Bars, "Papel automático", G, false, R),
+    spec(id::PAPER_A4, C::Bars, "Papel A4", G, false, R),
+    spec(id::PAPER_LETTER, C::Bars, "Papel carta", G, false, R),
+    spec(id::PAPER_A3, C::Bars, "Papel A3", G, false, R),
+    spec(id::PAPER_TABLOID, C::Bars, "Papel tabloide", G, false, R),
+    spec(id::LANDSCAPE, C::Bars, "Página horizontal", G, false, R),
+    spec(id::STAFF_SIZE_AUTOMATIC, C::Bars, "Tamaño de pentagrama automático", G, false, R),
+    spec(id::STAFF_SIZE_7, C::Bars, "Pentagrama de 7 mm", G, false, R),
+    spec(id::STAFF_SIZE_6, C::Bars, "Pentagrama de 6 mm", G, false, R),
+    spec(id::STAFF_SIZE_5, C::Bars, "Pentagrama de 5 mm", G, false, R),
+    spec(id::STAFF_SIZE_4, C::Bars, "Pentagrama de 4 mm", G, false, R),
 
     spec(id::ADD_INSTRUMENT, C::Instruments, "Añadir instrumentos…", S, false, R),
     spec(id::ADD_PIANO, C::Instruments, "Añadir piano a dos manos", G, false, R),

@@ -43,13 +43,12 @@ pub(crate) trait Canvas {
     fn show_text(&mut self, text: &str, style: Serif, size: f64);
 }
 
-/// Paper size in points: A3 for full scores of 12 parts or more, A4 otherwise.
+/// Paper size in points, as the score's page setup asks: by default A3 for
+/// full scores of 12 parts or more, A4 otherwise.
 pub(crate) fn paper(score: &Score, part: bool) -> (f64, f64) {
-    if !part && score.parts().len() >= 12 {
-        (841.8898, 1190.5512)
-    } else {
-        (595.2756, 841.8898)
-    }
+    let points = |mm: f32| (f64::from(mm) * 72. / 25.4 * 10_000.).round() / 10_000.;
+    let (width, height) = score.page_setup().paper_mm(score, part);
+    (points(width), points(height))
 }
 
 /// Print layout, independent of the screen's zoom and view.
