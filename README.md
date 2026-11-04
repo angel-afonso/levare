@@ -457,7 +457,11 @@ Linux, as in Sibelius) draws the selected notes of a piano, organ, harp, celesta
 or vibraphone on the hand's other staff. They stay in their own hand for rhythm, voice,
 playback, selection, copying and ties; only where they are drawn changes. The stem points
 back to their own staff and a click on the drawn note selects it. The other direction
-brings them back. For now a crossing note keeps its own flag instead of joining a beam.
+brings them back. A beam that joins notes of both staves is drawn between them, stems
+down from the notes above and up from the notes below, and the hands move apart to make
+room; a beam whose notes all cross is drawn on the other staff as usual. A crossing
+note's accidental is read with the staff where it is drawn, so a later note there gets
+the natural it needs.
 
 ## Flipping stems, ties and slurs
 

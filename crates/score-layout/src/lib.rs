@@ -146,6 +146,10 @@ pub struct MeasureLayout {
     pub cue: Vec<CueGlyph>,
     /// Notes drawn on the other staff, waiting for both staves' places.
     pub(crate) crossing: Vec<crossing::CrossingNote>,
+    /// Beams over those notes, drawn with them.
+    pub(crate) crossing_beams: Vec<beaming::Group>,
+    /// Signs of the notes the other staff draws here, read with this one's.
+    pub(crate) incoming_signs: HashMap<score_core::EventId, Vec<PlacedAccidental>>,
 }
 
 impl MeasureLayout {
@@ -683,10 +687,20 @@ impl Rhythm {
                 wide.insert(tick);
             }
             for staff in part.staves() {
-                let signs = measure_accidentals(
+                // Notes drawn here from the other staff make room for their signs.
+                let incoming = incoming(part, staff.id(), index);
+                let (signs, taken) = staff_accidentals(
                     &staff.measures()[index],
+                    &incoming,
                     score.written_key_at(part.id(), index),
+                    &[],
                 );
+                for note in &incoming {
+                    let padding = accidental_padding(&taken[&note.id]);
+                    left.entry(note.tick)
+                        .and_modify(|value| *value = value.max(padding))
+                        .or_insert(padding);
+                }
                 for (_, tick, id, event) in staff.measures()[index].timed_iter() {
                     if staff.measures()[index].has_several_voices()
                         || event.duration.is_dotted()
@@ -919,6 +933,7 @@ struct CacheEntry {
     previous_key: Option<KeySignature>,
     time_changed: bool,
     rhythm: Arc<Rhythm>,
+    incoming: Vec<Incoming>,
     content: Arc<MeasureLayout>,
     ink_top: f32,
     ink_bottom: f32,
@@ -941,6 +956,7 @@ struct Engraving<'a> {
     rhythm: &'a Rhythm,
     hidden: &'a HashSet<score_core::EventId>,
     accidental_resets: &'a [u32],
+    incoming: &'a [Incoming],
 }
 
 struct Metrics {
@@ -1379,6 +1395,7 @@ impl LayoutEngine {
                         let clef = part.clef_at(staff, index);
                         let clef_changed = part.clef_change_at(staff, index).is_some();
                         let rhythm = &rhythms[offset];
+                        let incoming = incoming(part, staff, index);
                         let key = (part.id(), staff, index);
                         if !self.cache.get(&key).is_some_and(|cached| {
                             cached.boundaries == part.divisi_changes_in(index).collect::<Vec<_>>()
@@ -1397,6 +1414,7 @@ impl LayoutEngine {
                                 && cached.previous_key == previous_key
                                 && cached.time_changed == time_changed
                                 && cached.rhythm == *rhythm
+                                && cached.incoming == incoming
                         }) {
                             let mut content = Arc::new(engrave(
                                 &measure,
@@ -1418,6 +1436,7 @@ impl LayoutEngine {
                                     rhythm,
                                     hidden: &hidden,
                                     accidental_resets: &resets,
+                                    incoming: &incoming,
                                 },
                                 &self.metrics,
                             ));
@@ -1478,6 +1497,7 @@ impl LayoutEngine {
                                     previous_key,
                                     time_changed,
                                     rhythm: rhythm.clone(),
+                                    incoming,
                                     content,
                                     ink_top,
                                     ink_bottom,
@@ -1622,6 +1642,19 @@ impl LayoutEngine {
                             ink_top - if above { 22. } else { 0. } - lines::LANE * lanes(true),
                         );
                         bottom = bottom.max(ink_bottom.max(bottom) + lines::LANE * lanes(false));
+                    }
+                    // A beam between a piano's hands needs eight spaces of room.
+                    if let Some(upper) = part_top.filter(|_| {
+                        staff == StaffId::Lower
+                            && part.instrument().is_grand_staff()
+                            && placed[part_start..].iter().any(|m| {
+                                m.content
+                                    .crossing_beams
+                                    .iter()
+                                    .any(beaming::Group::spans_staves)
+                            })
+                    }) {
+                        top = top.min(y - (upper + 40. + 80.));
                     }
                     let origin_y = pinned
                         .and_then(|layout| {
@@ -2281,17 +2314,70 @@ fn written_pitches(
         .collect()
 }
 
-fn measure_accidentals(
-    measure: &Measure,
-    key: KeySignature,
-) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
-    measure_accidentals_with_resets(measure, key, &[])
+/// A note drawn on this staff from the other staff of a piano.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Incoming {
+    voice: Voice,
+    tick: u32,
+    id: score_core::EventId,
+    event: score_core::Event,
 }
-fn measure_accidentals_with_resets(
+/// The notes of a piano's other staff, in bar `index`, drawn on `staff`.
+fn incoming(part: &score_core::Part, staff: StaffId, index: usize) -> Vec<Incoming> {
+    if !part.instrument().is_grand_staff() {
+        return Vec::new();
+    }
+    let other = match staff {
+        StaffId::Upper => StaffId::Lower,
+        StaffId::Lower => StaffId::Upper,
+    };
+    part.display_measure(other, index)
+        .timed_iter()
+        .filter(|(_, _, _, event)| event.notation.cross && !event.pitches.is_empty())
+        .map(|(voice, tick, id, event)| Incoming {
+            voice,
+            tick,
+            id,
+            event: *event,
+        })
+        .collect()
+}
+/// The signs of a staff's own notes and of those it takes from the other
+/// staff, read together; its own notes drawn on the other staff get none.
+fn staff_accidentals(
     measure: &Measure,
+    incoming: &[Incoming],
     key: KeySignature,
     resets: &[u32],
-) -> HashMap<score_core::EventId, Vec<PlacedAccidental>> {
+) -> (
+    HashMap<score_core::EventId, Vec<PlacedAccidental>>,
+    HashMap<score_core::EventId, Vec<PlacedAccidental>>,
+) {
+    let events = measure
+        .timed_iter()
+        .filter(|(_, _, _, event)| !event.notation.cross)
+        .map(|(voice, tick, id, event)| (voice, tick, (false, id), event))
+        .chain(
+            incoming
+                .iter()
+                .map(|note| (note.voice, note.tick, (true, note.id), &note.event)),
+        )
+        .collect();
+    let mut own = HashMap::new();
+    let mut taken = HashMap::new();
+    for ((theirs, id), signs) in accidentals(events, key, resets) {
+        if theirs { &mut taken } else { &mut own }.insert(id, signs);
+    }
+    for (_, _, id, _) in measure.timed_iter() {
+        own.entry(id).or_default();
+    }
+    (own, taken)
+}
+fn accidentals<K: Copy + Eq + std::hash::Hash>(
+    mut events: Vec<(Voice, u32, K, &score_core::Event)>,
+    key: KeySignature,
+    resets: &[u32],
+) -> HashMap<K, Vec<PlacedAccidental>> {
     // Unmarked pitches follow the key; explicit signs override it. Remember local
     // notation per octave and reset to the signature at each measure boundary.
     let mut state = [0i8; 63];
@@ -2302,7 +2388,6 @@ fn measure_accidentals_with_resets(
     }
     let initial = state;
     let mut previous = None;
-    let mut events: Vec<_> = measure.timed_iter().collect();
     events.sort_by_key(|(voice, tick, _, _)| (*tick, *voice));
     let mut alterations = HashMap::new();
     let mut conflicts = HashSet::new();
@@ -2501,6 +2586,7 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         rhythm,
         hidden,
         accidental_resets,
+        incoming,
     } = options;
     let mut result = MeasureLayout {
         lines: Vec::new(),
@@ -2527,6 +2613,8 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         music_ink_bottom: 40.,
         cue: Vec::new(),
         crossing: Vec::new(),
+        crossing_beams: Vec::new(),
+        incoming_signs: HashMap::new(),
     };
     let mut line = |x1, y1, x2, y2, thickness| {
         result.lines.push(Line {
@@ -2666,7 +2754,9 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
         time_changed,
         clef_changed,
     );
-    let signs = measure_accidentals_with_resets(measure, key_signature, accidental_resets);
+    let (signs, incoming_signs) =
+        staff_accidentals(measure, incoming, key_signature, accidental_resets);
+    result.incoming_signs = incoming_signs;
     let beams = beaming::Plan::new(measure, part, staff, index, time, clef, rhythm);
     for (voice, tick, id, event) in measure.timed_iter() {
         let onset = rhythm.x(tick) + voice_offset(measure, voice, tick);
@@ -2692,7 +2782,6 @@ fn engrave(measure: &Measure, options: Engraving<'_>, metrics: &Metrics) -> Meas
                 onset,
                 event: *event,
                 voice,
-                signs: signs[&id].clone(),
             });
             continue;
         }
