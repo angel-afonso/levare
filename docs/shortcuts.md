@@ -50,6 +50,8 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | `⇧T` | `Mayús+T` | Transportar… |  |
 | `X` | `X` | Invertir plica o ligadura |  |
 | `J` | `J` | Enarmonizar |  |
+| `⇧⌘↑` | `Ctrl+Mayús+↑` | Pasar al pentagrama superior |  |
+| `⇧⌘↓` | `Ctrl+Mayús+↓` | Pasar al pentagrama inferior |  |
 
 ## Entrada de notas
 

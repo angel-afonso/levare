@@ -733,3 +733,158 @@ fn voices_three_and_four_follow_one_and_two_beside_them() {
         );
     }
 }
+
+#[test]
+fn a_crossing_note_is_drawn_and_clicked_on_the_other_staff() {
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let high = Event {
+        pitches: Pitches::single(Pitch::new(Step::C, 5)),
+        ..note(Step::C, Duration::Quarter)
+    };
+    let id = s.insert_on(piano, StaffId::Lower, 0, 0, high).unwrap();
+    s.set_cross(id, true).unwrap();
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let upper = layout.measure_on(piano, StaffId::Upper, 0).unwrap();
+    let lower = layout.measure_on(piano, StaffId::Lower, 0).unwrap();
+    let head = lower
+        .content
+        .events
+        .iter()
+        .find(|event| event.id == id)
+        .unwrap();
+    // C5 sits in the treble staff's third space, 15 below its top line.
+    assert!((lower.origin.y + head.center.y - (upper.origin.y + 15.)).abs() < 0.01);
+    // Drawn with a stem down towards its own staff, and found by a click.
+    assert_eq!(layout.stem_down(id), Some(true));
+    let point = Point {
+        x: (lower.origin.x + head.center.x) * layout.scale,
+        y: (lower.origin.y + head.center.y) * layout.scale,
+    };
+    assert_eq!(layout.hit_test(point), Some(id));
+    // Rests and single staves do not cross.
+    let violin = s.add_part(score_core::Instrument::Violin).unwrap();
+    let other = s
+        .insert_in(violin, 0, 0, note(Step::C, Duration::Quarter))
+        .unwrap();
+    assert!(s.set_cross(other, true).is_err());
+}
+#[test]
+fn a_beam_crosses_between_a_pianos_staves() {
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let at = |step, octave| Event {
+        pitches: Pitches::single(Pitch::new(step, octave)),
+        ..note(step, Duration::Eighth)
+    };
+    // A beat with one note in each hand, then a beat drawn wholly above.
+    let ids: Vec<_> = [(Step::C, 3), (Step::E, 4), (Step::G, 4), (Step::C, 5)]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (step, octave))| {
+            s.insert_on(piano, StaffId::Lower, 0, i, at(step, octave))
+                .unwrap()
+        })
+        .collect();
+    for &id in &ids[1..] {
+        s.set_cross(id, true).unwrap();
+    }
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let upper = layout.measure_on(piano, StaffId::Upper, 0).unwrap();
+    let lower = layout.measure_on(piano, StaffId::Lower, 0).unwrap();
+    // The hands stand eight spaces apart to hold the beam.
+    let (top, bottom) = (upper.origin.y + 40., lower.origin.y);
+    assert!(bottom - top >= 80.);
+    let beam = |id| {
+        lower
+            .content
+            .beams
+            .iter()
+            .find(|group| group.elements.contains(&id))
+            .unwrap()
+    };
+    // The first beam lies between the staves, the note above stemmed down
+    // to its far edge and the one below stemmed up to its near one.
+    let between = beam(ids[0]);
+    assert_eq!(between.elements, ids[..2]);
+    let ys: Vec<f32> = between
+        .segments
+        .iter()
+        .flat_map(|s| s.corners)
+        .map(|c| lower.origin.y + c.y)
+        .collect();
+    let (beam_top, beam_bottom) = (
+        ys.iter().copied().fold(f32::INFINITY, f32::min),
+        ys.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+    );
+    assert!(top < beam_top && beam_bottom < bottom);
+    assert_eq!(layout.stem_down(ids[0]), Some(false));
+    assert_eq!(layout.stem_down(ids[1]), Some(true));
+    let stem = |id| lower.content.beam_stem(id).unwrap();
+    assert!((lower.origin.y + stem(ids[0]).to.y - beam_top).abs() < 0.01);
+    assert!((lower.origin.y + stem(ids[1]).to.y - beam_bottom).abs() < 0.01);
+    // A beam whose notes all cross is drawn on the other staff alone.
+    let above = beam(ids[2]);
+    assert_eq!(above.elements, ids[2..]);
+    assert!(
+        above
+            .segments
+            .iter()
+            .flat_map(|s| s.corners)
+            .all(|c| lower.origin.y + c.y < top)
+    );
+    // Each head is still found by a click.
+    for &id in &ids {
+        let head = lower.content.events.iter().find(|e| e.id == id).unwrap();
+        let point = Point {
+            x: (lower.origin.x + head.center.x) * layout.scale,
+            y: (lower.origin.y + head.center.y) * layout.scale,
+        };
+        assert_eq!(layout.hit_test(point), Some(id));
+    }
+}
+#[test]
+fn a_crossing_notes_accidental_is_read_with_the_staff_it_is_drawn_on() {
+    use score_core::Accidental;
+    let mut s = Score::default();
+    let piano = s.parts()[0].id();
+    let quarter = |step, octave, sign: Option<Accidental>| Event {
+        pitches: Pitches::single(Pitch::new(step, octave).map(|p| p.with_accidental(sign))),
+        ..note(step, Duration::Quarter)
+    };
+    // F♯4 crosses up from the left hand, then each hand plays an F4.
+    let crossing = s
+        .insert_on(
+            piano,
+            StaffId::Lower,
+            0,
+            0,
+            quarter(Step::F, 4, Some(Accidental::Sharp)),
+        )
+        .unwrap();
+    let left = s
+        .insert_on(piano, StaffId::Lower, 0, 1, quarter(Step::F, 4, None))
+        .unwrap();
+    s.insert_on(piano, StaffId::Upper, 0, 0, quarter(Step::E, 5, None))
+        .unwrap();
+    let right = s
+        .insert_on(piano, StaffId::Upper, 0, 1, quarter(Step::F, 4, None))
+        .unwrap();
+    s.set_cross(crossing, true).unwrap();
+    let layout = LayoutEngine::default().layout_view(&s, 1000., ViewMode::Page);
+    let signs = |id: ElementId| -> Vec<String> {
+        layout
+            .measures
+            .iter()
+            .flat_map(|m| &m.content.glyphs)
+            .filter(|g| g.element == Some(id))
+            .filter(|g| ["\u{e260}", "\u{e261}", "\u{e262}"].contains(&g.text.as_str()))
+            .map(|g| g.text.clone())
+            .collect()
+    };
+    assert_eq!(signs(crossing), ["\u{e262}"]);
+    // The right hand's F follows the sharp drawn on its staff; the left
+    // hand's does not.
+    assert_eq!(signs(right), ["\u{e261}"]);
+    assert!(signs(left).is_empty());
+}

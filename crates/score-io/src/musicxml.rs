@@ -912,11 +912,17 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                 .endpoints(f.id)
                 .contains(&(ConnectionKind::Tie, false)));
     let number = voice_number(f.id.staff, f.voice);
+    // A note drawn on a piano's other staff is written there, in its own voice.
+    let staff = if f.event.notation.cross && !f.event.pitches.is_empty() {
+        3 - f.staff
+    } else {
+        f.staff
+    };
     let pizz = index.pizzicato.contains(&f.id);
     if f.first
         && let Some(grace) = f.event.notation.grace
     {
-        graces(xml, grace, key, number, f.staff);
+        graces(xml, grace, key, number, staff);
     }
     for tone in 0..count {
         let _ = write!(
@@ -1008,7 +1014,7 @@ fn notes(xml: &mut String, score: &Score, index: &PartIndex, f: Fragment) {
                 Notehead::Slash => "<notehead>slash</notehead>",
             });
         }
-        let _ = write!(xml, "<staff>{}</staff><notations>", f.staff);
+        let _ = write!(xml, "<staff>{staff}</staff><notations>");
         if !pitches.is_empty() {
             if tie_stop {
                 xml.push_str("<tied type=\"stop\"/>");

@@ -349,6 +349,8 @@ impl Shortcuts {
                     Some(id::TRANSPOSE),
                     Some(id::FLIP),
                     Some(id::RESPELL),
+                    Some(id::CROSS_STAFF_UP),
+                    Some(id::CROSS_STAFF_DOWN),
                     None,
                     Some(id::BAR_AT_END),
                     Some(id::SINGLE_BAR),

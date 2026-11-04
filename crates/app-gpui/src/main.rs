@@ -1777,6 +1777,8 @@ impl AppView {
             id::TRANSPOSE => self.toggle_transpose_picker(cx),
             id::FLIP => self.flip(cx),
             id::RESPELL => self.edit(Command::Respell, cx),
+            id::CROSS_STAFF_UP => self.edit(Command::CrossStaff(true), cx),
+            id::CROSS_STAFF_DOWN => self.edit(Command::CrossStaff(false), cx),
             id::DUPLET
             | id::TRIPLET
             | id::QUADRUPLET
