@@ -817,3 +817,66 @@ fn nested_and_unsupported_tuplets_are_refused_with_their_bar() {
         "{error}"
     );
 }
+#[test]
+fn a_crossing_arpeggio_round_trips_through_musicxml() {
+    let mut score = Score::default();
+    let piano = score.parts()[0].id();
+    let eighth = |step, octave| Event {
+        pitches: Pitches::single(Pitch::new(step, octave)),
+        duration: Duration::Eighth,
+        notation: Notation::default(),
+    };
+    let ids: Vec<_> = [(Step::C, 3), (Step::G, 3), (Step::C, 4), (Step::E, 4)]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (step, octave))| {
+            score
+                .insert_on(piano, StaffId::Lower, 0, i, eighth(step, octave))
+                .unwrap()
+        })
+        .collect();
+    for &id in &ids[2..] {
+        score.set_cross(id, true).unwrap();
+    }
+    // Written on the staff where it is drawn, in its own voice.
+    let xml = String::from_utf8(crate::musicxml::encode(&score).unwrap()).unwrap();
+    let document = roxmltree::Document::parse(&xml).unwrap();
+    let written: Vec<_> = document
+        .descendants()
+        .filter(|n| n.has_tag_name("note") && child(*n, "pitch").is_some())
+        .map(|n| (text(n, "voice").unwrap(), text(n, "staff").unwrap()))
+        .collect();
+    assert_eq!(written, [("5", "2"), ("5", "2"), ("5", "1"), ("5", "1")]);
+    let imported = import(&xml).score;
+    let lower = &imported.parts()[0].staves()[1].measures()[0];
+    let crossing: Vec<_> = lower
+        .voice_iter(Voice::One)
+        .map(|(_, event)| event.notation.cross)
+        .collect();
+    // The rest that fills the bar stays on its own staff.
+    assert_eq!(crossing, [false, false, true, true, false]);
+    // Nothing moved into the right hand's own voices.
+    assert!(
+        imported.parts()[0].staves()[0].measures()[0]
+            .iter()
+            .all(|(_, event)| event.pitches.is_empty())
+    );
+}
+#[test]
+fn one_voice_name_on_both_staves_at_once_is_two_voices_not_a_crossing() {
+    // Finale numbers each staff's first voice 1.
+    let result = import(&wrap(
+        "Piano",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions><staves>2</staves></attributes>{}<backup><duration>4</duration></backup>{}</measure>",
+            n("E", 4, 1, 1),
+            n("C", 4, 1, 2)
+        ),
+    ));
+    let part = &result.score.parts()[0];
+    for staff in part.staves() {
+        let measure = &staff.measures()[0];
+        assert_eq!(measure.voice_len(Voice::One), 1);
+        assert!(measure.iter().all(|(_, event)| !event.notation.cross));
+    }
+}

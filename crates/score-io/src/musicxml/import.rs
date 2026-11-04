@@ -811,6 +811,9 @@ fn read_part(
         bar.repeats = state.repeating;
         bars.push(bar);
     }
+    if instrument.is_grand_staff() {
+        cross_staff(&mut bars);
+    }
     let two = bars
         .iter()
         .any(|b| b.staves == 2 || b.events.iter().any(|e| e.staff == 2));
@@ -1229,6 +1232,72 @@ fn read_harmony(
         }),
     });
     Ok(())
+}
+
+/// A piano's voice that moves between the staves within a bar, without
+/// sounding on both at once, is one line: its notes on the staff it uses
+/// less are drawn there but belong to its own staff. A voice name used on
+/// both staves at the same time (as Finale writes them) names two voices.
+fn cross_staff(bars: &mut [Bar]) {
+    let staves = |bar: &Bar, voice: &str| {
+        let mut on = [false; 2];
+        for event in bar.events.iter().filter(|e| e.voice == voice) {
+            on[usize::from(event.staff == 2)] = true;
+        }
+        on
+    };
+    // A voice's own staff is where it stands alone in a bar most often.
+    let mut alone: HashMap<String, [usize; 2]> = HashMap::new();
+    for bar in bars.iter() {
+        for event in &bar.events {
+            if let [true, false] | [false, true] = staves(bar, &event.voice) {
+                alone.entry(event.voice.clone()).or_default()[usize::from(event.staff == 2)] += 1;
+            }
+        }
+    }
+    for bar in bars {
+        let mut voices: Vec<String> = bar.events.iter().map(|e| e.voice.clone()).collect();
+        voices.sort();
+        voices.dedup();
+        for voice in voices {
+            if staves(bar, &voice) != [true, true] {
+                continue;
+            }
+            let events: Vec<_> = bar.events.iter().filter(|e| e.voice == voice).collect();
+            let together = events.iter().any(|a| {
+                events.iter().any(|b| {
+                    a.staff != b.staff
+                        && a.onset < b.onset + b.length
+                        && b.onset < a.onset + a.length
+                })
+            });
+            if together {
+                continue;
+            }
+            let [upper, lower] = alone.get(&voice).copied().unwrap_or_else(|| {
+                events.iter().fold([0, 0], |mut n, e| {
+                    n[usize::from(e.staff == 2)] += 1;
+                    n
+                })
+            });
+            let own = if lower > upper { 2 } else { 1 };
+            for event in bar.events.iter_mut().filter(|e| e.voice == voice) {
+                if event.staff != own {
+                    event.staff = own;
+                    event.notation.cross = !event.pitches.is_empty();
+                }
+            }
+            // Its marks keep to its own staff.
+            for mark in bar
+                .directions
+                .iter_mut()
+                .chain(bar.texts.iter_mut().map(|(m, _)| m))
+                .filter(|m| m.voice.as_deref() == Some(voice.as_str()))
+            {
+                mark.staff = own;
+            }
+        }
+    }
 }
 
 fn read_note(

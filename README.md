@@ -461,7 +461,9 @@ brings them back. A beam that joins notes of both staves is drawn between them, 
 down from the notes above and up from the notes below, and the hands move apart to make
 room; a beam whose notes all cross is drawn on the other staff as usual. A crossing
 note's accidental is read with the staff where it is drawn, so a later note there gets
-the natural it needs.
+the natural it needs. MusicXML keeps them: a crossing note is written on the staff where
+it is drawn, in its own voice, and a voice that moves between the staves within a bar is
+read back the same way.
 
 ## Flipping stems, ties and slurs
 
