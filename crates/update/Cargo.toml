@@ -8,7 +8,7 @@ license.workspace = true
 # Linux updates come as .tar.gz and Windows updates as .zip; both are read
 # on every OS so the install tests run everywhere.
 flate2 = { workspace = true, features = ["zlib-rs"] }
-minisign-verify = "=0.2.5"
+minisign-verify = "=0.3.0"
 # The same HTTP client score-sound-store downloads packs with.
 zed-reqwest.workspace = true
 semver = "=1.0.28"
@@ -21,4 +21,4 @@ zip.workspace = true
 
 [dev-dependencies]
 # Signs test archives with throwaway keys; the crate itself only verifies.
-minisign = "=0.8.0"
+minisign = "=0.10.0"
