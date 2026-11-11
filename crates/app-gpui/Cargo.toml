@@ -40,7 +40,7 @@ unicode-segmentation = "=1.13.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # The version GPUI 0.2.2 uses: the keyboard layout and the wheel setting.
-windows = { version = "=0.61.3", features = [
+windows = { version = "=0.62.2", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
@@ -51,7 +51,7 @@ windows = { version = "=0.61.3", features = [
 embed-resource = "=3.0.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "=0.26.0"
+cocoa = "=0.27.0"
 objc = "=0.2.7"
 core-text.workspace = true
 core-graphics.workspace = true
