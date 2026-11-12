@@ -85,11 +85,16 @@ Double-clicking a score, or using «Abrir con», opens it in Levare. It goes thr
 same steps as **Archivo › Abrir…**: MusicXML is imported, and if several files are
 opened at once, the first one opens.
 
-What happens when Levare is already running depends on the platform. On macOS, Finder
-hands the file to the open window, which asks about unsaved changes first. On Windows
-and Linux, the file manager starts a second Levare window with the file. That window has
-no autosave or crash recovery, because the first one holds them; close it and open the
-file from the first window to keep them.
+When Levare is already running, the file goes to its window, which comes to the front
+and asks about unsaved changes first. On macOS Finder hands it over; on Windows and
+Linux the new launch passes the file to the running Levare and closes, and starting
+Levare again with no file only brings its window forward. If the running Levare does
+not answer within two seconds, or is quitting, a second window opens with the file as
+before: that window has no autosave or crash recovery, because the first one holds
+them, and says so; close it and open the file from the first window to keep them. A
+Levare started with a different `LEVARE_DATA_DIR` has its own autosave and opens its
+own window. On Linux under Wayland the compositor decides whether the window comes to
+the front or only asks for attention.
 
 - **macOS:** Finder knows `.levare` and `.partitura` as Levare's own documents, and
   offers Levare for MusicXML (`.musicxml`, `.mxl`) as another app that can open it.

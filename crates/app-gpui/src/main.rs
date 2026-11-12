@@ -15,6 +15,7 @@ mod file_dialogs;
 mod follow;
 mod fonts;
 mod ghost;
+mod handoff;
 mod keyboard;
 mod mark_drag;
 mod menu_typography;
@@ -3916,6 +3917,9 @@ fn recovery_path() -> Option<PathBuf> {
 
 fn main() {
     diagnostics::install();
+    if system_open::hand_off() {
+        return;
+    }
     let app = Application::new();
     let to_open = system_open::listen(&app);
     app.run(|cx| {
@@ -3930,6 +3934,7 @@ fn main() {
             diagnostics::log(format_args!("Recuperación no disponible: {error}"));
         }
         let pending = recovery.as_ref().ok().cloned();
+        let handoffs = system_open::serve(recovery.is_ok());
         let shortcuts = Shortcuts::load(cx);
         shortcuts.install(cx);
         let (bounds, min_size) = ui::window_frame::first_window(cx);
@@ -3968,7 +3973,7 @@ fn main() {
         })
         .detach();
         diagnostics::announce_unseen_crash(window, cx);
-        system_open::deliver(to_open, cx);
+        system_open::deliver(to_open, handoffs, cx);
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
