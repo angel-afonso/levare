@@ -87,7 +87,12 @@ pub fn export(
                 }
                 .map(|_| ())?;
             } else {
-                score_io::musicxml::export(&path, score).map_err(|e| e.to_string())?;
+                if part {
+                    score_io::musicxml::export_part(&path, score)
+                } else {
+                    score_io::musicxml::export(&path, score)
+                }
+                .map_err(|e| e.to_string())?;
             }
             files.push(filename);
         }
