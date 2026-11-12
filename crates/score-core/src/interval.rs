@@ -123,7 +123,7 @@ impl ChordRoot {
 }
 
 impl ChordSymbol {
-    fn transposed(self, interval: Interval) -> Self {
+    pub(crate) fn transposed(self, interval: Interval) -> Self {
         Self {
             root: self.root.transposed(interval),
             bass: self.bass.map(|bass| bass.transposed(interval)),

@@ -1982,6 +1982,7 @@ impl AppView {
             id::PAGE_VIEW => self.set_view_mode(score_layout::ViewMode::Page, cx),
             id::CONTINUOUS_VIEW => self.set_view_mode(score_layout::ViewMode::Continuous, cx),
             id::SINGLE_SYSTEM_VIEW => self.set_view_mode(score_layout::ViewMode::SingleSystem, cx),
+            id::CONCERT_PITCH => self.toggle_concert_pitch(cx),
             id::ZOOM_FIT => {
                 self.set_view_mode(score_layout::ViewMode::Page, cx);
                 // Pages ignore the width and zoom only rescales them, so
@@ -2417,7 +2418,7 @@ impl AppView {
             let editor = &self.document.editor;
             editor
                 .selection()
-                .and_then(|id| editor.score().event(id))
+                .and_then(|id| editor.shown_score().event(id))
                 .and_then(|event| {
                     let pitches = event.pitches;
                     let index = pitches
@@ -2509,6 +2510,22 @@ impl AppView {
             .into();
             cx.notify();
         }
+    }
+
+    /// The full score in concert pitch or transposed. A view: the document
+    /// stays as saved and nothing enters the history.
+    fn toggle_concert_pitch(&mut self, cx: &mut Context<Self>) {
+        let concert = !self.document.editor.concert_pitch();
+        self.document.editor.set_concert_pitch(concert);
+        self.ghost = None;
+        self.selection_drag = None;
+        self.status = if concert {
+            "Partitura en Do · Altura de concierto; las partes siguen transpuestas"
+        } else {
+            "Partitura transpositora · Cada parte como la lee su músico"
+        }
+        .into();
+        cx.notify();
     }
 
     fn open_preferences(&mut self, cx: &mut Context<Self>) {
@@ -2702,7 +2719,9 @@ impl AppView {
                 self.pending_slur = None;
                 self.pending_hairpin = None;
                 self.end_agent_conversation(cx);
+                let concert = self.document.editor.concert_pitch();
                 self.document = Document::default();
+                self.document.editor.set_concert_pitch(concert);
                 self.review.reset_document();
                 self.comments = comments::CommentState::default();
                 self.comment_editor = None;
@@ -2782,7 +2801,9 @@ impl AppView {
                             view.pending_slur = None;
                             view.pending_hairpin = None;
                             view.end_agent_conversation(cx);
+                            let concert = view.document.editor.concert_pitch();
                             view.document = document;
+                            view.document.editor.set_concert_pitch(concert);
                             view.review.reset_document();
                             view.comments = comments::CommentState::default();
                             view.comment_editor = None;
@@ -2926,7 +2947,10 @@ impl AppView {
         self.ui.file_menu = false;
         self.ui.open_group = None;
         self.export_picker = Some(ui::ExportPicker {
-            selection: score_export::Selection::all(self.document.editor.score(), musicxml),
+            selection: score_export::Selection {
+                concert_pitch: self.document.editor.concert_pitch(),
+                ..score_export::Selection::all(self.document.editor.score(), musicxml)
+            },
             error: None,
         });
         self.confirming = true;

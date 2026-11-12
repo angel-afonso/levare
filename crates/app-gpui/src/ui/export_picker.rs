@@ -39,7 +39,11 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                         }))))
                 .child(button(view, "export-full-score", check(selection.full_score, "Partitura general"), selection.full_score, cx, |v, _, cx| {
                     if let Some(p) = &mut v.export_picker { p.selection.full_score = !p.selection.full_score; p.error = None; } cx.notify();
-                }).justify_start().px_3().w_full()))
+                }).justify_start().px_3().w_full())
+                .child(button(view, "export-concert-pitch", check(selection.concert_pitch, "Partitura general en Do (altura de concierto)"), selection.concert_pitch, cx, |v, _, cx| {
+                    if let Some(p) = &mut v.export_picker { p.selection.concert_pitch = !p.selection.concert_pitch; p.error = None; } cx.notify();
+                }).justify_start().px_3().w_full()
+                    .when(!selection.full_score, |b| b.opacity(0.4))))
             .child(div().id("export-parts-list").min_h_0().max_h(px(330.)).overflow_y_scroll().px_4().pb_3().flex().flex_col().gap_2()
                 .children(score.parts().iter().map(|part| {
                     let id = part.id();
@@ -54,7 +58,7 @@ pub fn dialog(view: &AppView, cx: &Context<AppView>) -> impl IntoElement {
                 })))
             .child(div().p_4().flex().flex_col().gap_3().border_t_1().border_color(rgb(BORDER))
                 .child(div().text_size(px(12.)).child(format!("{count} archivos · Un archivo por documento y formato")))
-                .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("Se creará una carpeta nueva en el destino que elijas. Las partes conservan sus voces, pentagramas y divisis. Alturas de concierto."))
+                .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child("Se creará una carpeta nueva en el destino que elijas. Las partes conservan sus voces, pentagramas y divisis, y van transpuestas, como las lee cada músico."))
                 .when_some(picker.error.clone(), |footer, error| footer.child(div().text_size(px(12.)).text_color(rgb(ERROR)).child(error)))
                 .child(div().flex().justify_end().gap_2()
                     .child(button(view, "export-cancel", "Cancelar", false, cx, |v, _, cx| v.close_export_picker(cx)).px_3())

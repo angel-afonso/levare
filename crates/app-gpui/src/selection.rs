@@ -465,7 +465,7 @@ impl AppView {
             });
             self.clicked_bar_mark = Some(mark);
             self.mark_drag = crate::mark_drag::MarkDrag::new_bar(
-                self.document.editor.score(),
+                self.document.editor.shown_score(),
                 mark,
                 event.position,
                 self.canvas_origin,
@@ -486,7 +486,7 @@ impl AppView {
             self.document.editor.select(anchor);
             self.clicked_mark = Some(mark);
             self.mark_drag = crate::mark_drag::MarkDrag::new(
-                self.document.editor.score(),
+                self.document.editor.shown_score(),
                 mark,
                 event.position,
                 self.canvas_origin,
@@ -553,7 +553,7 @@ impl AppView {
                 && let Some(pitch) = pitch
             {
                 self.note_drag = crate::note_drag::NoteDrag::new(
-                    self.document.editor.score(),
+                    self.document.editor.shown_score(),
                     id,
                     pitch,
                     event.position,
@@ -633,7 +633,7 @@ impl AppView {
             && let Some(end) = handle_at(&self.layout, line, (point.x, point.y))
         {
             self.connection_drag = Some(ConnectionDrag::stretch(
-                self.document.editor.score(),
+                self.document.editor.shown_score(),
                 line,
                 end,
                 event.position,
@@ -672,7 +672,7 @@ impl AppView {
             self.status = "La ligadura de expresión empieza en una nota o acorde".into();
         } else {
             self.connection_drag = Some(ConnectionDrag::draw(
-                self.document.editor.score(),
+                self.document.editor.shown_score(),
                 kind,
                 id,
                 event.position,

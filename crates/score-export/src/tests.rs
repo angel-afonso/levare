@@ -89,6 +89,7 @@ fn exports_only_selected_parts_in_score_order_with_distinct_section_names() {
         parts: vec![parts[2], parts[1]],
         pdf: false,
         musicxml: true,
+        concert_pitch: false,
     };
     let files = export(&score, &selection, &destination).unwrap();
     assert_eq!(files.len(), 2);
@@ -220,4 +221,43 @@ fn a_title_with_characters_windows_forbids_still_exports() {
     );
     let files = export(&score, &Selection::all(&score, true), &destination).unwrap();
     assert_eq!(files.len(), score.parts().len() + 1);
+}
+
+#[test]
+fn the_full_score_follows_the_concert_choice_and_parts_stay_transposed() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/menuetto-y-trio-orquesta.partitura");
+    let score = score_io::load(&path).unwrap();
+    let before = score.clone();
+    let (index, clarinet) = score
+        .parts()
+        .iter()
+        .enumerate()
+        .find(|(_, part)| part.instrument() == score_core::Instrument::ClarinetBb)
+        .map(|(index, part)| (index, part.id()))
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    // The fifths of a part's first key in an exported file.
+    let fifths = |file: &Path, part: usize| -> String {
+        let text = std::fs::read_to_string(file).unwrap();
+        let part = text.split("<part id=").nth(part + 1).unwrap();
+        let start = part.find("<fifths>").unwrap() + "<fifths>".len();
+        part[start..start + part[start..].find('<').unwrap()].to_owned()
+    };
+    for (concert, full) in [(false, "4"), (true, "2")] {
+        let destination = dir.path().join(format!("concierto-{concert}"));
+        let selection = Selection {
+            full_score: true,
+            parts: vec![clarinet],
+            pdf: false,
+            musicxml: true,
+            concert_pitch: concert,
+        };
+        let files = export(&score, &selection, &destination).unwrap();
+        assert_eq!(files.len(), 2);
+        // Concert D major: the B♭ clarinet's E major, or D in concert pitch.
+        assert_eq!(fifths(&files[0], index), full, "concert {concert}");
+        assert_eq!(fifths(&files[1], 0), "4", "concert {concert}");
+    }
+    assert_eq!(score, before);
 }

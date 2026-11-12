@@ -930,7 +930,8 @@ parts are written in **written pitch** and sound at the corresponding real pitch
 overall key is chosen in sounding pitch: in a work in C major, the B♭ clarinet shows D
 major and its written C natural sounds B♭. Key changes during the piece, auditions,
 copying between parts and the exports of score and parts to PDF and MusicXML adapt as
-well.
+well. **Vista › En Do** shows the full score in concert pitch instead (see
+[Concert pitch or transposed](#concert-pitch-or-transposed)).
 
 There are clarinets in C, B♭ and A, E♭ clarinet, bass clarinet, cor anglais, horn in
 F, trumpets in C, B♭ and D, cornet and saxophones; the octave transpositions of
@@ -1064,6 +1065,31 @@ The ribbon's **Vista** tab switches between **Página**, **Continua** and
 - **Continua:** lines that fit the available width, with vertical scrolling.
 - **Pentagrama:** all bars in one horizontal strip, with the instruments aligned and
   sideways scrolling.
+
+### Concert pitch or transposed
+
+The full score is transposed by default: each part shows what its player reads, as in
+the exported parts. **Vista › Alturas › En Do** (**Partitura en Do** in the **Vista**
+menu and the command search; `⇧⌘T` on macOS, as in Sibelius; Windows and Linux leave
+`Ctrl+Mayús+T` to the tempo and give it no shortcut, which you can add in the shortcut
+preferences) shows it in concert pitch instead: B♭ and A clarinets, horns in F, cor
+anglais, saxophones and trumpets are drawn as they sound, with the key of the piece and
+accidentals spelled from the interval, double sharps and flats included. Instruments
+that transpose by whole octaves keep them, as Sibelius and Dorico do: piccolo, double
+bass, guitar, contrabassoon, celesta, xylophone, glockenspiel and the tenor voice look
+the same in both views, and the bass clarinet and the tenor and baritone saxophones keep
+their treble clef, shown an octave above how they sound. Clefs never change.
+
+Pressing it again goes back to the transposed score; the status bar says **En Do** or
+**Transpositora** whenever a part transposes. It is a view: notes stay stored at written
+pitch, the document is not marked as changed and nothing enters the undo history. The
+choice holds for the session and for the scores you open in it.
+
+In concert pitch you write and edit what you see: a note entered, dragged or typed with
+its letter, a sign, a chord symbol, a passage pasted, all mean the concert pitch, and
+Levare stores the matching written pitch in the part. Notes you do not touch keep their
+written spelling. Range warnings, playback and the «Suena …» line read the same sound in
+both views. Parts are always transposed; the export dialog chooses the full score's view.
 
 ### Hiding empty staves
 
@@ -1421,9 +1447,12 @@ contents. Cancelling the destination keeps the selection.
 Parts keep all their voices and staves (both piano hands and divisi passages
 included), as well as notes, expressions and global changes of time signature, key and
 tempo. They keep the section names «Violín I» and «Violín II». Their layout is
-recalculated as standalone scores. Pitches are in concert pitch, as in the editor;
-transposed parts are not generated yet. Exporting does not change the work or mark its
-changes as saved.
+recalculated as standalone scores. Parts are always at written pitch, transposed as
+each player reads them. The full score is transposed too unless **Partitura general en
+Do (altura de concierto)** is ticked; the dialog opens with it ticked when the score is
+shown in concert pitch. A concert-pitch MusicXML score keeps only the octave
+transpositions, as other programs export one. Exporting does not change the work or mark
+its changes as saved.
 
 ```sh
 cargo run -p score-export --example export -- examples/menuetto-y-trio-cuerdas.partitura output/menuetto-partes

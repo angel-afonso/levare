@@ -320,6 +320,7 @@ mod tests {
             (id::ZOOM_OUT, "cmd--", "⌘-"),
             (id::REPLAY, "alt-space", "⌥Espacio"),
             (id::FULL_SCREEN, "cmd-u", "⌘U"),
+            (id::CONCERT_PITCH, "shift-cmd-t", "⇧⌘T"),
         ] {
             assert_eq!(typed(&keymap, command), Some(text), "{command}");
             assert_eq!(keymap.label(command).as_deref(), Some(label), "{command}");
@@ -349,6 +350,8 @@ mod tests {
                 );
                 assert_eq!(keymap.label(command).as_deref(), Some(label), "{command}");
             }
+            // Ctrl+Mayús+T is the tempo there; the concert view has none.
+            assert_eq!(typed(&keymap, id::CONCERT_PITCH), None, "{platform:?}");
         }
         let (windows, _) = resolve_on(Windows, &UserKeymap::new());
         assert_eq!(windows.label(id::REPLAY).as_deref(), Some("Alt+Espacio"));

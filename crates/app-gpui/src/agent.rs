@@ -1076,6 +1076,9 @@ impl AppView {
         } else {
             let registry = Rc::clone(&self.agent.registry);
             let (due, before) = (self.reveal_selection, Selected::of(&self.document.editor));
+            // The agent reads and writes the stored, written pitches.
+            let concert = self.document.editor.concert_pitch();
+            self.document.editor.set_concert_pitch(false);
             let result = agent_tools::dispatch(
                 &mut AgentHost {
                     view: self,
@@ -1085,6 +1088,7 @@ impl AppView {
                 &registry,
                 invocation.call,
             );
+            self.document.editor.set_concert_pitch(concert);
             // Every call that moved the selection shows it, whether it went
             // through a command or straight to the editor.
             self.reveal_selection =

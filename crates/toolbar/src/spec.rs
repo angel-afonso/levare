@@ -1745,6 +1745,20 @@ const VIEW_MODES: GroupSpec = GroupSpec {
         )),
     ],
 };
+/// Sibelius' Transposing Score, the other way round: on, the full score
+/// shows what sounds.
+const CONCERT_PITCH: GroupSpec = GroupSpec {
+    dropdown: false,
+    title: "Alturas",
+    visual: Label("Do"),
+    priority: 3,
+    controls: &[toggle(tile(
+        id::CONCERT_PITCH,
+        Label("Do"),
+        "En Do",
+        "La partitura general en altura de concierto; las partes siguen transpuestas.",
+    ))],
+};
 const ZOOM: GroupSpec = GroupSpec {
     dropdown: false,
     title: "Zoom",
@@ -1863,7 +1877,7 @@ pub const TABS: &[TabSpec] = &[
     },
     TabSpec {
         id: TabId::View,
-        groups: &[VIEW_MODES, ZOOM, RIBBON],
+        groups: &[VIEW_MODES, CONCERT_PITCH, ZOOM, RIBBON],
     },
 ];
 
@@ -2040,6 +2054,7 @@ mod tests {
             id::PAGE_VIEW,
             id::CONTINUOUS_VIEW,
             id::SINGLE_SYSTEM_VIEW,
+            id::CONCERT_PITCH,
             id::ZOOM_IN,
             id::ZOOM_OUT,
             id::ZOOM_ACTUAL,

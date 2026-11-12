@@ -54,6 +54,7 @@ pub use offsets::{BarMark, BarMarkRef, BarOffsets, ConnectionOffset, MarkOffsets
 mod offsets_tests;
 mod transposition;
 pub use transposition::Transposition;
+mod concert;
 mod instrument;
 pub use instrument::{Clef, Instrument, InstrumentFamily};
 mod instrument_range;

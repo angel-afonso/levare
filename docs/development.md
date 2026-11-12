@@ -1453,6 +1453,41 @@ accidentals are rewritten with an equivalent simple enharmonic. Unpitched percus
 uses its fixed General MIDI note, Bravura clef E069, a central position and an
 independent bank 128 on each route.
 
+### Concert-pitch view
+
+The concert view is derived, never stored, so the `.levare` format and its schema do not
+change. `Score::in_concert_pitch` (`score-core/src/concert.rs`) returns a copy in which
+each transposing part is rewritten by `Transposition::pitches` for the interval minus its
+whole octaves (`Transposition::octaves`, truncated towards zero), and that octave part
+becomes the part's transposition, so `written_key_at` gives the key of the piece and every
+note sounds as before. Pure octave instruments are left as they are; the bass clarinet
+and the tenor and baritone saxophones keep one octave. A note that followed its written
+key follows the concert key unless the other key says otherwise; explicit signs stay
+explicit. Grace notes move with their notes and chord symbols by the same interval.
+Event identities do not change, so selection, hit-testing and playback carry over.
+
+`Score::from_concert_pitch(shown, written)` goes back: for each part whose view interval
+is still the octave part of its stored one, pitches, grace notes and chord symbols equal
+to those of the view before the edit (`shown`) take the stored ones from `written`;
+everything else is rewritten for the stored interval. A view round trip is the identity
+on every example (`score-document` checks the 32-part orchestra).
+
+`Editor` keeps the flag (`set_concert_pitch`, outside the snapshots: it is not part of
+the history and does not change the revision, so `Document::is_dirty` is unaffected) and
+caches the view in a `OnceLock` reset on every change of state. `score()` stays the
+stored score, for saving, autosave, parts, the agent and playback; `shown_score()` is
+what the musician sees. `execute` and `paste` run through `on_shown`: in concert view
+the command is applied to the view, then the result and the snapshots it pushed are
+converted back with `from_concert_pitch`, so pitches, letters typed, signs, chord
+symbols and pasted passages mean concert pitch and the history only holds written
+scores. `selected_pitch`, `select_pitch`, entry octaves and `copy_selection` read the
+shown score; a clip copied in concert view carries the view's octave interval and
+pastes by sound anywhere. `Document` lays out `shown_score()` and keys its cached view
+on the flag too. The app keeps the flag across opened documents, switches it off while
+an agent tool call runs (the agent reads and writes written pitches) and gives the
+export dialog's `Selection::concert_pitch` its initial value; only the full score
+follows it, parts are always extracted from the stored score.
+
 The orchestra tests cover 48 routes, the full catalog, key changes, compatibility with
 files of schema 18, external and exported MusicXML, copying between profiles, the three
 views and no clipping when printing tall systems.
