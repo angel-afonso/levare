@@ -123,10 +123,11 @@ impl SoundEngine for Harmonics {
             _ => return,
         }
         state.update();
-        if value == 0 && matches!(controller, 7 | 11)
-            || !self.voices[..self.used]
-                .iter()
-                .any(|v| v.active && v.channel == channel)
+        // A sounding channel glides to its new level, so muting a part
+        // mid-note does not click; an idle one takes it at once.
+        if !self.voices[..self.used]
+            .iter()
+            .any(|v| v.active && v.channel == channel)
         {
             state.gain = state.target;
         }
@@ -323,6 +324,17 @@ mod tests {
     }
     fn energy(values: &[f32]) -> f64 {
         values.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / values.len() as f64
+    }
+    #[test]
+    fn muting_a_sounding_channel_fades_out_without_a_step() {
+        let mut engine = Harmonics::new(48_000);
+        engine.note_on(0, note(PlayingTechnique::Arco));
+        let sounding = energy(&render(&mut engine, 4800));
+        engine.midi(0, 0xb0, 7, 0);
+        let fade = render(&mut engine, 4800);
+        // The first milliseconds still carry most of the sound; then it is gone.
+        assert!(energy(&fade[..120]) > sounding * 0.3);
+        assert!(energy(&fade[2400..]) < sounding * 1e-6);
     }
     #[test]
     fn bow_sustains_while_pizzicato_decays_at_the_same_pitch() {
