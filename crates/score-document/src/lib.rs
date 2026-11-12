@@ -18,6 +18,7 @@ pub struct Document {
 
 struct View {
     revision: u64,
+    concert: bool,
     width: f32,
     mode: score_layout::ViewMode,
     scale: f32,
@@ -76,10 +77,12 @@ impl Document {
             width
         };
         let revision = self.editor.revision();
+        let concert = self.editor.concert_pitch();
         if let Some(view) = &mut self.view
             && view.width == key_width
             && view.mode == mode
             && view.revision == revision
+            && view.concert == concert
         {
             // Zoom is applied when painting; the engraving stays the same.
             if view.scale != scale {
@@ -91,11 +94,14 @@ impl Document {
             return view.layout.clone();
         }
         self.laid_out += 1;
-        let mut layout = self.layout.layout_view(self.editor.score(), width, mode);
+        let mut layout = self
+            .layout
+            .layout_view(self.editor.shown_score(), width, mode);
         layout.scale = scale;
         let layout = Rc::new(layout);
         self.view = Some(View {
             revision,
+            concert,
             width: key_width,
             mode,
             scale,
@@ -104,10 +110,10 @@ impl Document {
         layout
     }
     pub fn layout_compact(&mut self, width: f32) -> Layout {
-        self.layout.layout_compact(self.editor.score(), width)
+        self.layout.layout_compact(self.editor.shown_score(), width)
     }
     pub fn layout(&mut self, width: f32) -> Layout {
-        self.layout.layout(self.editor.score(), width)
+        self.layout.layout(self.editor.shown_score(), width)
     }
 }
 
@@ -304,6 +310,41 @@ mod tests {
                 doc.layout.recomputed_measures,
             );
         }
+    }
+
+    #[test]
+    fn the_concert_view_redraws_without_dirtying_and_keeps_the_orchestra_written() {
+        use score_layout::ViewMode;
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/menuetto-y-trio-orquesta.partitura"
+        );
+        let score = score_io::decode(&std::fs::read(path).unwrap()).unwrap();
+        let mut doc = Document::new(score).unwrap();
+        let written = doc.editor.score().clone();
+        let transposed = doc.layout_view(1000., ViewMode::Page, 1.);
+        doc.editor.set_concert_pitch(true);
+        let concert = doc.layout_view(1000., ViewMode::Page, 1.);
+        assert!(!Rc::ptr_eq(&transposed, &concert));
+        assert_ne!(format!("{transposed:?}"), format!("{concert:?}"));
+        assert!(!doc.is_dirty());
+        assert!(!doc.editor.can_undo());
+        // Every written note comes back from the concert view as it was.
+        let shown = doc.editor.shown_score().clone();
+        assert_eq!(shown.from_concert_pitch(&shown, &written), written);
+        shown.validate().unwrap();
+        // The B♭ clarinets read E major in concert D major; the view shows D.
+        let clarinet = written
+            .parts()
+            .iter()
+            .find(|part| part.instrument() == score_core::Instrument::ClarinetBb)
+            .unwrap()
+            .id();
+        assert_eq!(written.written_key_at(clarinet, 0).fifths(), 4);
+        assert_eq!(shown.written_key_at(clarinet, 0).fifths(), 2);
+        doc.editor.set_concert_pitch(false);
+        let back = doc.layout_view(1000., ViewMode::Page, 1.);
+        assert_eq!(format!("{transposed:?}"), format!("{back:?}"));
     }
 
     #[test]

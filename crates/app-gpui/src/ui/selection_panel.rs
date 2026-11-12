@@ -16,7 +16,7 @@ pub(super) fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
         .px(px(14.))
         .pt(px(14.))
         .pb(px(20.));
-    match selection_view(editor.score(), editor, view.open_editor()) {
+    match selection_view(editor.shown_score(), editor, view.open_editor()) {
         SelectionView::Score(summary) => score(body, view, &summary, cx),
         SelectionView::Note(summary) => note(body, view, &summary, cx),
         SelectionView::Rest(summary) => note(body, view, &summary, cx),

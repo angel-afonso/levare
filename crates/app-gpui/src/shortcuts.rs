@@ -451,6 +451,7 @@ impl Shortcuts {
                     Some(id::PAGE_VIEW),
                     Some(id::CONTINUOUS_VIEW),
                     Some(id::SINGLE_SYSTEM_VIEW),
+                    Some(id::CONCERT_PITCH),
                     None,
                     Some(id::BAR_NUMBERS_SYSTEM),
                     Some(id::BAR_NUMBERS_EVERY_BAR),

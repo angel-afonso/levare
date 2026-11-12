@@ -357,6 +357,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Vista de página |  |
 | — | — | Vista continua |  |
 | — | — | Vista de pentagrama |  |
+| `⇧⌘T` | — | Partitura en Do (altura de concierto) |  |
 | `⌘F` | `Ctrl+F` | Buscar comandos… |  |
 | `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Inicio |  |
 | `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Entrada de notas |  |

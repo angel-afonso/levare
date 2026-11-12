@@ -147,7 +147,8 @@ impl Editor {
         if ids.len() > MAX_EVENTS {
             return Err(ScoreError("Selecciona un pasaje más corto para copiar"));
         }
-        let score = self.score();
+        // As shown: copied in concert pitch, it pastes by its sound.
+        let score = self.shown_score();
         let base = score.event_tick(first).unwrap();
         let lookup: HashMap<_, _> = ids
             .iter()
@@ -214,6 +215,10 @@ impl Editor {
     /// Insert after the selection (or at the empty cursor), without overwriting
     /// existing music. The whole operation, including new bars and ties, is atomic.
     pub fn paste(&mut self, clip: &MusicalClipboard) -> Result<usize, ScoreError> {
+        self.on_shown(|editor| editor.paste_shown(clip))
+    }
+
+    fn paste_shown(&mut self, clip: &MusicalClipboard) -> Result<usize, ScoreError> {
         let upgraded;
         let clip = if clip.version < 4 {
             upgraded = clip.clone().upgraded()?;

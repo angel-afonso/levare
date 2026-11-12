@@ -234,6 +234,9 @@ const SIBELIUS_LAPTOP_MACOS: &[(&str, CommandId)] = &[
     ("alt-secondary-g", id::GO_TO_BAR),
     ("alt-space", id::REPLAY),
     ("secondary-u", id::FULL_SCREEN),
+    // Sibelius' Transposing Score. Windows and Linux give Ctrl+Mayús+T to
+    // the tempo, so there it has no shortcut of its own.
+    ("shift-secondary-t", id::CONCERT_PITCH),
 ];
 
 /// Ctrl+Alt is AltGr on Windows, which types @, # and | on Spanish and other

@@ -375,6 +375,7 @@ impl CommandStates for AppView {
             id::SINGLE_SYSTEM_VIEW => {
                 CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
             }
+            id::CONCERT_PITCH => CommandState::checked(editor.concert_pitch()),
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
             id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),
