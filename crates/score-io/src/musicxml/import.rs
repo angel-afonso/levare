@@ -1852,7 +1852,28 @@ fn read_direction(
     }
     let mut free_words = Vec::new();
     for dt in n.children().filter(|d| d.has_tag_name("direction-type")) {
+        // Consecutive words of one direction-type are one text written in
+        // runs, as Finale and Sibelius change font within «poco a poco
+        // cresc.» or «D.S. al Coda».
+        let mut items: Vec<(Node<'_, '_>, Option<String>)> = Vec::new();
         for d in dt.children().filter(Node::is_element) {
+            let run = d.has_tag_name("words").then(|| d.text().unwrap_or(""));
+            match (items.last_mut(), run) {
+                (Some((_, Some(text))), Some(run)) => {
+                    let placed =
+                        d.attribute("default-x").is_some() || d.attribute("relative-x").is_some();
+                    if placed
+                        && !text.ends_with(char::is_whitespace)
+                        && !run.starts_with(char::is_whitespace)
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(run);
+                }
+                (_, run) => items.push((d, run.map(str::to_owned))),
+            }
+        }
+        for (d, run) in items {
             let kind = match d.tag_name().name() {
                 "rehearsal" => {
                     let text = d.text().unwrap_or("").trim();
@@ -1863,7 +1884,14 @@ fn read_direction(
                 }
                 "dynamics" => read_dynamics(d, warnings).map(MarkType::Dynamic),
                 "words" => {
-                    let s = d.text().unwrap_or("").trim();
+                    // Line breaks within the words become spaces.
+                    let joined = run
+                        .as_deref()
+                        .unwrap_or("")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let s = joined.as_str();
                     let lower = s.to_lowercase();
                     if navigation_words(s, bar) {
                         None

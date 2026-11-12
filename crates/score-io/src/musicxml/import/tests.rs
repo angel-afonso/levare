@@ -938,6 +938,58 @@ fn clef_changes_inside_a_bar_move_to_the_next_barline() {
 }
 
 #[test]
+fn words_written_in_runs_or_over_lines_import_as_one_text() {
+    let direction = |placement: &str, words: &str| {
+        format!(
+            "<direction placement=\"{placement}\"><direction-type>{words}</direction-type></direction>"
+        )
+    };
+    let measure = [
+        direction(
+            "below",
+            "<words>poco a poco </words><words font-style=\"italic\">cresc.</words>",
+        ),
+        quarter("C", "", ""),
+        direction("above", "<words>con\n      sord.</words>"),
+        quarter("D", "", ""),
+        direction(
+            "above",
+            "<words font-weight=\"bold\">molto</words><words default-x=\"40\">rit.</words>",
+        ),
+        quarter("E", "", ""),
+        direction("above", "<words>D.S. </words><words font-size=\"9\">al Coda</words>"),
+        quarter("F", "", ""),
+    ]
+    .concat();
+    let result = import(&wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{measure}</measure>"
+        ),
+    ));
+    let texts: Vec<_> = first_bar(&result)
+        .iter()
+        .map(|e| {
+            (
+                e.notation.expression_text.map(|w| w.to_string()),
+                e.notation.technique_text.map(|w| w.to_string()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            (Some("poco a poco cresc.".to_owned()), None),
+            (None, Some("con sord.".to_owned())),
+            (None, Some("molto rit.".to_owned())),
+            (None, None),
+        ]
+    );
+    assert_eq!(result.score.bar_form(0).jump, Some(Jump::DalSegnoAlCoda));
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+}
+
+#[test]
 fn dynamics_on_notes_and_beyond_levares_range_import_at_the_nearest_mark() {
     let direction = |dynamic: &str| {
         format!("<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>")
