@@ -990,6 +990,54 @@ fn words_written_in_runs_or_over_lines_import_as_one_text() {
 }
 
 #[test]
+fn marks_levare_lacks_warn_by_name_and_a_stroke_reads_as_staccatissimo() {
+    let measure = [
+        quarter("C", "", "<articulations><spiccato/></articulations>"),
+        // Finale: a trill with its accidental.
+        quarter(
+            "D",
+            "",
+            "<ornaments><trill-mark/><accidental-mark>sharp</accidental-mark></ornaments>",
+        ),
+        quarter("E", "", "<ornaments><inverted-turn/></ornaments>"),
+        quarter("F", "", "<ornaments><mordent/></ornaments>"),
+        "<barline location=\"right\"><bar-style>light-heavy</bar-style><fermata type=\"upright\"/></barline>".to_owned(),
+    ]
+    .concat();
+    let result = import(&wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{measure}</measure>"
+        ),
+    ));
+    let events = first_bar(&result);
+    assert_eq!(
+        events[0].notation.articulation,
+        Some(Articulation::Staccatissimo)
+    );
+    assert_eq!(events[3].notation.ornament, Some(Ornament::Mordent));
+    assert!(
+        result
+            .score
+            .connections()
+            .iter()
+            .any(|c| c.kind == ConnectionKind::Trill)
+    );
+    for warning in [
+        "spiccato",
+        "alteraciones de los ornamentos",
+        "«inverted-turn»",
+        "barra de compás",
+    ] {
+        assert!(
+            result.warnings.iter().any(|w| w.contains(warning)),
+            "{warning}: {:?}",
+            result.warnings
+        );
+    }
+}
+
+#[test]
 fn dynamics_on_notes_and_beyond_levares_range_import_at_the_nearest_mark() {
     let direction = |dynamic: &str| {
         format!("<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>")

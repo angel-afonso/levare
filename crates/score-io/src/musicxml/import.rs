@@ -1545,6 +1545,11 @@ fn read_note(
                             "accent" => Some(Articulation::Accent),
                             "strong-accent" => Some(Articulation::Marcato),
                             "staccatissimo" => Some(Articulation::Staccatissimo),
+                            // A stroke, which Levare draws as a wedge.
+                            "spiccato" => {
+                                warnings.add("El spiccato se importa como staccatissimo");
+                                Some(Articulation::Staccatissimo)
+                            }
                             _ => None,
                         };
                         if art.is_none() || notation.articulation.is_some() {
@@ -1621,10 +1626,15 @@ fn read_note(
                                 Some("start" | "stop") => {
                                     warnings.add("El trémolo entre dos notas no se importa")
                                 }
-                                _ => warnings.add("Notación «ornaments» no importada"),
+                                _ => warnings.add("Trémolo sin medida no importado"),
                             }
+                        } else if ornament.has_tag_name("accidental-mark") {
+                            warnings.add("Las alteraciones de los ornamentos no se importan");
                         } else {
-                            warnings.add("Notación «ornaments» no importada");
+                            warnings.add(format!(
+                                "Ornamento «{}» no importado",
+                                ornament.tag_name().name()
+                            ));
                         }
                     }
                 }
@@ -1705,6 +1715,10 @@ fn sound_technique(n: Node<'_, '_>) -> Result<Option<PlayingTechnique>, FileErro
     }
 }
 fn read_barline(n: Node<'_, '_>, bar: &mut Bar, last: bool, warnings: &mut Warnings) {
+    // Levare holds notes and rests, not barlines.
+    if child(n, "fermata").is_some() {
+        warnings.add("Los calderones sobre la barra de compás no se importan");
+    }
     for repeat in n.children().filter(|node| node.has_tag_name("repeat")) {
         match repeat.attribute("direction") {
             Some("forward") => bar.repeat_start = true,
@@ -1966,6 +1980,10 @@ fn read_direction(
                                 kind: span(true),
                             });
                             Some(span(false))
+                        }
+                        Some("sostenuto") => {
+                            warnings.add("El pedal tonal no se importa");
+                            None
                         }
                         _ => None,
                     }
