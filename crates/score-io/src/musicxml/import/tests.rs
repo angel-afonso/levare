@@ -896,6 +896,48 @@ fn first_bar(result: &ImportResult) -> Vec<Event> {
 }
 
 #[test]
+fn clef_changes_inside_a_bar_move_to_the_next_barline() {
+    let clef = |sign: &str, line: u8| {
+        format!("<attributes><clef><sign>{sign}</sign><line>{line}</line></clef></attributes>")
+    };
+    let notes = |count: usize| quarter("D", "", "").repeat(count);
+    let open = |middle: &str, end: &str| {
+        import(&wrap(
+            "Violoncello",
+            &format!(
+                "<measure number=\"1\"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time>{}</attributes>{}{middle}{}</measure><measure number=\"2\">{}{end}</measure><measure number=\"3\">{}</measure>",
+                "<clef><sign>F</sign><line>4</line></clef>",
+                notes(2),
+                notes(2),
+                notes(4),
+                notes(4)
+            ),
+        ))
+    };
+    // Sibelius writes the clef of the next bar before the barline.
+    let before_barline = open("", &clef("C", 4));
+    let part = &before_barline.score.parts()[0];
+    assert_eq!(part.clef_at(StaffId::Upper, 1), Clef::Bass);
+    assert_eq!(part.clef_at(StaffId::Upper, 2), Clef::Tenor);
+    assert!(
+        !before_barline.warnings.iter().any(|w| w.contains("clave")),
+        "{:?}",
+        before_barline.warnings
+    );
+    // A change on the third beat was refused before; now it waits for the barline.
+    let inside = open(&clef("C", 4), "");
+    let part = &inside.score.parts()[0];
+    assert_eq!(part.clef_at(StaffId::Upper, 0), Clef::Bass);
+    assert_eq!(part.clef_at(StaffId::Upper, 1), Clef::Tenor);
+    assert!(
+        inside.warnings.iter().any(|w| w.contains("compás siguiente")),
+        "{:?}",
+        inside.warnings
+    );
+    assert_eq!(attacks(&inside.score), attacks(&before_barline.score));
+}
+
+#[test]
 fn dynamics_on_notes_and_beyond_levares_range_import_at_the_nearest_mark() {
     let direction = |dynamic: &str| {
         format!("<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>")

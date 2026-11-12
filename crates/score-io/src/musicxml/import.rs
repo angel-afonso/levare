@@ -553,6 +553,8 @@ struct State {
     staves: u8,
     /// Staves inside a `measure-repeat`, until its stop.
     repeating: [bool; 2],
+    /// Clefs changed within a bar, for the next bar's start.
+    clefs: BTreeMap<u8, Clef>,
 }
 
 fn read_part(
@@ -568,6 +570,7 @@ fn read_part(
         intervals: [None; 2],
         staves: 1,
         repeating: [false; 2],
+        clefs: BTreeMap::new(),
     };
     let mut bars = Vec::new();
     let mut passage = false;
@@ -579,6 +582,7 @@ fn read_part(
         };
         let mut bar = Bar {
             implicit: parent.attribute("implicit") == Some("yes"),
+            clefs: std::mem::take(&mut state.clefs),
             ..Bar::default()
         };
         let mut cursor = 0u32;
@@ -981,11 +985,6 @@ fn attributes(
         }
     }
     for c in n.children().filter(|c| c.has_tag_name("clef")) {
-        if cursor != 0 {
-            return Err(error(
-                "MusicXML: cambio de clave dentro del compás no admitido",
-            ));
-        }
         let staff = (staff_index(c.attribute("number").unwrap_or("1"))? + 1) as u8;
         let line = text(c, "line").unwrap_or("2");
         let octave = text(c, "clef-octave-change").unwrap_or("0");
@@ -1004,7 +1003,18 @@ fn attributes(
             _ => None,
         };
         if let Some(clef) = clef {
-            bar.clefs.insert(staff, clef);
+            if cursor == 0 {
+                bar.clefs.insert(staff, clef);
+            } else {
+                // Levare changes clef at a barline: the next bar takes it.
+                // One written just before the barline already belongs there.
+                if cursor < state.time.capacity() {
+                    warnings.add(
+                        "Los cambios de clave dentro del compás se trasladan al compás siguiente",
+                    );
+                }
+                state.clefs.insert(staff, clef);
+            }
         } else {
             warnings.add("La clave especial se redibuja con la clave del instrumento");
         }
