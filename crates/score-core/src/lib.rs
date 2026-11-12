@@ -8,6 +8,7 @@ mod bar_repeat;
 mod interval;
 pub use interval::{INTERVALS, Interval};
 mod breaks;
+mod multirest;
 mod numbering;
 pub use numbering::{BarNumbers, Numbering, PageNumbers};
 mod page_setup;
