@@ -52,6 +52,8 @@ mod offsets;
 pub use offsets::{BarMark, BarMarkRef, BarOffsets, ConnectionOffset, MarkOffsets, Offset};
 #[cfg(test)]
 mod offsets_tests;
+mod templates;
+pub use templates::{TEMPLATES, Template};
 mod transposition;
 pub use transposition::Transposition;
 mod instrument;

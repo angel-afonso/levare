@@ -741,6 +741,34 @@ accumulated drift.
 The visible clock is updated from the position already published by the audio control;
 the interface neither queries nor modifies the synthesizer to draw it.
 
+## Start view
+
+`start.rs` holds the state and the decisions; `ui/start_screen.rs` draws it as a dialog
+over the workspace, like the instrument picker. `AppView::new` shows it only when the
+autosave held nothing, no update reopens a score and no file came on the command line
+(`system_open::launched_with_files`); a file the system hands over later opens through
+`request_next` and closes it. Prompts (kept recovery, past crash, update notice) keep
+their order: the view does not set `confirming`.
+
+- **Templates** (`score_core::TEMPLATES`) are lists of catalog instruments. `Template::score`
+  builds them with `Score::new` and `arrange_parts`, with the default score's bar count,
+  title, key and meter, so clefs, transpositions and order are those of adding the
+  instruments by hand. The catalog has no drum kit or electric bass, so there is no big
+  band template yet. Score order puts keyboards above voices, so **Voz y piano** shows
+  the piano first.
+- **Examples** (`start::EXAMPLES`) are four small files from `examples/`, embedded with
+  `include_bytes!` and decoded with `score_io::decode`. They and the templates reach the
+  document through `Next::Fresh`, which `perform_next` turns into a clean, untitled
+  `Document` (`replace_document`, shared with `Next::New`); saving asks for a path.
+- **Recent scores** come from `recientes.json`. One that has gone since launch is dropped
+  from the list with a message inside the view, which covers the status bar.
+- **Keys**: `AppView::intercept` hands keys without ⌘/Ctrl/Alt to `start_key` (arrows,
+  Tab, Enter, Esc); the rest reach `run`, where `start_allows` keeps the view for
+  opening and quitting and closes it for any other command.
+- **Preference**: `inicio.json` holds `mostrar_al_iniciar`; a missing or damaged file
+  shows the view. The command is `archivo.nueva-desde-plantilla` (`⇧⌘N`, «Nueva partitura
+  desde plantilla…»), in Archivo and the command search.
+
 ## Toolbar
 
 The parts panel lives in `ui/instrument_panel.rs` (what it lists, in `ui/parts_view.rs`)

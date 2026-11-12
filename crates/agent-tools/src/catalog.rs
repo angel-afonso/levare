@@ -35,6 +35,7 @@ pub const EXCLUDED: &[CommandId] = &[
     id::FULL_SCREEN,
     // Ask to save and replace or close the document, ending the session.
     id::NEW,
+    id::START_SCREEN,
     id::OPEN,
     id::CLOSE,
     id::QUIT,

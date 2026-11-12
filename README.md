@@ -108,8 +108,20 @@ connections. You can open
 [`examples/cuarteto-en-sol.partitura`](examples/cuarteto-en-sol.partitura) to see the
 five-instrument ensemble.
 
-- **Archivo:** new, open, open recent, save, save as, export to PDF or MusicXML, score
-  information and shortcut preferences. On macOS it is in the menu bar and in the
+- **Start view:** when Levare opens with no score to open and nothing to recover, a
+  start view over the empty score offers **Partitura nueva** from a template (piano,
+  melody with chord symbols, voice and piano, mixed choir, string quartet, wind and
+  brass quintets, string, chamber and symphony orchestra, concert band), the
+  **Recientes** list, a few **Ejemplos** that open as untitled copies (saving one asks
+  where, so the example never changes), **Abrir…** and **Partitura vacía**. Templates
+  take their clefs, transpositions and order from the instrument catalog, as if the
+  instruments were added by hand. Arrows and Tab move, Enter opens, and Esc goes
+  straight to the empty score. **Archivo › Nueva partitura desde plantilla…** (`⇧⌘N`)
+  brings it back; untick **Mostrar al abrir Levare** to start on the empty score
+  (`inicio.json` in the data folder). A recovered score, a file opened from the system
+  or the score reopened after an update skip it.
+- **Archivo:** new, new from a template, open, open recent, save, save as, export to
+  PDF or MusicXML, score information and shortcut preferences. On macOS it is in the menu bar and in the
   window; on Windows and Linux the window's **Archivo** menu also holds what macOS keeps
   in the **Levare** menu: the update commands, **Acerca de Levare…** and quit. The title
   bar icons save, undo and redo.
@@ -1292,8 +1304,8 @@ Levare keeps its settings and working files in a `Levare` folder (or the older
 path, points it elsewhere. Among other things, it holds:
 
 - `atajos.json` (your shortcuts), `recientes.json` (recent files), `paneles.json`
-  (panel layout), `sonidos.json` (sound priority) and `actualizaciones.json` (update
-  settings);
+  (panel layout), `sonidos.json` (sound priority), `actualizaciones.json` (update
+  settings) and `inicio.json` (whether the start view shows at launch);
 - `recovery.partitura`, the autosave, and any emergency copies or set-aside
   recoveries;
 - `soundpacks/` (installed sound packs) and `actualizaciones/` (downloaded updates,

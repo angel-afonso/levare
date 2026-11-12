@@ -37,6 +37,12 @@ pub fn listen(app: &Application) -> UnboundedReceiver<Vec<PathBuf>> {
     receiver
 }
 
+/// Whether Levare was started with a score to open on its command line, as
+/// Windows and Linux do on a double click. macOS hands its files over later.
+pub fn launched_with_files() -> bool {
+    !command_line_paths(std::env::args_os().skip(1), Path::new("")).is_empty()
+}
+
 /// Opens each request in Levare's window once it can take it. Levare holds
 /// one score per window, so of several files at once the first one opens.
 /// Called once the window is open.

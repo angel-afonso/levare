@@ -172,6 +172,7 @@ pub mod id {
     }
     ids! {
         NEW = "archivo.nueva";
+        START_SCREEN = "archivo.nueva-desde-plantilla";
         OPEN = "archivo.abrir";
         SAVE = "archivo.guardar";
         SAVE_AS = "archivo.guardar-como";
@@ -506,6 +507,7 @@ use Status::{Pending as P, Ready as R};
 #[rustfmt::skip]
 const BUILTIN: &[CommandSpec] = &[
     spec(id::NEW, C::File, "Nueva partitura", G, false, R),
+    spec(id::START_SCREEN, C::File, "Nueva partitura desde plantilla…", G, false, R),
     spec(id::OPEN, C::File, "Abrir…", G, false, R),
     spec(id::SAVE, C::File, "Guardar", G, false, R),
     spec(id::SAVE_AS, C::File, "Guardar como…", G, false, R),

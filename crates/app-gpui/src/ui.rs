@@ -19,6 +19,7 @@ mod parts_view;
 mod parts_view_tests;
 mod sound_panel;
 mod staff_text;
+mod start_screen;
 mod status_bar;
 pub use staff_text::{ChordEditor, LyricEditor, StaffTextEditor};
 mod tempo_editor;
@@ -388,6 +389,9 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         )
         .child(transport(view, cx))
         .child(statusbar(view, cx))
+        .when(view.start.is_some(), |root| {
+            root.child(start_screen::dialog(view, cx))
+        })
         .when(view.preferences.is_some(), |root| {
             root.child(preferences::overlay(view, cx))
         })
