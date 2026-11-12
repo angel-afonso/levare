@@ -895,6 +895,189 @@ fn first_bar(result: &ImportResult) -> Vec<Event> {
         .collect()
 }
 
+/// What a musician reads in a one-staff score: every mark at its position,
+/// connections between positions, and the bars' form, clefs and changes.
+fn readable(score: &Score) -> Vec<String> {
+    let part = &score.parts()[0];
+    let mut at = HashMap::new();
+    let mut found = Vec::new();
+    for (bar, measure) in part.staves()[0].measures().iter().enumerate() {
+        for (_, onset, event, e) in measure.timed_iter() {
+            let id = ElementId {
+                part: part.id(),
+                staff: StaffId::Upper,
+                measure: bar,
+                event,
+            };
+            at.insert(id, (bar, onset));
+            let n = &e.notation;
+            let lyrics: Vec<_> = n
+                .lyrics
+                .verses()
+                .map(|(verse, s)| format!("{verse}:{}:{:?}", s.text(), s.join))
+                .collect();
+            found.push(format!(
+                "{bar}@{onset} {:?} {lyrics:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {} {:?} {:?}",
+                // Accidentals as they sound in the bar's key.
+                e.pitches
+                    .in_key(score.key_signature_at(bar))
+                    .iter()
+                    .collect::<Vec<_>>(),
+                n.chord.map(|c| c.label()),
+                n.dynamic,
+                n.expression_text.map(|w| w.to_string()),
+                n.technique_text.map(|w| w.to_string()),
+                n.articulation,
+                n.ornament,
+                n.tremolo,
+                n.notehead,
+                n.fermata,
+                n.pause,
+                n.grace,
+            ));
+        }
+        found.push(format!(
+            "bar {bar}: {:?} {:?} {:?} {:?} {:?}",
+            score.bar_form(bar),
+            part.clef_at(StaffId::Upper, bar),
+            score.tempo_change_at(bar),
+            score.key_change_at(bar),
+            score.rehearsal_label(bar),
+        ));
+    }
+    found.extend(score.endings().map(|e| format!("{e:?}")));
+    let mut links: Vec<_> = score
+        .connections()
+        .iter()
+        .map(|c| format!("{:?} {:?}-{:?}", c.kind, at[&c.start], at[&c.end]))
+        .collect();
+    links.sort();
+    found.extend(links);
+    found
+}
+
+#[test]
+fn a_score_with_every_mark_levare_writes_round_trips_through_musicxml() {
+    let mut score = Score::new("Todo".into(), &[Instrument::Viola], 4).unwrap();
+    let part = score.parts()[0].id();
+    let steps = [Step::C, Step::D, Step::E, Step::F, Step::G, Step::A];
+    let mut ids = Vec::new();
+    for bar in 0..4 {
+        for index in 0..4 {
+            let event = Event {
+                pitches: Pitches::single(Pitch::new(steps[(bar + index) % 6], 4)),
+                duration: Duration::Quarter,
+                notation: Notation::default(),
+            };
+            ids.push(score.insert_in(part, bar, index, event).unwrap());
+        }
+    }
+    let sing = |text, join| Some(Syllable::new(text, join).unwrap());
+    score
+        .set_syllable(ids[0], 0, sing("Can", Join::Hyphen))
+        .unwrap();
+    score
+        .set_syllable(ids[1], 0, sing("ta", Join::Melisma))
+        .unwrap();
+    score
+        .set_syllable(ids[0], 1, sing("Sol", Join::Word))
+        .unwrap();
+    for (id, chord) in [(0, "Dm7"), (2, "G7b9/B"), (4, "Cmaj7"), (8, "F#ø")] {
+        score
+            .set_chord(ids[id], Some(ChordSymbol::parse(chord).unwrap()))
+            .unwrap();
+    }
+    score.set_dynamic(ids[0], Some(Dynamic::P)).unwrap();
+    score.set_dynamic(ids[5], Some(Dynamic::Sfz)).unwrap();
+    score
+        .set_text(ids[0], TextKind::Expression, Some("dolce"))
+        .unwrap();
+    score
+        .set_text(ids[1], TextKind::Technique, Some("con sord."))
+        .unwrap();
+    score
+        .set_articulation(ids[1], Some(Articulation::Staccato))
+        .unwrap();
+    score
+        .set_articulation(ids[6], Some(Articulation::Marcato))
+        .unwrap();
+    score.set_ornament(ids[2], Some(Ornament::Turn)).unwrap();
+    score
+        .set_ornament(ids[7], Some(Ornament::InvertedMordent))
+        .unwrap();
+    score.set_tremolo(ids[3], Some(Tremolo::Two)).unwrap();
+    score.set_notehead(ids[9], Some(Notehead::Cross)).unwrap();
+    score.set_fermata(ids[15], true).unwrap();
+    score.set_pause(ids[11], Some(Pause::Caesura)).unwrap();
+    score
+        .set_grace(ids[13], Some(GraceKind::Acciaccatura))
+        .unwrap();
+    for (start, end, kind) in [
+        (0, 1, ConnectionKind::Slur),
+        (1, 3, ConnectionKind::Crescendo),
+        (4, 6, ConnectionKind::Trill),
+        (6, 7, ConnectionKind::Glissando),
+        (8, 10, ConnectionKind::OttavaAlta),
+        (12, 14, ConnectionKind::Diminuendo),
+    ] {
+        score
+            .add_connection(Connection {
+                start: ids[start],
+                end: ids[end],
+                kind,
+            })
+            .unwrap();
+    }
+    score.toggle_rehearsal_mark(1).unwrap();
+    score
+        .set_bar_form(
+            1,
+            BarForm {
+                repeat_start: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    score
+        .set_bar_form(
+            2,
+            BarForm {
+                repeat_end: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    for (bar, number) in [(2, 1), (3, 2)] {
+        score
+            .set_ending(Ending {
+                start: bar,
+                end: bar,
+                numbers: vec![number],
+            })
+            .unwrap();
+    }
+    score
+        .set_clef_at(part, StaffId::Upper, 2, Clef::Treble)
+        .unwrap();
+    score
+        .set_tempo_at(
+            2,
+            TempoMark {
+                bpm: 92,
+                beat: TempoBeat::Quarter,
+                text: "Più mosso".into(),
+            },
+        )
+        .unwrap();
+    score
+        .set_key_signature_at(3, KeySignature::new(2, KeyMode::Major).unwrap())
+        .unwrap();
+    let xml = super::super::encode(&score).unwrap();
+    let opened = decode(&xml).unwrap();
+    assert!(opened.warnings.is_empty(), "{:?}", opened.warnings);
+    assert_eq!(readable(&opened.score), readable(&score));
+}
+
 #[test]
 fn clef_changes_inside_a_bar_move_to_the_next_barline() {
     let clef = |sign: &str, line: u8| {
@@ -930,7 +1113,10 @@ fn clef_changes_inside_a_bar_move_to_the_next_barline() {
     assert_eq!(part.clef_at(StaffId::Upper, 0), Clef::Bass);
     assert_eq!(part.clef_at(StaffId::Upper, 1), Clef::Tenor);
     assert!(
-        inside.warnings.iter().any(|w| w.contains("compás siguiente")),
+        inside
+            .warnings
+            .iter()
+            .any(|w| w.contains("compás siguiente")),
         "{:?}",
         inside.warnings
     );
@@ -957,7 +1143,10 @@ fn words_written_in_runs_or_over_lines_import_as_one_text() {
             "<words font-weight=\"bold\">molto</words><words default-x=\"40\">rit.</words>",
         ),
         quarter("E", "", ""),
-        direction("above", "<words>D.S. </words><words font-size=\"9\">al Coda</words>"),
+        direction(
+            "above",
+            "<words>D.S. </words><words font-size=\"9\">al Coda</words>",
+        ),
         quarter("F", "", ""),
     ]
     .concat();
@@ -1040,7 +1229,9 @@ fn marks_levare_lacks_warn_by_name_and_a_stroke_reads_as_staccatissimo() {
 #[test]
 fn dynamics_on_notes_and_beyond_levares_range_import_at_the_nearest_mark() {
     let direction = |dynamic: &str| {
-        format!("<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>")
+        format!(
+            "<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>"
+        )
     };
     let measure = [
         direction("<pppp/>"),

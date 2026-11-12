@@ -175,7 +175,11 @@ fn chord_alterations_and_added_notes_import_from_other_programs() {
     };
     let first = [
         // MuseScore: the kind's text and the added flat nine apart.
-        harmony("G", "<kind text=\"7\">dominant</kind>", &degree(9, -1, "add")),
+        harmony(
+            "G",
+            "<kind text=\"7\">dominant</kind>",
+            &degree(9, -1, "add"),
+        ),
         // Sibelius: everything printed in the text, and the degree too.
         harmony(
             "E",
@@ -248,6 +252,81 @@ fn every_chord_quality_with_roots_and_basses_round_trips_through_musicxml() {
         );
         assert_eq!(sung(&result.score), sung(&score), "{quality:?}");
     }
+}
+
+#[test]
+fn a_lead_sheet_in_musescores_style_imports_without_losses() {
+    let note = |step: &str, duration: u32, kind: &str, lyric: &str| {
+        format!(
+            "<note default-x=\"80\" default-y=\"-30\"><pitch><step>{step}</step><octave>4</octave></pitch><duration>{duration}</duration><voice>1</voice>{kind}<stem>up</stem>{lyric}</note>"
+        )
+    };
+    let lyric = |syllabic: &str, text: &str| {
+        format!(
+            "<lyric number=\"1\" default-x=\"6\" default-y=\"-80\" relative-y=\"-30\"><syllabic>{syllabic}</syllabic><text>{text}</text></lyric>"
+        )
+    };
+    let harmony = |root: &str, kind: &str, text: &str| {
+        format!(
+            "<harmony print-frame=\"no\"><root><root-step>{root}</root-step></root><kind text=\"{text}\">{kind}</kind></harmony>"
+        )
+    };
+    let first = [
+        "<print><system-layout><system-margins><left-margin>50</left-margin><right-margin>0</right-margin></system-margins><top-system-distance>170</top-system-distance></system-layout></print>".to_owned(),
+        "<attributes><divisions>480</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>".to_owned(),
+        "<direction placement=\"above\"><direction-type><rehearsal default-x=\"-10\" relative-y=\"30\" font-weight=\"bold\" font-size=\"14\" enclosure=\"square\">A</rehearsal></direction-type></direction>".to_owned(),
+        "<direction placement=\"above\"><direction-type><words default-y=\"40\" font-weight=\"bold\">Swing</words></direction-type><direction-type><metronome parentheses=\"no\"><beat-unit>quarter</beat-unit><per-minute>132</per-minute></metronome></direction-type><sound tempo=\"132\"/></direction>".to_owned(),
+        "<direction placement=\"above\"><direction-type><segno/></direction-type><sound segno=\"segno\"/></direction>".to_owned(),
+        harmony("F", "major-seventh", "maj7"),
+        note("F", 960, "<type>half</type>", &lyric("begin", "Sum")),
+        harmony("D", "minor-seventh", "m7"),
+        note("A", 960, "<type>half</type>", &lyric("end", "mer")),
+    ]
+    .concat();
+    let second = [
+        harmony("G", "minor-seventh", "m7"),
+        note(
+            "G",
+            1440,
+            "<type>half</type><dot/>",
+            &lyric("single", "time"),
+        ),
+        harmony("C", "dominant", "7"),
+        note("E", 480, "<type>quarter</type>", ""),
+        "<direction placement=\"below\"><direction-type><words>D.S. al Fine</words></direction-type><sound dalsegno=\"segno\"/></direction>".to_owned(),
+        "<barline location=\"right\"><bar-style>light-light</bar-style></barline>".to_owned(),
+    ]
+    .concat();
+    let xml = foreign(&format!(
+        "<measure number=\"1\" width=\"300\">{first}</measure><measure number=\"2\" width=\"250\">{second}</measure>"
+    ));
+    let result = musicxml::decode(xml.as_bytes()).unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    let score = &result.score;
+    assert_eq!(score.rehearsal_label(0).as_deref(), Some("A"));
+    let tempo = score.tempo_change_at(0).unwrap();
+    assert_eq!((tempo.bpm, tempo.text.as_str()), (132, "Swing"));
+    assert!(score.bar_form(0).segno);
+    assert_eq!(
+        score.bar_form(1).jump,
+        Some(score_core::Jump::DalSegnoAlFine)
+    );
+    assert_eq!(score.bar_form(1).barline, score_core::Barline::Double);
+    let found = sung(score);
+    let chords: Vec<_> = found.iter().map(|s| s.2.clone()).collect();
+    assert_eq!(chords, labels(&["Fmaj7", "Dm7", "Gm7", "C7"]));
+    let syllables: Vec<_> = found
+        .iter()
+        .flat_map(|s| s.1.iter().map(|(_, text, join)| (text.clone(), *join)))
+        .collect();
+    assert_eq!(
+        syllables,
+        [
+            ("Sum".to_owned(), Join::Hyphen),
+            ("mer".to_owned(), Join::Word),
+            ("time".to_owned(), Join::Word)
+        ]
+    );
 }
 
 #[test]
