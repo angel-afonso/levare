@@ -732,6 +732,7 @@ fn read_part(
                                 last.notation.lyrics.set(verse, Some(syllable));
                             }
                         }
+                        last.notation.dynamic = last.notation.dynamic.or(event.notation.dynamic);
                         last.notation.fermata |= event.notation.fermata;
                         last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
                         last.notation.notehead = last.notation.notehead.or(event.notation.notehead);
@@ -1511,6 +1512,12 @@ fn read_note(
                     }
                 }
                 "fermata" => notation.fermata = true,
+                // A dynamic attached to the note, as an sfz may be written.
+                "dynamics" => {
+                    if let Some(dynamic) = read_dynamics(m, warnings) {
+                        notation.dynamic = Some(dynamic);
+                    }
+                }
                 "articulations" => {
                     for a in m.children().filter(Node::is_element) {
                         let pause = match a.tag_name().name() {
@@ -1844,21 +1851,7 @@ fn read_direction(
                     }
                     None
                 }
-                "dynamics" => {
-                    let dynamic = d.children().filter(Node::is_element).find_map(|n| {
-                        // Accents Levare writes one way, and niente's «n».
-                        match n.tag_name().name() {
-                            "sf" | "sffz" | "fz" => Some(Dynamic::Sfz),
-                            "rf" => Some(Dynamic::Rfz),
-                            "n" => Some(Dynamic::Niente),
-                            name => Dynamic::ALL.into_iter().find(|a| a.label() == name),
-                        }
-                    });
-                    if dynamic.is_none() {
-                        warnings.add("Algunas dinámicas no admitidas no se importan");
-                    }
-                    dynamic.map(MarkType::Dynamic)
-                }
+                "dynamics" => read_dynamics(d, warnings).map(MarkType::Dynamic),
                 "words" => {
                     let s = d.text().unwrap_or("").trim();
                     let lower = s.to_lowercase();
@@ -2009,6 +2002,43 @@ fn read_direction(
         }));
     }
     Ok(())
+}
+
+/// The dynamic of a `<dynamics>` element, in a direction or a note's notations.
+fn read_dynamics(dynamics: Node<'_, '_>, warnings: &mut Warnings) -> Option<Dynamic> {
+    let found = dynamics.children().filter(Node::is_element).find_map(|n| {
+        let name = match n.tag_name().name() {
+            "other-dynamics" => n.text().unwrap_or("").trim(),
+            name => name,
+        };
+        // Accents Levare writes one way, niente's «n», and the extreme
+        // levels at the nearest one Levare has.
+        match name {
+            "sf" | "sffz" | "fz" | "sfz" => Some((Dynamic::Sfz, false)),
+            "rf" | "rfz" => Some((Dynamic::Rfz, false)),
+            "sfzp" => Some((Dynamic::Sfp, false)),
+            "n" | "niente" => Some((Dynamic::Niente, false)),
+            "pppp" | "ppppp" | "pppppp" => Some((Dynamic::Ppp, true)),
+            "ffff" | "fffff" | "ffffff" => Some((Dynamic::Fff, true)),
+            "sfpp" => Some((Dynamic::Sfp, true)),
+            name => Dynamic::ALL
+                .into_iter()
+                .find(|a| a.label() == name)
+                .map(|a| (a, false)),
+        }
+    });
+    match found {
+        Some((dynamic, adapted)) => {
+            if adapted {
+                warnings.add("Las dinámicas pppp, ffff y sfpp se importan como ppp, fff y sfp");
+            }
+            Some(dynamic)
+        }
+        None => {
+            warnings.add("Algunas dinámicas no admitidas no se importan");
+            None
+        }
+    }
 }
 
 /// Below the staff, or in italics without a placement, words are an

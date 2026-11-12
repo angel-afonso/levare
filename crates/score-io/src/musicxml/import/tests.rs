@@ -880,3 +880,64 @@ fn one_voice_name_on_both_staves_at_once_is_two_voices_not_a_crossing() {
         assert!(measure.iter().all(|(_, event)| !event.notation.cross));
     }
 }
+
+/// A quarter note with its own notations, on the first staff.
+fn quarter(step: &str, inside: &str, notations: &str) -> String {
+    format!(
+        "<note>{inside}<pitch><step>{step}</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><notations>{notations}</notations></note>"
+    )
+}
+/// The events of the first staff's first bar.
+fn first_bar(result: &ImportResult) -> Vec<Event> {
+    result.score.parts()[0].staves()[0].measures()[0]
+        .timed_iter()
+        .map(|(_, _, _, event)| event.clone())
+        .collect()
+}
+
+#[test]
+fn dynamics_on_notes_and_beyond_levares_range_import_at_the_nearest_mark() {
+    let direction = |dynamic: &str| {
+        format!("<direction placement=\"below\"><direction-type><dynamics>{dynamic}</dynamics></direction-type></direction>")
+    };
+    let measure = [
+        direction("<pppp/>"),
+        quarter("C", "", ""),
+        // A dynamic attached to the note, as Dorico and Finale may write it.
+        quarter("D", "", "<dynamics><sfz/></dynamics>"),
+        direction("<other-dynamics>sfzp</other-dynamics>"),
+        quarter("E", "", ""),
+        quarter("F", "", ""),
+        quarter("A", "<chord/>", "<dynamics><ffff/></dynamics>"),
+    ]
+    .concat();
+    let result = import(&wrap(
+        "Violin",
+        &format!(
+            "<measure number=\"1\"><attributes><divisions>1</divisions></attributes>{measure}</measure>"
+        ),
+    ));
+    let dynamics: Vec<_> = first_bar(&result)
+        .iter()
+        .map(|e| e.notation.dynamic)
+        .collect();
+    assert_eq!(
+        dynamics,
+        [
+            Some(Dynamic::Ppp),
+            Some(Dynamic::Sfz),
+            Some(Dynamic::Sfp),
+            Some(Dynamic::Fff)
+        ]
+    );
+    assert!(
+        result.warnings.iter().any(|w| w.contains("pppp")),
+        "{:?}",
+        result.warnings
+    );
+    assert!(
+        !result.warnings.iter().any(|w| w.contains("dynamics")),
+        "{:?}",
+        result.warnings
+    );
+}
