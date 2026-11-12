@@ -2943,7 +2943,10 @@ impl AppView {
         self.ui.file_menu = false;
         self.ui.open_group = None;
         self.export_picker = Some(ui::ExportPicker {
-            selection: score_export::Selection::all(self.document.editor.score(), musicxml),
+            selection: score_export::Selection {
+                concert_pitch: self.document.editor.concert_pitch(),
+                ..score_export::Selection::all(self.document.editor.score(), musicxml)
+            },
             error: None,
         });
         self.confirming = true;

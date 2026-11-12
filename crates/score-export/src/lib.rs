@@ -8,6 +8,9 @@ pub struct Selection {
     pub parts: Vec<PartId>,
     pub pdf: bool,
     pub musicxml: bool,
+    /// The full score in concert pitch rather than transposed. Parts are
+    /// always at written pitch, as each player reads them.
+    pub concert_pitch: bool,
 }
 
 impl Selection {
@@ -17,6 +20,7 @@ impl Selection {
             parts: score.parts().iter().map(|part| part.id()).collect(),
             pdf: !musicxml,
             musicxml,
+            concert_pitch: false,
         }
     }
     pub fn file_count(&self) -> usize {
@@ -94,7 +98,15 @@ pub fn export(
         Ok(())
     };
     if selection.full_score {
-        render("00 - Partitura general".into(), score, false)?;
+        if selection.concert_pitch {
+            render(
+                "00 - Partitura general".into(),
+                &score.in_concert_pitch(),
+                false,
+            )?;
+        } else {
+            render("00 - Partitura general".into(), score, false)?;
+        }
     }
     // Score order is authoritative even when the user selected parts out of order.
     for (index, part) in score.parts().iter().enumerate() {
