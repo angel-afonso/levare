@@ -36,6 +36,9 @@ impl CommandStates for AppView {
         if command == id::HIDE_EMPTY_STAVES {
             return CommandState::checked(setup.hide_empty_staves);
         }
+        if command == id::MULTIRESTS {
+            return CommandState::checked(!setup.separate_empty_bars);
+        }
         if let Some(chosen) = crate::page_setup_command(setup, command) {
             return CommandState::checked(chosen == setup);
         }
@@ -361,6 +364,12 @@ impl CommandStates for AppView {
             id::MIXER => CommandState::checked(
                 self.ui.show_instruments && self.ui.parts_mode == crate::panels::PartsMode::Mix,
             ),
+            id::MUTE_PART => CommandState::checked(self.playback.is_muted(editor.cursor().part)),
+            id::SOLO_PART => CommandState::checked(self.playback.is_soloed(editor.cursor().part)),
+            id::CLEAR_MUTE_SOLO => CommandState {
+                enabled: self.playback.has_mute_or_solo(editor.score()),
+                ..CommandState::default()
+            },
             id::SOUNDS => {
                 CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }
@@ -375,6 +384,7 @@ impl CommandStates for AppView {
             id::SINGLE_SYSTEM_VIEW => {
                 CommandState::checked(self.ui.view_mode == score_layout::ViewMode::SingleSystem)
             }
+            id::CONCERT_PITCH => CommandState::checked(editor.concert_pitch()),
             id::TOGGLE_INSPECTOR => CommandState::checked(self.ui.show_inspector),
             id::TOGGLE_AGENT_PANEL => CommandState::checked(self.ui.show_agent),
             id::TAB_HOME => CommandState::checked(self.ui.tab == score_toolbar::TabId::Home),

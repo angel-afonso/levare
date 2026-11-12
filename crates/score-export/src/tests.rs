@@ -89,6 +89,7 @@ fn exports_only_selected_parts_in_score_order_with_distinct_section_names() {
         parts: vec![parts[2], parts[1]],
         pdf: false,
         musicxml: true,
+        concert_pitch: false,
     };
     let files = export(&score, &selection, &destination).unwrap();
     assert_eq!(files.len(), 2);
@@ -220,4 +221,125 @@ fn a_title_with_characters_windows_forbids_still_exports() {
     );
     let files = export(&score, &Selection::all(&score, true), &destination).unwrap();
     assert_eq!(files.len(), score.parts().len() + 1);
+}
+
+#[test]
+fn the_full_score_follows_the_concert_choice_and_parts_stay_transposed() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/menuetto-y-trio-orquesta.partitura");
+    let score = score_io::load(&path).unwrap();
+    let before = score.clone();
+    let (index, clarinet) = score
+        .parts()
+        .iter()
+        .enumerate()
+        .find(|(_, part)| part.instrument() == score_core::Instrument::ClarinetBb)
+        .map(|(index, part)| (index, part.id()))
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    // The fifths of a part's first key in an exported file.
+    let fifths = |file: &Path, part: usize| -> String {
+        let text = std::fs::read_to_string(file).unwrap();
+        let part = text.split("<part id=").nth(part + 1).unwrap();
+        let start = part.find("<fifths>").unwrap() + "<fifths>".len();
+        part[start..start + part[start..].find('<').unwrap()].to_owned()
+    };
+    for (concert, full) in [(false, "4"), (true, "2")] {
+        let destination = dir.path().join(format!("concierto-{concert}"));
+        let selection = Selection {
+            full_score: true,
+            parts: vec![clarinet],
+            pdf: false,
+            musicxml: true,
+            concert_pitch: concert,
+        };
+        let files = export(&score, &selection, &destination).unwrap();
+        assert_eq!(files.len(), 2);
+        // Concert D major: the B♭ clarinet's E major, or D in concert pitch.
+        assert_eq!(fifths(&files[0], index), full, "concert {concert}");
+        assert_eq!(fifths(&files[1], 0), "4", "concert {concert}");
+    }
+    assert_eq!(score, before);
+}
+
+#[test]
+fn parts_gather_empty_bars_into_multirests_in_pdf_and_musicxml() {
+    use score_core::{Duration, Event, Instrument, Notation, Pitch, Pitches, Step};
+    let note = |step, octave| Event {
+        pitches: Pitches::single(Pitch::new(step, octave)),
+        duration: Duration::Quarter,
+        notation: Notation::default(),
+    };
+    let mut score = Score::new(
+        "Tacet".into(),
+        &[Instrument::Violin, Instrument::Cello],
+        300,
+    )
+    .unwrap();
+    let ids: Vec<_> = score.parts().iter().map(|p| p.id()).collect();
+    for bar in 0..300 {
+        score.insert_in(ids[0], bar, 0, note(Step::A, 4)).unwrap();
+    }
+    for bar in [0, 299] {
+        score.insert_in(ids[1], bar, 0, note(Step::C, 3)).unwrap();
+    }
+    // The player must see the rehearsal mark: two runs of 149 bars.
+    score.toggle_rehearsal_mark(150).unwrap();
+    let mut selection = Selection::all(&score, true);
+    selection.pdf = true;
+    let dir = tempfile::tempdir().unwrap();
+    let files = export(&score, &selection, &dir.path().join("tacet")).unwrap();
+    let rests = |name: &str| -> Vec<String> {
+        let path = files
+            .iter()
+            .find(|p| {
+                let file = p.file_name().unwrap().to_str().unwrap();
+                file.starts_with(name) && file.ends_with(".musicxml")
+            })
+            .unwrap();
+        let xml = std::fs::read_to_string(path).unwrap();
+        let doc = roxmltree::Document::parse(&xml).unwrap();
+        let measures = doc
+            .descendants()
+            .find(|n| n.has_tag_name("part"))
+            .unwrap()
+            .children()
+            .filter(|n| n.has_tag_name("measure"))
+            .count();
+        assert_eq!(measures, 300, "{name}: every bar is still written");
+        doc.descendants()
+            .filter(|n| n.has_tag_name("multiple-rest"))
+            .map(|n| {
+                let measure = n.ancestors().find(|a| a.has_tag_name("measure")).unwrap();
+                format!(
+                    "{}:{}",
+                    measure.attribute("number").unwrap(),
+                    n.text().unwrap()
+                )
+            })
+            .collect()
+    };
+    assert_eq!(rests("02"), ["2:149", "151:149"]);
+    assert!(rests("01").is_empty(), "the violin plays in every bar");
+    assert!(rests("00").is_empty(), "the full score never gathers bars");
+    // The printed part holds both runs on one page; bar by bar it takes more.
+    let cello = score.extract_part(ids[1]).unwrap();
+    let mut separate = cello.clone();
+    separate
+        .set_page_setup(score_core::PageSetup {
+            separate_empty_bars: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let gathered = score_pdf::export_part(&cello, &dir.path().join("a.pdf")).unwrap();
+    let every = score_pdf::export_part(&separate, &dir.path().join("b.pdf")).unwrap();
+    assert_eq!(gathered, 1);
+    assert!(every > gathered, "{every} pages bar by bar");
+    let xml = String::from_utf8(score_io::musicxml::encode_part(&separate).unwrap()).unwrap();
+    assert!(!xml.contains("multiple-rest"));
+    // Other programs read the part back with all its bars.
+    let back = score_io::musicxml::decode(&score_io::musicxml::encode_part(&cello).unwrap())
+        .unwrap()
+        .score;
+    assert_eq!(back.measures().len(), 300);
 }

@@ -19,6 +19,7 @@ mod parts_view;
 mod parts_view_tests;
 mod sound_panel;
 mod staff_text;
+mod start_screen;
 mod status_bar;
 pub use staff_text::{ChordEditor, LyricEditor, StaffTextEditor};
 mod tempo_editor;
@@ -388,6 +389,9 @@ pub fn workspace(view: &AppView, title: String, cx: &Context<AppView>) -> impl I
         )
         .child(transport(view, cx))
         .child(statusbar(view, cx))
+        .when(view.start.is_some(), |root| {
+            root.child(start_screen::dialog(view, cx))
+        })
         .when(view.preferences.is_some(), |root| {
             root.child(preferences::overlay(view, cx))
         })
@@ -1709,7 +1713,7 @@ fn score_surface(view: &AppView, cx: &Context<AppView>) -> Div {
                             .as_ref()
                             .and_then(|drag| drag.preview_score())
                     })
-                    .unwrap_or_else(|| editor.score())
+                    .unwrap_or_else(|| editor.shown_score())
                     .clone(),
                 notation_point: view.document.editor.divisi_position(),
                 selection: editor.selection(),
@@ -2358,6 +2362,7 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                     .into_any_element()
             }
         }))
+        .children(pitch_view(view))
         .child(div().flex_shrink_0().text_color(rgb(MUTED)).child(bar.zoom))
         .child(
             div()
@@ -2371,6 +2376,23 @@ fn statusbar(view: &AppView, cx: &Context<AppView>) -> Div {
                 .text_color(rgb(if bar.unsaved { BLUE } else { MUTED }))
                 .child(bar.document),
         )
+}
+
+/// Which pitches the full score shows, once a part transposes or the
+/// concert view is on.
+fn pitch_view(view: &AppView) -> Option<Div> {
+    let editor = &view.document.editor;
+    let concert = editor.concert_pitch();
+    let transposes = editor.score().parts().iter().any(|part| {
+        let interval = part.transposition();
+        interval != interval.octaves()
+    });
+    (concert || transposes).then(|| {
+        div()
+            .flex_shrink_0()
+            .text_color(rgb(if concert { BLUE } else { MUTED }))
+            .child(if concert { "En Do" } else { "Transpositora" })
+    })
 }
 
 #[cfg(test)]

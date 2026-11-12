@@ -2,6 +2,11 @@
 //! or the Linux file manager, «Abrir con», or a path on the command line.
 //! They go through the same steps as Archivo › Abrir, unsaved changes prompt
 //! included.
+//!
+//! On Windows and Linux a file opened while Levare is running starts Levare
+//! again; that launch hands the file to the running Levare ([`hand_off`],
+//! [`serve`], through `crate::handoff`) instead of opening a second window
+//! without autosave. macOS hands it over itself, as an open event.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -11,6 +16,8 @@ use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use gpui::{App, Application, Timer};
 
+use crate::diagnostics;
+use crate::handoff::{self, Address, Listener, Outcome};
 use crate::{AppView, Next};
 
 /// How often a request waits for the window to be free (a save, a dialog or
@@ -37,10 +44,78 @@ pub fn listen(app: &Application) -> UnboundedReceiver<Vec<PathBuf>> {
     receiver
 }
 
+/// On Windows and Linux, offers this launch's files to the Levare already
+/// running with the same data folder. True when that Levare took them and
+/// this process should exit; false to start as usual, which is also what
+/// happens if it does not answer within [`handoff::TIMEOUT`].
+pub fn hand_off() -> bool {
+    if cfg!(target_os = "macos") {
+        return false;
+    }
+    let Some(address) = address() else {
+        return false;
+    };
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let paths = command_line_paths(std::env::args_os().skip(1), &cwd);
+    match handoff::hand_off(&address, &paths, handoff::TIMEOUT) {
+        Outcome::HandedOff => {
+            diagnostics::log("Levare is already running: the files went to its window");
+            true
+        }
+        Outcome::NoneRunning => false,
+        Outcome::Failed(error) => {
+            diagnostics::log(format_args!(
+                "Could not hand the files to the running Levare ({error}); starting another"
+            ));
+            false
+        }
+    }
+}
+
+/// What later launches hand over to this Levare.
+pub struct Handoffs {
+    listener: Listener,
+    requests: UnboundedReceiver<Vec<PathBuf>>,
+}
+
+/// On Windows and Linux, starts taking later launches' files. Only the
+/// Levare that holds the autosave (`holds_recovery`) listens.
+pub fn serve(holds_recovery: bool) -> Option<Handoffs> {
+    if cfg!(target_os = "macos") || !holds_recovery {
+        return None;
+    }
+    let address = address()?;
+    let (sender, requests) = unbounded();
+    match Listener::start(&address, move |paths| sender.unbounded_send(paths).is_ok()) {
+        Ok(listener) => Some(Handoffs { listener, requests }),
+        Err(error) => {
+            diagnostics::log(format_args!(
+                "Later launches will open their own window: cannot listen at {address}: {error}"
+            ));
+            None
+        }
+    }
+}
+
+fn address() -> Option<Address> {
+    crate::recovery_path().map(|recovery| Address::for_recovery(&recovery))
+}
+
+/// Whether Levare was started with a score to open on its command line, as
+/// Windows and Linux do on a double click. macOS hands its files over later.
+pub fn launched_with_files() -> bool {
+    !command_line_paths(std::env::args_os().skip(1), Path::new("")).is_empty()
+}
+
 /// Opens each request in Levare's window once it can take it. Levare holds
 /// one score per window, so of several files at once the first one opens.
-/// Called once the window is open.
-pub fn deliver(mut requests: UnboundedReceiver<Vec<PathBuf>>, cx: &mut App) {
+/// A launch handed over also brings the window to the front. Called once the
+/// window is open.
+pub fn deliver(
+    requests: UnboundedReceiver<Vec<PathBuf>>,
+    handoffs: Option<Handoffs>,
+    cx: &mut App,
+) {
     let Some(window) = cx
         .windows()
         .into_iter()
@@ -48,8 +123,27 @@ pub fn deliver(mut requests: UnboundedReceiver<Vec<PathBuf>>, cx: &mut App) {
     else {
         return;
     };
+    let handed = match handoffs {
+        Some(Handoffs { listener, requests }) => {
+            // A launch that arrives while Levare quits starts on its own.
+            cx.on_app_quit(move |_| {
+                listener.close();
+                async {}
+            })
+            .detach();
+            requests
+        }
+        None => unbounded().1,
+    };
+    let mut requests = futures::stream::select(
+        requests.map(|paths| (paths, false)),
+        handed.map(|paths| (paths, true)),
+    );
     cx.spawn(async move |cx| {
-        while let Some(paths) = requests.next().await {
+        while let Some((paths, raise)) = requests.next().await {
+            if raise {
+                let _ = window.update(cx, |_, window, _| window.activate_window());
+            }
             let Some(path) = paths.into_iter().next() else {
                 continue;
             };

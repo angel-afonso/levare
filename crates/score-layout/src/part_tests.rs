@@ -112,6 +112,13 @@ fn grand_staff_labels_show_only_the_instrument_centered_between_staves() {
 fn tempo_text_can_span_barlines_without_changing_rhythmic_spacing() {
     for annotations in 0..4 {
         let mut score = Score::new("Tempo".into(), &[Instrument::Violin], 8).unwrap();
+        // Every bar on its own, to measure the bar the tempo spans.
+        score
+            .set_page_setup(score_core::PageSetup {
+                separate_empty_bars: true,
+                ..Default::default()
+            })
+            .unwrap();
         if annotations & 1 != 0 {
             score.toggle_rehearsal_mark(0).unwrap();
         }

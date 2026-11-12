@@ -172,6 +172,7 @@ pub mod id {
     }
     ids! {
         NEW = "archivo.nueva";
+        START_SCREEN = "archivo.nueva-desde-plantilla";
         OPEN = "archivo.abrir";
         SAVE = "archivo.guardar";
         SAVE_AS = "archivo.guardar-como";
@@ -407,6 +408,7 @@ pub mod id {
         PAPER_TABLOID = "pagina.papel.tabloide";
         LANDSCAPE = "pagina.horizontal";
         HIDE_EMPTY_STAVES = "pagina.ocultar-pentagramas-vacios";
+        MULTIRESTS = "pagina.silencios-de-varios-compases";
         MARGINS_NORMAL = "pagina.margenes.normales";
         MARGINS_WIDE = "pagina.margenes.anchos";
         MARGINS_EXTRA_WIDE = "pagina.margenes.muy-anchos";
@@ -450,6 +452,9 @@ pub mod id {
         COUNT_IN = "reproduccion.cuenta-previa";
         CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
+        MUTE_PART = "reproduccion.silenciar-parte";
+        SOLO_PART = "reproduccion.solo-parte";
+        CLEAR_MUTE_SOLO = "reproduccion.quitar-silencios-solos";
         SOUNDS = "reproduccion.sonidos";
         AUDITION = "reproduccion.audicion";
         TEMPO_UP = "reproduccion.tempo-mas";
@@ -467,6 +472,7 @@ pub mod id {
         PAGE_VIEW = "vista.pagina";
         CONTINUOUS_VIEW = "vista.continua";
         SINGLE_SYSTEM_VIEW = "vista.pentagrama";
+        CONCERT_PITCH = "vista.altura-de-concierto";
         COMMAND_SEARCH = "vista.buscar-comandos";
         TAB_HOME = "vista.pestana.inicio";
         TAB_NOTE_INPUT = "vista.pestana.entrada";
@@ -506,6 +512,7 @@ use Status::{Pending as P, Ready as R};
 #[rustfmt::skip]
 const BUILTIN: &[CommandSpec] = &[
     spec(id::NEW, C::File, "Nueva partitura", G, false, R),
+    spec(id::START_SCREEN, C::File, "Nueva partitura desde plantilla…", G, false, R),
     spec(id::OPEN, C::File, "Abrir…", G, false, R),
     spec(id::SAVE, C::File, "Guardar", G, false, R),
     spec(id::SAVE_AS, C::File, "Guardar como…", G, false, R),
@@ -730,6 +737,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAPER_TABLOID, C::Bars, "Papel tabloide", G, false, R),
     spec(id::LANDSCAPE, C::Bars, "Página horizontal", G, false, R),
     spec(id::HIDE_EMPTY_STAVES, C::Bars, "Ocultar pentagramas vacíos", G, false, R),
+    spec(id::MULTIRESTS, C::Bars, "Silencios de varios compases", G, false, R),
     spec(id::MARGINS_NORMAL, C::Bars, "Márgenes normales", G, false, R),
     spec(id::MARGINS_WIDE, C::Bars, "Márgenes anchos", G, false, R),
     spec(id::MARGINS_EXTRA_WIDE, C::Bars, "Márgenes muy anchos", G, false, R),
@@ -773,6 +781,9 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::COUNT_IN, C::Playback, "Cuenta previa de un compás", G, false, R),
     spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
     spec(id::MIXER, C::Playback, "Mezcla de las partes", S, false, R),
+    spec(id::MUTE_PART, C::Playback, "Silenciar parte", S, false, R),
+    spec(id::SOLO_PART, C::Playback, "Solo de la parte", S, false, R),
+    spec(id::CLEAR_MUTE_SOLO, C::Playback, "Quitar silencios y solos", S, false, R),
     spec(id::SOUNDS, C::Playback, "Mostrar el sonido", S, false, R),
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
     spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),
@@ -801,6 +812,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAGE_VIEW, C::View, "Vista de página", G, false, R),
     spec(id::CONTINUOUS_VIEW, C::View, "Vista continua", G, false, R),
     spec(id::SINGLE_SYSTEM_VIEW, C::View, "Vista de pentagrama", G, false, R),
+    spec(id::CONCERT_PITCH, C::View, "Partitura en Do (altura de concierto)", G, false, R),
     spec(id::COMMAND_SEARCH, C::View, "Buscar comandos…", G, false, R),
     spec(id::TAB_HOME, C::View, "Pestaña Inicio", G, false, R),
     spec(id::TAB_NOTE_INPUT, C::View, "Pestaña Entrada de notas", G, false, R),

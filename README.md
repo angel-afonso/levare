@@ -85,11 +85,16 @@ Double-clicking a score, or using «Abrir con», opens it in Levare. It goes thr
 same steps as **Archivo › Abrir…**: MusicXML is imported, and if several files are
 opened at once, the first one opens.
 
-What happens when Levare is already running depends on the platform. On macOS, Finder
-hands the file to the open window, which asks about unsaved changes first. On Windows
-and Linux, the file manager starts a second Levare window with the file. That window has
-no autosave or crash recovery, because the first one holds them; close it and open the
-file from the first window to keep them.
+When Levare is already running, the file goes to its window, which comes to the front
+and asks about unsaved changes first. On macOS Finder hands it over; on Windows and
+Linux the new launch passes the file to the running Levare and closes, and starting
+Levare again with no file only brings its window forward. If the running Levare does
+not answer within two seconds, or is quitting, a second window opens with the file as
+before: that window has no autosave or crash recovery, because the first one holds
+them, and says so; close it and open the file from the first window to keep them. A
+Levare started with a different `LEVARE_DATA_DIR` has its own autosave and opens its
+own window. On Linux under Wayland the compositor decides whether the window comes to
+the front or only asks for attention.
 
 - **macOS:** Finder knows `.levare` and `.partitura` as Levare's own documents, and
   offers Levare for MusicXML (`.musicxml`, `.mxl`) as another app that can open it.
@@ -108,8 +113,20 @@ connections. You can open
 [`examples/cuarteto-en-sol.partitura`](examples/cuarteto-en-sol.partitura) to see the
 five-instrument ensemble.
 
-- **Archivo:** new, open, open recent, save, save as, export to PDF or MusicXML, score
-  information and shortcut preferences. On macOS it is in the menu bar and in the
+- **Start view:** when Levare opens with no score to open and nothing to recover, a
+  start view over the empty score offers **Partitura nueva** from a template (piano,
+  melody with chord symbols, voice and piano, mixed choir, string quartet, wind and
+  brass quintets, string, chamber and symphony orchestra, concert band), the
+  **Recientes** list, a few **Ejemplos** that open as untitled copies (saving one asks
+  where, so the example never changes), **Abrir…** and **Partitura vacía**. Templates
+  take their clefs, transpositions and order from the instrument catalog, as if the
+  instruments were added by hand. Arrows and Tab move, Enter opens, and Esc goes
+  straight to the empty score. **Archivo › Nueva partitura desde plantilla…** (`⇧⌘N`)
+  brings it back; untick **Mostrar al abrir Levare** to start on the empty score
+  (`inicio.json` in the data folder). A recovered score, a file opened from the system
+  or the score reopened after an update skip it.
+- **Archivo:** new, new from a template, open, open recent, save, save as, export to
+  PDF or MusicXML, score information and shortcut preferences. On macOS it is in the menu bar and in the
   window; on Windows and Linux the window's **Archivo** menu also holds what macOS keeps
   in the **Levare** menu: the update commands, **Acerca de Levare…** and quit. The title
   bar icons save, undo and redo.
@@ -168,9 +185,13 @@ five-instrument ensemble.
   playback, and clicking the value shown on their right resets it to the usual one;
   their settings belong to the session, are kept when switching sound bank and are
   not saved in the score. Solista or Sección is saved and can be undone
-  ([details](docs/sfz.md#solista-o-sección)). The footer says which part is chosen and
-  which keys change part (`⌥↑` `⌥↓`) or, in Mezcla, the master volume. No editors open
-  here any more.
+  ([details](docs/sfz.md#solista-o-sección)). Next to each name, **M** (Silenciar)
+  mutes the part and **S** (Solo) puts it in solo; several parts can be in solo at
+  once, and while any is, only those sound, even if they are muted. A part that does
+  not sound shows its name faded. Both act at once, also during playback, and belong to
+  the session like volume and position. The footer says which part is chosen and which
+  keys change part (`⌥↑` `⌥↓`) or, in Mezcla, the master volume, with **Quitar
+  silencios y solos** while a part is muted or in solo. No editors open here any more.
 - **Selection, Sound and Review (right panel):** answers "what have I selected and
   what do I change about it?". Three tabs on one line.
   **Selección** changes with what is selected. With nothing selected it shows the
@@ -909,6 +930,10 @@ When a score is opened or instruments are added, the score and the parts list ar
 sorted by family: woodwinds, brass, percussion, keyboards, plucked strings, voices and
 strings. Within each family the orchestral catalog order is kept
 (flute–oboe–clarinet–bassoon, horn–trumpet–trombone, violin–viola–cello–double bass).
+Chamber line-ups follow their own convention: voices accompanied only by piano, organ,
+harp or guitar go above them, trumpets lead a brass ensemble, and woodwinds with horns
+(a wind quintet) place the horns above the bassoons. Adding an instrument from outside
+the line-up brings orchestral order back.
 Repeated instruments keep their relative order and their notes; the IDs do not change.
 
 Each system shows **family brackets** and barlines joined within each group, with
@@ -921,7 +946,8 @@ parts are written in **written pitch** and sound at the corresponding real pitch
 overall key is chosen in sounding pitch: in a work in C major, the B♭ clarinet shows D
 major and its written C natural sounds B♭. Key changes during the piece, auditions,
 copying between parts and the exports of score and parts to PDF and MusicXML adapt as
-well.
+well. **Vista › En Do** shows the full score in concert pitch instead (see
+[Concert pitch or transposed](#concert-pitch-or-transposed)).
 
 There are clarinets in C, B♭ and A, E♭ clarinet, bass clarinet, cor anglais, horn in
 F, trumpets in C, B♭ and D, cornet and saxophones; the octave transpositions of
@@ -1055,6 +1081,31 @@ The ribbon's **Vista** tab switches between **Página**, **Continua** and
 - **Continua:** lines that fit the available width, with vertical scrolling.
 - **Pentagrama:** all bars in one horizontal strip, with the instruments aligned and
   sideways scrolling.
+
+### Concert pitch or transposed
+
+The full score is transposed by default: each part shows what its player reads, as in
+the exported parts. **Vista › Alturas › En Do** (**Partitura en Do** in the **Vista**
+menu and the command search; `⇧⌘T` on macOS, as in Sibelius; Windows and Linux leave
+`Ctrl+Mayús+T` to the tempo and give it no shortcut, which you can add in the shortcut
+preferences) shows it in concert pitch instead: B♭ and A clarinets, horns in F, cor
+anglais, saxophones and trumpets are drawn as they sound, with the key of the piece and
+accidentals spelled from the interval, double sharps and flats included. Instruments
+that transpose by whole octaves keep them, as Sibelius and Dorico do: piccolo, double
+bass, guitar, contrabassoon, celesta, xylophone, glockenspiel and the tenor voice look
+the same in both views, and the bass clarinet and the tenor and baritone saxophones keep
+their treble clef, shown an octave above how they sound. Clefs never change.
+
+Pressing it again goes back to the transposed score; the status bar says **En Do** or
+**Transpositora** whenever a part transposes. It is a view: notes stay stored at written
+pitch, the document is not marked as changed and nothing enters the undo history. The
+choice holds for the session and for the scores you open in it.
+
+In concert pitch you write and edit what you see: a note entered, dragged or typed with
+its letter, a sign, a chord symbol, a passage pasted, all mean the concert pitch, and
+Levare stores the matching written pitch in the part. Notes you do not touch keep their
+written spelling. Range warnings, playback and the «Suena …» line read the same sound in
+both views. Parts are always transposed; the export dialog chooses the full score's view.
 
 ### Hiding empty staves
 
@@ -1223,6 +1274,12 @@ are respected.
   time signature (two clicks a bar in 6/8, three in 9/8), tempo changes, fermatas,
   repeats and half speed. Switching it while playing keeps the place. Levare makes the
   click itself, so it sounds the same with every sound bank.
+- **Silenciar parte**, **Solo de la parte** and **Quitar silencios y solos** (command
+  search, or a shortcut of your own in Preferencias de atajos): mute the chosen part,
+  put it in solo, or make every part sound again, like **M** and **S** in Mezcla. They
+  are session settings: the score, its PDF and its MusicXML do not change, and a new or
+  opened score starts with every part sounding. The metronome, the count-in and the
+  audition of the notes you write still sound for a muted part.
 - **Cuenta previa**: one bar of clicks, in the time signature and tempo where playback
   starts, before the music. The playhead waits through it; notes already sounding at
   the start come in with the music.
@@ -1292,8 +1349,8 @@ Levare keeps its settings and working files in a `Levare` folder (or the older
 path, points it elsewhere. Among other things, it holds:
 
 - `atajos.json` (your shortcuts), `recientes.json` (recent files), `paneles.json`
-  (panel layout), `sonidos.json` (sound priority) and `actualizaciones.json` (update
-  settings);
+  (panel layout), `sonidos.json` (sound priority), `actualizaciones.json` (update
+  settings) and `inicio.json` (whether the start view shows at launch);
 - `recovery.partitura`, the autosave, and any emergency copies or set-aside
   recoveries;
 - `soundpacks/` (installed sound packs) and `actualizaciones/` (downloaded updates,
@@ -1406,9 +1463,31 @@ contents. Cancelling the destination keeps the selection.
 Parts keep all their voices and staves (both piano hands and divisi passages
 included), as well as notes, expressions and global changes of time signature, key and
 tempo. They keep the section names «Violín I» and «Violín II». Their layout is
-recalculated as standalone scores. Pitches are in concert pitch, as in the editor;
-transposed parts are not generated yet. Exporting does not change the work or mark its
-changes as saved.
+recalculated as standalone scores. Parts are always at written pitch, transposed as
+each player reads them. The full score is transposed too unless **Partitura general en
+Do (altura de concierto)** is ticked; the dialog opens with it ticked when the score is
+shown in concert pitch. A concert-pitch MusicXML score keeps only the octave
+transpositions, as other programs export one. Exporting does not change the work or mark
+its changes as saved.
+
+### Multi-measure rests in parts
+
+In a part, two or more bars in a row where the instrument only rests (in every staff and
+voice, both piano hands included) are printed as one multi-measure rest: a thick bar
+across the staff with the number of bars above it, as Sibelius, Dorico and MuseScore
+print them. The bar after it keeps its real number. The full score always shows every
+bar.
+
+A run stops wherever the player has to read something: a time, key or clef change, a
+tempo marking, a rehearsal mark, a repeat, a double or final barline, a system or page
+break, and a bar with a volta, a segno, a coda, a jump, or a dynamic, text or any other
+mark on a rest. Such a bar starts a new multi-measure rest, or stands on its own when the
+mark is in the bar itself. Writing a note in one of the bars splits the rest at once.
+
+The exported MusicXML of a part marks each run with `<multiple-rest>`, and still writes
+every bar with its rest, so other programs read the same music. To print every empty bar
+on its own, turn off **Diseño › Sistema y página › Multicompás** («Silencios de varios
+compases» in the **Vista** menu); it is saved with the score and is on by default.
 
 ```sh
 cargo run -p score-export --example export -- examples/menuetto-y-trio-cuerdas.partitura output/menuetto-partes
@@ -1483,22 +1562,48 @@ Importing creates an editable copy with no native path and marks it as unsaved.
 **Guardar** asks for a **.levare** file; the original MusicXML is not changed. The
 imported copy also takes part in autosave and recovery.
 
-Notes, chords of uniform duration, rests, up to four voices per staff and two staves per
-instrument are kept; time signature, key signature, tempo, dynamics, basic
-articulations, complete ties and slurs, hairpins, fermatas, arco/pizzicato, harmonics
-and arpeggios. Transposing parts keep their transposition interval and are rebuilt in
-written pitch. Pickups are represented with a shortened first bar. Divisi can be rebuilt
-from the div./unis. markings or the visibility of the second staff. The page layout is
-recalculated with Levare's engraving.
+What is kept:
 
-If something is left out or adapted, a warning appears on opening: for example, lyrics,
-free text, ornaments, chord symbols, instruments without an equivalent and ties or
-slurs that affect only some notes of a chord. Cases that cannot represent the music
-correctly are refused with an explanation, including more than four voices per staff,
-rhythms beyond the supported resolution, microtones, different simultaneous time
-signatures and touch harmonics with no deducible sounding pitch. Natural harmonics
-without a pitch type are read at the written pitch with a warning. The artificial
-harmonics accepted are at the fourth.
+- **Music:** notes, chords of uniform duration, rests, tuplets, up to four voices per
+  staff, two staves per instrument with notes crossing between them, grace notes (up to
+  four before a note), header credits, and changes of time signature, key, clef and
+  tempo with its text. Transposing parts keep their transposition interval and are
+  rebuilt in written pitch. Pickups are represented with a shortened first bar. Divisi
+  is rebuilt from the div./unis. markings or the visibility of the second staff.
+- **Marks:** dynamics, also those written on a note; staccato, tenuto, accent, marcato
+  and staccatissimo; breaths and caesuras; fermatas; mordents and turns; trills with
+  or without their wavy line; single-note tremolos; x, diamond and slash noteheads;
+  arco/pizzicato, harmonics and arpeggios.
+- **Lines:** ties and slurs, hairpins, 8va and 8vb, sustain pedal and glissandi.
+- **Text:** lyrics in up to four verses, with hyphens and extenders (elisions are written
+  with a space); chord symbols with their root, quality and bass, including the ♭9, ♯9
+  and added notes Levare writes, whether the program prints them in the text or spells
+  them as degrees; expression and technique text by its placement and style, also when
+  written in several runs; rehearsal marks.
+- **Form:** repeats, endings, segno, coda, To Coda, Fine, D.C. and D.S. jumps, barline
+  styles and one-bar repeats (%).
+
+The page layout, stem directions and system and page breaks are recalculated with
+Levare's engraving.
+
+If something is left out or adapted, a warning appears on opening. Left out:
+instruments without an equivalent; ties or slurs that affect only some notes of a chord;
+lyrics on rests or grace notes and verses after the fourth; N.C., hidden chord symbols,
+Roman numerals and chord alterations Levare does not write (a ♯11 keeps the seventh
+chord without it); other ornaments, such as the inverted turn or the trill's
+accidental; fermatas over a barline; two-note tremolos; fingerings, bowings and other
+technical marks; the sostenuto pedal; 15ma lines; and tempo changes within a bar.
+Adapted: pppp and ffff become ppp and fff; spiccato becomes staccatissimo; a clef change
+within a bar moves to the next barline; texts over 40 characters and syllables over 20
+are shortened; cue notes become normal notes; and the bars of a repeat of several bars
+keep the music the file writes in them.
+
+Cases that cannot represent the music correctly are refused with an explanation,
+including more than four voices per staff or two staves per instrument, rhythms beyond
+the supported resolution, nested tuplets, microtones, different simultaneous time
+signatures, time or key changes within a bar and touch harmonics with no deducible
+sounding pitch. Natural harmonics without a pitch type are read at the written pitch
+with a warning. The artificial harmonics accepted are at the fourth.
 
 ```sh
 cargo run -p score-io --example import_musicxml -- obra.musicxml copia-editable.levare

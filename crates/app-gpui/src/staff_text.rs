@@ -185,7 +185,7 @@ impl AppView {
             cx.notify();
             return;
         };
-        let chords = ui::ChordEditor::new(editor.score(), target, cx);
+        let chords = ui::ChordEditor::new(editor.shown_score(), target, cx);
         chords.focus(window, cx);
         self.chord_editor = Some(chords);
         self.close_other_word_editors(Words::Chords);
@@ -230,7 +230,7 @@ impl AppView {
             Some(next) => {
                 self.document.editor.select(next);
                 self.reveal_selection = true;
-                let score = self.document.editor.score();
+                let score = self.document.editor.shown_score();
                 if let Some(editor) = &mut self.chord_editor {
                     editor.retarget(score, next, cx);
                 }

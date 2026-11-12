@@ -13,6 +13,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | macOS | Windows and Linux | Command | Status |
 |---|---|---|---|
 | `⌘N` | `Ctrl+N` | Nueva partitura |  |
+| `⇧⌘N` | `Ctrl+Mayús+N` | Nueva partitura desde plantilla… |  |
 | `⌘O` | `Ctrl+O` | Abrir… |  |
 | `⌘S` | `Ctrl+S` | Guardar |  |
 | `⇧⌘S` | `Ctrl+Mayús+S` | Guardar como… |  |
@@ -263,6 +264,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Papel tabloide |  |
 | — | — | Página horizontal |  |
 | — | — | Ocultar pentagramas vacíos |  |
+| — | — | Silencios de varios compases |  |
 | — | — | Márgenes normales |  |
 | — | — | Márgenes anchos |  |
 | — | — | Márgenes muy anchos |  |
@@ -320,6 +322,9 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Cuenta previa de un compás |  |
 | — | — | Hacer sonar los cifrados |  |
 | `M` | `M` | Mezcla de las partes |  |
+| — | — | Silenciar parte |  |
+| — | — | Solo de la parte |  |
+| — | — | Quitar silencios y solos |  |
 | — | — | Mostrar el sonido |  |
 | — | — | Audición al escribir |  |
 | — | — | Subir el tempo |  |
@@ -357,6 +362,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Vista de página |  |
 | — | — | Vista continua |  |
 | — | — | Vista de pentagrama |  |
+| `⇧⌘T` | — | Partitura en Do (altura de concierto) |  |
 | `⌘F` | `Ctrl+F` | Buscar comandos… |  |
 | `⌥⌘1` | `Ctrl+Mayús+1` | Pestaña Inicio |  |
 | `⌥⌘2` | `Ctrl+Mayús+2` | Pestaña Entrada de notas |  |

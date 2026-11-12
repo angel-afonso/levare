@@ -3,7 +3,7 @@ use score_platform::mixer::{ChannelMix, ReverbSettings};
 use score_platform::sound_engine::{RoutingSignature, SoundBank};
 use score_platform::{AudioOutput, Health};
 use score_playback::{Audition, PlaybackPlan, Style, Tempo};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -54,6 +54,11 @@ pub struct Playback {
     pub sound_error: Option<String>,
     sound_signature: Option<RoutingSignature>,
     pub part_mix: HashMap<PartId, ChannelMix>,
+    /// Parts silenced in the mix, for this session.
+    muted: HashSet<PartId>,
+    /// Parts in solo, for this session: while any part of the score is,
+    /// only those sound.
+    soloed: HashSet<PartId>,
     pub reverb: ReverbSettings,
     mix_channels: [ChannelMix; score_playback::PLAYBACK_CHANNELS],
     /// When the stream was last reopened after an error.
@@ -99,6 +104,8 @@ impl Playback {
             sound_error: None,
             sound_signature: None,
             part_mix: HashMap::new(),
+            muted: HashSet::new(),
+            soloed: HashSet::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
             recovered_at: None,
@@ -257,15 +264,61 @@ impl Playback {
             self.part_mix.remove(&part);
         }
     }
+    pub fn is_muted(&self, part: PartId) -> bool {
+        self.muted.contains(&part)
+    }
+    pub fn is_soloed(&self, part: PartId) -> bool {
+        self.soloed.contains(&part)
+    }
+    /// Whether any part is muted or in solo: what «Quitar silencios y solos»
+    /// would undo.
+    pub fn has_mute_or_solo(&self, score: &Score) -> bool {
+        score
+            .parts()
+            .iter()
+            .any(|part| self.is_muted(part.id()) || self.is_soloed(part.id()))
+    }
+    /// Whether a part sounds in playback. A part of another score (one since
+    /// removed, say) in solo does not silence the rest.
+    pub fn is_audible(&self, score: &Score, part: PartId) -> bool {
+        let any_solo = score.parts().iter().any(|other| self.is_soloed(other.id()));
+        audible(self.is_muted(part), self.is_soloed(part), any_solo)
+    }
+    /// Mute or unmute a part; true when it is now muted.
+    pub fn toggle_mute(&mut self, score: &Score, part: PartId, audition: PartId) -> bool {
+        let muted = !self.muted.remove(&part) && self.muted.insert(part);
+        self.apply_mixer(score, audition);
+        muted
+    }
+    /// Put a part in solo or take it out; true when it is now in solo.
+    /// Several parts may be in solo at once.
+    pub fn toggle_solo(&mut self, score: &Score, part: PartId, audition: PartId) -> bool {
+        let soloed = !self.soloed.remove(&part) && self.soloed.insert(part);
+        self.apply_mixer(score, audition);
+        soloed
+    }
+    /// Every part sounds again.
+    pub fn clear_mute_solo(&mut self, score: &Score, audition: PartId) {
+        self.muted.clear();
+        self.soloed.clear();
+        self.apply_mixer(score, audition);
+    }
     pub fn apply_mixer(&mut self, score: &Score, audition: PartId) {
         self.mix_channels.fill(ChannelMix::default());
         for (index, part) in score.parts().iter().enumerate() {
             let channel = usize::from(score_playback::part_channel(index));
-            let mix = self.part_mix(score, part.id());
+            let mut mix = self.part_mix(score, part.id());
+            // Silence through the channel volume: its notes keep running, so
+            // unmuting mid-note brings them back and nothing is left hanging.
+            if !self.is_audible(score, part.id()) {
+                mix.volume = 0;
+            }
             self.mix_channels[channel] = mix;
             // A piano may split its hands into the second bank for hairpins.
             self.mix_channels[channel + 16] = mix;
         }
+        // Audition on entry sounds even for a muted part: the music being
+        // written is always heard.
         self.mix_channels[15] = self.part_mix(score, audition);
         if let Some(output) = &mut self.output {
             output.control.set_reverb(self.reverb);
@@ -276,7 +329,7 @@ impl Playback {
     }
     pub fn reset_part_mix(&mut self, score: &Score, audition: PartId) {
         self.part_mix.clear();
-        self.apply_mixer(score, audition);
+        self.clear_mute_solo(score, audition);
     }
     fn prepare_sound(&mut self, score: &Score, audition: Instrument) -> Result<(), String> {
         if let Some(index) = self.selected_bank {
@@ -696,6 +749,12 @@ impl Playback {
     }
 }
 
+/// The usual console rule: while any part is in solo only the parts in solo
+/// sound, muted or not; otherwise every part but the muted ones.
+fn audible(muted: bool, soloed: bool, any_solo: bool) -> bool {
+    if any_solo { soloed } else { !muted }
+}
+
 /// The visible ruler includes implicit rests through the final bar.
 fn transport_plan(
     score: &Score,
@@ -748,6 +807,8 @@ mod tests {
             sound_error: None,
             sound_signature: None,
             part_mix: HashMap::new(),
+            muted: HashSet::new(),
+            soloed: HashSet::new(),
             reverb: ReverbSettings::default(),
             mix_channels: [ChannelMix::default(); score_playback::PLAYBACK_CHANNELS],
             recovered_at: None,
@@ -945,6 +1006,162 @@ mod tests {
             ChannelMix::default()
         );
     }
+    #[test]
+    fn solo_wins_over_mute_and_silences_every_part_not_in_solo() {
+        // (muted, soloed, any part in solo) → sounds
+        assert!(audible(false, false, false));
+        assert!(!audible(true, false, false));
+        assert!(audible(false, true, true));
+        assert!(audible(true, true, true));
+        assert!(!audible(false, false, true));
+        assert!(!audible(true, false, true));
+    }
+
+    #[test]
+    fn mute_solo_and_clearing_shape_the_channels_but_not_the_audition() {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let flute = score.add_part(Instrument::Flute).unwrap();
+        let violin = score.add_part(Instrument::Violin).unwrap();
+        let mut playback = offline();
+        let volume = |playback: &Playback, score: &Score, part: PartId| {
+            let index = score.parts().iter().position(|p| p.id() == part).unwrap();
+            let channel = usize::from(score_playback::part_channel(index));
+            let volume = playback.mix_channels[channel].volume;
+            assert_eq!(playback.mix_channels[channel + 16].volume, volume);
+            volume
+        };
+        let sounding = |playback: &Playback, score: &Score| {
+            [piano, flute, violin].map(|part| volume(playback, score, part) > 0)
+        };
+        playback.part_mix_mut(&score, flute).volume = 80;
+        assert!(!playback.has_mute_or_solo(&score));
+
+        assert!(playback.toggle_mute(&score, flute, flute));
+        assert_eq!(sounding(&playback, &score), [true, false, true]);
+        // Entry audition keeps the part's own level although it is muted.
+        assert_eq!(playback.mix_channels[15].volume, 80);
+        // Unmuting gives back the level the part had.
+        assert!(!playback.toggle_mute(&score, flute, flute));
+        assert_eq!(volume(&playback, &score, flute), 80);
+        playback.toggle_mute(&score, flute, piano);
+
+        // Several parts in solo; a muted part in solo still sounds.
+        assert!(playback.toggle_solo(&score, piano, piano));
+        assert_eq!(sounding(&playback, &score), [true, false, false]);
+        assert!(playback.toggle_solo(&score, violin, piano));
+        assert_eq!(sounding(&playback, &score), [true, false, true]);
+        playback.toggle_mute(&score, violin, piano);
+        assert_eq!(sounding(&playback, &score), [true, false, true]);
+        assert!(playback.toggle_solo(&score, flute, piano));
+        assert_eq!(sounding(&playback, &score), [true, true, true]);
+        assert!(!playback.toggle_solo(&score, flute, piano));
+        assert!(!playback.toggle_solo(&score, violin, piano));
+        assert_eq!(sounding(&playback, &score), [true, false, false]);
+
+        // A part in solo that leaves the score does not silence the rest.
+        let mut without_piano = score.clone();
+        without_piano.remove_part(piano).unwrap();
+        playback.apply_mixer(&without_piano, flute);
+        assert!(!playback.is_audible(&without_piano, flute));
+        assert!(!playback.is_audible(&without_piano, violin));
+        playback.toggle_mute(&without_piano, violin, flute);
+        assert!(playback.is_audible(&without_piano, violin));
+
+        playback.toggle_mute(&score, violin, piano);
+        assert!(playback.has_mute_or_solo(&score));
+        playback.clear_mute_solo(&score, piano);
+        assert!(!playback.has_mute_or_solo(&score));
+        assert_eq!(sounding(&playback, &score), [true, true, true]);
+
+        // A new or opened score starts with every part sounding.
+        playback.toggle_mute(&score, piano, piano);
+        playback.toggle_solo(&score, flute, piano);
+        playback.reset_part_mix(&score, piano);
+        assert!(!playback.has_mute_or_solo(&score));
+        assert_eq!(volume(&playback, &score, flute), 100);
+    }
+
+    #[test]
+    fn a_muted_part_renders_silent_and_a_part_in_solo_alone_is_heard() {
+        let mut score = Score::default();
+        let piano = score.parts()[0].id();
+        let flute = score.add_part(Instrument::Flute).unwrap();
+        for part in [piano, flute] {
+            score
+                .insert_on(
+                    part,
+                    StaffId::Upper,
+                    0,
+                    0,
+                    score_core::Event {
+                        pitches: score_core::Pitches::single(score_core::Pitch::new(
+                            score_core::Step::A,
+                            4,
+                        )),
+                        duration: score_core::Duration::Whole,
+                        notation: Default::default(),
+                    },
+                )
+                .unwrap();
+        }
+        let mut playback = offline();
+        // The piano alone on the left, the flute alone on the right.
+        playback.part_mix_mut(&score, piano).pan = -100;
+        playback.part_mix_mut(&score, flute).pan = 100;
+        let (mut control, mut renderer) = score_platform::Renderer::new(48_000).unwrap();
+        control.set_reverb(ReverbSettings {
+            enabled: false,
+            ..Default::default()
+        });
+        let send = |playback: &Playback, control: &mut score_platform::Control| {
+            for (channel, mix) in playback.mix_channels.iter().enumerate() {
+                control.set_channel_mix(channel as u8, *mix);
+            }
+        };
+        let mut samples = [0f32; 16384];
+        let mut energies = |renderer: &mut score_platform::Renderer| {
+            renderer.render(&mut samples, 2);
+            samples[8192..]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .fold((0f64, 0f64), |(l, r), s| {
+                    (l + f64::from(s[0]).powi(2), r + f64::from(s[1]).powi(2))
+                })
+        };
+
+        playback.toggle_mute(&score, flute, piano);
+        send(&playback, &mut control);
+        let plan = PlaybackPlan::new(&score, Tempo::default(), 48_000).unwrap();
+        control.play(Arc::new(plan)).unwrap();
+        let (left, right) = energies(&mut renderer);
+        // A grand piano's samples leak a little to the right even hard left.
+        assert!(left > 0.001, "the piano plays: {left}");
+        assert!(
+            right < left / 50.,
+            "the muted flute is silent: {left} {right}"
+        );
+
+        // During playback: the flute in solo comes in, the piano goes quiet.
+        playback.toggle_solo(&score, flute, piano);
+        send(&playback, &mut control);
+        let (left, right) = energies(&mut renderer);
+        assert!(right > 0.001, "the flute in solo plays: {right}");
+        assert!(
+            left < right / 50.,
+            "the piano outside the solo is silent: {left} {right}"
+        );
+
+        // Both muted: nothing at all.
+        playback.clear_mute_solo(&score, piano);
+        playback.toggle_mute(&score, piano, piano);
+        playback.toggle_mute(&score, flute, piano);
+        send(&playback, &mut control);
+        let (left, right) = energies(&mut renderer);
+        assert!(left + right < 1e-9, "every part muted: {left} {right}");
+    }
+
     #[test]
     fn a_part_back_at_its_seat_stops_being_an_override() {
         let mut score = Score::default();

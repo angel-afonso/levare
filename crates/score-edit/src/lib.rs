@@ -8,6 +8,8 @@ pub mod clipboard;
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
+mod concert_tests;
+#[cfg(test)]
 mod duration_tests;
 #[cfg(test)]
 mod grace_tests;
@@ -202,6 +204,11 @@ pub struct Editor {
     redo: Vec<Snapshot>,
     pub duration: Duration,
     pub octave: u8,
+    /// Whether the musician sees and edits the full score in concert pitch.
+    /// A view: the stored score and its history keep written pitches.
+    concert: bool,
+    /// The concert-pitch view of `state.score`, made when first asked for.
+    shown: std::sync::OnceLock<Score>,
 }
 
 impl Default for Editor {
@@ -240,10 +247,69 @@ impl Editor {
             redo: Vec::new(),
             duration: Duration::Quarter,
             octave: 4,
+            concert: false,
+            shown: std::sync::OnceLock::new(),
         })
     }
+    /// The stored score, at written pitch: what is saved, exported as parts
+    /// and played.
     pub fn score(&self) -> &Score {
         &self.state.score
+    }
+    /// The score as the musician sees it: in concert pitch when that view is
+    /// on, otherwise the stored score. Note identities are the same in both.
+    pub fn shown_score(&self) -> &Score {
+        if !self.concert {
+            return &self.state.score;
+        }
+        self.shown
+            .get_or_init(|| self.state.score.in_concert_pitch())
+    }
+    pub fn concert_pitch(&self) -> bool {
+        self.concert
+    }
+    /// Show the full score in concert pitch or transposed. It changes no
+    /// note, the revision nor the history.
+    pub fn set_concert_pitch(&mut self, concert: bool) {
+        if self.concert != concert {
+            self.concert = concert;
+            self.shown = std::sync::OnceLock::new();
+            self.sync_octave_if_cursor_part_exists();
+        }
+    }
+    /// Run `edit` on the score as shown: in concert pitch it works on the
+    /// view and the result is written back at written pitch, so the history
+    /// keeps written scores and an untouched note keeps its spelling.
+    fn on_shown<T>(
+        &mut self,
+        edit: impl FnOnce(&mut Self) -> Result<T, ScoreError>,
+    ) -> Result<T, ScoreError> {
+        if !self.concert {
+            return edit(self);
+        }
+        let written = self.state.score.clone();
+        let shown = self.shown_score().clone();
+        let (undo, revision) = (self.undo.len(), self.state.revision);
+        self.state.score = shown.clone();
+        // Inside, the view is the score: its pitches are the shown ones.
+        self.concert = false;
+        let result = edit(self);
+        self.concert = true;
+        for snapshot in self.undo.iter_mut().skip(undo) {
+            snapshot.score = if snapshot.score == shown {
+                written.clone()
+            } else {
+                snapshot.score.from_concert_pitch(&shown, &written)
+            };
+        }
+        // An edit that changed nothing kept the revision.
+        self.state.score = if self.state.revision == revision {
+            written
+        } else {
+            self.state.score.from_concert_pitch(&shown, &written)
+        };
+        self.shown = std::sync::OnceLock::new();
+        result
     }
     /// Names the score as it is now. Every edit that changes it gives a new
     /// revision, and undo, redo and rollback bring the old one back, so an
@@ -259,9 +325,10 @@ impl Editor {
     pub fn selection(&self) -> Option<ElementId> {
         self.state.selection
     }
+    /// The selected chord tone as shown, in concert pitch in that view.
     pub fn selected_pitch(&self) -> Option<Pitch> {
         self.selection()
-            .and_then(|id| self.score().event(id))?
+            .and_then(|id| self.shown_score().event(id))?
             .pitches
             .iter()
             .nth(self.state.tone)
@@ -269,7 +336,7 @@ impl Editor {
     pub fn select_tone(&mut self, index: usize) {
         if self
             .selection()
-            .and_then(|id| self.score().event(id))
+            .and_then(|id| self.shown_score().event(id))
             .is_some_and(|event| index < event.pitches.len())
         {
             self.state.tone = index;
@@ -280,7 +347,7 @@ impl Editor {
         self.select(id);
         if self.selection() == Some(id) {
             self.state.tone = self
-                .score()
+                .shown_score()
                 .event(id)
                 .and_then(|event| event.pitches.iter().position(|p| Some(p) == pitch))
                 .unwrap_or(0);
@@ -495,7 +562,12 @@ impl Editor {
         true
     }
 
+    /// Run `command` on the score as shown; see `shown_score`.
     pub fn execute(&mut self, command: Command) -> Result<bool, ScoreError> {
+        self.on_shown(|editor| editor.apply(command))
+    }
+
+    fn apply(&mut self, command: Command) -> Result<bool, ScoreError> {
         let mut next = self.state.clone();
         match command {
             Command::SaveComment {
@@ -1473,6 +1545,9 @@ impl Editor {
                     };
                     next.selection = None;
                 }
+                // A line-up can change convention when a part leaves (a
+                // violin from voice, piano and violin).
+                next.score.arrange_parts();
             }
         }
         let remove_other =
@@ -1579,6 +1654,7 @@ impl Editor {
         self.undo.truncate(mark.undo_len);
         self.redo.clear();
         self.state = mark.snapshot.clone();
+        self.shown = std::sync::OnceLock::new();
         self.sync_octave_if_cursor_part_exists();
     }
 
@@ -1663,6 +1739,7 @@ impl Editor {
         }
         self.undo.push(std::mem::replace(&mut self.state, next));
         self.redo.clear();
+        self.shown = std::sync::OnceLock::new();
         if let Some(pitch) = self.selected_pitch() {
             self.octave = pitch.octave();
         }
@@ -1719,6 +1796,7 @@ impl Editor {
             return false;
         };
         self.redo.push(std::mem::replace(&mut self.state, previous));
+        self.shown = std::sync::OnceLock::new();
         self.sync_octave();
         true
     }
@@ -1727,6 +1805,7 @@ impl Editor {
             return false;
         };
         self.undo.push(std::mem::replace(&mut self.state, next));
+        self.shown = std::sync::OnceLock::new();
         self.sync_octave();
         true
     }
@@ -1736,7 +1815,7 @@ impl Editor {
             self.octave = pitch.octave();
         } else {
             self.octave = self
-                .score()
+                .shown_score()
                 .part(self.cursor().part)
                 .expect("cursor part")
                 .entry_octave_at(self.cursor().staff, self.cursor().measure);

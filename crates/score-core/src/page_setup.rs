@@ -76,6 +76,9 @@ pub struct PageSetup {
     /// nothing in that system, as Sibelius' «Hide Empty Staves» does.
     pub hide_empty_staves: bool,
     pub margins: Margins,
+    /// In parts, draw every empty bar on its own instead of gathering runs
+    /// of them into multi-measure rests. Off by default: parts gather them.
+    pub separate_empty_bars: bool,
 }
 impl PageSetup {
     pub(crate) fn is_default(&self) -> bool {

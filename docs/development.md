@@ -184,6 +184,27 @@ loading the playback engine.
   update also writes the autosave and waits for it; if it fails, the update stays for
   the next start and the status line asks the musician to save first. Dates in these
   names are UTC, as `2026-10-28 15-30-12`, without the colons Windows forbids.
+- **Handing a launch over** (`app-gpui::handoff`, wired in `system_open`). On Windows and
+  Linux the file manager opens a score by starting Levare again. The Levare that holds
+  the recovery lock listens on a per-user endpoint named after its recovery path and the
+  build profile (FNV-1a, stable across versions): a Unix domain socket,
+  `levare-<hash>.sock`, in `$XDG_RUNTIME_DIR` (in the data folder when there is none),
+  mode 0600; a named pipe, `\\.\pipe\levare-<hash>`, on Windows, whose default security
+  lets other users only read, with remote clients refused. A new launch connects first
+  thing in `main`, before GPUI starts; if a Levare greets it, it passes the absolute
+  paths from its arguments (raw OS bytes, UTF-16 on Windows, so any name survives),
+  waits for «queued» and exits. The running Levare brings its window forward
+  (on Windows the new launch first calls `AllowSetForegroundWindow` for it) and opens
+  the first file as from **Archivo › Abrir…**. A refused connection or a missing
+  socket means no Levare is running: the launch starts as before, and since only the
+  lock holder listens, its listener can replace a socket a crash left behind. No answer
+  within 2 seconds, a different protocol version or a Levare that is quitting (it stops
+  listening in `on_app_quit`) also start a separate window, which then runs without
+  autosave as before. The updater's relaunch waits for the old process to exit, so the
+  new one never hands off to it. Debug and release builds have separate endpoints, so
+  `cargo run` does not hand its files to an installed Levare; it still shares the
+  recovery lock unless `LEVARE_DATA_DIR` points elsewhere. macOS keeps its open events
+  and does not listen.
 - **Log and crash reports** (`app-gpui::diagnostics`). Release builds have no console on
   Windows, and a Mac app opened from Finder only reaches the unified log, so warnings
   and failures go to `registro.log` in the data folder as well as to stderr: one
@@ -420,6 +441,19 @@ The second delivery lets the musician hear what they write and play the score:
 - **Controls:** 120 BPM initially, range 30–240, volume and audition configurable during
   the session. Changing tempo stops the plan; changing volume applies on the next block.
   These options aren't part of the native file yet.
+- **Mute and solo:** `Playback` keeps the muted and soloed parts by `PartId` for the
+  session, like each part's volume and pan, and never in the score, so files, PDF and
+  MusicXML don't change and old files need nothing. `apply_mixer` turns them into the
+  channel volume: a part that should not sound (muted, or outside a solo while any part
+  of the score is in solo; solo wins over mute) gets volume 0 on its channel and its
+  second bank. That travels the same lock-free route as the sliders, one atomic per
+  channel read at the start of each block, so the audio thread neither locks nor
+  allocates and the plan keeps playing: notes still start and stop, unmuting mid-note
+  brings them back, and none can hang. GeneralUser ramps a volume change across the
+  block, sfizz smooths it and the harmonics engine glides over 5 ms, so muting does
+  not click. The audition channel (15) keeps the part's own mix, so the notes being
+  written sound even in a muted part; the metronome and count-in are mixed apart from
+  the channels. Opening or starting a score clears them with `reset_part_mix`.
 
 The view automatically follows the active note or rest on both axes, with a margin for
 the highlight, stems and flags. It only scrolls the canvas when the element leaves the
@@ -641,7 +675,14 @@ Preferencias is open.
 
 `InstrumentFamily` and `Instrument::score_order` share the presentation order between
 editor, parts list and engraver. `Score::arrange_parts` sorts whole parts stably: it keeps
-IDs, the voices of both hands, events and connections. The session normalizes the order
+IDs, the voices of both hands, events and connections. Its key
+(`ensemble_order::order_key`) is `score_order` except for three line-ups: voices
+accompanied only by keyboards or plucked strings go above them, trumpets lead a
+brass-only ensemble, and in woodwinds with horns the horns sit above the bassoons. Adding
+or removing a part re-sorts with the line-up it leaves, so adding a violin to voice and
+piano brings orchestral order back. The parts list still groups by family in its fixed
+order, and the engraver brackets each run of a family, so a wind quintet's horn splits
+the woodwind bracket. The session normalizes the order
 on opening and editing applies it when adding instruments. The saved snapshot uses that
 same order to avoid a false changes indicator. The file schema wasn't modified: the
 sequence of parts was already serializable.
@@ -678,7 +719,9 @@ their ribbon buttons, at hand next to what is being looked at.
   rows (name and a note on clefs and transposition) and the search filter, which ignores
   case and accents and shows the families unfolded. Lista and Mezcla share the rows;
   Mezcla adds `mixer::part_controls` (volume and pan, per session; Sección | Solista as
-  `Command::SetPlayers`, which is saved and undone).
+  `Command::SetPlayers`, which is saved and undone) and `mixer::mute_solo`, the M and S
+  buttons, which run the same code as the commands `reproduccion.silenciar-parte`,
+  `reproduccion.solo-parte` and `reproduccion.quitar-silencios-solos` (no default keys).
 - **Right, «what do I have selected and what do I change on it?»**. `RightTab` tabs:
   Selección (`ui/selection_view.rs` computes without GPUI what is selected from the
   editor: score, note, rest, passage or open editor; `ui/selection_panel.rs` draws it and
@@ -740,6 +783,33 @@ accumulated drift.
 
 The visible clock is updated from the position already published by the audio control;
 the interface neither queries nor modifies the synthesizer to draw it.
+
+## Start view
+
+`start.rs` holds the state and the decisions; `ui/start_screen.rs` draws it as a dialog
+over the workspace, like the instrument picker. `AppView::new` shows it only when the
+autosave held nothing, no update reopens a score and no file came on the command line
+(`system_open::launched_with_files`); a file the system hands over later opens through
+`request_next` and closes it. Prompts (kept recovery, past crash, update notice) keep
+their order: the view does not set `confirming`.
+
+- **Templates** (`score_core::TEMPLATES`) are lists of catalog instruments. `Template::score`
+  builds them with `Score::new` and `arrange_parts`, with the default score's bar count,
+  title, key and meter, so clefs, transpositions and order are those of adding the
+  instruments by hand. The catalog has no drum kit or electric bass, so there is no big
+  band template yet.
+- **Examples** (`start::EXAMPLES`) are four small files from `examples/`, embedded with
+  `include_bytes!` and decoded with `score_io::decode`. They and the templates reach the
+  document through `Next::Fresh`, which `perform_next` turns into a clean, untitled
+  `Document` (`replace_document`, shared with `Next::New`); saving asks for a path.
+- **Recent scores** come from `recientes.json`. One that has gone since launch is dropped
+  from the list with a message inside the view, which covers the status bar.
+- **Keys**: `AppView::intercept` hands keys without ⌘/Ctrl/Alt to `start_key` (arrows,
+  Tab, Enter, Esc); the rest reach `run`, where `start_allows` keeps the view for
+  opening and quitting and closes it for any other command.
+- **Preference**: `inicio.json` holds `mostrar_al_iniciar`; a missing or damaged file
+  shows the view. The command is `archivo.nueva-desde-plantilla` (`⇧⌘N`, «Nueva partitura
+  desde plantilla…»), in Archivo and the command search.
 
 ## Toolbar
 
@@ -1281,6 +1351,25 @@ MXL, timewise, external voices and chords, transposition, pickups, expressions a
 export/import round trip of the 22 examples of that time, comparing attacks, pitches,
 durations, harmonics and techniques.
 
+Marks attach to events: the reader keeps each direction, harmony and lyric at its tick,
+and the builder cuts a note with ties where a mark falls inside it, so a chord symbol on
+the third beat of a whole note gets its own note. Consecutive `<words>` of one
+`direction-type` are one text, as Finale and Sibelius change font within it. A
+`<harmony>` is read through its printed kind and its degrees together (`text="7"` plus
+an added ♭9 is «7♭9», a `minor-seventh` with an altered fifth is «m7♭5»); degrees no
+`ChordQuality` holds keep the base quality and warn. Dynamics are read from directions
+and from a note's `<notations>`. A clef changed within a bar is moved to the next bar,
+since `ClefMap` changes only at barlines; key and time changes within a bar are still
+refused. `<stem>` is not read, because most programs write one on every note and the
+native stem is a manual override; `<print>` breaks are layout and are recalculated.
+
+Whatever the model cannot hold produces a deduplicated Spanish warning (at most 32 per
+file) rather than a silent loss: README «Opening MusicXML» lists what is kept, adapted,
+left out and refused. `a_score_with_every_mark_levare_writes_round_trips_through_musicxml`
+exports one score with every mark the exporter writes and compares it after opening
+again; the fixtures in `musicxml/import/tests.rs` and `sung_tests.rs` are small
+hand-written files in the style of MuseScore, Sibelius, Dorico and Finale.
+
 
 ## Exporting score and parts
 
@@ -1312,6 +1401,44 @@ The tests compare the extraction of every part of the examples with the original
 global changes, divisi, connections and piano arpeggios included. They also verify names
 and order of sections, subsets, native format, MusicXML of each part, invalid selection,
 protection of existing targets and the joint PDF/MusicXML delivery of the Menuetto.
+
+### Multi-measure rests
+
+`Score::multirests(part)` (`score-core/src/multirest.rs`) returns the runs of two or
+more bars a part gathers, and both engraving and MusicXML read it, so a part prints and
+exports the same runs. A bar can join a run when every event of every staff and voice is
+a rest with a default `Notation` (no dynamic, text, lyric, chord symbol, fermata…), it is
+not a bar repeat, it has no divisi, no volta covers it, it carries no segno, coda,
+To Coda, Fine or jump, and no connection of the part (hairpin, line, slur) spans it.
+A bar starts a new run instead of continuing one when it brings a time, key, clef or
+tempo change, a rehearsal mark or a start repeat, or when the bar before it ends with an
+end repeat, any barline other than a single one, or a system or page break. A bar ending
+with a special barline can close a run, which then ends with that barline.
+
+`LayoutEngine::layout_part` uses the runs unless `PageSetup::separate_empty_bars` is set
+(a `#[serde(default)]` field, so older files open with multi-measure rests on);
+`layout_view`, the full score, never does. Every bar of a run stays in
+`Layout::measures`, so indices, `measure_at`, `voice_cursor` and the playhead's
+`time_positions` keep working: the first bar gets a column of at least its prefix plus
+`multirest::WIDTH`, ends with the run's last barline and draws the H-bar and the count
+(Bravura time-signature digits, upper staff only); the other bars take no room, lie on
+top of the first with its origin and width, and draw nothing. A run counts as one bar
+towards the six per system and never splits between systems. `Layout::multirests` lists
+the runs, and `numbered_bars` skips the bars inside them, so the next bar shows its real
+number. Piano barline connectors are drawn once per run. The cached engraving of each bar
+is kept unchanged and the multi-measure rest is derived from it after the cache.
+
+Editing in a part view needs no special case: the caret of a gathered bar is drawn on the
+multi-measure rest, a click on it lands in the run's first bar, and a note written in any
+bar makes that bar non-empty, so the next layout splits the run around it. Playback
+ignores multi-measure rests: they only change the drawing.
+
+`musicxml::encode_part`/`export_part`, used by `score-export` for parts, add
+`<measure-style><multiple-rest>N</multiple-rest></measure-style>` to the first bar of
+each run and still write every bar with its rest. The tests are in
+`score-layout/src/multirest_tests.rs` (consolidation, each kind of break, numbering,
+caret and click, a piano part, the option and every view) and in `score-export`
+(PDF pages and MusicXML of a part against the full score).
 
 
 ## Click to place playback and pitch drag
@@ -1397,6 +1524,41 @@ Enharmonic key signatures are limited to seven accidentals; notes that would nee
 accidentals are rewritten with an equivalent simple enharmonic. Unpitched percussion
 uses its fixed General MIDI note, Bravura clef E069, a central position and an
 independent bank 128 on each route.
+
+### Concert-pitch view
+
+The concert view is derived, never stored, so the `.levare` format and its schema do not
+change. `Score::in_concert_pitch` (`score-core/src/concert.rs`) returns a copy in which
+each transposing part is rewritten by `Transposition::pitches` for the interval minus its
+whole octaves (`Transposition::octaves`, truncated towards zero), and that octave part
+becomes the part's transposition, so `written_key_at` gives the key of the piece and every
+note sounds as before. Pure octave instruments are left as they are; the bass clarinet
+and the tenor and baritone saxophones keep one octave. A note that followed its written
+key follows the concert key unless the other key says otherwise; explicit signs stay
+explicit. Grace notes move with their notes and chord symbols by the same interval.
+Event identities do not change, so selection, hit-testing and playback carry over.
+
+`Score::from_concert_pitch(shown, written)` goes back: for each part whose view interval
+is still the octave part of its stored one, pitches, grace notes and chord symbols equal
+to those of the view before the edit (`shown`) take the stored ones from `written`;
+everything else is rewritten for the stored interval. A view round trip is the identity
+on every example (`score-document` checks the 32-part orchestra).
+
+`Editor` keeps the flag (`set_concert_pitch`, outside the snapshots: it is not part of
+the history and does not change the revision, so `Document::is_dirty` is unaffected) and
+caches the view in a `OnceLock` reset on every change of state. `score()` stays the
+stored score, for saving, autosave, parts, the agent and playback; `shown_score()` is
+what the musician sees. `execute` and `paste` run through `on_shown`: in concert view
+the command is applied to the view, then the result and the snapshots it pushed are
+converted back with `from_concert_pitch`, so pitches, letters typed, signs, chord
+symbols and pasted passages mean concert pitch and the history only holds written
+scores. `selected_pitch`, `select_pitch`, entry octaves and `copy_selection` read the
+shown score; a clip copied in concert view carries the view's octave interval and
+pastes by sound anywhere. `Document` lays out `shown_score()` and keys its cached view
+on the flag too. The app keeps the flag across opened documents, switches it off while
+an agent tool call runs (the agent reads and writes written pitches) and gives the
+export dialog's `Selection::concert_pitch` its initial value; only the full score
+follows it, parts are always extracted from the stored score.
 
 The orchestra tests cover 48 routes, the full catalog, key changes, compatibility with
 files of schema 18, external and exported MusicXML, copying between profiles, the three

@@ -49,10 +49,20 @@ fn page_setup_round_trips_and_rejects_impossible_staff_sizes() {
             staff: Some(45),
             hide_empty_staves: true,
             margins: score_core::Margins::Wide,
+            separate_empty_bars: true,
         })
         .unwrap();
     assert_eq!(decode(&encode(&score).unwrap()).unwrap(), score);
     let mut file: serde_json::Value = serde_json::from_slice(&encode(&score).unwrap()).unwrap();
+    // Files from before multi-measure rests open with them on in parts.
+    let mut older = file.clone();
+    older["score"]["page_setup"]
+        .as_object_mut()
+        .unwrap()
+        .remove("separate_empty_bars")
+        .unwrap();
+    let older = decode(&serde_json::to_vec(&older).unwrap()).unwrap();
+    assert!(!older.page_setup().separate_empty_bars);
     file["score"]["page_setup"]["staff"] = 250.into();
     assert!(decode(&serde_json::to_vec(&file).unwrap()).is_err());
 }

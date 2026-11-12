@@ -553,6 +553,8 @@ struct State {
     staves: u8,
     /// Staves inside a `measure-repeat`, until its stop.
     repeating: [bool; 2],
+    /// Clefs changed within a bar, for the next bar's start.
+    clefs: BTreeMap<u8, Clef>,
 }
 
 fn read_part(
@@ -568,6 +570,7 @@ fn read_part(
         intervals: [None; 2],
         staves: 1,
         repeating: [false; 2],
+        clefs: BTreeMap::new(),
     };
     let mut bars = Vec::new();
     let mut passage = false;
@@ -579,6 +582,7 @@ fn read_part(
         };
         let mut bar = Bar {
             implicit: parent.attribute("implicit") == Some("yes"),
+            clefs: std::mem::take(&mut state.clefs),
             ..Bar::default()
         };
         let mut cursor = 0u32;
@@ -623,6 +627,9 @@ fn read_part(
                 }
                 "note" => {
                     if let Some(grace) = child(n, "grace") {
+                        if child(n, "lyric").is_some() {
+                            warnings.add("La letra de las notas de adorno no se importa");
+                        }
                         let pitch = child(n, "pitch");
                         if child(n, "chord").is_some() || pitch.is_none() {
                             warnings.add("Los acordes y las notas de adorno sin altura se importan solo con su primera nota");
@@ -723,6 +730,13 @@ fn read_part(
                         if event.arpeggio.is_some() {
                             last.arpeggio = event.arpeggio;
                         }
+                        // A syllable may stand on any note of the chord.
+                        for (verse, syllable) in event.notation.lyrics.verses() {
+                            if last.notation.lyrics.verse(verse).is_none() {
+                                last.notation.lyrics.set(verse, Some(syllable));
+                            }
+                        }
+                        last.notation.dynamic = last.notation.dynamic.or(event.notation.dynamic);
                         last.notation.fermata |= event.notation.fermata;
                         last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
                         last.notation.notehead = last.notation.notehead.or(event.notation.notehead);
@@ -971,11 +985,6 @@ fn attributes(
         }
     }
     for c in n.children().filter(|c| c.has_tag_name("clef")) {
-        if cursor != 0 {
-            return Err(error(
-                "MusicXML: cambio de clave dentro del compás no admitido",
-            ));
-        }
         let staff = (staff_index(c.attribute("number").unwrap_or("1"))? + 1) as u8;
         let line = text(c, "line").unwrap_or("2");
         let octave = text(c, "clef-octave-change").unwrap_or("0");
@@ -994,7 +1003,18 @@ fn attributes(
             _ => None,
         };
         if let Some(clef) = clef {
-            bar.clefs.insert(staff, clef);
+            if cursor == 0 {
+                bar.clefs.insert(staff, clef);
+            } else {
+                // Levare changes clef at a barline: the next bar takes it.
+                // One written just before the barline already belongs there.
+                if cursor < state.time.capacity() {
+                    warnings.add(
+                        "Los cambios de clave dentro del compás se trasladan al compás siguiente",
+                    );
+                }
+                state.clefs.insert(staff, clef);
+            }
         } else {
             warnings.add("La clave especial se redibuja con la clave del instrumento");
         }
@@ -1118,7 +1138,12 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
             .filter(|c| c.has_tag_name("text"))
             .filter_map(|t| t.text())
             .collect();
-        let mut text = words.join(" ").trim().to_owned();
+        // Non-breaking and other spaces, as some programs write them, are plain spaces.
+        let mut text = words
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         if text.is_empty() {
             continue;
         }
@@ -1138,7 +1163,10 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
             text.truncate(end);
             warnings.add("Las sílabas de más de 20 caracteres se recortan");
         }
-        let join = if child(lyric, "extend").is_some() {
+        // An extender's stop ends a line drawn from an earlier syllable.
+        let join = if child(lyric, "extend")
+            .is_some_and(|e| matches!(e.attribute("type"), None | Some("start" | "continue")))
+        {
             Join::Melisma
         } else {
             match self::text(lyric, "syllabic") {
@@ -1163,6 +1191,11 @@ fn read_harmony(
     bar: &mut Bar,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
+    // Hidden symbols only drive another program's playback.
+    if n.attribute("print-object") == Some("no") {
+        warnings.add("Los cifrados ocultos no se importan");
+        return Ok(());
+    }
     let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(bad_number))?;
     let tickf = f64::from(cursor) + offset * f64::from(TICKS_PER_QUARTER) / state.divisions;
     if !tickf.is_finite() || tickf < 0.0 || (tickf - tickf.round()).abs() > 1e-6 {
@@ -1191,26 +1224,18 @@ fn read_harmony(
         warnings.add("Los cifrados «N.C.» no se importan");
         return Ok(());
     }
-    let degree = n
-        .children()
-        .filter(|c| c.has_tag_name("degree"))
-        .find(|d| text(*d, "degree-type") == Some("add"))
-        .and_then(|d| {
-            Some((
-                text(d, "degree-value")?.trim().parse::<u8>().ok()?,
-                text(d, "degree-alter").map_or(Some(0), |alter| alter.trim().parse::<i8>().ok())?,
-            ))
-        });
     let printed = kind
         .attribute("text")
         .filter(|text| !text.trim().is_empty());
-    let (Some(root), Some(quality)) = (
-        read_root("root"),
-        ChordQuality::from_musicxml(value, degree, printed),
-    ) else {
+    let (Some(root), Some((quality, complete))) =
+        (read_root("root"), harmony_quality(n, value, printed))
+    else {
         warnings.add("Algunos cifrados no reconocidos no se importan");
         return Ok(());
     };
+    if !complete {
+        warnings.add("Algunas alteraciones o notas añadidas de los cifrados no se importan");
+    }
     let bass = match child(n, "bass") {
         Some(_) => match read_root("bass") {
             Some(bass) => Some(bass),
@@ -1232,6 +1257,73 @@ fn read_harmony(
         }),
     });
     Ok(())
+}
+
+/// A chord suffix as it is typed («7b9», «m7(♭5)»), in any spelling Levare reads.
+fn suffix_quality(suffix: &str) -> Option<ChordQuality> {
+    // No kind is empty, so only the printed text can match.
+    ChordQuality::from_musicxml("", None, Some(suffix))
+}
+
+/// The quality of a `<harmony>`, and whether every `<degree>` is kept in it.
+/// Programs print the kind's text and spell its degrees apart (MuseScore
+/// writes «7» and an added ♭9), or put everything in the text (Sibelius
+/// writes «7(b9)» and the degree too): both are read as one suffix.
+fn harmony_quality(
+    harmony: Node<'_, '_>,
+    kind: &str,
+    printed: Option<&str>,
+) -> Option<(ChordQuality, bool)> {
+    let mut degrees = Vec::new();
+    let mut readable = true;
+    for d in harmony.children().filter(|c| c.has_tag_name("degree")) {
+        let value = text(d, "degree-value").and_then(|v| v.trim().parse::<u8>().ok());
+        let alter = text(d, "degree-alter").map_or(Some(0.), |a| a.trim().parse::<f64>().ok());
+        match (value, alter, text(d, "degree-type").map(str::trim)) {
+            (Some(value), Some(alter), Some(kind @ ("add" | "alter" | "subtract")))
+                if alter.fract() == 0. && (-1. ..=1.).contains(&alter) =>
+            {
+                degrees.push((value, alter as i8, kind))
+            }
+            _ => readable = false,
+        }
+    }
+    let spelled: String = degrees
+        .iter()
+        .map(|&(value, alter, kind)| match (kind, alter) {
+            ("subtract", _) => format!("no{value}"),
+            ("add", 0) => format!("add{value}"),
+            (_, 0) => String::new(),
+            (_, alter) => format!("{}{value}", if alter < 0 { "b" } else { "#" }),
+        })
+        .collect();
+    if readable && !degrees.is_empty() {
+        let base = printed.map(str::to_owned).or_else(|| {
+            ChordQuality::from_musicxml(kind, None, None).map(|q| q.suffix().to_owned())
+        });
+        if let Some(quality) = base
+            .filter(|base| !base.contains('/'))
+            .and_then(|base| suffix_quality(&format!("{base}{spelled}")))
+        {
+            return Some((quality, true));
+        }
+    }
+    let add = match degrees.as_slice() {
+        [(value, alter, "add")] => Some((*value, *alter)),
+        _ => None,
+    };
+    let quality = ChordQuality::from_musicxml(kind, add, printed)?;
+    let complete = readable
+        && (degrees.is_empty()
+            || (add.is_some() && quality.musicxml().1 == add)
+            // A printed suffix that already names the degrees, as «7sus4».
+            || printed.is_some_and(|printed| {
+                suffix_quality(printed) == Some(quality)
+                    && degrees
+                        .iter()
+                        .all(|(value, _, _)| printed.contains(&value.to_string()))
+            }));
+    Some((quality, complete))
 }
 
 /// A piano's voice that moves between the staves within a bar, without
@@ -1430,6 +1522,12 @@ fn read_note(
                     }
                 }
                 "fermata" => notation.fermata = true,
+                // A dynamic attached to the note, as an sfz may be written.
+                "dynamics" => {
+                    if let Some(dynamic) = read_dynamics(m, warnings) {
+                        notation.dynamic = Some(dynamic);
+                    }
+                }
                 "articulations" => {
                     for a in m.children().filter(Node::is_element) {
                         let pause = match a.tag_name().name() {
@@ -1447,6 +1545,11 @@ fn read_note(
                             "accent" => Some(Articulation::Accent),
                             "strong-accent" => Some(Articulation::Marcato),
                             "staccatissimo" => Some(Articulation::Staccatissimo),
+                            // A stroke, which Levare draws as a wedge.
+                            "spiccato" => {
+                                warnings.add("El spiccato se importa como staccatissimo");
+                                Some(Articulation::Staccatissimo)
+                            }
                             _ => None,
                         };
                         if art.is_none() || notation.articulation.is_some() {
@@ -1523,10 +1626,15 @@ fn read_note(
                                 Some("start" | "stop") => {
                                     warnings.add("El trémolo entre dos notas no se importa")
                                 }
-                                _ => warnings.add("Notación «ornaments» no importada"),
+                                _ => warnings.add("Trémolo sin medida no importado"),
                             }
+                        } else if ornament.has_tag_name("accidental-mark") {
+                            warnings.add("Las alteraciones de los ornamentos no se importan");
                         } else {
-                            warnings.add("Notación «ornaments» no importada");
+                            warnings.add(format!(
+                                "Ornamento «{}» no importado",
+                                ornament.tag_name().name()
+                            ));
                         }
                     }
                 }
@@ -1607,6 +1715,10 @@ fn sound_technique(n: Node<'_, '_>) -> Result<Option<PlayingTechnique>, FileErro
     }
 }
 fn read_barline(n: Node<'_, '_>, bar: &mut Bar, last: bool, warnings: &mut Warnings) {
+    // Levare holds notes and rests, not barlines.
+    if child(n, "fermata").is_some() {
+        warnings.add("Los calderones sobre la barra de compás no se importan");
+    }
     for repeat in n.children().filter(|node| node.has_tag_name("repeat")) {
         match repeat.attribute("direction") {
             Some("forward") => bar.repeat_start = true,
@@ -1754,7 +1866,28 @@ fn read_direction(
     }
     let mut free_words = Vec::new();
     for dt in n.children().filter(|d| d.has_tag_name("direction-type")) {
+        // Consecutive words of one direction-type are one text written in
+        // runs, as Finale and Sibelius change font within «poco a poco
+        // cresc.» or «D.S. al Coda».
+        let mut items: Vec<(Node<'_, '_>, Option<String>)> = Vec::new();
         for d in dt.children().filter(Node::is_element) {
+            let run = d.has_tag_name("words").then(|| d.text().unwrap_or(""));
+            match (items.last_mut(), run) {
+                (Some((_, Some(text))), Some(run)) => {
+                    let placed =
+                        d.attribute("default-x").is_some() || d.attribute("relative-x").is_some();
+                    if placed
+                        && !text.ends_with(char::is_whitespace)
+                        && !run.starts_with(char::is_whitespace)
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(run);
+                }
+                (_, run) => items.push((d, run.map(str::to_owned))),
+            }
+        }
+        for (d, run) in items {
             let kind = match d.tag_name().name() {
                 "rehearsal" => {
                     let text = d.text().unwrap_or("").trim();
@@ -1763,23 +1896,16 @@ fn read_direction(
                     }
                     None
                 }
-                "dynamics" => {
-                    let dynamic = d.children().filter(Node::is_element).find_map(|n| {
-                        // Accents Levare writes one way, and niente's «n».
-                        match n.tag_name().name() {
-                            "sf" | "sffz" | "fz" => Some(Dynamic::Sfz),
-                            "rf" => Some(Dynamic::Rfz),
-                            "n" => Some(Dynamic::Niente),
-                            name => Dynamic::ALL.into_iter().find(|a| a.label() == name),
-                        }
-                    });
-                    if dynamic.is_none() {
-                        warnings.add("Algunas dinámicas no admitidas no se importan");
-                    }
-                    dynamic.map(MarkType::Dynamic)
-                }
+                "dynamics" => read_dynamics(d, warnings).map(MarkType::Dynamic),
                 "words" => {
-                    let s = d.text().unwrap_or("").trim();
+                    // Line breaks within the words become spaces.
+                    let joined = run
+                        .as_deref()
+                        .unwrap_or("")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let s = joined.as_str();
                     let lower = s.to_lowercase();
                     if navigation_words(s, bar) {
                         None
@@ -1855,6 +1981,10 @@ fn read_direction(
                             });
                             Some(span(false))
                         }
+                        Some("sostenuto") => {
+                            warnings.add("El pedal tonal no se importa");
+                            None
+                        }
                         _ => None,
                     }
                 }
@@ -1928,6 +2058,43 @@ fn read_direction(
         }));
     }
     Ok(())
+}
+
+/// The dynamic of a `<dynamics>` element, in a direction or a note's notations.
+fn read_dynamics(dynamics: Node<'_, '_>, warnings: &mut Warnings) -> Option<Dynamic> {
+    let found = dynamics.children().filter(Node::is_element).find_map(|n| {
+        let name = match n.tag_name().name() {
+            "other-dynamics" => n.text().unwrap_or("").trim(),
+            name => name,
+        };
+        // Accents Levare writes one way, niente's «n», and the extreme
+        // levels at the nearest one Levare has.
+        match name {
+            "sf" | "sffz" | "fz" | "sfz" => Some((Dynamic::Sfz, false)),
+            "rf" | "rfz" => Some((Dynamic::Rfz, false)),
+            "sfzp" => Some((Dynamic::Sfp, false)),
+            "n" | "niente" => Some((Dynamic::Niente, false)),
+            "pppp" | "ppppp" | "pppppp" => Some((Dynamic::Ppp, true)),
+            "ffff" | "fffff" | "ffffff" => Some((Dynamic::Fff, true)),
+            "sfpp" => Some((Dynamic::Sfp, true)),
+            name => Dynamic::ALL
+                .into_iter()
+                .find(|a| a.label() == name)
+                .map(|a| (a, false)),
+        }
+    });
+    match found {
+        Some((dynamic, adapted)) => {
+            if adapted {
+                warnings.add("Las dinámicas pppp, ffff y sfpp se importan como ppp, fff y sfp");
+            }
+            Some(dynamic)
+        }
+        None => {
+            warnings.add("Algunas dinámicas no admitidas no se importan");
+            None
+        }
+    }
 }
 
 /// Below the staff, or in italics without a placement, words are an
