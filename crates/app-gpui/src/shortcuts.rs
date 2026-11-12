@@ -468,6 +468,7 @@ impl Shortcuts {
                     Some(id::PAPER_TABLOID),
                     Some(id::LANDSCAPE),
                     Some(id::HIDE_EMPTY_STAVES),
+                    Some(id::MULTIRESTS),
                     Some(id::MARGINS_NORMAL),
                     Some(id::MARGINS_WIDE),
                     Some(id::MARGINS_EXTRA_WIDE),

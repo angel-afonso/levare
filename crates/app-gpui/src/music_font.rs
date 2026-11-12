@@ -384,9 +384,9 @@ mod tests {
     #[test]
     fn bundled_font_contains_outlines_for_all_editor_symbols() {
         let font = MusicFont::new();
-        assert_eq!(font.outlines.len(), 140);
-        // The bar repeat.
-        assert!(font.covers("\u{e500}"));
+        assert_eq!(font.outlines.len(), 141);
+        // The bar repeat and the multi-measure rest.
+        assert!(font.covers("\u{e500}\u{e4ee}"));
         // Cross, diamond and slash noteheads.
         assert!(
             font.covers("\u{e0a7}\u{e0a8}\u{e0a9}\u{e0d8}\u{e0d9}\u{e0db}\u{e101}\u{e102}\u{e103}")

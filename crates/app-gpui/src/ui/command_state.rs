@@ -36,6 +36,9 @@ impl CommandStates for AppView {
         if command == id::HIDE_EMPTY_STAVES {
             return CommandState::checked(setup.hide_empty_staves);
         }
+        if command == id::MULTIRESTS {
+            return CommandState::checked(!setup.separate_empty_bars);
+        }
         if let Some(chosen) = crate::page_setup_command(setup, command) {
             return CommandState::checked(chosen == setup);
         }

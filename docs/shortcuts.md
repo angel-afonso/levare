@@ -263,6 +263,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Papel tabloide |  |
 | — | — | Página horizontal |  |
 | — | — | Ocultar pentagramas vacíos |  |
+| — | — | Silencios de varios compases |  |
 | — | — | Márgenes normales |  |
 | — | — | Márgenes anchos |  |
 | — | — | Márgenes muy anchos |  |
