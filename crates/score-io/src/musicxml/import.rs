@@ -1163,6 +1163,11 @@ fn read_harmony(
     bar: &mut Bar,
     warnings: &mut Warnings,
 ) -> Result<(), FileError> {
+    // Hidden symbols only drive another program's playback.
+    if n.attribute("print-object") == Some("no") {
+        warnings.add("Los cifrados ocultos no se importan");
+        return Ok(());
+    }
     let offset = text(n, "offset").map_or(Ok(0.0), |s| s.parse::<f64>().map_err(bad_number))?;
     let tickf = f64::from(cursor) + offset * f64::from(TICKS_PER_QUARTER) / state.divisions;
     if !tickf.is_finite() || tickf < 0.0 || (tickf - tickf.round()).abs() > 1e-6 {
@@ -1191,26 +1196,18 @@ fn read_harmony(
         warnings.add("Los cifrados «N.C.» no se importan");
         return Ok(());
     }
-    let degree = n
-        .children()
-        .filter(|c| c.has_tag_name("degree"))
-        .find(|d| text(*d, "degree-type") == Some("add"))
-        .and_then(|d| {
-            Some((
-                text(d, "degree-value")?.trim().parse::<u8>().ok()?,
-                text(d, "degree-alter").map_or(Some(0), |alter| alter.trim().parse::<i8>().ok())?,
-            ))
-        });
     let printed = kind
         .attribute("text")
         .filter(|text| !text.trim().is_empty());
-    let (Some(root), Some(quality)) = (
-        read_root("root"),
-        ChordQuality::from_musicxml(value, degree, printed),
-    ) else {
+    let (Some(root), Some((quality, complete))) =
+        (read_root("root"), harmony_quality(n, value, printed))
+    else {
         warnings.add("Algunos cifrados no reconocidos no se importan");
         return Ok(());
     };
+    if !complete {
+        warnings.add("Algunas alteraciones o notas añadidas de los cifrados no se importan");
+    }
     let bass = match child(n, "bass") {
         Some(_) => match read_root("bass") {
             Some(bass) => Some(bass),
@@ -1232,6 +1229,73 @@ fn read_harmony(
         }),
     });
     Ok(())
+}
+
+/// A chord suffix as it is typed («7b9», «m7(♭5)»), in any spelling Levare reads.
+fn suffix_quality(suffix: &str) -> Option<ChordQuality> {
+    // No kind is empty, so only the printed text can match.
+    ChordQuality::from_musicxml("", None, Some(suffix))
+}
+
+/// The quality of a `<harmony>`, and whether every `<degree>` is kept in it.
+/// Programs print the kind's text and spell its degrees apart (MuseScore
+/// writes «7» and an added ♭9), or put everything in the text (Sibelius
+/// writes «7(b9)» and the degree too): both are read as one suffix.
+fn harmony_quality(
+    harmony: Node<'_, '_>,
+    kind: &str,
+    printed: Option<&str>,
+) -> Option<(ChordQuality, bool)> {
+    let mut degrees = Vec::new();
+    let mut readable = true;
+    for d in harmony.children().filter(|c| c.has_tag_name("degree")) {
+        let value = text(d, "degree-value").and_then(|v| v.trim().parse::<u8>().ok());
+        let alter = text(d, "degree-alter").map_or(Some(0.), |a| a.trim().parse::<f64>().ok());
+        match (value, alter, text(d, "degree-type").map(str::trim)) {
+            (Some(value), Some(alter), Some(kind @ ("add" | "alter" | "subtract")))
+                if alter.fract() == 0. && (-1. ..=1.).contains(&alter) =>
+            {
+                degrees.push((value, alter as i8, kind))
+            }
+            _ => readable = false,
+        }
+    }
+    let spelled: String = degrees
+        .iter()
+        .map(|&(value, alter, kind)| match (kind, alter) {
+            ("subtract", _) => format!("no{value}"),
+            ("add", 0) => format!("add{value}"),
+            (_, 0) => String::new(),
+            (_, alter) => format!("{}{value}", if alter < 0 { "b" } else { "#" }),
+        })
+        .collect();
+    if readable && !degrees.is_empty() {
+        let base = printed.map(str::to_owned).or_else(|| {
+            ChordQuality::from_musicxml(kind, None, None).map(|q| q.suffix().to_owned())
+        });
+        if let Some(quality) = base
+            .filter(|base| !base.contains('/'))
+            .and_then(|base| suffix_quality(&format!("{base}{spelled}")))
+        {
+            return Some((quality, true));
+        }
+    }
+    let add = match degrees.as_slice() {
+        [(value, alter, "add")] => Some((*value, *alter)),
+        _ => None,
+    };
+    let quality = ChordQuality::from_musicxml(kind, add, printed)?;
+    let complete = readable
+        && (degrees.is_empty()
+            || (add.is_some() && quality.musicxml().1 == add)
+            // A printed suffix that already names the degrees, as «7sus4».
+            || printed.is_some_and(|printed| {
+                suffix_quality(printed) == Some(quality)
+                    && degrees
+                        .iter()
+                        .all(|(value, _, _)| printed.contains(&value.to_string()))
+            }));
+    Some((quality, complete))
 }
 
 /// A piano's voice that moves between the staves within a bar, without

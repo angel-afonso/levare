@@ -144,3 +144,108 @@ fn other_programs_lyrics_and_harmonies_import_with_their_meaning() {
     );
     assert!(result.warnings.iter().any(|w| w.contains("silencios")));
 }
+
+/// A soprano part, as other programs write it.
+fn foreign(measures: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Soprano</part-name></score-part></part-list><part id="P1">{measures}</part></score-partwise>"#
+    )
+}
+const FOREIGN_ATTRIBUTES: &str = "<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>";
+const QUARTER: &str = "<note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>";
+
+fn labels(chords: &[&str]) -> Vec<Option<String>> {
+    chords
+        .iter()
+        .map(|chord| Some(ChordSymbol::parse(chord).unwrap().label()))
+        .collect()
+}
+
+#[test]
+fn chord_alterations_and_added_notes_import_from_other_programs() {
+    let harmony = |root: &str, kind: &str, rest: &str| {
+        format!(
+            "<harmony print-frame=\"no\"><root><root-step>{root}</root-step></root>{kind}{rest}</harmony>{QUARTER}"
+        )
+    };
+    let degree = |value: u8, alter: i8, kind: &str| {
+        format!(
+            "<degree><degree-value>{value}</degree-value><degree-alter>{alter}</degree-alter><degree-type>{kind}</degree-type></degree>"
+        )
+    };
+    let first = [
+        // MuseScore: the kind's text and the added flat nine apart.
+        harmony("G", "<kind text=\"7\">dominant</kind>", &degree(9, -1, "add")),
+        // Sibelius: everything printed in the text, and the degree too.
+        harmony(
+            "E",
+            "<kind use-symbols=\"no\" text=\"7(#9)\">dominant</kind>",
+            &degree(9, 1, "add"),
+        ),
+        // Dorico: a printed suffix and a bass.
+        harmony(
+            "C",
+            "<kind text=\"maj7\">major-seventh</kind>",
+            "<bass><bass-step>B</bass-step></bass>",
+        ),
+        // Finale: no printed text, an added ninth.
+        harmony("F", "<kind>major</kind>", &degree(9, 0, "add")),
+    ]
+    .concat();
+    let second = [
+        harmony(
+            "A",
+            "<kind text=\"m7\">minor-seventh</kind>",
+            &degree(5, -1, "alter"),
+        ),
+        harmony(
+            "D",
+            "<kind text=\"7sus4\">suspended-fourth</kind>",
+            &degree(7, -1, "add"),
+        ),
+        // A sharp eleventh Levare cannot write: the dominant seventh stays.
+        harmony("G", "<kind>dominant</kind>", &degree(11, 1, "add")),
+        // Hidden, for playback only.
+        format!(
+            "<harmony print-object=\"no\"><root><root-step>C</root-step></root><kind>major</kind></harmony>{QUARTER}"
+        ),
+    ]
+    .concat();
+    let xml = foreign(&format!(
+        "<measure number=\"1\">{FOREIGN_ATTRIBUTES}{first}</measure><measure number=\"2\">{second}</measure>"
+    ));
+    let result = musicxml::decode(xml.as_bytes()).unwrap();
+    let chords: Vec<_> = sung(&result.score).into_iter().map(|s| s.2).collect();
+    assert_eq!(
+        chords,
+        labels(&["G7b9", "E7#9", "Cmaj7/B", "Fadd9", "Am7b5", "D7sus4", "G7"])
+    );
+    assert!(
+        result.warnings.iter().any(|w| w.contains("notas añadidas")),
+        "{:?}",
+        result.warnings
+    );
+    assert!(result.warnings.iter().any(|w| w.contains("ocultos")));
+    assert!(!result.warnings.iter().any(|w| w.contains("no reconocidos")));
+}
+
+#[test]
+fn every_chord_quality_with_roots_and_basses_round_trips_through_musicxml() {
+    for (index, quality) in score_core::ChordQuality::ALL.into_iter().enumerate() {
+        let mut score = Score::default();
+        let id = score.insert(0, 0, note(Step::C)).unwrap();
+        let root = ["C", "F#", "Bb", "E", "Ab", "D"][index % 6];
+        let bass = ["", "/G", "/Eb"][index % 3];
+        let chord = ChordSymbol::parse(&format!("{root}{}{bass}", quality.suffix())).unwrap();
+        assert_eq!(chord.quality, quality);
+        score.set_chord(id, Some(chord)).unwrap();
+        let xml = musicxml::encode(&score).unwrap();
+        let result = musicxml::decode(&xml).unwrap();
+        assert!(
+            result.warnings.iter().all(|w| !w.contains("cifrado")),
+            "{quality:?}: {:?}",
+            result.warnings
+        );
+        assert_eq!(sung(&result.score), sung(&score), "{quality:?}");
+    }
+}
