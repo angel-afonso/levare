@@ -407,6 +407,7 @@ pub mod id {
         PAPER_TABLOID = "pagina.papel.tabloide";
         LANDSCAPE = "pagina.horizontal";
         HIDE_EMPTY_STAVES = "pagina.ocultar-pentagramas-vacios";
+        MULTIRESTS = "pagina.silencios-de-varios-compases";
         MARGINS_NORMAL = "pagina.margenes.normales";
         MARGINS_WIDE = "pagina.margenes.anchos";
         MARGINS_EXTRA_WIDE = "pagina.margenes.muy-anchos";
@@ -734,6 +735,7 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::PAPER_TABLOID, C::Bars, "Papel tabloide", G, false, R),
     spec(id::LANDSCAPE, C::Bars, "Página horizontal", G, false, R),
     spec(id::HIDE_EMPTY_STAVES, C::Bars, "Ocultar pentagramas vacíos", G, false, R),
+    spec(id::MULTIRESTS, C::Bars, "Silencios de varios compases", G, false, R),
     spec(id::MARGINS_NORMAL, C::Bars, "Márgenes normales", G, false, R),
     spec(id::MARGINS_WIDE, C::Bars, "Márgenes anchos", G, false, R),
     spec(id::MARGINS_EXTRA_WIDE, C::Bars, "Márgenes muy anchos", G, false, R),

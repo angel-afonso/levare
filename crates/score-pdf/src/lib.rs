@@ -286,6 +286,7 @@ mod portable_tests {
                 staff: Some(60),
                 hide_empty_staves: false,
                 margins: Default::default(),
+                separate_empty_bars: false,
             })
             .unwrap();
         assert_eq!(painter::paper(&letter, false), (792., 612.));

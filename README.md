@@ -1454,6 +1454,25 @@ shown in concert pitch. A concert-pitch MusicXML score keeps only the octave
 transpositions, as other programs export one. Exporting does not change the work or mark
 its changes as saved.
 
+### Multi-measure rests in parts
+
+In a part, two or more bars in a row where the instrument only rests (in every staff and
+voice, both piano hands included) are printed as one multi-measure rest: a thick bar
+across the staff with the number of bars above it, as Sibelius, Dorico and MuseScore
+print them. The bar after it keeps its real number. The full score always shows every
+bar.
+
+A run stops wherever the player has to read something: a time, key or clef change, a
+tempo marking, a rehearsal mark, a repeat, a double or final barline, a system or page
+break, and a bar with a volta, a segno, a coda, a jump, or a dynamic, text or any other
+mark on a rest. Such a bar starts a new multi-measure rest, or stands on its own when the
+mark is in the bar itself. Writing a note in one of the bars splits the rest at once.
+
+The exported MusicXML of a part marks each run with `<multiple-rest>`, and still writes
+every bar with its rest, so other programs read the same music. To print every empty bar
+on its own, turn off **Diseño › Sistema y página › Multicompás** («Silencios de varios
+compases» in the **Vista** menu); it is saved with the score and is on by default.
+
 ```sh
 cargo run -p score-export --example export -- examples/menuetto-y-trio-cuerdas.partitura output/menuetto-partes
 ```

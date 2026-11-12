@@ -374,6 +374,17 @@ fn voice_number(staff: StaffId, voice: Voice) -> u8 {
 
 /// Encode a validated score as UTF-8, uncompressed `.musicxml`.
 pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
+    encode_document(score, false)
+}
+
+/// An extracted part (`Score::extract_part`): as `encode`, and its runs of
+/// empty bars marked as multi-measure rests, unless the page setup draws
+/// every empty bar.
+pub fn encode_part(score: &Score) -> Result<Vec<u8>, FileError> {
+    encode_document(score, !score.page_setup().separate_empty_bars)
+}
+
+fn encode_document(score: &Score, multirests: bool) -> Result<Vec<u8>, FileError> {
     score.validate()?;
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n",
@@ -449,11 +460,20 @@ pub fn encode(score: &Score) -> Result<Vec<u8>, FileError> {
     xml.push_str("</part-list>\n");
     for (i, part) in score.parts().iter().enumerate() {
         let index = PartIndex::new(score, part);
+        let runs = if multirests {
+            score.multirests(part.id())
+        } else {
+            Vec::new()
+        };
         let _ = writeln!(xml, "<part id=\"P{}\">", i + 1);
         for bar in 0..score.measures().len() {
             let _ = writeln!(xml, "<measure number=\"{}\">", bar + 1);
             left_barline(&mut xml, score, bar);
-            attributes(&mut xml, score, part, bar);
+            let rest = runs
+                .iter()
+                .find(|run| run.start == bar)
+                .map(|run| run.len());
+            attributes(&mut xml, score, part, bar, rest);
             directions(&mut xml, score, part, &index, bar, i == 0);
             let capacity = score.time_at(bar).capacity();
             let mut first = true;
@@ -586,7 +606,14 @@ pub fn export(path: &Path, score: &Score) -> Result<(), FileError> {
     Ok(atomic_write::write(path, &bytes)?)
 }
 
-fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
+/// `export` for an extracted part, with its multi-measure rests.
+pub fn export_part(path: &Path, score: &Score) -> Result<(), FileError> {
+    let bytes = encode_part(score)?;
+    Ok(atomic_write::write(path, &bytes)?)
+}
+
+/// `multirest` is the number of bars a multi-measure rest from `bar` stands for.
+fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize, multirest: Option<usize>) {
     xml.push_str("<attributes>");
     if bar == 0 {
         let _ = write!(xml, "<divisions>{TICKS_PER_QUARTER}</divisions>");
@@ -666,7 +693,14 @@ fn attributes(xml: &mut String, score: &Score, part: &Part, bar: usize) {
             interval.chromatic - octaves * 12
         );
     }
-    // Last, as MusicXML orders it: a run of % bars is one measure-repeat,
+    // Last, as MusicXML orders it; the following bars keep their rests.
+    if let Some(bars) = multirest {
+        let _ = write!(
+            xml,
+            "<measure-style><multiple-rest>{bars}</multiple-rest></measure-style>"
+        );
+    }
+    // A run of % bars is one measure-repeat,
     // stopped by the first bar after it.
     for (number, staff) in part.staves().iter().enumerate() {
         let repeat = |bar: usize| {

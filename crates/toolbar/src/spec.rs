@@ -1500,6 +1500,12 @@ const BREAKS: GroupSpec = GroupSpec {
             "Ocultar vacíos",
             "En la vista de página y el PDF, tras el primer sistema, quita los pentagramas de los instrumentos que no tocan en ese sistema.",
         )),
+        toggle(tile(
+            id::MULTIRESTS,
+            Music("\u{e4ee}"),
+            "Multicompás",
+            "En las partes, junta los compases seguidos sin notas en un solo silencio con el número de compases encima.",
+        )),
     ],
 };
 

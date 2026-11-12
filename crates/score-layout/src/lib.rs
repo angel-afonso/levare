@@ -31,6 +31,7 @@ mod lines;
 pub use lines::LineMark;
 mod crossing;
 mod lyrics;
+mod multirest;
 mod offsets;
 
 pub const STAFF_SPACE: f32 = 10.;
@@ -329,6 +330,9 @@ pub struct Layout {
     pub piano_arpeggios: Vec<PianoArpeggioLayout>,
     /// Which bars and pages carry their numbers.
     pub numbering: score_core::Numbering,
+    /// Runs of bars a part shows as one multi-measure rest. Every bar stays
+    /// placed; the ones after the first lie on top of it and draw nothing.
+    pub multirests: Vec<std::ops::Range<usize>>,
 }
 
 /// Where a page's number is printed.
@@ -382,7 +386,14 @@ impl Layout {
         self.measures.iter().filter(move |measure| {
             measure.origin.y == tops[&measure.system_start]
                 && bars.shows(measure.index, measure.index == measure.system_start)
+                && !self.gathered(measure.index)
         })
+    }
+    /// Whether `bar` is drawn by the multi-measure rest of an earlier bar.
+    pub fn gathered(&self, bar: usize) -> bool {
+        self.multirests
+            .iter()
+            .any(|run| run.start < bar && run.contains(&bar))
     }
     /// The text of page `index`'s number and where it goes, if it has one.
     pub fn page_number(&self, index: usize) -> Option<(String, PageNumberPlace)> {
@@ -1134,6 +1145,19 @@ impl LayoutEngine {
                 160.
             };
         let available = width - left - 32.;
+        // A part gathers runs of empty bars into multi-measure rests; a
+        // preview keeps the runs of the view it previews.
+        let multirests = match pinned {
+            Some(base) => base.multirests.clone(),
+            None if part_layout && !score.page_setup().separate_empty_bars => score
+                .parts()
+                .iter()
+                .next()
+                .map_or_else(Vec::new, |part| score.multirests(part.id())),
+            None => Vec::new(),
+        };
+        let run_of = |bar: usize| multirests.iter().find(|run| run.contains(&bar));
+        let gathered = |bar: usize| run_of(bar).is_some_and(|run| run.start < bar);
         self.cache.retain(|(part, staff, index), _| {
             *index < score.measures().len()
                 && score
@@ -1184,7 +1208,14 @@ impl LayoutEngine {
             } else if unwrapped {
                 score.measures().len()
             } else {
-                (row_start + if part_layout { 6 } else { 4 }).min(score.measures().len())
+                // A multi-measure rest counts as one bar and never splits.
+                let most = if part_layout { 6 } else { 4 };
+                let (mut end, mut shown) = (row_start, 0);
+                while end < score.measures().len() && (shown < most || gathered(end)) {
+                    shown += usize::from(!gathered(end));
+                    end += 1;
+                }
+                end
             };
             for index in row_start..row_end {
                 // The user ended the system after the previous bar.
@@ -1229,9 +1260,17 @@ impl LayoutEngine {
                             }
                         })
                     });
+                let minimum = match run_of(index) {
+                    _ if gathered(index) => 0.,
+                    Some(run) if run.start == index && pinned.is_none() => {
+                        minimum.max(prefix + multirest::WIDTH + repeat_trailing(score, run.end - 1))
+                    }
+                    _ => minimum,
+                };
                 if pinned.is_none()
                     && !unwrapped
                     && !columns.is_empty()
+                    && !gathered(index)
                     && occupied + minimum > available
                 {
                     break;
@@ -1256,7 +1295,10 @@ impl LayoutEngine {
                 0.
             } else {
                 loop {
-                    let extra = (available - occupied).max(0.) / columns.len() as f32;
+                    let shown = (row_start..row_start + columns.len())
+                        .filter(|&bar| !gathered(bar))
+                        .count();
+                    let extra = (available - occupied).max(0.) / shown as f32;
                     let mut x = 0.;
                     let overflow =
                         columns
@@ -1265,7 +1307,7 @@ impl LayoutEngine {
                             .find_map(|(offset, (ticks, minimum))| {
                                 let bar = row_start + offset;
                                 let start = x + signature_prefix(score, bar, offset == 0) + ticks.2;
-                                x += minimum + extra;
+                                x += minimum + if gathered(bar) { 0. } else { extra };
                                 system_heading_width(score, bar)
                                     .filter(|heading| {
                                         offset > 0 && start + heading + 20. > available
@@ -1282,11 +1324,21 @@ impl LayoutEngine {
                     }
                 }
             };
-            let column_extra = vec![extra; columns.len()];
+            let column_extra: Vec<f32> = (row_start..row_start + columns.len())
+                .map(|bar| if gathered(bar) { 0. } else { extra })
+                .collect();
+            // The column that draws each bar: its own, or its run's first.
+            let lead = |offset: usize| {
+                let bar = row_start + offset;
+                run_of(bar).map_or(offset, |run| run.start.max(row_start) - row_start)
+            };
+            let widths: Vec<f32> = (0..columns.len())
+                .map(|offset| columns[lead(offset)].1 + column_extra[lead(offset)])
+                .collect();
             let rhythms: Vec<_> = columns
                 .iter()
                 .enumerate()
-                .map(|(offset, (ticks, minimum))| {
+                .map(|(offset, (ticks, _))| {
                     if let Some(measure) = pinned.and_then(|layout| {
                         layout
                             .measures
@@ -1308,11 +1360,16 @@ impl LayoutEngine {
                                 .collect(),
                         });
                     }
+                    // The bars of a run share the run's room and margins.
+                    let (first, last) = run_of(row_start + offset)
+                        .map_or((offset, row_start + offset), |run| {
+                            (lead(offset), run.end - 1)
+                        });
                     Arc::new(Rhythm::new(
                         ticks.clone(),
-                        signature_prefix(score, row_start + offset, offset == 0),
-                        minimum + column_extra[offset],
-                        repeat_trailing(score, row_start + offset),
+                        signature_prefix(score, row_start + first, first == 0),
+                        widths[offset],
+                        repeat_trailing(score, last),
                     ))
                 })
                 .collect();
@@ -1370,16 +1427,24 @@ impl LayoutEngine {
                     let mut x = left;
                     let mut top = if compact { -24f32 } else { -42f32 };
                     let mut bottom = if compact { 64f32 } else { 80f32 };
-                    for (offset, (_, minimum)) in columns.iter().enumerate() {
+                    for offset in 0..columns.len() {
                         let index = row_start + offset;
-                        let width = minimum + column_extra[offset];
+                        let width = widths[offset];
+                        // A bar inside a multi-measure rest lies on its first bar.
+                        let (origin_x, advance) = if gathered(index) {
+                            (x - width, 0.)
+                        } else {
+                            (x, width)
+                        };
                         if staff == StaffId::Lower
                             && !part.instrument().is_grand_staff()
                             && !part.bar_has_divisi(index)
                         {
-                            x += width;
+                            x += advance;
                             continue;
                         }
+                        // A multi-measure rest ends with its last bar's barline.
+                        let end = bar_end(score, run_of(index).map_or(index, |run| run.end - 1));
                         let first = offset == 0
                             || (staff == StaffId::Lower
                                 && !part.instrument().is_grand_staff()
@@ -1405,7 +1470,7 @@ impl LayoutEngine {
                                 && cached.time == score.time_at(index)
                                 && cached.width == width
                                 && cached.first == first
-                                && cached.end == bar_end(score, index)
+                                && cached.end == end
                                 && cached.repeat_start == score.bar_form(index).repeat_start
                                 && cached.repeat_x == repeat_start_x(score, index, offset == 0)
                                 && cached.clef == clef
@@ -1424,7 +1489,7 @@ impl LayoutEngine {
                                     index,
                                     width,
                                     first,
-                                    end: bar_end(score, index),
+                                    end,
                                     repeat_start: score.bar_form(index).repeat_start,
                                     repeat_x: repeat_start_x(score, index, offset == 0),
                                     time: score.time_at(index),
@@ -1488,7 +1553,7 @@ impl LayoutEngine {
                                     time: score.time_at(index),
                                     width,
                                     first,
-                                    end: bar_end(score, index),
+                                    end,
                                     repeat_start: score.bar_form(index).repeat_start,
                                     repeat_x: repeat_start_x(score, index, offset == 0),
                                     clef,
@@ -1505,7 +1570,16 @@ impl LayoutEngine {
                             );
                             self.recomputed_measures += 1;
                         }
-                        let content = self.cache[&key].content.clone();
+                        let content = match run_of(index) {
+                            Some(run) if run.start == index => multirest::engrave(
+                                &self.cache[&key].content,
+                                run.len(),
+                                staff == StaffId::Upper,
+                                &self.metrics,
+                            ),
+                            Some(_) => multirest::hide(&self.cache[&key].content),
+                            None => self.cache[&key].content.clone(),
+                        };
                         let cached = &self.cache[&key];
                         top = top.min(if compact { cached.ink_top } else { content.top });
                         bottom = bottom.max(if compact {
@@ -1531,11 +1605,11 @@ impl LayoutEngine {
                                     .collect()
                             }),
                             index,
-                            origin: Point { x, y: 0. },
+                            origin: Point { x: origin_x, y: 0. },
                             width,
                             content,
                         });
-                        x += width;
+                        x += advance;
                     }
                     if staff == StaffId::Upper {
                         for measure in &placed[first_placed..] {
@@ -1748,6 +1822,7 @@ impl LayoutEngine {
                     for (x, measure) in std::iter::once((left, None)).chain(
                         placed[part_start..part_start + columns.len()]
                             .iter()
+                            .filter(|measure| !gathered(measure.index))
                             .map(|measure| (measure.origin.x + measure.width, Some(measure))),
                     ) {
                         let connected = part.instrument().is_grand_staff()
@@ -1767,7 +1842,10 @@ impl LayoutEngine {
                         let strokes = measure.map_or_else(
                             || vec![(x, self.metrics.bar)],
                             |m| {
-                                let end = bar_end(score, m.index);
+                                let end = bar_end(
+                                    score,
+                                    run_of(m.index).map_or(m.index, |run| run.end - 1),
+                                );
                                 if joins_staves(end) {
                                     barline_strokes(end, x, &self.metrics)
                                 } else {
@@ -1936,6 +2014,7 @@ impl LayoutEngine {
         let piano_arpeggios = expression::piano_arpeggios(score, &placed, &self.metrics);
         Layout {
             numbering: score.numbering(),
+            multirests: multirests.clone(),
             curves,
             hairpins,
             line_marks,
@@ -4402,5 +4481,7 @@ mod form_tests;
 #[cfg(test)]
 mod tremolo_tests;
 
+#[cfg(test)]
+mod multirest_tests;
 #[cfg(test)]
 mod rehearsal_tests;

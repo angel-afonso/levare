@@ -426,6 +426,7 @@ fn paper_and_staff_size_shape_the_page() {
             staff: Some(50),
             hide_empty_staves: false,
             margins: Default::default(),
+            separate_empty_bars: false,
         })
         .unwrap();
     let (wide, tall, _, _) = page(&score);

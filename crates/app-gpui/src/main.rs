@@ -4131,6 +4131,10 @@ fn page_setup_command(
             hide_empty_staves: !setup.hide_empty_staves,
             ..setup
         },
+        id::MULTIRESTS => PageSetup {
+            separate_empty_bars: !setup.separate_empty_bars,
+            ..setup
+        },
         id::MARGINS_NORMAL => PageSetup {
             margins: Margins::Normal,
             ..setup
