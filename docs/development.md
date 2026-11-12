@@ -184,6 +184,27 @@ loading the playback engine.
   update also writes the autosave and waits for it; if it fails, the update stays for
   the next start and the status line asks the musician to save first. Dates in these
   names are UTC, as `2026-10-28 15-30-12`, without the colons Windows forbids.
+- **Handing a launch over** (`app-gpui::handoff`, wired in `system_open`). On Windows and
+  Linux the file manager opens a score by starting Levare again. The Levare that holds
+  the recovery lock listens on a per-user endpoint named after its recovery path and the
+  build profile (FNV-1a, stable across versions): a Unix domain socket,
+  `levare-<hash>.sock`, in `$XDG_RUNTIME_DIR` (in the data folder when there is none),
+  mode 0600; a named pipe, `\\.\pipe\levare-<hash>`, on Windows, whose default security
+  lets other users only read, with remote clients refused. A new launch connects first
+  thing in `main`, before GPUI starts; if a Levare greets it, it passes the absolute
+  paths from its arguments (raw OS bytes, UTF-16 on Windows, so any name survives),
+  waits for «queued» and exits. The running Levare brings its window forward
+  (on Windows the new launch first calls `AllowSetForegroundWindow` for it) and opens
+  the first file as from **Archivo › Abrir…**. A refused connection or a missing
+  socket means no Levare is running: the launch starts as before, and since only the
+  lock holder listens, its listener can replace a socket a crash left behind. No answer
+  within 2 seconds, a different protocol version or a Levare that is quitting (it stops
+  listening in `on_app_quit`) also start a separate window, which then runs without
+  autosave as before. The updater's relaunch waits for the old process to exit, so the
+  new one never hands off to it. Debug and release builds have separate endpoints, so
+  `cargo run` does not hand its files to an installed Levare; it still shares the
+  recovery lock unless `LEVARE_DATA_DIR` points elsewhere. macOS keeps its open events
+  and does not listen.
 - **Log and crash reports** (`app-gpui::diagnostics`). Release builds have no console on
   Windows, and a Mac app opened from Finder only reaches the unified log, so warnings
   and failures go to `registro.log` in the data folder as well as to stderr: one

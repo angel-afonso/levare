@@ -39,8 +39,13 @@ futures.workspace = true
 unicode-segmentation = "=1.13.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# The version GPUI 0.2.2 uses: the keyboard layout and the wheel setting.
+# The version GPUI 0.2.2 uses: the keyboard layout and the wheel setting, and
+# the named pipe a second launch hands its files over through.
 windows = { version = "=0.61.3", features = [
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
