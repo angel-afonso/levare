@@ -33,6 +33,7 @@ mod selection;
 mod shortcuts;
 mod sound_banks;
 mod staff_text;
+mod start;
 #[cfg(feature = "vsco")]
 mod store;
 mod system_open;
@@ -75,6 +76,8 @@ fn audition_due(last: Option<Instant>, now: Instant) -> bool {
 #[derive(Clone)]
 enum Next {
     New,
+    /// A template or an example, untitled.
+    Fresh(Box<start::Fresh>),
     Open,
     OpenPath(PathBuf),
     Close,
@@ -93,6 +96,8 @@ struct AppView {
     busy: bool,
     confirming: bool,
     instrument_picker: Option<ui::InstrumentPicker>,
+    /// The start view: templates, recent scores and examples.
+    start: Option<start::StartScreen>,
     export_picker: Option<ui::ExportPicker>,
     /// Acerca de Levare.
     about: bool,
@@ -288,7 +293,13 @@ impl AppView {
         updates::start(&updates, cx);
         // After an update's restart: the saved score that was open. Unsaved
         // work comes back through the autosave above instead.
-        if let Some(score) = updates::take_reopen().filter(|_| nothing_recovered) {
+        let reopen = updates::take_reopen().filter(|_| nothing_recovered);
+        let start = if nothing_recovered && reopen.is_none() {
+            start::StartScreen::at_launch(recent.files().len())
+        } else {
+            None
+        };
+        if let Some(score) = reopen {
             cx.defer_in(window, move |view, window, cx| {
                 view.open(Some(score), window, cx)
             });
@@ -354,6 +365,7 @@ impl AppView {
             busy: false,
             confirming: false,
             instrument_picker: None,
+            start,
             export_picker: None,
             about: false,
             key_picker: false,
@@ -1103,6 +1115,10 @@ impl AppView {
             }
             return;
         }
+        if self.start.is_some() && self.start_key(stroke, window, cx) {
+            cx.stop_propagation();
+            return;
+        }
         let now = Instant::now();
         let repeated = self
             .held
@@ -1492,7 +1508,7 @@ impl AppView {
         let Some(spec) = self.shortcuts.spec(command).copied() else {
             return;
         };
-        if self.busy || self.confirming {
+        if self.busy || self.confirming || !self.start_allows(command, cx) {
             return;
         }
         if !agent::user_may_run(spec.category, self.agent_locked()) {
@@ -1655,6 +1671,7 @@ impl AppView {
                 cx,
             ),
             id::NEW => self.request_next(Next::New, window, cx),
+            id::START_SCREEN => self.open_start(cx),
             id::OPEN => self.request_next(Next::Open, window, cx),
             id::SAVE => self.save(false, window, cx),
             id::SAVE_AS => self.save(true, window, cx),
@@ -2712,33 +2729,15 @@ impl AppView {
     fn perform_next(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         let closing = matches!(next, Next::Close);
         match next {
-            Next::New => {
-                self.clear_recovery();
-                self.clicked_mark = None;
-                self.clicked_bar_mark = None;
-                self.pending_slur = None;
-                self.pending_hairpin = None;
-                self.end_agent_conversation(cx);
-                let concert = self.document.editor.concert_pitch();
-                self.document = Document::default();
-                self.document.editor.set_concert_pitch(concert);
-                self.review.reset_document();
-                self.comments = comments::CommentState::default();
-                self.comment_editor = None;
-                self.range_editor = None;
-                self.playback.reset_part_mix(
-                    self.document.editor.score(),
-                    self.document.editor.cursor().part,
-                );
-                self.mixer_drag = None;
-                self.viewport.scroll.set_offset(Point::default());
-                self.instrument_picker = None;
-                self.cancel_editor();
-                self.chord_entry = false;
-                self.entry_accidental = None;
-                self.path = None;
-                self.status = "Nueva partitura · clave de sol · 4/4".into();
-            }
+            Next::New => self.replace_document(
+                Document::default(),
+                "Nueva partitura · clave de sol · 4/4".into(),
+                cx,
+            ),
+            Next::Fresh(fresh) => match Document::new(fresh.score) {
+                Ok(document) => self.replace_document(document, fresh.status, cx),
+                Err(error) => self.status = format!("No se pudo crear la partitura: {error}"),
+            },
             Next::Open => self.open(None, window, cx),
             Next::OpenPath(path) => self.open(Some(path), window, cx),
             Next::Close => {
@@ -2753,6 +2752,36 @@ impl AppView {
             self.sync_quit_snapshot();
         }
         cx.notify();
+    }
+
+    /// A new, untitled score in place of the open one.
+    fn replace_document(&mut self, document: Document, status: String, cx: &mut Context<Self>) {
+        self.start = None;
+        self.clear_recovery();
+        self.clicked_mark = None;
+        self.clicked_bar_mark = None;
+        self.pending_slur = None;
+        self.pending_hairpin = None;
+        self.end_agent_conversation(cx);
+        let concert = self.document.editor.concert_pitch();
+        self.document = document;
+        self.document.editor.set_concert_pitch(concert);
+        self.review.reset_document();
+        self.comments = comments::CommentState::default();
+        self.comment_editor = None;
+        self.range_editor = None;
+        self.playback.reset_part_mix(
+            self.document.editor.score(),
+            self.document.editor.cursor().part,
+        );
+        self.mixer_drag = None;
+        self.viewport.scroll.set_offset(Point::default());
+        self.instrument_picker = None;
+        self.cancel_editor();
+        self.chord_entry = false;
+        self.entry_accidental = None;
+        self.path = None;
+        self.status = status;
     }
 
     /// Opens `known`, or asks for a file when it is `None`.
@@ -2815,6 +2844,7 @@ impl AppView {
                             view.mixer_drag = None;
                             view.viewport.scroll.set_offset(Point::default());
                             view.instrument_picker = None;
+                            view.start = None;
                             view.cancel_editor();
                             view.chord_entry = false;
                             view.entry_accidental = None;

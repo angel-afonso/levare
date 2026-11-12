@@ -49,3 +49,34 @@ fn adding_and_removing_parts_keeps_score_order_selection_and_undo_data() {
     assert!(editor.execute(Command::RemovePart).is_err());
     assert_eq!(editor.score(), &before);
 }
+
+#[test]
+fn a_song_keeps_the_voice_on_top_through_adding_removing_and_undo() {
+    let mut editor = Editor::default();
+    editor.execute(Command::AddPart(Instrument::Voice)).unwrap();
+    let instruments = |editor: &Editor| -> Vec<Instrument> {
+        editor
+            .score()
+            .parts()
+            .iter()
+            .map(|p| p.instrument())
+            .collect()
+    };
+    assert_eq!(instruments(&editor), [Instrument::Voice, Instrument::Piano]);
+    editor
+        .execute(Command::AddPart(Instrument::Violin))
+        .unwrap();
+    let violin = editor.cursor().part;
+    assert_eq!(
+        instruments(&editor),
+        [Instrument::Piano, Instrument::Voice, Instrument::Violin],
+        "with strings, orchestral order"
+    );
+    editor.execute(Command::RemovePartById(violin)).unwrap();
+    assert_eq!(instruments(&editor), [Instrument::Voice, Instrument::Piano]);
+    editor.undo();
+    assert_eq!(
+        instruments(&editor),
+        [Instrument::Piano, Instrument::Voice, Instrument::Violin]
+    );
+}

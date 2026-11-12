@@ -1545,6 +1545,9 @@ impl Editor {
                     };
                     next.selection = None;
                 }
+                // A line-up can change convention when a part leaves (a
+                // violin from voice, piano and violin).
+                next.score.arrange_parts();
             }
         }
         let remove_other =

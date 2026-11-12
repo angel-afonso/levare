@@ -20,6 +20,7 @@ use MenuEntry::{Command as C, Recent, Separator as S};
 
 pub const FILE_MENU: &[MenuEntry] = &[
     C(id::NEW),
+    C(id::START_SCREEN),
     C(id::OPEN),
     Recent,
     S,
@@ -39,6 +40,7 @@ pub const FILE_MENU: &[MenuEntry] = &[
 /// menu bar: updates, and quit at the end as Windows and Linux apps do.
 pub const FILE_MENU_WITH_APP_ITEMS: &[MenuEntry] = &[
     C(id::NEW),
+    C(id::START_SCREEN),
     C(id::OPEN),
     Recent,
     S,
@@ -215,13 +217,18 @@ mod tests {
         };
         assert_eq!(new.label, "Nueva partitura");
         assert_eq!(new.keys.as_deref(), Some("⌘N"));
-        let MenuRow::Recent { files, clear, .. } = &rows[2] else {
-            panic!("third row is the recent submenu")
+        let MenuRow::Item(start) = &rows[1] else {
+            panic!("second row is New from a template")
+        };
+        assert_eq!(start.label, "Nueva partitura desde plantilla…");
+        assert_eq!(start.keys.as_deref(), Some("⇧⌘N"));
+        let MenuRow::Recent { files, clear, .. } = &rows[3] else {
+            panic!("fourth row is the recent submenu")
         };
         assert_eq!(files[0].title, "Trío.partitura");
         assert!(clear.enabled);
         let empty = project_menu(FILE_MENU, &registry, &keymap, &Defaults, &[]);
-        let MenuRow::Recent { clear, .. } = &empty[2] else {
+        let MenuRow::Recent { clear, .. } = &empty[3] else {
             panic!()
         };
         assert!(!clear.enabled, "nothing to clear");

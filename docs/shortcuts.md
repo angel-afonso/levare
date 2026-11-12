@@ -13,6 +13,7 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | macOS | Windows and Linux | Command | Status |
 |---|---|---|---|
 | `⌘N` | `Ctrl+N` | Nueva partitura |  |
+| `⇧⌘N` | `Ctrl+Mayús+N` | Nueva partitura desde plantilla… |  |
 | `⌘O` | `Ctrl+O` | Abrir… |  |
 | `⌘S` | `Ctrl+S` | Guardar |  |
 | `⇧⌘S` | `Ctrl+Mayús+S` | Guardar como… |  |

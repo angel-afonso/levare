@@ -80,6 +80,7 @@ impl Profile {
 #[rustfmt::skip]
 const SIBELIUS_LAPTOP: &[(&str, CommandId)] = &[
     ("secondary-n", id::NEW),
+    ("shift-secondary-n", id::START_SCREEN),
     ("secondary-o", id::OPEN),
     ("secondary-s", id::SAVE),
     ("shift-secondary-s", id::SAVE_AS),

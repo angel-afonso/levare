@@ -675,7 +675,14 @@ Preferencias is open.
 
 `InstrumentFamily` and `Instrument::score_order` share the presentation order between
 editor, parts list and engraver. `Score::arrange_parts` sorts whole parts stably: it keeps
-IDs, the voices of both hands, events and connections. The session normalizes the order
+IDs, the voices of both hands, events and connections. Its key
+(`ensemble_order::order_key`) is `score_order` except for three line-ups: voices
+accompanied only by keyboards or plucked strings go above them, trumpets lead a
+brass-only ensemble, and in woodwinds with horns the horns sit above the bassoons. Adding
+or removing a part re-sorts with the line-up it leaves, so adding a violin to voice and
+piano brings orchestral order back. The parts list still groups by family in its fixed
+order, and the engraver brackets each run of a family, so a wind quintet's horn splits
+the woodwind bracket. The session normalizes the order
 on opening and editing applies it when adding instruments. The saved snapshot uses that
 same order to avoid a false changes indicator. The file schema wasn't modified: the
 sequence of parts was already serializable.
@@ -776,6 +783,33 @@ accumulated drift.
 
 The visible clock is updated from the position already published by the audio control;
 the interface neither queries nor modifies the synthesizer to draw it.
+
+## Start view
+
+`start.rs` holds the state and the decisions; `ui/start_screen.rs` draws it as a dialog
+over the workspace, like the instrument picker. `AppView::new` shows it only when the
+autosave held nothing, no update reopens a score and no file came on the command line
+(`system_open::launched_with_files`); a file the system hands over later opens through
+`request_next` and closes it. Prompts (kept recovery, past crash, update notice) keep
+their order: the view does not set `confirming`.
+
+- **Templates** (`score_core::TEMPLATES`) are lists of catalog instruments. `Template::score`
+  builds them with `Score::new` and `arrange_parts`, with the default score's bar count,
+  title, key and meter, so clefs, transpositions and order are those of adding the
+  instruments by hand. The catalog has no drum kit or electric bass, so there is no big
+  band template yet.
+- **Examples** (`start::EXAMPLES`) are four small files from `examples/`, embedded with
+  `include_bytes!` and decoded with `score_io::decode`. They and the templates reach the
+  document through `Next::Fresh`, which `perform_next` turns into a clean, untitled
+  `Document` (`replace_document`, shared with `Next::New`); saving asks for a path.
+- **Recent scores** come from `recientes.json`. One that has gone since launch is dropped
+  from the list with a message inside the view, which covers the status bar.
+- **Keys**: `AppView::intercept` hands keys without ⌘/Ctrl/Alt to `start_key` (arrows,
+  Tab, Enter, Esc); the rest reach `run`, where `start_allows` keeps the view for
+  opening and quitting and closes it for any other command.
+- **Preference**: `inicio.json` holds `mostrar_al_iniciar`; a missing or damaged file
+  shows the view. The command is `archivo.nueva-desde-plantilla` (`⇧⌘N`, «Nueva partitura
+  desde plantilla…»), in Archivo and the command search.
 
 ## Toolbar
 
