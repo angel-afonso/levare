@@ -1317,6 +1317,25 @@ MXL, timewise, external voices and chords, transposition, pickups, expressions a
 export/import round trip of the 22 examples of that time, comparing attacks, pitches,
 durations, harmonics and techniques.
 
+Marks attach to events: the reader keeps each direction, harmony and lyric at its tick,
+and the builder cuts a note with ties where a mark falls inside it, so a chord symbol on
+the third beat of a whole note gets its own note. Consecutive `<words>` of one
+`direction-type` are one text, as Finale and Sibelius change font within it. A
+`<harmony>` is read through its printed kind and its degrees together (`text="7"` plus
+an added ♭9 is «7♭9», a `minor-seventh` with an altered fifth is «m7♭5»); degrees no
+`ChordQuality` holds keep the base quality and warn. Dynamics are read from directions
+and from a note's `<notations>`. A clef changed within a bar is moved to the next bar,
+since `ClefMap` changes only at barlines; key and time changes within a bar are still
+refused. `<stem>` is not read, because most programs write one on every note and the
+native stem is a manual override; `<print>` breaks are layout and are recalculated.
+
+Whatever the model cannot hold produces a deduplicated Spanish warning (at most 32 per
+file) rather than a silent loss: README «Opening MusicXML» lists what is kept, adapted,
+left out and refused. `a_score_with_every_mark_levare_writes_round_trips_through_musicxml`
+exports one score with every mark the exporter writes and compares it after opening
+again; the fixtures in `musicxml/import/tests.rs` and `sung_tests.rs` are small
+hand-written files in the style of MuseScore, Sibelius, Dorico and Finale.
+
 
 ## Exporting score and parts
 

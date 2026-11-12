@@ -67,12 +67,18 @@ fn musicxml_preserves_initial_and_later_staff_clefs() {
     assert_eq!(extracted.parts()[0].clef_at(StaffId::Lower, 4), Clef::Tenor);
 }
 #[test]
-fn musicxml_rejects_mid_measure_clef_changes_instead_of_moving_them() {
+fn musicxml_moves_mid_measure_clef_changes_to_the_next_barline_with_a_warning() {
     let xml = br#"<score-partwise><part-list><score-part id="P1"><part-name>Viola</part-name></score-part></part-list><part id="P1"><measure><attributes><divisions>1</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note><attributes><clef><sign>G</sign><line>2</line></clef></attributes></measure></part></score-partwise>"#;
+    let result = musicxml::decode(xml).unwrap();
     assert!(
-        musicxml::decode(xml)
-            .unwrap_err()
-            .to_string()
-            .contains("dentro del compás")
+        result
+            .warnings
+            .iter()
+            .any(|w| w.contains("dentro del compás"))
+    );
+    // The last bar has no barline after it to take the clef.
+    assert_eq!(
+        result.score.parts()[0].clef_at(StaffId::Upper, 0),
+        Clef::Alto
     );
 }
