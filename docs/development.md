@@ -1313,6 +1313,44 @@ global changes, divisi, connections and piano arpeggios included. They also veri
 and order of sections, subsets, native format, MusicXML of each part, invalid selection,
 protection of existing targets and the joint PDF/MusicXML delivery of the Menuetto.
 
+### Multi-measure rests
+
+`Score::multirests(part)` (`score-core/src/multirest.rs`) returns the runs of two or
+more bars a part gathers, and both engraving and MusicXML read it, so a part prints and
+exports the same runs. A bar can join a run when every event of every staff and voice is
+a rest with a default `Notation` (no dynamic, text, lyric, chord symbol, fermata…), it is
+not a bar repeat, it has no divisi, no volta covers it, it carries no segno, coda,
+To Coda, Fine or jump, and no connection of the part (hairpin, line, slur) spans it.
+A bar starts a new run instead of continuing one when it brings a time, key, clef or
+tempo change, a rehearsal mark or a start repeat, or when the bar before it ends with an
+end repeat, any barline other than a single one, or a system or page break. A bar ending
+with a special barline can close a run, which then ends with that barline.
+
+`LayoutEngine::layout_part` uses the runs unless `PageSetup::separate_empty_bars` is set
+(a `#[serde(default)]` field, so older files open with multi-measure rests on);
+`layout_view`, the full score, never does. Every bar of a run stays in
+`Layout::measures`, so indices, `measure_at`, `voice_cursor` and the playhead's
+`time_positions` keep working: the first bar gets a column of at least its prefix plus
+`multirest::WIDTH`, ends with the run's last barline and draws the H-bar and the count
+(Bravura time-signature digits, upper staff only); the other bars take no room, lie on
+top of the first with its origin and width, and draw nothing. A run counts as one bar
+towards the six per system and never splits between systems. `Layout::multirests` lists
+the runs, and `numbered_bars` skips the bars inside them, so the next bar shows its real
+number. Piano barline connectors are drawn once per run. The cached engraving of each bar
+is kept unchanged and the multi-measure rest is derived from it after the cache.
+
+Editing in a part view needs no special case: the caret of a gathered bar is drawn on the
+multi-measure rest, a click on it lands in the run's first bar, and a note written in any
+bar makes that bar non-empty, so the next layout splits the run around it. Playback
+ignores multi-measure rests: they only change the drawing.
+
+`musicxml::encode_part`/`export_part`, used by `score-export` for parts, add
+`<measure-style><multiple-rest>N</multiple-rest></measure-style>` to the first bar of
+each run and still write every bar with its rest. The tests are in
+`score-layout/src/multirest_tests.rs` (consolidation, each kind of break, numbering,
+caret and click, a piano part, the option and every view) and in `score-export`
+(PDF pages and MusicXML of a part against the full score).
+
 
 ## Click to place playback and pitch drag
 
