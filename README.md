@@ -1483,22 +1483,48 @@ Importing creates an editable copy with no native path and marks it as unsaved.
 **Guardar** asks for a **.levare** file; the original MusicXML is not changed. The
 imported copy also takes part in autosave and recovery.
 
-Notes, chords of uniform duration, rests, up to four voices per staff and two staves per
-instrument are kept; time signature, key signature, tempo, dynamics, basic
-articulations, complete ties and slurs, hairpins, fermatas, arco/pizzicato, harmonics
-and arpeggios. Transposing parts keep their transposition interval and are rebuilt in
-written pitch. Pickups are represented with a shortened first bar. Divisi can be rebuilt
-from the div./unis. markings or the visibility of the second staff. The page layout is
-recalculated with Levare's engraving.
+What is kept:
 
-If something is left out or adapted, a warning appears on opening: for example, lyrics,
-free text, ornaments, chord symbols, instruments without an equivalent and ties or
-slurs that affect only some notes of a chord. Cases that cannot represent the music
-correctly are refused with an explanation, including more than four voices per staff,
-rhythms beyond the supported resolution, microtones, different simultaneous time
-signatures and touch harmonics with no deducible sounding pitch. Natural harmonics
-without a pitch type are read at the written pitch with a warning. The artificial
-harmonics accepted are at the fourth.
+- **Music:** notes, chords of uniform duration, rests, tuplets, up to four voices per
+  staff, two staves per instrument with notes crossing between them, grace notes (up to
+  four before a note), header credits, and changes of time signature, key, clef and
+  tempo with its text. Transposing parts keep their transposition interval and are
+  rebuilt in written pitch. Pickups are represented with a shortened first bar. Divisi
+  is rebuilt from the div./unis. markings or the visibility of the second staff.
+- **Marks:** dynamics, also those written on a note; staccato, tenuto, accent, marcato
+  and staccatissimo; breaths and caesuras; fermatas; mordents and turns; trills with
+  or without their wavy line; single-note tremolos; x, diamond and slash noteheads;
+  arco/pizzicato, harmonics and arpeggios.
+- **Lines:** ties and slurs, hairpins, 8va and 8vb, sustain pedal and glissandi.
+- **Text:** lyrics in up to four verses, with hyphens and extenders (elisions are written
+  with a space); chord symbols with their root, quality and bass, including the ♭9, ♯9
+  and added notes Levare writes, whether the program prints them in the text or spells
+  them as degrees; expression and technique text by its placement and style, also when
+  written in several runs; rehearsal marks.
+- **Form:** repeats, endings, segno, coda, To Coda, Fine, D.C. and D.S. jumps, barline
+  styles and one-bar repeats (%).
+
+The page layout, stem directions and system and page breaks are recalculated with
+Levare's engraving.
+
+If something is left out or adapted, a warning appears on opening. Left out:
+instruments without an equivalent; ties or slurs that affect only some notes of a chord;
+lyrics on rests or grace notes and verses after the fourth; N.C., hidden chord symbols,
+Roman numerals and chord alterations Levare does not write (a ♯11 keeps the seventh
+chord without it); other ornaments, such as the inverted turn or the trill's
+accidental; fermatas over a barline; two-note tremolos; fingerings, bowings and other
+technical marks; the sostenuto pedal; 15ma lines; and tempo changes within a bar.
+Adapted: pppp and ffff become ppp and fff; spiccato becomes staccatissimo; a clef change
+within a bar moves to the next barline; texts over 40 characters and syllables over 20
+are shortened; cue notes become normal notes; and the bars of a repeat of several bars
+keep the music the file writes in them.
+
+Cases that cannot represent the music correctly are refused with an explanation,
+including more than four voices per staff or two staves per instrument, rhythms beyond
+the supported resolution, nested tuplets, microtones, different simultaneous time
+signatures, time or key changes within a bar and touch harmonics with no deducible
+sounding pitch. Natural harmonics without a pitch type are read at the written pitch
+with a warning. The artificial harmonics accepted are at the fourth.
 
 ```sh
 cargo run -p score-io --example import_musicxml -- obra.musicxml copia-editable.levare
