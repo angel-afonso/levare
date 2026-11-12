@@ -153,7 +153,7 @@ pub fn panel(view: &AppView, cx: &Context<AppView>) -> Div {
                         .map(|family| family_rows(view, family, cx)),
                 ),
         )
-        .child(footer(view))
+        .child(footer(view, cx))
 }
 
 /// «Partes N» with its «+», Lista | Mezcla and the search field.
@@ -478,13 +478,30 @@ fn mix_row(
             v.focus.focus(window);
             v.select_part(id, cx);
         }))
-        .child(row_line(view, &row, chosen))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    row_line(view, &row, chosen)
+                        .flex_1()
+                        // Faded while muted or left out of a solo.
+                        .when(
+                            !view.playback.is_audible(view.document.editor.score(), id),
+                            |line| line.opacity(0.5),
+                        ),
+                )
+                .child(mixer::mute_solo(view, id, &row.name, cx)),
+        )
         .child(mixer::part_controls(view, id, &row.name, family, cx))
 }
 
 /// One quiet line: the current part and the keys that change it, or in
-/// Mezcla the general volume.
-fn footer(view: &AppView) -> Div {
+/// Mezcla the general volume, after a way to clear mutes and solos while
+/// there are any.
+fn footer(view: &AppView, cx: &Context<AppView>) -> Div {
     let line = div()
         .flex_shrink_0()
         .border_t_1()
@@ -497,6 +514,28 @@ fn footer(view: &AppView) -> Div {
         .text_size(px(11.5))
         .text_color(rgb(MUTED));
     if view.ui.parts_mode == PartsMode::Mix {
+        if view.playback.has_mute_or_solo(view.document.editor.score()) {
+            return line
+                .items_center()
+                .child(
+                    toolbar::action_button(
+                        "clear-mute-solo",
+                        "Quitar silencios y solos",
+                        false,
+                        cx,
+                        |v, _, cx| {
+                            if !(v.busy || v.confirming) {
+                                v.clear_mute_solo(cx);
+                            }
+                        },
+                    )
+                    .h(px(22.))
+                    .px_2()
+                    .text_size(px(11.))
+                    .tooltip(command_hint(view, id::CLEAR_MUTE_SOLO)),
+                )
+                .child(format!("General {} %", view.playback.volume));
+        }
         return line
             .child("Volumen general")
             .child(format!("{} %", view.playback.volume));

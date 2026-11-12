@@ -168,9 +168,13 @@ five-instrument ensemble.
   playback, and clicking the value shown on their right resets it to the usual one;
   their settings belong to the session, are kept when switching sound bank and are
   not saved in the score. Solista or Sección is saved and can be undone
-  ([details](docs/sfz.md#solista-o-sección)). The footer says which part is chosen and
-  which keys change part (`⌥↑` `⌥↓`) or, in Mezcla, the master volume. No editors open
-  here any more.
+  ([details](docs/sfz.md#solista-o-sección)). Next to each name, **M** (Silenciar)
+  mutes the part and **S** (Solo) puts it in solo; several parts can be in solo at
+  once, and while any is, only those sound, even if they are muted. A part that does
+  not sound shows its name faded. Both act at once, also during playback, and belong to
+  the session like volume and position. The footer says which part is chosen and which
+  keys change part (`⌥↑` `⌥↓`) or, in Mezcla, the master volume, with **Quitar
+  silencios y solos** while a part is muted or in solo. No editors open here any more.
 - **Selection, Sound and Review (right panel):** answers "what have I selected and
   what do I change about it?". Three tabs on one line.
   **Selección** changes with what is selected. With nothing selected it shows the
@@ -1223,6 +1227,12 @@ are respected.
   time signature (two clicks a bar in 6/8, three in 9/8), tempo changes, fermatas,
   repeats and half speed. Switching it while playing keeps the place. Levare makes the
   click itself, so it sounds the same with every sound bank.
+- **Silenciar parte**, **Solo de la parte** and **Quitar silencios y solos** (command
+  search, or a shortcut of your own in Preferencias de atajos): mute the chosen part,
+  put it in solo, or make every part sound again, like **M** and **S** in Mezcla. They
+  are session settings: the score, its PDF and its MusicXML do not change, and a new or
+  opened score starts with every part sounding. The metronome, the count-in and the
+  audition of the notes you write still sound for a muted part.
 - **Cuenta previa**: one bar of clicks, in the time signature and tempo where playback
   starts, before the music. The playhead waits through it; notes already sounding at
   the start come in with the music.
