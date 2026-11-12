@@ -1961,6 +1961,9 @@ impl AppView {
                     self.ui.parts_mode = panels::PartsMode::Mix;
                 }
             }
+            id::MUTE_PART => self.toggle_part_mute(self.document.editor.cursor().part, cx),
+            id::SOLO_PART => self.toggle_part_solo(self.document.editor.cursor().part, cx),
+            id::CLEAR_MUTE_SOLO => self.clear_mute_solo(cx),
             // Like MIXER: again goes back to Selección.
             id::SOUNDS => {
                 if self.ui.show_inspector && self.ui.right == panels::RightTab::Sound {

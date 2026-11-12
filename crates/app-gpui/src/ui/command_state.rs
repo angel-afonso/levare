@@ -361,6 +361,12 @@ impl CommandStates for AppView {
             id::MIXER => CommandState::checked(
                 self.ui.show_instruments && self.ui.parts_mode == crate::panels::PartsMode::Mix,
             ),
+            id::MUTE_PART => CommandState::checked(self.playback.is_muted(editor.cursor().part)),
+            id::SOLO_PART => CommandState::checked(self.playback.is_soloed(editor.cursor().part)),
+            id::CLEAR_MUTE_SOLO => CommandState {
+                enabled: self.playback.has_mute_or_solo(editor.score()),
+                ..CommandState::default()
+            },
             id::SOUNDS => {
                 CommandState::checked(self.ui.show_inspector && self.ui.right == RightTab::Sound)
             }

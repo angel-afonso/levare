@@ -329,6 +329,96 @@ pub fn part_controls(
         )
 }
 
+impl AppView {
+    /// Mute or unmute a part, at once even during playback; for this session.
+    pub(crate) fn toggle_part_mute(&mut self, part: PartId, cx: &mut Context<AppView>) {
+        let score = self.document.editor.score();
+        let audition = self.document.editor.cursor().part;
+        let name = score.part_name(part);
+        self.status = if self.playback.toggle_mute(score, part, audition) {
+            format!("{name} no suena al reproducir")
+        } else {
+            format!("{name} vuelve a sonar")
+        };
+        cx.notify();
+    }
+    /// Put a part in solo or take it out; several may be in solo at once.
+    pub(crate) fn toggle_part_solo(&mut self, part: PartId, cx: &mut Context<AppView>) {
+        let score = self.document.editor.score();
+        let audition = self.document.editor.cursor().part;
+        let name = score.part_name(part);
+        self.status = if self.playback.toggle_solo(score, part, audition) {
+            format!("Solo de {name}: solo suenan las partes en solo")
+        } else {
+            format!("{name} sale del solo")
+        };
+        cx.notify();
+    }
+    pub(crate) fn clear_mute_solo(&mut self, cx: &mut Context<AppView>) {
+        let score = self.document.editor.score();
+        self.playback
+            .clear_mute_solo(score, self.document.editor.cursor().part);
+        self.status = "Todas las partes suenan".into();
+        cx.notify();
+    }
+}
+
+/// The M and S buttons of a part's row in Mezcla.
+pub fn mute_solo(view: &AppView, part: PartId, name: &str, cx: &Context<AppView>) -> Div {
+    let score = view.document.editor.score();
+    let silenced_by_solo = !view.playback.is_audible(score, part) && !view.playback.is_muted(part);
+    let toggle = |command: CommandId, label: &'static str, on: bool, detail: String| {
+        toolbar::control(
+            format!("{}-{}", command.as_str(), part.0),
+            label,
+            on,
+            cx,
+            move |v, _, cx| {
+                if v.busy || v.confirming {
+                    return;
+                }
+                if command == id::MUTE_PART {
+                    v.toggle_part_mute(part, cx);
+                } else {
+                    v.toggle_part_solo(part, cx);
+                }
+            },
+        )
+        .size(px(20.))
+        .text_size(px(10.5))
+        .font_weight(FontWeight::SEMIBOLD)
+        .tooltip(described_hint(
+            view.shortcuts
+                .registry
+                .get(command.as_str())
+                .map_or(label, |spec| spec.label),
+            view.shortcuts.label(command),
+            detail,
+        ))
+    };
+    div()
+        .flex_shrink_0()
+        .flex()
+        .gap(px(2.))
+        .on_mouse_down(MouseButton::Left, stop_press)
+        .child(toggle(
+            id::MUTE_PART,
+            "M",
+            view.playback.is_muted(part),
+            format!("Silenciar {name}. Ajuste de esta sesión: no modifica la partitura."),
+        ))
+        .child(toggle(
+            id::SOLO_PART,
+            "S",
+            view.playback.is_soloed(part),
+            if silenced_by_solo {
+                format!("Otra parte está en solo, así que {name} no suena. Ponla en solo también para oírla.")
+            } else {
+                format!("Solo de {name}: mientras haya partes en solo, solo suenan ellas.")
+            },
+        ))
+}
+
 /// Solo or section recordings, for instruments a pack may have both of.
 /// Choosing the score's own default stores no choice in the document.
 fn players(view: &AppView, part: PartId, cx: &Context<AppView>) -> Div {

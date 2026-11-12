@@ -320,6 +320,9 @@ Change them in **Archivo › Preferencias de atajos…** (`⌘,` on macOS, `Ctrl
 | — | — | Cuenta previa de un compás |  |
 | — | — | Hacer sonar los cifrados |  |
 | `M` | `M` | Mezcla de las partes |  |
+| — | — | Silenciar parte |  |
+| — | — | Solo de la parte |  |
+| — | — | Quitar silencios y solos |  |
 | — | — | Mostrar el sonido |  |
 | — | — | Audición al escribir |  |
 | — | — | Subir el tempo |  |

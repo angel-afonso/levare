@@ -450,6 +450,9 @@ pub mod id {
         COUNT_IN = "reproduccion.cuenta-previa";
         CHORD_PLAYBACK = "reproduccion.cifrados";
         MIXER = "reproduccion.mezclador";
+        MUTE_PART = "reproduccion.silenciar-parte";
+        SOLO_PART = "reproduccion.solo-parte";
+        CLEAR_MUTE_SOLO = "reproduccion.quitar-silencios-solos";
         SOUNDS = "reproduccion.sonidos";
         AUDITION = "reproduccion.audicion";
         TEMPO_UP = "reproduccion.tempo-mas";
@@ -773,6 +776,9 @@ const BUILTIN: &[CommandSpec] = &[
     spec(id::COUNT_IN, C::Playback, "Cuenta previa de un compás", G, false, R),
     spec(id::CHORD_PLAYBACK, C::Playback, "Hacer sonar los cifrados", S, false, R),
     spec(id::MIXER, C::Playback, "Mezcla de las partes", S, false, R),
+    spec(id::MUTE_PART, C::Playback, "Silenciar parte", S, false, R),
+    spec(id::SOLO_PART, C::Playback, "Solo de la parte", S, false, R),
+    spec(id::CLEAR_MUTE_SOLO, C::Playback, "Quitar silencios y solos", S, false, R),
     spec(id::SOUNDS, C::Playback, "Mostrar el sonido", S, false, R),
     spec(id::AUDITION, C::Playback, "Audición al escribir", G, false, R),
     spec(id::TEMPO_UP, C::Playback, "Subir el tempo", G, true, R),

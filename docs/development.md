@@ -420,6 +420,19 @@ The second delivery lets the musician hear what they write and play the score:
 - **Controls:** 120 BPM initially, range 30–240, volume and audition configurable during
   the session. Changing tempo stops the plan; changing volume applies on the next block.
   These options aren't part of the native file yet.
+- **Mute and solo:** `Playback` keeps the muted and soloed parts by `PartId` for the
+  session, like each part's volume and pan, and never in the score, so files, PDF and
+  MusicXML don't change and old files need nothing. `apply_mixer` turns them into the
+  channel volume: a part that should not sound (muted, or outside a solo while any part
+  of the score is in solo; solo wins over mute) gets volume 0 on its channel and its
+  second bank. That travels the same lock-free route as the sliders, one atomic per
+  channel read at the start of each block, so the audio thread neither locks nor
+  allocates and the plan keeps playing: notes still start and stop, unmuting mid-note
+  brings them back, and none can hang. GeneralUser ramps a volume change across the
+  block, sfizz smooths it and the harmonics engine glides over 5 ms, so muting does
+  not click. The audition channel (15) keeps the part's own mix, so the notes being
+  written sound even in a muted part; the metronome and count-in are mixed apart from
+  the channels. Opening or starting a score clears them with `reset_part_mix`.
 
 The view automatically follows the active note or rest on both axes, with a margin for
 the highlight, stems and flags. It only scrolls the canvas when the element leaves the
@@ -678,7 +691,9 @@ their ribbon buttons, at hand next to what is being looked at.
   rows (name and a note on clefs and transposition) and the search filter, which ignores
   case and accents and shows the families unfolded. Lista and Mezcla share the rows;
   Mezcla adds `mixer::part_controls` (volume and pan, per session; Sección | Solista as
-  `Command::SetPlayers`, which is saved and undone).
+  `Command::SetPlayers`, which is saved and undone) and `mixer::mute_solo`, the M and S
+  buttons, which run the same code as the commands `reproduccion.silenciar-parte`,
+  `reproduccion.solo-parte` and `reproduccion.quitar-silencios-solos` (no default keys).
 - **Right, «what do I have selected and what do I change on it?»**. `RightTab` tabs:
   Selección (`ui/selection_view.rs` computes without GPUI what is selected from the
   editor: score, note, rest, passage or open editor; `ui/selection_panel.rs` draws it and
