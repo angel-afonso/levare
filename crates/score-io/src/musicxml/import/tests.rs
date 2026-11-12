@@ -891,7 +891,7 @@ fn quarter(step: &str, inside: &str, notations: &str) -> String {
 fn first_bar(result: &ImportResult) -> Vec<Event> {
     result.score.parts()[0].staves()[0].measures()[0]
         .timed_iter()
-        .map(|(_, _, _, event)| event.clone())
+        .map(|(_, _, _, event)| *event)
         .collect()
 }
 
