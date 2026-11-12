@@ -623,6 +623,9 @@ fn read_part(
                 }
                 "note" => {
                     if let Some(grace) = child(n, "grace") {
+                        if child(n, "lyric").is_some() {
+                            warnings.add("La letra de las notas de adorno no se importa");
+                        }
                         let pitch = child(n, "pitch");
                         if child(n, "chord").is_some() || pitch.is_none() {
                             warnings.add("Los acordes y las notas de adorno sin altura se importan solo con su primera nota");
@@ -722,6 +725,12 @@ fn read_part(
                         }
                         if event.arpeggio.is_some() {
                             last.arpeggio = event.arpeggio;
+                        }
+                        // A syllable may stand on any note of the chord.
+                        for (verse, syllable) in event.notation.lyrics.verses() {
+                            if last.notation.lyrics.verse(verse).is_none() {
+                                last.notation.lyrics.set(verse, Some(syllable));
+                            }
                         }
                         last.notation.fermata |= event.notation.fermata;
                         last.notation.ornament = last.notation.ornament.or(event.notation.ornament);
@@ -1118,7 +1127,12 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
             .filter(|c| c.has_tag_name("text"))
             .filter_map(|t| t.text())
             .collect();
-        let mut text = words.join(" ").trim().to_owned();
+        // Non-breaking and other spaces, as some programs write them, are plain spaces.
+        let mut text = words
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         if text.is_empty() {
             continue;
         }
@@ -1138,7 +1152,10 @@ fn read_lyrics(n: Node<'_, '_>, notation: &mut Notation, warnings: &mut Warnings
             text.truncate(end);
             warnings.add("Las sílabas de más de 20 caracteres se recortan");
         }
-        let join = if child(lyric, "extend").is_some() {
+        // An extender's stop ends a line drawn from an earlier syllable.
+        let join = if child(lyric, "extend")
+            .is_some_and(|e| matches!(e.attribute("type"), None | Some("start" | "continue")))
+        {
             Join::Melisma
         } else {
             match self::text(lyric, "syllabic") {

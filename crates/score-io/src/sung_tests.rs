@@ -249,3 +249,44 @@ fn every_chord_quality_with_roots_and_basses_round_trips_through_musicxml() {
         assert_eq!(sung(&result.score), sung(&score), "{quality:?}");
     }
 }
+
+#[test]
+fn lyrics_on_any_chord_note_and_foreign_spacing_import() {
+    let note = |step: &str, extra: &str| {
+        format!(
+            "<note>{extra}<pitch><step>{step}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type>"
+        )
+    };
+    let measure = [
+        "<note><grace slash=\"yes\"/><pitch><step>D</step><octave>5</octave></pitch><voice>1</voice><type>eighth</type><lyric number=\"1\"><text>ah</text></lyric></note>".to_owned(),
+        note("C", "") + "</note>",
+        // Finale may write the syllable on another note of the chord.
+        note("E", "<chord/>")
+            + "<lyric number=\"1\" name=\"verse\" default-y=\"-80\"><syllabic>begin</syllabic><text>A\u{a0}la</text></lyric></note>",
+        note("D", "")
+            + "<lyric number=\"1\"><syllabic>end</syllabic><text>ba</text><extend type=\"start\"/></lyric></note>",
+        note("E", "") + "<lyric number=\"1\"><extend type=\"stop\"/></lyric></note>",
+        note("F", "")
+            + "<lyric number=\"1\"><syllabic>single</syllabic><text>sí</text><extend type=\"stop\"/></lyric></note>",
+    ]
+    .concat();
+    let xml = foreign(&format!(
+        "<measure number=\"1\">{FOREIGN_ATTRIBUTES}{measure}</measure>"
+    ));
+    let result = musicxml::decode(xml.as_bytes()).unwrap();
+    let lyrics: Vec<_> = sung(&result.score).into_iter().map(|s| s.1).collect();
+    assert_eq!(
+        lyrics,
+        [
+            vec![(0, "A la".to_owned(), Join::Hyphen)],
+            vec![(0, "ba".to_owned(), Join::Melisma)],
+            vec![(0, "sí".to_owned(), Join::Word)],
+        ]
+    );
+    assert!(
+        result.warnings.iter().any(|w| w.contains("adorno")),
+        "{:?}",
+        result.warnings
+    );
+    assert!(!result.warnings.iter().any(|w| w.contains("sílaba")));
+}
