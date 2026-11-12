@@ -921,6 +921,10 @@ When a score is opened or instruments are added, the score and the parts list ar
 sorted by family: woodwinds, brass, percussion, keyboards, plucked strings, voices and
 strings. Within each family the orchestral catalog order is kept
 (flute–oboe–clarinet–bassoon, horn–trumpet–trombone, violin–viola–cello–double bass).
+Chamber line-ups follow their own convention: voices accompanied only by piano, organ,
+harp or guitar go above them, trumpets lead a brass ensemble, and woodwinds with horns
+(a wind quintet) place the horns above the bassoons. Adding an instrument from outside
+the line-up brings orchestral order back.
 Repeated instruments keep their relative order and their notes; the IDs do not change.
 
 Each system shows **family brackets** and barlines joined within each group, with

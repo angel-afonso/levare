@@ -641,7 +641,14 @@ Preferencias is open.
 
 `InstrumentFamily` and `Instrument::score_order` share the presentation order between
 editor, parts list and engraver. `Score::arrange_parts` sorts whole parts stably: it keeps
-IDs, the voices of both hands, events and connections. The session normalizes the order
+IDs, the voices of both hands, events and connections. Its key
+(`ensemble_order::order_key`) is `score_order` except for three line-ups: voices
+accompanied only by keyboards or plucked strings go above them, trumpets lead a
+brass-only ensemble, and in woodwinds with horns the horns sit above the bassoons. Adding
+or removing a part re-sorts with the line-up it leaves, so adding a violin to voice and
+piano brings orchestral order back. The parts list still groups by family in its fixed
+order, and the engraver brackets each run of a family, so a wind quintet's horn splits
+the woodwind bracket. The session normalizes the order
 on opening and editing applies it when adding instruments. The saved snapshot uses that
 same order to avoid a false changes indicator. The file schema wasn't modified: the
 sequence of parts was already serializable.
@@ -754,8 +761,7 @@ their order: the view does not set `confirming`.
   builds them with `Score::new` and `arrange_parts`, with the default score's bar count,
   title, key and meter, so clefs, transpositions and order are those of adding the
   instruments by hand. The catalog has no drum kit or electric bass, so there is no big
-  band template yet. Score order puts keyboards above voices, so **Voz y piano** shows
-  the piano first.
+  band template yet.
 - **Examples** (`start::EXAMPLES`) are four small files from `examples/`, embedded with
   `include_bytes!` and decoded with `score_io::decode`. They and the templates reach the
   document through `Next::Fresh`, which `perform_next` turns into a clean, untitled

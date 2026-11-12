@@ -50,6 +50,7 @@ mod marks;
 pub use marks::{MarkFamily, MarkKind, MarkRef, Placement};
 mod offsets;
 pub use offsets::{BarMark, BarMarkRef, BarOffsets, ConnectionOffset, MarkOffsets, Offset};
+mod ensemble_order;
 #[cfg(test)]
 mod offsets_tests;
 mod templates;
@@ -708,16 +709,17 @@ impl Score {
     }
     /// Rearrange complete parts, preserving their IDs, notes, staves and links.
     pub fn arrange_parts(&mut self) -> bool {
-        if self
-            .parts
+        let instruments: Vec<_> = self.parts.iter().map(|part| part.instrument).collect();
+        let key = ensemble_order::order_key(&instruments);
+        if instruments
             .iter()
-            .map(|part| part.instrument.score_order())
+            .map(|&instrument| key(instrument))
             .is_sorted()
         {
             return false;
         }
         let mut parts: Vec<_> = self.parts.iter().cloned().collect();
-        parts.sort_by_key(|part| part.instrument.score_order());
+        parts.sort_by_key(|part| key(part.instrument));
         self.parts = parts.into_iter().collect();
         true
     }

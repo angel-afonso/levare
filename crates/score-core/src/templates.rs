@@ -45,7 +45,7 @@ pub const TEMPLATES: &[Template] = &[
     },
     Template {
         name: "Quinteto de viento",
-        detail: "Flauta, oboe, clarinete en Si♭, fagot y corno en Fa",
+        detail: "Flauta, oboe, clarinete en Si♭, corno en Fa y fagot",
         instruments: &[Flute, Oboe, ClarinetBb, HornF, Bassoon],
     },
     Template {
@@ -189,12 +189,8 @@ mod tests {
             assert_eq!(score.time(), empty.time());
             assert_eq!(score.key_signature(), empty.key_signature());
             assert!(
-                score
-                    .parts()
-                    .iter()
-                    .map(|part| part.instrument().score_order())
-                    .is_sorted(),
-                "{} is in score order",
+                !score.clone().arrange_parts(),
+                "{} stays as it is when opened or edited",
                 template.name
             );
             assert!(!template.detail.is_empty());
@@ -215,10 +211,10 @@ mod tests {
     fn piano_lead_sheet_and_voices() {
         assert_eq!(line_up("Piano"), [row("Piano", &[Treble, Bass], C)]);
         assert_eq!(line_up("Melodía y cifrado"), [row("Voz", &[Treble], C)]);
-        // Score order puts keyboards above voices, as in an orchestral score.
+        // The voice above its accompaniment.
         assert_eq!(
             line_up("Voz y piano"),
-            [row("Piano", &[Treble, Bass], C), row("Voz", &[Treble], C)]
+            [row("Voz", &[Treble], C), row("Piano", &[Treble, Bass], C)]
         );
         assert_eq!(
             line_up("Coro mixto"),
@@ -249,16 +245,16 @@ mod tests {
                 row("Flauta", &[Treble], C),
                 row("Oboe", &[Treble], C),
                 row("Clarinete en Si♭", &[Treble], (-1, -2)),
-                row("Fagot", &[Bass], C),
                 row("Corno en Fa", &[Treble], (-4, -7)),
+                row("Fagot", &[Bass], C),
             ]
         );
         assert_eq!(
             line_up("Quinteto de metales"),
             [
-                row("Corno en Fa", &[Treble], (-4, -7)),
                 row("Trompeta en Si♭ I", &[Treble], (-1, -2)),
                 row("Trompeta en Si♭ II", &[Treble], (-1, -2)),
+                row("Corno en Fa", &[Treble], (-4, -7)),
                 row("Trombón tenor", &[Bass], C),
                 row("Tuba", &[Bass], C),
             ]
@@ -366,5 +362,72 @@ mod tests {
         let position = |name: &str| band.iter().position(|(part, ..)| part == name).unwrap();
         assert!(position("Saxofón barítono en Mi♭") < position("Corno en Fa I"));
         assert!(position("Tuba") < position("Timbales"));
+    }
+
+    fn order(score: &Score) -> Vec<Instrument> {
+        score.parts().iter().map(|part| part.instrument()).collect()
+    }
+
+    #[test]
+    fn adding_a_part_outside_the_line_up_brings_orchestral_order_back() {
+        let mut song = template("Voz y piano").score().unwrap();
+        song.add_part(Violin).unwrap();
+        assert!(song.arrange_parts());
+        assert_eq!(order(&song), [Piano, Voice, Violin]);
+        let violin = song.parts().back().unwrap().id();
+        song.remove_part(violin).unwrap();
+        assert!(song.arrange_parts());
+        assert_eq!(order(&song), [Voice, Piano], "back to a song");
+
+        let mut quintet = template("Quinteto de viento").score().unwrap();
+        quintet.add_part(Oboe).unwrap();
+        assert!(quintet.arrange_parts());
+        assert_eq!(
+            order(&quintet),
+            [Flute, Oboe, Oboe, ClarinetBb, HornF, Bassoon]
+        );
+        quintet.add_part(Violin).unwrap();
+        assert!(quintet.arrange_parts());
+        assert_eq!(
+            order(&quintet),
+            [Flute, Oboe, Oboe, ClarinetBb, Bassoon, HornF, Violin]
+        );
+
+        let mut brass = template("Quinteto de metales").score().unwrap();
+        brass.add_part(BassTrombone).unwrap();
+        assert!(brass.arrange_parts());
+        assert_eq!(
+            order(&brass),
+            [TrumpetBb, TrumpetBb, HornF, Trombone, BassTrombone, Tuba],
+            "still a brass ensemble"
+        );
+        brass.add_part(Timpani).unwrap();
+        assert!(brass.arrange_parts());
+        assert_eq!(
+            order(&brass),
+            [
+                HornF,
+                TrumpetBb,
+                TrumpetBb,
+                Trombone,
+                BassTrombone,
+                Tuba,
+                Timpani
+            ]
+        );
+    }
+
+    #[test]
+    fn orchestras_keep_orchestral_order() {
+        let full = template("Orquesta sinfónica").score().unwrap();
+        assert_eq!(order(&full), Instrument::ORCHESTRA);
+        // Voices with strings sit below the keyboards, as soloists and choir do.
+        let mut cantata = Score::new(String::new(), &[Violin, Soprano, Organ], 1).unwrap();
+        cantata.arrange_parts();
+        assert_eq!(order(&cantata), [Organ, Soprano, Violin]);
+        // A choir with piano keeps the voices on top.
+        let mut choir = Score::new(String::new(), &[Piano, BassVoice, Soprano], 1).unwrap();
+        choir.arrange_parts();
+        assert_eq!(order(&choir), [Soprano, BassVoice, Piano]);
     }
 }
